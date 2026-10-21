@@ -85,7 +85,7 @@ test('status without credentials is readable without making any provider request
 
 test('health endpoint is independent from model configuration', async (t) => {
   const { base } = await startServer(t, { generator: undefined })
-  const response = await fetch(`${base}/healthz`)
+  const response = await fetch(`${base}/api/health`)
   assert.equal(response.status, 200)
   assert.deepEqual(await response.json(), { ok: true })
 })

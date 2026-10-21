@@ -52,7 +52,7 @@ gcloud run deploy storyweave \
 ```bash
 npm test
 npm run build
-curl -i https://SERVICE_URL/healthz
+curl -i https://SERVICE_URL/api/health
 curl -i https://SERVICE_URL/api/status
 ```
 

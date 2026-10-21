@@ -96,7 +96,7 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
     try {
       allowedRequest(request, server, env, request.method === 'POST')
       const pathname = new URL(request.url, 'http://localhost').pathname
-      if (pathname === '/healthz' && request.method === 'GET') return sendJson(response, 200, { ok: true })
+      if ((pathname === '/api/health' || pathname === '/healthz') && request.method === 'GET') return sendJson(response, 200, { ok: true })
       if (pathname === '/api/status' && request.method === 'GET') return sendJson(response, 200, generator.status())
       if (pathname === '/api/generate' && request.method === 'POST') {
         const body = await readJson(request)
