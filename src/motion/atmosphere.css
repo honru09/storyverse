@@ -1,0 +1,44 @@
+.world-atmosphere {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: inherit;
+  background: #c4d7cc;
+}
+.world-atmosphere-fallback,
+.world-atmosphere-canvas {
+  position: absolute;
+  inset: 0;
+}
+.world-atmosphere-fallback svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.world-atmosphere-canvas {
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+[data-atmosphere="live"] .world-atmosphere-canvas {
+  opacity: 0.75;
+}
+.atmosphere-merge {
+  opacity: 0.16;
+}
+.world-card-wrap {
+  min-width: 0;
+  height: 100%;
+}
+.world-card-wrap > .world-card {
+  width: 100%;
+  height: 100%;
+}
+[data-motion="off"] button:not(:disabled):active {
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .world-atmosphere-canvas {
+    transition: none;
+  }
+}

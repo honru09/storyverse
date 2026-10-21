@@ -1,0 +1,275 @@
+/* Reading controls: quiet during the story, explicit at chapter boundaries. */
+.reader-directory-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.6rem 0.85rem;
+  color: var(--paper);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.reader-directory-button:not(:disabled):active,
+button.chapter-item:not(:disabled):active,
+.chapter-directory-list button:not(:disabled):active {
+  transform: none;
+  background: var(--surface-tide);
+}
+.reader-directory-button:focus-visible,
+.reading-dialog button:focus-visible,
+button.chapter-item:focus-visible {
+  outline: 3px solid var(--mint);
+  outline-offset: 4px;
+}
+button.chapter-item {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  background: transparent;
+}
+button.chapter-item:disabled {
+  cursor: default;
+}
+.reader-article h1:focus {
+  outline: none;
+}
+.forge-section-heading h2:focus {
+  outline: none;
+}
+.chapter-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding-block: 0.5rem 1.5rem;
+}
+.chapter-navigation .reader-directory-button:first-child {
+  margin-right: auto;
+}
+.chapter-navigation .reader-directory-button {
+  flex-shrink: 0;
+  color: var(--paper-soft);
+}
+.reading-end {
+  margin-block: 2rem 1rem;
+  padding-block: 1.4rem;
+  border-top: 1px solid var(--line);
+}
+.reading-end > span {
+  color: var(--mint);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.reading-end h2 {
+  font-size: 1.25rem;
+  margin-block: 0.6rem;
+}
+.reading-end p {
+  color: var(--paper-soft);
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+.reading-end .button {
+  width: 100%;
+  margin-top: 0.75rem;
+  border-width: 1px;
+  border-color: var(--line);
+  box-shadow: none;
+}
+.reading-end > button:last-child:not(.button) {
+  display: block;
+  min-height: 44px;
+  margin: 0.5rem auto 0;
+  color: inherit;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.reading-dialog {
+  --dialog-enter-y: 8px;
+  box-sizing: border-box;
+  width: min(100% - 2rem, 460px);
+  max-height: min(80dvh, 680px);
+  padding: 1.5rem;
+  color: var(--paper);
+  background: var(--ink-soft);
+  border: 2px solid var(--line-strong);
+  border-radius: 24px;
+  box-shadow: 0 18px 64px #1e242329;
+  overscroll-behavior: contain;
+  overflow-y: auto;
+}
+.reading-dialog[open] {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 180ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform 180ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+/* Entry only: native close/React unmount still dismisses immediately. */
+@starting-style {
+  .reading-dialog[open] {
+    opacity: 0.72;
+    transform: translateY(var(--dialog-enter-y));
+  }
+}
+.reading-dialog::backdrop {
+  background: #1e242361;
+}
+.reading-dialog-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.reading-dialog h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
+}
+.reading-dialog p {
+  color: var(--paper-soft);
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+.reading-dialog .icon-button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.chapter-directory-list {
+  display: grid;
+  gap: 0;
+  margin-top: 1rem;
+}
+.chapter-directory-list button {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  min-height: 56px;
+  padding: 0.9rem 0.6rem;
+  color: var(--paper);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.chapter-directory-list button:last-child {
+  border-bottom: 0;
+}
+.chapter-directory-list button[aria-current="page"] {
+  border-color: transparent;
+  border-radius: 12px;
+  background: var(--surface-tide);
+}
+.chapter-directory-list button:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 1;
+}
+.chapter-directory-list button > b {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.chapter-directory-list button > span {
+  display: grid;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+}
+.chapter-directory-list strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.chapter-directory-list small {
+  font-size: 0.72rem;
+  color: var(--paper-soft);
+}
+.reading-dialog-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+.reading-dialog-actions .button {
+  min-height: 48px;
+  justify-content: center;
+}
+.reading-dialog .rewrite-summary {
+  padding: 1rem;
+  background: var(--surface-peach);
+  border-radius: 14px;
+}
+@media (max-width: 700px) {
+  .reading-dialog {
+    width: 100%;
+    max-width: 100%;
+    max-height: 85dvh;
+    margin: auto 0 0;
+    border-bottom: 0;
+    border-radius: 24px 24px 0 0;
+    padding: 1.25rem 1.25rem max(1.25rem, env(safe-area-inset-bottom));
+    padding-left: max(1.25rem, env(safe-area-inset-left));
+    padding-right: max(1.25rem, env(safe-area-inset-right));
+  }
+  .reader-actions .reader-directory-button {
+    min-width: 44px;
+    padding-inline: 0.7rem;
+  }
+  .chapter-navigation {
+    padding-bottom: 0.5rem;
+  }
+}
+.app-shell[data-motion="off"] .reading-dialog[open] {
+  --dialog-enter-y: 0px;
+  transition: none;
+  transform: none;
+}
+.app-shell[data-motion="off"] .reader-directory-button:active,
+.app-shell[data-motion="off"] .reading-dialog button:active,
+.app-shell[data-motion="off"] button.chapter-item:active {
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reading-dialog[open] {
+    --dialog-enter-y: 0px;
+    transition: none;
+    transform: none;
+  }
+  .reader-directory-button:active,
+  .reading-dialog button:active,
+  button.chapter-item:active {
+    transform: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .reading-dialog {
+    background: var(--ink-soft);
+    backdrop-filter: none;
+  }
+}
+@media (prefers-contrast: more) {
+  .reading-dialog,
+  .chapter-directory-list button {
+    border-color: var(--paper);
+  }
+  .reading-dialog p,
+  .chapter-directory-list small {
+    color: var(--paper);
+  }
+}
