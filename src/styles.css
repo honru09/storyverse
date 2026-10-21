@@ -31,7 +31,7 @@
 html { scroll-padding-top: 80px; background: var(--ink); scrollbar-color: var(--line) var(--ink); }
 body { margin: 0; min-width: 0; min-height: 100dvh; -webkit-font-smoothing: antialiased; }
 ::selection { background: #c5d9ca; color: var(--paper); }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button {
   color: inherit;
   border: 0;
@@ -42,7 +42,7 @@ button {
 }
 button:disabled { opacity: 0.45; cursor: default; }
 button:not(:disabled):active { transform: scale(0.98); transition-duration: 80ms; }
-button:focus-visible, input:focus-visible {
+button:focus-visible, input:focus-visible, select:focus-visible {
   outline: 3px solid var(--mint);
   outline-offset: 4px;
 }
@@ -61,6 +61,48 @@ input {
   caret-color: var(--mint);
 }
 input::placeholder { color: var(--muted); }
+select {
+  width: 100%; min-width: 0; min-height: 48px; padding: 12px;
+  border: 2px solid var(--line); border-radius: var(--radius-control);
+  color: var(--paper); background: var(--surface); font-size: 16px;
+  text-overflow: ellipsis;
+}
+.merge-book-selectors { display: grid; gap: 16px; margin-bottom: 24px; }
+.merge-book-selectors label { display: grid; gap: 8px; min-width: 0; }
+.library-tools { display: grid; gap: 12px; }
+.library-tools p { margin: 0; }
+.generation-mode { margin-block: 20px; text-align: left; }
+.generation-options { display: flex; gap: 8px; }
+.generation-options button { flex: 1; min-height: 44px; padding: 10px 12px; border: 2px solid var(--line); border-radius: var(--radius-control); background: var(--surface); font-size: .88rem; }
+.generation-options button[aria-pressed="true"] { border-color: var(--mint); background: var(--surface-tide); color: var(--mint); font-weight: 650; }
+.generation-feedback { min-height: 1.5em; margin-block: 12px; font-size: .85rem; color: var(--paper-soft); }
+.share-prose-preview { max-height: 40dvh; overflow-y: auto; overscroll-behavior: contain; }
+.share-prose-preview details { padding-block: 12px; border-top: 1px solid var(--line); }
+.share-prose-preview summary { cursor: pointer; font-weight: 650; padding: 8px 0; }
+.share-prose-preview p { line-height: 1.8; font-size: .9rem; }
+.share-review { display: flex; align-items: flex-start; gap: 10px; margin-block: 20px; font-size: .85rem; }
+.share-review input { width: 20px; height: 20px; min-height: 20px; flex-shrink: 0; accent-color: var(--mint); }
+html[data-input="keyboard"] *, html[data-input="keyboard"] *::before, html[data-input="keyboard"] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+html[data-input="keyboard"] button:not(:disabled):active { transform: none; }
+html[data-input="keyboard"] .reading-dialog[open] { opacity: 1; transform: none; }
+.library-tools .button { width: 100%; }
+.backup-upload {
+  position: relative; display: grid; place-items: center; min-height: 48px;
+  padding: 12px; border: 2px dashed var(--line); border-radius: var(--radius-control);
+  font-size: .9rem; font-weight: 650; cursor: pointer; overflow: hidden;
+}
+.backup-upload:focus-within { outline: 3px solid var(--mint); outline-offset: 3px; }
+.backup-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.backup-confirm, .backup-recovery { padding-block: 12px; border-top: 1px solid var(--line); }
+.backup-confirm h3 { margin: 0 0 8px; }
+.backup-status { min-height: 1.5em; font-size: .85rem; color: var(--mint); }
+.sw-storage-warning { flex-wrap: wrap; }
+.sw-storage-warning span { flex: 1; min-width: 180px; }
+.sw-storage-warning button { min-height: 44px; padding: 8px 12px; border-radius: 10px; background: var(--surface); font-weight: 700; }
+.recovery-page { width: min(100% - 40px, 480px); margin: 15dvh auto; }
+.recovery-page > button { width: 100%; margin-top: 12px; }
+.page h1[tabindex="-1"]:focus { outline: none; }
+@media (min-width: 700px) { .merge-book-selectors { grid-template-columns: 1fr 1fr; } }
 h1, h2, h3, p { overflow-wrap: break-word; }
 h1, h2, h3 { letter-spacing: -0.025em; line-height: 1.25; text-wrap: balance; }
 h1 { font-size: clamp(1.75rem, 4vw, 2rem); font-weight: 750; }

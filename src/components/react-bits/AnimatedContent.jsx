@@ -8,6 +8,7 @@
 import React, { useRef } from "react";
 import { gsap, ScrollTrigger, useGSAP } from "../../motion/gsap.js";
 import { useMotionPolicy } from "../../motion/MotionProvider.jsx";
+import { isKeyboardInput, subscribeInputModality } from "../../motion/input-modality.js";
 
 export default function AnimatedContent({
   children,
@@ -29,7 +30,7 @@ export default function AnimatedContent({
   useGSAP(
     () => {
       const el = ref.current;
-      if (!el || !animate) return;
+      if (!el || !animate || isKeyboardInput()) return;
       const axis = direction === "horizontal" ? "x" : "y";
       const offset = reverse ? -distance : distance;
       gsap.set(el, {
@@ -50,13 +51,20 @@ export default function AnimatedContent({
         trigger: el,
         start: `top ${(1 - threshold) * 100}%`,
         once: true,
-        onEnter: () => tl.play(),
+        onEnter: () => isKeyboardInput() ? tl.progress(1).pause() : tl.play(),
       });
       // Input takes priority over the reveal, including touch that skips focus.
-      const reveal = () => tl.progress(1);
+      const reveal = () => {
+        tl.progress(1).pause();
+        trigger.kill();
+      };
+      const unsubscribeInput = subscribeInputModality((keyboard) => {
+        if (keyboard) reveal();
+      });
       el.addEventListener("focusin", reveal);
       el.addEventListener("pointerdown", reveal);
       return () => {
+        unsubscribeInput();
         el.removeEventListener("focusin", reveal);
         el.removeEventListener("pointerdown", reveal);
         trigger.kill();

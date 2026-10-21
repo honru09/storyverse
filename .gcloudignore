@@ -1,0 +1,15 @@
+.git/
+.github/
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+docs/
+e2e/
+tests/
+playwright-artifacts/
+test-results/
+playwright-report/
+*.log
+*.local

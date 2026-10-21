@@ -1,0 +1,11 @@
+{
+  "id": "/",
+  "name": "织界 · Storyweave",
+  "short_name": "织界",
+  "lang": "zh-CN",
+  "start_url": "/#/home",
+  "display": "standalone",
+  "background_color": "#f5f3ee",
+  "theme_color": "#f5f3ee",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

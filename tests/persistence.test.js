@@ -2,12 +2,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   STORAGE_KEY,
+  MAX_BACKUP_BYTES,
   emptyLibrary,
+  exportLibrary,
+  importLibrary,
   loadLibrary,
   migrateLegacy,
   saveLibrary,
   upsertStory,
 } from '../src/persistence.js'
+import { createMergedStory, createStory, publicSnapshot, FRIEND_BOOK } from '../src/story-engine.js'
+import { prepareReadingWindow } from '../src/reading-flow.js'
 
 class MemoryStorage {
   constructor(entries = {}) {
@@ -159,4 +164,123 @@ test('migrateLegacy flattens world and character display values without deleting
 test('migrateLegacy returns null for an empty legacy payload', () => {
   const storage = new MemoryStorage({ 'storyweave:story-state': JSON.stringify({}) })
   assert.equal(migrateLegacy(storage), null)
+})
+
+function populatedLibrary() {
+  const current = prepareReadingWindow(createStory({ name: '阿遥', immersive: true, hometown: '宁波' }))
+  const library = upsertStory(emptyLibrary(), current)
+  library.publications.push({ id: `publication-${current.id}`, storyId: current.id, snapshot: publicSnapshot(current) })
+  return library
+}
+
+test('real solo and merged stories with publication snapshots survive a backup round trip', () => {
+  const library = populatedLibrary()
+  const merged = prepareReadingWindow(createMergedStory(library.stories[0], FRIEND_BOOK))
+  const both = upsertStory(library, merged)
+  both.publications.push({ id: `publication-${merged.id}`, storyId: merged.id, snapshot: publicSnapshot(merged) })
+  const before = structuredClone(both)
+  const raw = exportLibrary(both)
+
+  assert.deepEqual(importLibrary(raw), JSON.parse(JSON.stringify(both)))
+  assert.deepEqual(both, before, 'export does not mutate the live library')
+  const storage = new MemoryStorage()
+  assert.equal(saveLibrary(storage, both).ok, true)
+  assert.equal(loadLibrary(storage).warning, null)
+})
+
+test('render-sensitive corruption is rejected before it can reach the reader or overwrite storage', async (t) => {
+  const cases = [
+    ['character name object', (library) => { library.stories[0].config.name = { text: 'not text' } }],
+    ['character ability object', (library) => { library.stories[0].config.ability = {} }],
+    ['draft field object', (library) => { library.draft = { friend: {} } }],
+    ['world premise object', (library) => { library.stories[0].worldBible.premise = {} }],
+    ['non-array paragraphs', (library) => { library.stories[0].chapters[0].paragraphs = 'not an array' }],
+    ['paragraph object', (library) => { library.stories[0].chapters[0].paragraphs[0] = {} }],
+    ['empty paragraphs', (library) => { library.stories[0].chapters[0].paragraphs = [] }],
+    ['missing chapter', (library) => { library.stories[0].chapters[0] = null }],
+    ['chapter index gap', (library) => { library.stories[0].chapters[0].index = 2 }],
+    ['stale next chapter cursor', (library) => { library.stories[0].chapterIndex = 0 }],
+    ['invalid choice options', (library) => { library.stories[0].chapters[1].choice.options = {} }],
+    ['choice option object label', (library) => { library.stories[0].chapters[1].choice.options[0].label = {} }],
+    ['duplicate choice branches', (library) => { library.stories[0].chapters[1].choice.options[1].id = 'open' }],
+    ['unsupported choice branch', (library) => { library.stories[0].chapters[1].choice.options[0].id = 'unknown' }],
+    ['missing decision gate', (library) => { library.stories[0].chapters[1].choice = null }],
+    ['invalid choice map', (library) => { library.stories[0].choices = { 1: {} } }],
+    ['invalid merged protagonists', (library) => { library.stories[0].kind = 'merged'; library.stories[0].config.protagonists = [null, {}] }],
+    ['publication null', (library) => { library.publications[0] = null }],
+    ['publication malformed snapshot', (library) => { library.publications[0].snapshot = {} }],
+    ['publication malformed prose', (library) => { library.publications[0].snapshot.chapters[0].paragraphs = [{}] }],
+    ['favorite object', (library) => { library.favorites = [{}] }],
+  ]
+
+  for (const [name, corrupt] of cases) {
+    await t.test(name, () => {
+      const library = populatedLibrary()
+      corrupt(library)
+      const raw = JSON.stringify(library)
+      const storage = new MemoryStorage({ [STORAGE_KEY]: raw })
+      const loaded = loadLibrary(storage)
+      assert.deepEqual(loaded.library, emptyLibrary())
+      assert.match(loaded.warning, /结构无效/)
+      assert.equal(storage.getItem(STORAGE_KEY), raw)
+      assert.equal(saveLibrary(storage, library).ok, false)
+      assert.equal(storage.getItem(STORAGE_KEY), raw)
+      assert.throws(() => importLibrary(raw), /结构无效/)
+    })
+  }
+})
+
+test('save failures from cycles, BigInt, accessors and toJSON leave the previous library untouched', () => {
+  const cases = [
+    (library) => { library.extra = library },
+    (library) => { library.extra = 1n },
+    (library) => { Object.defineProperty(library, 'stories', { get() { throw new Error('unreadable') } }) },
+    (library) => { library.toJSON = () => ({ version: 2, stories: [null] }) },
+    (library) => { library.toJSON = () => undefined },
+  ]
+  for (const corrupt of cases) {
+    const previous = JSON.stringify(emptyLibrary())
+    const storage = new MemoryStorage({ [STORAGE_KEY]: previous })
+    const library = populatedLibrary()
+    corrupt(library)
+    assert.doesNotThrow(() => {
+      const result = saveLibrary(storage, library)
+      assert.equal(result.ok, false)
+      assert.match(result.error, /书库/)
+    })
+    assert.equal(storage.getItem(STORAGE_KEY), previous)
+    assert.throws(() => exportLibrary(library), /书库/)
+  }
+})
+
+test('backup import accepts a UTF-8 BOM and rejects malformed or unsupported backups', () => {
+  assert.deepEqual(importLibrary(`\uFEFF${JSON.stringify(emptyLibrary())}`), emptyLibrary())
+  for (const raw of ['', '{broken', 'null', '[]', JSON.stringify({ version: 3 })]) {
+    assert.throws(() => importLibrary(raw), /JSON|结构无效|版本/)
+  }
+  assert.throws(() => importLibrary(emptyLibrary()), /JSON/)
+})
+
+test('backup size limits count UTF-8 bytes, not JavaScript characters', () => {
+  const library = populatedLibrary()
+  library.extra = '潮'.repeat(Math.ceil(MAX_BACKUP_BYTES / 3))
+  const raw = JSON.stringify(library)
+  assert.ok(raw.length < MAX_BACKUP_BYTES)
+  assert.throws(() => importLibrary(raw), /5 MB/)
+  assert.throws(() => exportLibrary(library), /5 MB/)
+})
+
+test('legacy sparse choice arrays retain their JSON null placeholders', () => {
+  const library = populatedLibrary()
+  library.stories[0].choices = [null, 'open']
+  assert.deepEqual(importLibrary(exportLibrary(library)), library)
+})
+
+test('legacy migration drops nested display objects that are unsafe to render', () => {
+  const legacy = { protagonist: { name: { nested: 'bad' }, trait: { label: { nested: 'bad' } } }, worldId: 'mist' }
+  const storage = new MemoryStorage({ 'storyweave:story-state': JSON.stringify(legacy) })
+  const migrated = migrateLegacy(storage)
+  assert.equal(migrated.draft.protagonistName, undefined)
+  assert.equal(migrated.draft.protagonistTrait, undefined)
+  assert.equal(migrated.draft.worldId, 'mist')
 })

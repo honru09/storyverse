@@ -33,6 +33,9 @@ export function readerIndexFor(story, readOnly = false) {
 }
 
 export function materialize(story, targetLength) {
+  // Remote stories can only accept model responses through acceptChapter.
+  // Preparing a reading window must never substitute the local demo prose.
+  if (story?.engine === 'gemini' || story?.readOnly) return story
   let current = story
   const target = Math.min(CHAPTER_COUNT, Math.max(0, Math.floor(targetLength)))
   while (current.chapters.length < target) {
@@ -48,7 +51,7 @@ export function materialize(story, targetLength) {
 // One chapter ahead, bounded by the next unresolved decision. Calling again is
 // idempotent, so reading, revisiting, and React effect reruns cannot overproduce.
 export function prepareReadingWindow(story, index = readerIndexFor(story)) {
-  if (story?.readOnly) return story
+  if (story?.readOnly || story?.engine === 'gemini') return story
   const position = readerIndexFor({ ...story, readerIndex: index })
   return materialize(story, position + 2)
 }

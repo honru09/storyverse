@@ -1,0 +1,35 @@
+name: Client quality
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Browser journeys against production build
+        env:
+          TARGET_URL: http://127.0.0.1:4173
+          PW_HEADLESS: 'true'
+          PW_ARTIFACT_DIR: playwright-artifacts
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 --strictPort &
+          trap 'kill $(jobs -p)' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4173/ > /dev/null; then break; fi
+            sleep 1
+          done
+          npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-journeys
+          path: playwright-artifacts/
+          if-no-files-found: ignore

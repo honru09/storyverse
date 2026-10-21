@@ -1,6 +1,6 @@
 # 织界 Storyweave
 
-一个“由你的选择驱动”的 AI 互动小说平台首版原型。
+一个“由你的选择驱动”的手机端互动小说内测客户端，当前使用本地确定性剧情。
 
 ## 当前原型
 
@@ -18,8 +18,10 @@
 
 ## 运行
 
+Node.js 22.12+（推荐 24），使用锁文件恢复依赖：
+
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -37,13 +39,15 @@ npm test
 
 当前为本地确定性原型，不调用收费模型。书城发布仅存本机，联机邀请仍为演示；尚未接入真实后端、多人房间或付费系统。
 
+0.2 支持刷新/历史导航恢复、两本本地单人书合流、书架 JSON 备份恢复、损坏存档保护、存储失败反馈和跨标签冲突检测。完整浏览器验收：`npx playwright install chromium`，开发服务运行后执行 `npm run test:e2e`。见 [验收说明](e2e/README.md) 与 [商用上线计划](docs/RELEASE_READINESS.md)。
+
 ## 项目交接
 
 完整的当前状态、已完成内容、未完成事项、使用过的 skills、聊天需求摘要和下一位 agent 的启动步骤见 [项目交接记录](docs/PROJECT_HANDOFF.md)。
 
 ## 后续接入建议
 
-将 `src/story-engine.js` 中的确定性模板替换为三个后端接口即可开始接模型：
+真实 AI 需要将 `src/story-engine.js` 的同步模板调用改为异步服务，并增加授权、任务取消、失败重试与版本校验。建议接口起点：
 
 ```text
 POST /api/story/create
@@ -52,6 +56,10 @@ POST /api/choice/apply
 ```
 
 模型层不要把整本小说反复塞进上下文。建议长期保存结构化 `WorldBible`、`CharacterSheet`、`StoryState`，每次只发送当前章节摘要、最近一到两章和当前决策；阅读第 N 章时后台预热第 N+1 章。合流时先生成 `MergePlan`（冲突清单 + 用户确认），再一次性生成合流章节。
+
+## Google Cloud
+
+服务端支持两种后端：本地默认使用 Gemini Developer API；Cloud Run 使用 `GENAI_BACKEND=vertex` 和服务身份调用 Vertex AI，不需要生产 API Key。完整资源、权限、部署与验证步骤见 [Google Cloud 部署](docs/GOOGLE_CLOUD_DEPLOYMENT.md)。
 
 ## 设计取向
 

@@ -442,6 +442,7 @@ export function chapterForReading(story, index) {
   validateIndex(index)
   const stored = story.chapters.find((chapter) => chapter?.index === index)
   if (!stored) return null
+  if (story.engine === 'gemini') return stored
   if ((index !== 1 && index !== 3) || !Array.isArray(stored.paragraphs)) return stored
   const currentScene = sceneFor(story, index)
   const signature = legacyDecisionSignature(story, index, currentScene)
@@ -617,21 +618,102 @@ export function createMergedStory(a, b, options = {}) {
   return story
 }
 
+// This only removes known literal values. A model may infer or paraphrase
+// personal facts, so an AI share still needs a human review of every chapter.
+const snapshotRedactor = (sourceConfig, safeConfig) => {
+  const replacements = new Map()
+  const add = (value, alias) => {
+    if (typeof value !== 'string' || !value.trim()) return
+    if (!replacements.has(value)) replacements.set(value, alias)
+    const trimmed = value.trim()
+    if (!replacements.has(trimmed)) replacements.set(trimmed, alias)
+  }
+  const visit = (source, target, field = '') => {
+    if (typeof source === 'string') {
+      if (field === 'genreId' || field === 'sourceGenres') return
+      const aliases = {
+        hometown: '某地', school: '某所学校', company: '某个组织', role: '某种职业',
+        friend: '一位故人', destination: '某处目的地', protagonist: target?.name || safeConfig.name,
+      }
+      add(source, typeof target === 'string' && target ? target : aliases[field] || '已隐去的设定')
+      return
+    }
+    if (Array.isArray(source)) {
+      source.forEach((item, index) => visit(item, target?.[index], field))
+      return
+    }
+    if (!source || typeof source !== 'object') return
+    for (const [key, value] of Object.entries(source)) {
+      // World genres and the three merge enums are public controlled values.
+      if (key === 'genreId' || key === 'sourceGenres' || key === 'merge') continue
+      visit(value, target?.[key], key)
+    }
+  }
+  visit(sourceConfig, safeConfig)
+  const keys = [...replacements.keys()].sort((a, b) => b.length - a.length || a.localeCompare(b))
+  const escaped = keys.map(value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const pattern = escaped.length ? new RegExp(escaped.join('|'), 'g') : null
+  // One pass prevents an inserted alias from being interpreted as another
+  // source value. Longest matches win when a person's name prefixes another.
+  return value => typeof value === 'string' && pattern
+    ? value.replace(pattern, match => replacements.get(match))
+    : typeof value === 'string' ? value : ''
+}
+
+const snapshotChoice = (story, safe, index, redact) => {
+  const expected = choiceAt(safe, index)
+  if (!expected) return null
+  const supplied = story.chapters[index]?.choice
+  return {
+    prompt: typeof supplied?.prompt === 'string' ? redact(supplied.prompt) : expected.prompt,
+    options: expected.options.map(fallback => {
+      const option = supplied?.options?.find(item => item?.id === fallback.id)
+      return {
+        id: fallback.id,
+        label: typeof option?.label === 'string' ? redact(option.label) : fallback.label,
+        detail: typeof option?.detail === 'string' ? redact(option.detail) : fallback.detail,
+        consequence: typeof option?.consequence === 'string' ? redact(option.consequence) : fallback.consequence,
+      }
+    }),
+  }
+}
+
 export function publicSnapshot(story) {
   validateStory(story)
-  const safe = clone(story)
   const sourceGenre = genreFor(story.genreId || story.config.genreId)
+  // Backups can carry arbitrary extra fields. Build the public object from an
+  // explicit schema instead of copying hidden prompts, model responses or PII.
+  const safe = {
+    id: `public-${hash(story.id)}`,
+    genreId: sourceGenre.id,
+    kind: story.kind === 'merged' ? 'merged' : 'solo',
+    sourceIds: [],
+    revision: Number.isInteger(story.revision) && story.revision >= 0 ? story.revision : 0,
+    chapterIndex: Math.min(story.chapters.length, LAST_INDEX),
+    chapters: [],
+    choices: {},
+    author: '我 · 本地分享',
+    bookmarked: false,
+    readOnly: true,
+    readerIndex: 0,
+    status: story.chapters.length >= MAX_CHAPTERS ? 'complete' : 'ongoing',
+  }
+  if (story.engine === 'gemini') safe.engine = 'gemini'
   if (story.kind === 'merged') {
     safe.config = {
       ...redactedSnapshotConfig(story.config, '旅者甲 × 旅者乙'),
       name: '旅者甲 × 旅者乙',
       protagonists: [
-        { name: '旅者甲', trait: '匿名探索者', origin: '未知世界', ability: '未命名火种', genreId: story.config.protagonists?.[0]?.genreId || sourceGenre.id },
-        { name: '旅者乙', trait: '匿名探索者', origin: '未知世界', ability: '未命名火种', genreId: story.config.protagonists?.[1]?.genreId || sourceGenre.id },
+        { name: '旅者甲', trait: '匿名探索者', origin: '未知世界', ability: '未命名火种', genreId: genreFor(story.config.protagonists?.[0]?.genreId || sourceGenre.id).id },
+        { name: '旅者乙', trait: '匿名探索者', origin: '未知世界', ability: '未命名火种', genreId: genreFor(story.config.protagonists?.[1]?.genreId || sourceGenre.id).id },
       ],
       destination: '',
-      merge: story.config.merge ? { ...story.config.merge } : undefined,
-      sourceGenres: Array.isArray(story.config.sourceGenres) ? [...story.config.sourceGenres] : undefined,
+      merge: {
+        rules: story.config.merge?.rules === 'separate' ? 'separate' : 'bridge',
+        lead: story.config.merge?.lead === 'b' ? 'b' : 'a',
+        bond: story.config.merge?.bond === 'rivals' ? 'rivals' : 'allies',
+      },
+      sourceGenres: [0, 1].map(index => genreFor(story.config.protagonists?.[index]?.genreId || sourceGenre.id).id),
     }
     safe.title = '合流：两条匿名世界线'
     safe.worldBible = {
@@ -647,11 +729,25 @@ export function publicSnapshot(story) {
     safe.title = `${sourceGenre.title} · 匿名旅者`
     safe.worldBible = worldBibleFor(sourceGenre, safe.config)
   }
-  safe.chapters = story.chapters.map((chapter) => buildChapter(safe, chapter.index))
-  safe.author = '我 · 本地分享'
-  safe.bookmarked = false
-  safe.readOnly = true
-  safe.readerIndex = 0
+  for (const [index, chapter] of story.chapters.entries()) {
+    if (chapter?.index !== index || index >= MAX_CHAPTERS) throw new TypeError('cannot share non-sequential chapters')
+    const selected = validChoiceAt(story, index)
+    if (selected) safe.choices[index] = selected
+  }
+  if (story.engine === 'gemini') {
+    const redact = snapshotRedactor(story.config, safe.config)
+    safe.title = redact(story.title) || safe.title
+    safe.chapters = story.chapters.map((chapter, index) => ({
+      id: `${safe.id}:chapter:${index}:r${safe.revision}`,
+      index,
+      title: redact(chapter.title),
+      paragraphs: chapter.paragraphs.map(redact),
+      summary: redact(chapter.summary),
+      choice: snapshotChoice(story, safe, index, redact),
+    }))
+  } else {
+    safe.chapters = story.chapters.map(chapter => buildChapter(safe, chapter.index))
+  }
   return safe
 }
 

@@ -1,14 +1,21 @@
 import React, {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import "./reader-flow.css";
 import AnimatedContent from "./components/react-bits/AnimatedContent.jsx";
+import ErrorBoundary from "./components/ErrorBoundary.jsx";
+import { createLibraryStore } from "./library-store.js";
+import { parseRoute, routeHash } from "./navigation.js";
+import { downloadText } from "./downloads.js";
+import { acceptGeneratedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter } from "./generation.js";
 import WorldAtmosphere from "./motion/WorldAtmosphere.jsx";
 import {
   MotionProvider,
@@ -42,10 +49,9 @@ import {
   publicSnapshot,
 } from "./story-engine";
 import {
-  emptyLibrary,
-  loadLibrary,
-  migrateLegacy,
-  saveLibrary,
+  exportLibrary,
+  importLibrary,
+  STORAGE_KEY,
   upsertStory,
 } from "./persistence";
 
@@ -305,7 +311,7 @@ function Sidebar({ view, onNavigate }) {
   );
 }
 
-function Topbar({ onNavigate }) {
+function Topbar({ onNavigate, onOpenLibrary }) {
   return (
     <header className="topbar">
       <Brand onClick={() => onNavigate("home")} />
@@ -315,6 +321,9 @@ function Topbar({ onNavigate }) {
           体验版
         </span>
         <MotionToggle />
+        <button className="icon-button" onClick={onOpenLibrary} aria-label="书架与备份" aria-haspopup="dialog">
+          <Icon name="sliders" size={20} />
+        </button>
       </div>
     </header>
   );
@@ -547,8 +556,26 @@ function PreviewPanel({ world, draft, ability, tone }) {
   );
 }
 
-function Forge({ onGenerate, initialDraft, onDraftChange }) {
+function GenerationMode({ provider, value, onChange, disabled }) {
+  return <div className="generation-mode">
+    <div className="generation-options" role="group" aria-label="故事方式">
+      <button disabled={disabled} aria-pressed={value === "local"} onClick={() => onChange("local")}>预设体验</button>
+      <button disabled={disabled || !provider.configured} aria-pressed={value === "gemini"} onClick={() => onChange("gemini")}>Gemini 创作</button>
+    </div>
+    <p className="experience-note">{value === "gemini"
+      ? "设定与剧情会发送给 Gemini。请使用昵称或虚构资料；每次续写会使用服务端额度。"
+      : provider.configured ? "无需等待，体验六章预设故事。" : "预设剧情体验 · Gemini 尚未连接"}</p>
+  </div>;
+}
+
+function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
   const forgeRef = useRef(null);
+  const operation = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [mode, setMode] = useState(null);
+  const engine = mode || (provider.configured ? "gemini" : "local");
+  useEffect(() => () => operation.current?.abort(), []);
   const [step, setStep] = useState(
     Math.min(4, Math.max(1, Number(initialDraft?.step) || 1)),
   );
@@ -594,15 +621,23 @@ function Forge({ onGenerate, initialDraft, onDraftChange }) {
       ?.querySelector(".forge-section-heading h2")
       ?.focus({ preventScroll: true });
   }, [step]);
-  const submit = () =>
-    onGenerate({
+  const submit = async () => {
+    if (operation.current) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    setBusy(true);
+    setError("");
+    try { await onGenerate({
       ...draft,
       ability: ability.name,
       tone: tone.name,
       world,
       abilityOption: ability,
       toneOption: tone,
-    });
+    }, { engine, signal: controller.signal }); }
+    catch (failure) { if (!controller.signal.aborted) setError(failure.message || "暂时没能打开故事，草稿还在。"); }
+    finally { if (operation.current === controller) { operation.current = null; setBusy(false); } }
+  };
   const previewText =
     draft.immersive && draft.hometown
       ? `来自${draft.hometown}的${draft.role || "旅人"}，会在${world.location}听见第一声回响。`
@@ -613,7 +648,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange }) {
         <h1>新故事</h1>
         <span className="step-count" aria-label={`第 ${step} 步，共 4 步`}>{step} / 4</span>
       </div>
-      <Stepper step={step} setStep={setStep} />
+      <Stepper step={step} setStep={(value) => { if (!busy) setStep(value); }} />
       <div className="forge-layout">
         <main className="forge-main">
           {step === 1 && (
@@ -646,6 +681,8 @@ function Forge({ onGenerate, initialDraft, onDraftChange }) {
                 <label className="field-label">
                   主角昵称（选填）
                   <input
+                    maxLength={40}
+                    autoComplete="off"
                     value={draft.name}
                     onChange={(event) => set({ name: event.target.value })}
                     placeholder="取一个名字"
@@ -708,10 +745,11 @@ function Forge({ onGenerate, initialDraft, onDraftChange }) {
                   </div>
                   {draft.immersive && (
                     <div className="life-fields">
-                      <p className="field-hint">建议用昵称或虚构内容。仅存本机，分享时匿名化。</p>
+                      <p className="field-hint">建议用昵称或虚构内容。选择 Gemini 时，设定会发送给模型服务。</p>
                       <label className="field-label">
                         成长的地方（选填）
                         <input
+                          maxLength={80}
                           value={draft.hometown || ""}
                           onChange={(event) =>
                             set({ hometown: event.target.value })
@@ -722,6 +760,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange }) {
                       <label className="field-label">
                         学习的地方（选填）
                         <input
+                          maxLength={80}
                           value={draft.school || ""}
                           onChange={(event) =>
                             set({ school: event.target.value })
@@ -732,6 +771,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange }) {
                       <label className="field-label">
                         做过的工作（选填）
                         <input
+                          maxLength={80}
                           value={draft.role || ""}
                           onChange={(event) =>
                             set({ role: event.target.value })
@@ -742,6 +782,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange }) {
                       <label className="field-label">
                         工作过的地方（选填）
                         <input
+                          maxLength={80}
                           value={draft.company || ""}
                           onChange={(event) =>
                             set({ company: event.target.value })
@@ -752,6 +793,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange }) {
                       <label className="field-label">
                         重要的人（昵称，选填）
                         <input
+                          maxLength={40}
                           value={draft.friend || ""}
                           onChange={(event) =>
                             set({ friend: event.target.value })
@@ -824,17 +866,17 @@ function Forge({ onGenerate, initialDraft, onDraftChange }) {
                 <h3>{world.name}</h3>
                 <p>{previewText}</p>
                 <div className="opening-details" aria-label="确认故事设定">
-                  <button onClick={() => setStep(2)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "未命名旅人"}</b><Icon name="chevron" size={15} /></button>
-                  <button onClick={() => setStep(3)} aria-label="修改能力与风格"><span>能力</span><b>{ability.name} · {tone.name}</b><Icon name="chevron" size={15} /></button>
+                  <button disabled={busy} onClick={() => setStep(2)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "未命名旅人"}</b><Icon name="chevron" size={15} /></button>
+                  <button disabled={busy} onClick={() => setStep(3)} aria-label="修改能力与风格"><span>能力</span><b>{ability.name} · {tone.name}</b><Icon name="chevron" size={15} /></button>
                 </div>
               </div>
-              <p className="experience-note">预设剧情体验 · 设定与进度仅存本机</p>
+              <GenerationMode provider={provider} value={engine} onChange={setMode} disabled={busy} />
             </>
           )}
           {
             <div className="forge-actions">
               {step > 1 && (
-                <button className="back-button" onClick={back}>
+                <button className="back-button" onClick={back} disabled={busy}>
                   <Icon name="chevron" size={15} className="rotate-180" />
                   上一步
                 </button>
@@ -845,13 +887,15 @@ function Forge({ onGenerate, initialDraft, onDraftChange }) {
                     继续
                   </Button>
                 ) : (
-                  <Button icon="arrow" onClick={submit}>
-                    进入第一章
+                  <Button icon={busy ? undefined : "arrow"} onClick={submit} disabled={busy}>
+                    {busy ? "正在翻开…" : "进入第一章"}
                   </Button>
                 )}
               </div>
             </div>
           }
+          <div className="generation-feedback" role="status" aria-live="polite">{busy ? "第一章准备好后，即可开始阅读。" : error}</div>
+          {busy && <button className="small-link" onClick={() => { operation.current?.abort(); operation.current = null; setBusy(false); }}>取消等待</button>}
         </main>
         <PreviewPanel
           world={world}
@@ -866,10 +910,12 @@ function Forge({ onGenerate, initialDraft, onDraftChange }) {
 
 function ShareSheet({ story, onClose, onPublish }) {
   const preview = useMemo(() => publicSnapshot(story), [story]);
+  const [reviewed, setReviewed] = useState(false);
+  const requiresReview = story.engine === "gemini";
   return (
     <ReadingDialog title="分享预览" onClose={onClose}>
       <p>
-        匿名只读副本，仅保存在本机书城，不会上传。姓名与现实资料已移除。
+        {requiresReview ? "仅保存在本机书城。已替换设定中的原始资料，但正文仍可能含有可识别的线索，请逐章检查。" : "匿名只读副本，仅保存在本机书城，不会上传。姓名与现实资料已移除。"}
       </p>
       <div className="sw-share-preview">
         <span className="sw-share-symbol">{genreOf(story).symbol}</span>
@@ -881,8 +927,20 @@ function ShareSheet({ story, onClose, onPublish }) {
         </div>
         <Icon name="lock" size={15} />
       </div>
+      {requiresReview && <>
+        <div className="share-prose-preview">{preview.chapters.map((chapter) => <details key={chapter.id}>
+          <summary>{chapter.title}</summary>
+          {chapter.paragraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+          {chapter.summary && <p>章节摘要：{chapter.summary}</p>}
+          {chapter.choice && <div>
+            <p>{chapter.choice.prompt}</p>
+            {chapter.choice.options.map((option) => <p key={option.id}>{option.label} · {option.detail} · {option.consequence}</p>)}
+          </div>}
+        </details>)}</div>
+        <label className="share-review"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} />我已检查正文，可保存此副本</label>
+      </>}
       <div className="reading-dialog-actions">
-        <Button icon="arrow" onClick={() => onPublish(story)}>
+        <Button icon="arrow" onClick={() => onPublish(story)} disabled={requiresReview && !reviewed}>
           保存到本机书城
         </Button>
         <Button variant="ghost" onClick={onClose}>
@@ -895,6 +953,7 @@ function ShareSheet({ story, onClose, onPublish }) {
 
 function ReadingDialog({ title, children, onClose }) {
   const dialogRef = useRef(null);
+  const titleId = useId();
   useEffect(() => {
     const dialog = dialogRef.current;
     const trigger = document.activeElement;
@@ -912,7 +971,7 @@ function ReadingDialog({ title, children, onClose }) {
       ref={dialogRef}
       className="reading-dialog"
       data-lenis-prevent
-      aria-labelledby="reading-dialog-title"
+      aria-labelledby={titleId}
       onCancel={(event) => {
         event.preventDefault();
         onClose();
@@ -930,7 +989,7 @@ function ReadingDialog({ title, children, onClose }) {
       }}
     >
       <div className="reading-dialog-heading">
-        <h2 id="reading-dialog-title">{title}</h2>
+        <h2 id={titleId}>{title}</h2>
         <button
           className="icon-button"
           onClick={onClose}
@@ -994,6 +1053,8 @@ function Reader({
   onPublish,
   openShare = false,
   onShareOpened,
+  unsaved = false,
+  onPrepareChapter,
 }) {
   const [snapshotIndex, setSnapshotIndex] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
@@ -1001,6 +1062,10 @@ function Reader({
   const [rewriteMode, setRewriteMode] = useState(false);
   const [pendingChoice, setPendingChoice] = useState(null);
   const [error, setError] = useState("");
+  const [preparing, setPreparing] = useState(false);
+  const [generationError, setGenerationError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const requesting = useRef(false);
   const titleRef = useRef(null);
   const readerRef = useRef(null);
   const index = readOnly
@@ -1040,6 +1105,19 @@ function Reader({
     }
   }, [story, index, readOnly, onUpdateStory]);
 
+  const pendingIndex = readOnly ? null : nextGenerationIndex(story, index);
+  useEffect(() => {
+    if (pendingIndex === null || !onPrepareChapter) { requesting.current = false; setPreparing(false); setGenerationError(""); return; }
+    const controller = new AbortController();
+    requesting.current = true;
+    setPreparing(true);
+    setGenerationError("");
+    onPrepareChapter(story.id, pendingIndex, controller.signal)
+      .catch((failure) => { if (!controller.signal.aborted) setGenerationError(failure.message); })
+      .finally(() => { if (!controller.signal.aborted) { requesting.current = false; setPreparing(false); } });
+    return () => { controller.abort(); requesting.current = false; };
+  }, [story?.id, story?.revision, pendingIndex, retry, onPrepareChapter]);
+
   useEffect(() => {
     scrollToTop();
     titleRef.current?.focus({ preventScroll: true });
@@ -1059,6 +1137,13 @@ function Reader({
         </div>
       </div>
     );
+  if (story.engine === "gemini" && !story.chapters[index]) return (
+    <div className="page sw-empty-page">
+      <h1>故事还在这里。</h1><p role="status">{generationError || "正在接回这一章…"}</p>
+      <Button disabled={preparing} onClick={() => setRetry((value) => value + 1)}>重试</Button>
+      <Button variant="ghost" onClick={() => onNavigate("home")}>返回书架</Button>
+    </div>
+  );
   const chapter = chapterForReading(story, index) || buildChapter(story, index);
   const selected = selectedChoice(story, index);
   const selection = chapter.choice?.options.find(
@@ -1100,6 +1185,16 @@ function Reader({
       return;
     }
     if (!ready || isFinal) return;
+    if (story.engine === "gemini") {
+      if (nextAvailable) goToChapter(index + 1);
+      else if (!requesting.current) {
+        requesting.current = true;
+        setPreparing(true);
+        setGenerationError("");
+        setRetry((value) => value + 1);
+      }
+      return;
+    }
     try {
       const prepared = prepareReadingWindow(story, index);
       if (index + 1 <= lastAccessibleIndex(prepared)) {
@@ -1271,11 +1366,12 @@ function Reader({
               <Button
                 icon="arrow"
                 onClick={handleNext}
-                disabled={!readOnly && !ready}
+                disabled={!readOnly && (!ready || (preparing && !nextAvailable))}
               >
-                下一章
+                {preparing && !nextAvailable ? "下一章准备中…" : generationError && !nextAvailable ? "重试下一章" : "下一章"}
               </Button>
               {!readOnly && !ready && <span>做出选择后继续</span>}
+              {generationError && <span role="alert">{generationError}</span>}
             </div>
           )}
           {(isFinal || (readOnly && !nextAvailable)) && (
@@ -1323,7 +1419,7 @@ function Reader({
           </div>
           {!readOnly && (
             <div className="article-footer">
-              <span>进度已保存在本机</span>
+              <span role="status">{unsaved ? "进度暂存于此页，请先备份" : "进度已保存在本机"}</span>
             </div>
           )}
         </article>
@@ -1396,7 +1492,7 @@ function storeBookMeta(book) {
 function Store({ onNavigate, onOpenBook, onOpenOwn, publications }) {
   const [filter, setFilter] = useState("全部");
   const filters = ["全部", "奇幻", "修仙", "赛博", "都市", "合流章"];
-  const published = (publications || []).map((item) => {
+  const published = (publications || []).filter((item) => item.snapshot?.chapters?.length).map((item) => {
     const snapshot = item.snapshot || {};
     const status =
       snapshot.status ||
@@ -1497,9 +1593,18 @@ function Store({ onNavigate, onOpenBook, onOpenOwn, publications }) {
   );
 }
 
-function Merge({ activeStory, onNavigate, onMerged }) {
-  // Keep the two originals on stage after the new book becomes active.
-  const [sourceStory] = useState(activeStory);
+function Merge({ activeStory, stories, onNavigate, onMerged, provider }) {
+  const operation = useRef(null);
+  const candidate = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState(null);
+  const engine = mode || (provider.configured ? "gemini" : "local");
+  useEffect(() => () => operation.current?.abort(), []);
+  const originals = stories.filter((story) => story.kind !== "merged" && !story.readOnly);
+  const [sourceId, setSourceId] = useState(activeStory?.kind !== "merged" ? activeStory?.id : originals[0]?.id);
+  const [partnerId, setPartnerId] = useState(originals.find((story) => story.id !== sourceId)?.id || FRIEND_BOOK.id);
+  const sourceStory = originals.find((story) => story.id === sourceId) || originals[0];
+  const partnerStory = originals.find((story) => story.id === partnerId && story.id !== sourceStory?.id) || FRIEND_BOOK;
   const [rules, setRules] = useState("bridge");
   const [lead, setLead] = useState("a");
   const [bond, setBond] = useState("allies");
@@ -1522,19 +1627,31 @@ function Merge({ activeStory, onNavigate, onMerged }) {
       </div>
     );
   const mineGenre = genreOf(sourceStory);
-  const friendGenre = genreOf(FRIEND_BOOK);
-  const runMerge = () => {
+  const friendGenre = genreOf(partnerStory);
+  const runMerge = async () => {
+    if (operation.current) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    setBusy(true);
+    setError("");
     try {
-      const next = materialize(
-        createMergedStory(sourceStory, FRIEND_BOOK, { rules, lead, bond }),
-        2,
-      );
-      setMergedStory(next);
+      const signature = JSON.stringify([sourceStory, partnerStory, rules, lead, bond, engine]);
+      if (candidate.current?.signature !== signature) candidate.current = { signature, story: {
+        ...createMergedStory(sourceStory, partnerStory, { rules, lead, bond }),
+        mergeContext: [mergeSourceContext(sourceStory), mergeSourceContext(partnerStory)],
+      } };
+      let next = candidate.current.story;
+      if (engine === "gemini") {
+        next = { ...next, engine: "gemini" };
+        next = acceptGeneratedChapter(next, await requestChapter(next, 0, { signal: controller.signal }));
+      } else next = materialize(next, 2);
+      if (controller.signal.aborted) return;
       onMerged?.(next);
+      setMergedStory(next);
       setError("");
-    } catch {
-      setError("这一次没能连接两个世界。原书和设定都还在，请再试一次。");
-    }
+    } catch (failure) {
+      if (!controller.signal.aborted) setError(failure.message || "这一次没能连接两个世界。原书和设定都还在，请再试一次。");
+    } finally { if (operation.current === controller) { operation.current = null; setBusy(false); } }
   };
   return (
     <div className="page page-merge page-enter">
@@ -1544,6 +1661,22 @@ function Merge({ activeStory, onNavigate, onMerged }) {
           <p>两个主角，一本新故事。原书保留。</p>
         </div>
       </div>
+      {!started && <div className="merge-book-selectors" inert={busy ? true : undefined}>
+        <label className="field-label">你的故事
+          <select aria-label="你的故事" value={sourceStory.id} onChange={(event) => {
+            setSourceId(event.target.value);
+            if (event.target.value === partnerId) setPartnerId(FRIEND_BOOK.id);
+          }}>
+            {originals.map((book) => <option key={book.id} value={book.id}>{book.title}</option>)}
+          </select>
+        </label>
+        <label className="field-label">相遇的故事
+          <select aria-label="相遇的故事" value={partnerStory.id} onChange={(event) => setPartnerId(event.target.value)}>
+            {originals.filter((book) => book.id !== sourceStory.id).map((book) => <option key={book.id} value={book.id}>{book.title}</option>)}
+            <option value={FRIEND_BOOK.id}>体验角色 · {displayName(FRIEND_BOOK)}</option>
+          </select>
+        </label>
+      </div>}
       <div className="merge-stage">
         <WorldAtmosphere variant="merge" />
         <div className="merge-world-card mine">
@@ -1573,18 +1706,18 @@ function Merge({ activeStory, onNavigate, onMerged }) {
         </div>
         <div className="merge-world-card friend">
           <div className="merge-card-top">
-            <span>示例角色</span>
+            <span>{partnerStory.id === FRIEND_BOOK.id ? "示例角色" : "书架中的主角"}</span>
           </div>
           <div className="merge-art merge-art-mint">
             <span className="merge-art-symbol">{friendGenre.symbol}</span>
             <span className="merge-art-label">{friendGenre.world}</span>
           </div>
           <div className="merge-card-bottom">
-            <div className="avatar avatar-mint">烬</div>
+            <div className="avatar avatar-mint">{displayName(partnerStory).slice(0, 1)}</div>
             <div>
-              <b>{displayName(FRIEND_BOOK)}</b>
+              <b>{displayName(partnerStory)}</b>
               <span>
-                {friendGenre.label} · {FRIEND_BOOK.config.ability}
+                {friendGenre.label} · {partnerStory.config.ability}
               </span>
             </div>
           </div>
@@ -1596,7 +1729,7 @@ function Merge({ activeStory, onNavigate, onMerged }) {
         </div>
       )}
       <div className="merge-controls">
-        <section className="merge-conflicts">
+        <section className="merge-conflicts" inert={busy ? true : undefined}>
           <div className="control-heading">
             <div>
               <h2>{started ? "新故事已入书架" : "如何相遇"}</h2>
@@ -1662,7 +1795,7 @@ function Merge({ activeStory, onNavigate, onMerged }) {
                   className={lead === "b" ? "active" : ""}
                   onClick={() => setLead("b")}
                 >
-                  烬野
+                  {displayName(partnerStory)}
                 </button>
               </div>
               <span
@@ -1696,10 +1829,12 @@ function Merge({ activeStory, onNavigate, onMerged }) {
         </section>
           {!started && (
           <div className="merge-action">
-            <Button icon="arrow" onClick={runMerge}>
-              开启合流故事
+            <GenerationMode provider={provider} value={engine} onChange={setMode} disabled={busy} />
+            <Button icon={busy ? undefined : "arrow"} onClick={runMerge} disabled={busy}>
+              {busy ? "正在翻开…" : "开启合流故事"}
             </Button>
-            <p className="experience-note">与示例角色合流，好友邀请暂未开放。</p>
+            {busy && <button className="small-link" onClick={() => { operation.current?.abort(); operation.current = null; setBusy(false); }}>取消等待</button>}
+            <p className="experience-note">{partnerStory.id === FRIEND_BOOK.id ? "与示例角色相遇。也可以新建另一本书，再来合流。" : "两本原书保留，新故事单独存入书架。"}</p>
           </div>
           )}
       </div>
@@ -1749,24 +1884,93 @@ function libraryWithStory(library, story) {
   };
 }
 
+function LibraryTools({ store, library, onClose, onRestored }) {
+  const [candidate, setCandidate] = useState(null);
+  const [message, setMessage] = useState("");
+  const [confirmReload, setConfirmReload] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const fileRequest = useRef(0);
+  useEffect(() => () => { fileRequest.current += 1; }, []);
+  const chooseBackup = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const request = ++fileRequest.current;
+    setCandidate(null);
+    setMessage("");
+    setBusy(true);
+    try {
+      if (file.size > 5 * 1024 * 1024) throw new Error("备份不能超过 5 MB。");
+      const restored = importLibrary(await file.text());
+      if (request === fileRequest.current) setCandidate(restored);
+    } catch (error) {
+      if (request === fileRequest.current) setMessage(error.message || "无法读取这份备份。");
+    } finally {
+      if (request === fileRequest.current) setBusy(false);
+      event.target.value = "";
+    }
+  };
+  return <ReadingDialog title="书架与备份" onClose={onClose}>
+    <div className="library-tools">
+      <p>{library.stories.length} 本故事 · {library.publications.length} 份分享</p>
+      <p className="field-hint">备份含个人设定，请自行保管。恢复前会保留一份原存档。</p>
+      <Button variant="secondary" onClick={() => {
+        try {
+          downloadText(exportLibrary(library), `storyweave-${new Date().toISOString().slice(0, 10)}.json`);
+          setMessage("备份已交给浏览器下载。");
+        } catch (error) { setMessage(error.message); }
+      }}>导出书架备份</Button>
+      <label className="backup-upload">{busy ? "正在读取…" : "选择备份文件"}
+        <input type="file" accept=".json,application/json" aria-label="选择备份文件" onChange={chooseBackup} disabled={busy} />
+      </label>
+      {candidate && <section className="backup-confirm">
+        <h3>恢复 {candidate.stories.length} 本故事？</h3>
+        <p>当前书架和阅读进度将被这份备份替换。</p>
+        <div className="reading-dialog-actions">
+          <Button onClick={() => {
+            try { store.restore(candidate); onRestored(); }
+            catch (error) { setMessage(error.message); }
+          }}>确认恢复</Button>
+          <Button variant="ghost" onClick={() => setCandidate(null)}>取消</Button>
+        </div>
+      </section>}
+      {store.getSnapshot().warning && <div className="backup-recovery">
+        <Button variant="ghost" onClick={() => {
+          try { downloadText(store.raw() || "{}", "storyweave-original.json"); }
+          catch (error) { setMessage(error.message); }
+        }}>导出原始存档</Button>
+        {!store.getSnapshot().blocked && <Button variant="secondary" onClick={() => setMessage(store.retry() ? "已保存到本机。" : "暂未保存成功，请保留备份。")}>重试保存</Button>}
+        <Button variant="ghost" onClick={() => setConfirmReload(true)}>载入本机存档</Button>
+        {confirmReload && <div className="backup-confirm">
+          <p>此页的未保存改动将被替换。请确认已导出需要的备份。</p>
+          <Button variant="secondary" onClick={() => {
+            if (store.reload()) onRestored();
+            else setMessage("本机存档仍无法读取，请选择有效的备份文件。");
+          }}>确认载入</Button>
+          <Button variant="ghost" onClick={() => setConfirmReload(false)}>保留当前进度</Button>
+        </div>}
+      </div>}
+      <p className="backup-status" role="status">{message}</p>
+    </div>
+  </ReadingDialog>;
+}
+
 function App() {
   const sceneRef = useRef(null);
-  const [boot] = useState(() => {
-    const loaded = loadLibrary();
-    const migrated = migrateLegacy();
-    const library =
-      migrated?.draft && !loaded.library.draft
-        ? { ...loaded.library, draft: migrated.draft }
-        : loaded.library;
-    return { library, warning: loaded.warning };
-  });
-  const [library, setLibrary] = useState(boot.library || emptyLibrary());
-  const [warning, setWarning] = useState(boot.warning);
-  const [view, setView] = useState("home");
-  const [readerExternal, setReaderExternal] = useState(null);
+  const [store] = useState(() => createLibraryStore());
+  const { library, warning, unsaved } = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const setLibrary = store.update;
+  const [route, setRoute] = useState(() => parseRoute(window.location.hash));
+  const view = route.view;
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [shareRequest, setShareRequest] = useState(false);
   const [toast, setToast] = useState("");
-  const skipFirstSave = useRef(true);
+  const [provider, setProvider] = useState({ configured: false });
+  const opening = useRef(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    generationStatus({ signal: controller.signal }).then((status) => { if (!controller.signal.aborted) setProvider(status); });
+    return () => controller.abort();
+  }, []);
   const activeStory = useMemo(
     () =>
       library.stories.find((story) => story.id === library.activeStoryId) ||
@@ -1774,7 +1978,10 @@ function App() {
       null,
     [library],
   );
-  const readerStory = readerExternal || activeStory;
+  const readerExternal = route.shared
+    ? COMMUNITY_BOOKS.find((book) => book.id === route.id) || library.publications.find((item) => item.id === route.id)?.snapshot
+    : null;
+  const readerStory = route.shared ? readerExternal : library.stories.find((story) => story.id === route.id);
   const { animate } = useMotionPolicy(view);
   useSmoothScroll(view);
   useSceneMotion(
@@ -1783,44 +1990,74 @@ function App() {
     ".hero-copy h1, .store-heading h1, .merge-heading h1",
   );
   useEffect(() => {
-    if (skipFirstSave.current) {
-      skipFirstSave.current = false;
-      return;
+    const onHash = () => { setRoute(parseRoute(window.location.hash)); setShareRequest(false); };
+    const onStorage = (event) => { if (event.key === STORAGE_KEY || event.key === null) store.sync(); };
+    const onVisible = () => { if (!document.hidden) store.sync(); };
+    window.addEventListener("hashchange", onHash);
+    window.addEventListener("popstate", onHash);
+    window.addEventListener("storage", onStorage);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("popstate", onHash);
+      window.removeEventListener("storage", onStorage);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [store]);
+  useEffect(() => {
+    const warnBeforeLeaving = (event) => { event.preventDefault(); event.returnValue = ""; };
+    if (unsaved) window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [unsaved]);
+  useEffect(() => {
+    const titles = { home: "我的世界", forge: "新故事", store: "书城", merge: "世界合流" };
+    document.title = `${view === "reader" ? readerStory?.title || "故事未找到" : titles[view]} · 织界`;
+    if (view !== "reader" && view !== "forge") {
+      const heading = sceneRef.current?.querySelector(".page h1");
+      heading?.setAttribute("tabindex", "-1");
+      heading?.focus({ preventScroll: true });
+      scrollToTop();
     }
-    const result = saveLibrary(undefined, library);
-    if (!result.ok) setWarning(result.error);
-  }, [library]);
+  }, [view, route.id, readerStory?.title]);
   useEffect(() => {
     if (!toast) return undefined;
     const timer = window.setTimeout(() => setToast(""), 2600);
     return () => window.clearTimeout(timer);
   }, [toast]);
   const navigate = (next, options = {}) => {
-    // Leaving a community snapshot and tapping the main Reading tab should
-    // always return to the user's own active world, never keep the read-only
-    // object as a hidden navigation state.
-    if (next === "reader" && readerExternal && !options.keepExternal) {
-      setReaderExternal(null);
-    }
-    if (next !== "reader") {
-      setReaderExternal(null);
-      setShareRequest(false);
-    }
-    setView(next);
+    const nextRoute = next === "reader"
+      ? { view: next, id: options.storyId || activeStory?.id, shared: Boolean(options.shared) }
+      : { view: next };
+    const hash = routeHash(nextRoute);
+    if (window.location.hash !== hash) window.history.pushState(null, "", hash);
+    setRoute(parseRoute(hash));
+    if (next !== "reader") setShareRequest(false);
     scrollToTop();
   };
   const commitStory = useCallback(
     (story) => setLibrary((current) => libraryWithStory(current, story)),
-    [],
+    [setLibrary],
   );
   const saveDraft = useCallback(
     (draft) => setLibrary((current) => ({ ...current, draft })),
-    [],
+    [setLibrary],
   );
-  const generate = (payload) => {
-    try {
-      // The local story is ready synchronously; open it without a staged wait.
-      const story = seedStory(
+  const prepareChapter = useCallback(async (id, index, signal) => {
+    const source = store.getSnapshot().library.stories.find((book) => book.id === id);
+    if (!source || nextGenerationIndex(source) !== index) return;
+    const result = await requestChapter(source, index, { signal });
+    if (signal.aborted) return;
+    setLibrary((current) => {
+      const latest = current.stories.find((book) => book.id === id);
+      if (!latest) return current;
+      const next = acceptGeneratedChapter(latest, result);
+      if (next === latest) return current;
+      return { ...current, stories: current.stories.map((book) => book.id === id ? next : book) };
+    });
+  }, [store, setLibrary]);
+  const generate = async (payload, { engine, signal }) => {
+      const signature = JSON.stringify([payload, engine]);
+      if (opening.current?.signature !== signature) opening.current = { signature, story:
         createStory({
           genreId: payload.genreId,
           name: payload.name,
@@ -1835,31 +2072,31 @@ function App() {
           role: payload.role,
           friend: payload.friend,
           destination: payload.destination,
-        }),
-      );
+        }) };
+      let story = opening.current.story;
+      if (engine === "gemini") {
+        story = { ...story, engine: "gemini" };
+        story = acceptGeneratedChapter(story, await requestChapter(story, 0, { signal }));
+      } else story = seedStory(story);
+      if (signal.aborted) return;
       setLibrary((current) => ({
         ...libraryWithStory(current, story),
         draft: null,
       }));
-      setReaderExternal(null);
       setShareRequest(false);
       setToast("");
-      navigate("reader");
-    } catch {
-      setToast("暂时没能打开故事，草稿还在。请再试一次。");
-    }
+      navigate("reader", { storyId: story.id });
+      opening.current = null;
   };
   const openOwnReader = (storyId = activeStory?.id, options = {}) => {
-    setReaderExternal(null);
     setShareRequest(Boolean(options.share));
     if (storyId)
       setLibrary((current) => ({ ...current, activeStoryId: storyId }));
-    navigate("reader");
+    navigate("reader", { storyId });
   };
   const openCommunityBook = (book) => {
-    setReaderExternal(book);
     setShareRequest(false);
-    navigate("reader", { keepExternal: true });
+    navigate("reader", { storyId: book.id, shared: true });
   };
   const openOwnForShare = () => {
     if (activeStory) openOwnReader(activeStory.id, { share: true });
@@ -1896,6 +2133,7 @@ function App() {
   if (view === "forge")
     page = (
       <Forge
+        provider={provider}
         onGenerate={generate}
         initialDraft={legacyDraftToDraft(library)}
         onDraftChange={saveDraft}
@@ -1909,10 +2147,12 @@ function App() {
         readOnly={Boolean(readerExternal)}
         onNavigate={navigate}
         onUpdateStory={commitStory}
+        onPrepareChapter={prepareChapter}
         onToggleBookmark={commitStory}
         onPublish={publish}
         openShare={shareRequest}
         onShareOpened={() => setShareRequest(false)}
+        unsaved={unsaved}
       />
     );
   else if (view === "store")
@@ -1927,9 +2167,11 @@ function App() {
   else if (view === "merge")
     page = (
       <Merge
+        provider={provider}
+        stories={library.stories}
         activeStory={
           activeStory?.kind === "merged"
-            ? library.stories.find((story) => story.kind !== "merged") || activeStory
+            ? library.stories.find((story) => story.kind !== "merged")
             : activeStory
         }
         onNavigate={(next, id) => (id ? openOwnReader(id) : navigate(next))}
@@ -1954,16 +2196,22 @@ function App() {
     >
       <Sidebar view={view} onNavigate={navigate} />
       <main className="main-shell">
-        <Topbar view={view} onNavigate={navigate} />
+        <Topbar view={view} onNavigate={navigate} onOpenLibrary={() => setLibraryOpen(true)} />
         {warning && (
-          <div className="sw-storage-warning">
+          <div className="sw-storage-warning" role="alert">
             <Icon name="lock" size={14} />
-            {warning}
+            <span>{warning}</span>
+            <button onClick={() => setLibraryOpen(true)}>备份与恢复</button>
           </div>
         )}
         <MobileBottomNav view={view} onNavigate={navigate} />
         {page}
       </main>
+      {libraryOpen && <LibraryTools store={store} library={library} onClose={() => setLibraryOpen(false)} onRestored={() => {
+        setLibraryOpen(false);
+        navigate("home");
+        setToast("书架已恢复。");
+      }} />}
       {toast && (
         <div className="sw-toast" role="status" aria-live="polite">
           <Icon name="check" size={15} />
@@ -1975,7 +2223,9 @@ function App() {
 }
 
 createRoot(document.getElementById("root")).render(
+  <ErrorBoundary>
   <MotionProvider>
     <App />
-  </MotionProvider>,
+  </MotionProvider>
+  </ErrorBoundary>,
 );

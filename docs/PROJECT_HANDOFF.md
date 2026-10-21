@@ -1,11 +1,13 @@
 # Storyweave 项目交接记录
 
-更新时间：2026-10-21（Asia/Tokyo）  
+更新时间：2026-10-22（Asia/Tokyo）
 本地路径：`D:\Projects\Novel`  
 目标仓库：https://github.com/honru09/storyverse.git  
 项目名称：织界 Storyweave
 
 ## 交接结论
+
+**最新增量先读 [0.2 客户端质量与上线计划](RELEASE_READINESS.md) 和 [本轮 skills 记录](SKILLS_USED.md)。** 0.2 增加 hash 路由、存档防覆盖、备份恢复、真实本地双书合流、完整浏览器验收与 CI 配置。下方保留 0.1 的产品背景。
 
 当前代码是一个可以本地运行的手机优先互动小说原型。核心流程已经打通：
 
@@ -161,8 +163,7 @@ POST /api/story/merge
 ## 当前交接状态
 
 - 交接文档：已完成。
-- 代码与现有设计文档：准备提交。
-- 远端仓库：已确认为空仓库，目标为 `main`。
+- 0.1 代码与文档已于此前推送到远端 `main`，提交 `8b89f48`。
+- 0.2 本地增量及验证见 `RELEASE_READINESS.md`；是否提交/推送以 Git 当前状态为准。
 - 真实 AI / 联机 / 支付：未开始，属于后续工作。
 - 下一位 agent 的第一步：阅读本文件，再运行 `npm test`、`npm run build`，然后从 `src/story-engine.js` 和 `src/persistence.js` 设计后端替换边界。
-

@@ -6,6 +6,7 @@ import React, {
   useState,
 } from "react";
 import { motionPolicy } from "./policy.js";
+import { observeInputModality } from "./input-modality.js";
 
 const MotionContext = createContext(null);
 const PREFERENCE_KEY = "storyweave:motion";
@@ -25,6 +26,7 @@ function useMedia(query) {
 }
 
 export function MotionProvider({ children }) {
+  useEffect(() => observeInputModality(), []);
   const [enabled, setEnabled] = useState(() => {
     try {
       return localStorage.getItem(PREFERENCE_KEY) !== "off";
