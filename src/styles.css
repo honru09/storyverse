@@ -53,7 +53,7 @@ em{font-style:normal}
 .sidebar{display:none}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:calc(72px + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(22px,env(safe-area-inset-right)) 0 max(22px,env(safe-area-inset-left));position:sticky;top:0;z-index:12;background:var(--paper);border-bottom:1px solid var(--line)}
 .brand-mark{display:inline-flex;align-items:center;gap:9px;min-height:44px;padding:0;flex-shrink:0;background:none;text-align:left}
-.brand-glyph{display:grid;place-items:center;width:34px;height:36px;border-radius:10px;background:var(--action);color:#fff}
+.brand-glyph{display:grid;place-items:center;width:34px;height:34px;border-radius:8px;background:none;color:var(--ink)}
 .brand-copy strong{font-size:24px;font-weight:750;letter-spacing:-.03em;white-space:nowrap}
 .topbar-actions{display:flex;align-items:center;gap:3px;min-width:0;margin-left:auto}
 .local-badge{margin-right:10px;color:var(--muted);font-size:11px;white-space:nowrap}
@@ -201,8 +201,8 @@ em{font-style:normal}
 .generation-feedback{min-height:1.5em;margin-block:12px;color:var(--secondary-text);font-size:13px}
 /* Reading is an open page, not another cover. */
 .app-shell[data-view="reader"] .topbar{min-height:calc(60px + env(safe-area-inset-top));border:0}
-.app-shell[data-view="reader"] .brand-glyph{width:28px;height:28px;border-radius:6px}
-.app-shell[data-view="reader"] .brand-glyph svg{width:24px;height:24px}
+.app-shell[data-view="reader"] .brand-glyph{width:28px;height:28px;border-radius:7px}
+.app-shell[data-view="reader"] .brand-glyph svg{width:28px;height:28px}
 .app-shell[data-view="reader"] .brand-copy strong{font-size:20px}
 .page-reader{max-width:1020px;padding-top:12px;padding-bottom:40px}
 .reader-topline{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
@@ -393,7 +393,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .tone-block .forge-section-heading{margin-bottom:16px}
 .forge-actions-right{min-width:0}
 .preview-facts dd{overflow-wrap:anywhere}
-.brand-glyph svg{width:25px;height:25px}
+.brand-glyph svg{width:34px;height:34px}
 .home-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 20px}
 .home-welcome{min-width:0;margin:0;color:var(--muted);font-size:13px;line-height:1.7}
 .home-welcome h1,.home-welcome h2{margin:0;font-size:clamp(1.5rem,6vw,2rem);font-weight:750}

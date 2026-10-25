@@ -44,11 +44,13 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
         await page.reload();
         await page.locator('[data-reading-paragraph="21"]').waitFor();
         const storyBefore = await page.evaluate(key => localStorage.getItem(key), key);
-        await check('glass reader chrome is reachable and unclipped', async () => {
+        await check('solid reader chrome is reachable and unclipped', async () => {
           await noOverflow();
           const buttons = await page.locator('.reader-floating-dock button').evaluateAll(nodes => nodes.map(node => ({ w: node.getBoundingClientRect().width, h: node.getBoundingClientRect().height })));
           assert.ok(buttons.every(item => item.w >= 44 && item.h >= 44));
-          assert.notEqual(await page.locator('.reader-floating-dock').evaluate(node => getComputedStyle(node).backdropFilter), 'none');
+          const dockMaterial = await page.locator('.reader-floating-dock').evaluate(node => { const style = getComputedStyle(node); return { backdropFilter: style.backdropFilter, backgroundColor: style.backgroundColor }; });
+          assert.equal(dockMaterial.backdropFilter, 'none');
+          assert.ok(!/rgba\([^)]*,\s*0\)$/.test(dockMaterial.backgroundColor) && dockMaterial.backgroundColor !== 'transparent', 'reader dock must be a solid surface');
           await capture('reading-light');
         });
         await check('six themes preserve contrast and preview / page agreement', async () => {

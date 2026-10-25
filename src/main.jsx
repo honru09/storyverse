@@ -283,9 +283,11 @@ function Brand({ onClick }) {
   return (
     <button className="brand-mark" onClick={onClick} aria-label="回到我的世界">
       <span className="brand-glyph" aria-hidden="true">
-        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M5 5h7l4 5h7v13h-7l-4-5H5V5Z" />
-          <path d="M5 10h7l4 8h7M12 5v13M16 10v13" />
+        <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true">
+          <rect width="64" height="64" rx="14" fill="#1a201c" />
+          <path d="M32 15.2c-5.8-4.4-13.1-5.3-19-3.6v30.8c5.9-1.7 13.2-.8 19 3.6 5.8-4.4 13.1-5.3 19-3.6V11.6c-5.9-1.7-13.2-.8-19 3.6Z" fill="none" stroke="#f2f3ef" strokeWidth="3.8" strokeLinejoin="round" />
+          <path d="M32 15.2v33.4" stroke="#c23a1e" strokeWidth="3.8" strokeLinecap="round" />
+          <path d="M27.8 23.6h8.4M27.8 31.4h8.4M27.8 39.2h8.4" stroke="#c23a1e" strokeWidth="3.8" strokeLinecap="round" />
         </svg>
       </span>
       <span className="brand-copy">

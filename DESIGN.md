@@ -257,6 +257,10 @@ frontmatter 是规范 token 层，与 src/styles.css 的 :root 变量一一对�
 
 功能、文案语义与数值全部不变；仅材质层跟随 No Glass Rule 改实色。账号面板的未配置禁用态、游客路径、本机书架提示保持诚实口径（见 PRODUCT.md)。
 
+### Brand mark
+
+品牌标记只有一个：「线装书」——墨色圆角底（ink，圆角 14/64）上一本打开的书（canvas 色线条），书脊由一道朱线（thread）三针缝住，线尾在书底下方收圆头。几何源文件为 `public/icon.svg`（64 viewBox），顶栏 Brand glyph 使用同一几何，不许另画近似版。它同时是朱线签名的源头：站内所有朱线形态都读作从这本书脊上抽出的线。颜色只许用 ink / canvas / thread 三色；不许改线色、不许省墨底直接压在插画或照片上、不许加文字进标记内。横式组合 = 标记 + 「织界」800 字重 + 起针线（标题上方 36×3px 朱线），英文小字 STORYWEAVE 只在品牌.lockup 场景出现，不进普通页面眉题。
+
 ## Do's and Don'ts
 
 ### Do:
