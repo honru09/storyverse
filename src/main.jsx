@@ -21,7 +21,7 @@ import AccountPanel from "./components/AccountPanel.jsx";
 import { createAuthClient } from "./auth/client.js";
 import ReadingPreferences from "./components/ReadingPreferences.jsx";
 import { createReadingPreferencesStore, getReaderAppearance } from "./reading-preferences.js";
-import { chapterLocationKey } from "./reading-location.js";
+import { chapterLocationKey, estimateReadingMetrics } from "./reading-location.js";
 import { useReaderExperience } from "./useReaderExperience.js";
 import ReadingTools from "./components/ReadingTools.jsx";
 import "./reader-experience.css";
@@ -1102,6 +1102,7 @@ function Reader({
     : readerIndexFor(story);
   const readingChapters = useMemo(() => story?.chapters.map((_, i) => chapterForReading(story, i)) || [], [story]);
   const chapter = story ? (readingChapters[index] || buildChapter(story, index)) : null;
+  const chapterMetrics = useMemo(() => estimateReadingMetrics(chapter?.paragraphs || []), [chapter]);
   const locationKey = story && chapterLocationKey(story.id, index, chapter.paragraphs, readOnly);
   const reading = useReaderExperience({ readerRef, locationKey, settings: preferences.settings,
     blocked: preferencesOpen || toolsOpen || directoryOpen || shareOpen || Boolean(pendingChoice) });
@@ -1484,7 +1485,10 @@ function Reader({
         </article>
       </div>
       <div className="reader-floating-dock" role="region" aria-label="阅读工具栏">
-        <div className="reader-live-progress"><span>第 {index + 1} 章</span><span>本章 {reading.progress}%</span></div>
+        <div className="reader-live-progress">
+          <span>第 {index + 1} 章{chapterMetrics.charCount ? ` · 约 ${chapterMetrics.charCount} 字` : ""}</span>
+          <span>本章 {reading.progress}%</span>
+        </div>
         {focused ? <button type="button" className="reader-focus-exit" onClick={() => setFocused(false)}>退出专注阅读</button> :
           <div className="reader-dock-actions">
             <button type="button" onClick={() => setDirectoryOpen(true)} aria-haspopup="dialog"><Icon name="menu" size={19}/><span>目录</span></button>
@@ -1504,6 +1508,7 @@ function Reader({
       </ReadingDialog>}
       {toolsOpen && <ReadingDialog title="查找与书签" onClose={() => setToolsOpen(false)}>
         <ReadingTools chapters={readingChapters} lastAccessible={lastAccessibleIndex(story, readOnly)} bookmarks={bookmarks}
+          story={story} currentChapterIndex={index}
           onSelect={selectLocation} onBookmark={togglePositionBookmark} warning={reading.store.warning()}
           onRemove={item => { reading.store.removeBookmark(item.key, item.anchor.paragraph); setBookmarkVersion(value => value + 1); }}/>
       </ReadingDialog>}

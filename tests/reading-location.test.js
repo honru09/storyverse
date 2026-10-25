@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { READING_LOCATION_KEY, chapterLocationKey, normalizeAnchor, findInChapters, createReadingLocationStore } from '../src/reading-location.js';
+import { READING_LOCATION_KEY, chapterLocationKey, normalizeAnchor, findInChapters, createReadingLocationStore, estimateReadingMetrics } from '../src/reading-location.js';
 const memory = () => { const data = new Map(); return { data, getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) }; };
 test('chapter identity separates branches, chapters, books and snapshots', () => {
   const key = chapterLocationKey('book', 0, ['你好']);
@@ -80,4 +80,13 @@ test('unreadable saved location data is retained, not overwritten during scrolli
   const store = createReadingLocationStore({ storage });
   store.set('a', { paragraph: 1, offset: 0 });
   assert.equal(storage.getItem(READING_LOCATION_KEY), '{broken');
+});
+test('estimateReadingMetrics calculates stripped character count and reading time', () => {
+  assert.deepEqual(estimateReadingMetrics([]), { charCount: 0, readingMinutes: 0, paragraphCount: 0 });
+  const metrics = estimateReadingMetrics(['第一段  有空格', '第二段\n有换行']);
+  assert.equal(metrics.charCount, 12);
+  assert.equal(metrics.readingMinutes, 1);
+  assert.equal(metrics.paragraphCount, 2);
+  const longText = ['字'.repeat(800)];
+  assert.equal(estimateReadingMetrics(longText).readingMinutes, 3);
 });

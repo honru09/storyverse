@@ -397,6 +397,188 @@ export function buildChapter(story, index) {
   }
 }
 
+const ACT_LABELS = [
+  '第 1 章 · 开篇',
+  '第 2 章 · 第一次选择',
+  '第 3 章 · 展开',
+  '第 4 章 · 第二次选择',
+  '第 5 章 · 转折',
+  '第 6 章 · 结局',
+]
+
+const TONE_DIRECTIVES = {
+  诗性冒险: '注重环境细节与场景氛围描写，推进主角探索过程。',
+  悬疑推进: '注重线索铺垫、时间压力与前后因果逻辑。',
+  群像治愈: '注重人物对话、互动关系与共同解决问题的过程。',
+}
+
+// 为每一章提供确定性的章节结构规划，供模型生成与阅读器剧情概览共享。
+export function storyBeatPlan(story, index) {
+  validateStory(story)
+  validateIndex(index)
+  const config = story.config || {}
+  const genre = genreFor(story.genreId || config.genreId)
+  const merged = story.kind === 'merged'
+  const name = merged
+    ? (config.protagonists || []).map((item, idx) => protagonistName(item, `旅者${idx === 0 ? '甲' : '乙'}`)).join('与')
+    : protagonistName(config)
+  const identity = displayIdentity(config)
+  const ability = cleanText(config.ability, '') || '尚未命名的能力'
+  const destination = cleanText(config.destination, '') || genre.location
+  const friend = cleanText(config.friend, '') || '同行者'
+  const lived = realityDetail(config)
+  const tone = cleanText(config.tone, '') || '诗性冒险'
+  const toneDirective = TONE_DIRECTIVES[tone] || TONE_DIRECTIVES.诗性冒险
+
+  const prerequisites = [
+    `世界：${genre.world}（${genre.location}）`,
+    merged
+      ? `双主角合流：${name}（规则：${config.merge?.rules === 'separate' ? '各自独立' : '互相融合'}，关系：${config.merge?.bond === 'rivals' ? '竞争' : '合作'}）`
+      : `主角：${name}，身份“${identity}”，性格“${cleanText(config.trait, '') || '冷静观察者'}”`,
+    `能力：${ability}`,
+  ]
+  if (lived && !merged) prerequisites.push(`现实背景：${lived}`)
+
+  const unlockedConsequences = []
+  if (index >= 2) {
+    const c1 = validChoiceAt(story, 1)
+    const opt1 = choiceAt(story, 1)?.options.find((opt) => opt.id === c1)
+    if (opt1) {
+      unlockedConsequences.push({ chapter: 2, choiceId: opt1.id, label: opt1.label, consequence: opt1.consequence })
+      prerequisites.push(`第 2 章已选：“${opt1.label}”——${opt1.consequence}`)
+    }
+  }
+  if (index >= 4) {
+    const c3 = validChoiceAt(story, 3)
+    const opt3 = choiceAt(story, 3)?.options.find((opt) => opt.id === c3)
+    if (opt3) {
+      unlockedConsequences.push({ chapter: 4, choiceId: opt3.id, label: opt3.label, consequence: opt3.consequence })
+      prerequisites.push(`第 4 章已选：“${opt3.label}”——${opt3.consequence}`)
+    }
+  }
+
+  const mustGroundByChapter = [
+    [
+      `交代${name}在${genre.location}的处境与能力“${ability}”`,
+      `引出主线事件与世界基本规则`,
+    ],
+    [
+      `推进指向“${destination}”的线索`,
+      `交代两个选项的背景，正文停在读者做出第 2 章选择之前`,
+    ],
+    [
+      unlockedConsequences[0]
+        ? `承接第 2 章选择“${unlockedConsequences[0].label}”的结果：${unlockedConsequences[0].consequence}`
+        : `承接第 2 章选择后的剧情变化`,
+      merged
+        ? `展现双主角在合流点的配合与新冲突`
+        : `在${destination}推进与${friend}相关的线索`,
+    ],
+    [
+      `升级主要矛盾，要求${name}做出判断`,
+      `交代第二次选择两个方向的利弊，正文停在第 4 章选择之前`,
+    ],
+    [
+      unlockedConsequences[1]
+        ? `承接第 4 章选择“${unlockedConsequences[1].label}”的结果：${unlockedConsequences[1].consequence}`
+        : `承接第 4 章选择后的局势变化`,
+      `推进主线冲突进入结局前的关键阶段`,
+    ],
+    [
+      `回应主线目标：${story.worldBible?.endingAnchor || '完成主线故事收尾'}`,
+      `交代此前选择带来的最终结果，完成结局`,
+    ],
+  ]
+
+  const dramaticQuestions = [
+    '交代主角背景、当前处境与故事起点。',
+    '推进主线线索，给出第一次分支选择。',
+    '承接上一次选择的结果，展开新场景。',
+    '矛盾升级，给出第二次分支选择。',
+    '承接第二次选择的结果，推向高潮。',
+    '解决核心冲突，交代故事结局。',
+  ]
+
+  const paragraphShape = index === 1 || index === 3
+    ? [
+      '承接上文场景，不重复上一章结尾原句',
+      '通过具体行动与对话推进冲突',
+      '呈现两个选项的处境，在做出决定前结束本章',
+    ]
+    : [
+      '承接当前场景或上一次选择的结果',
+      '通过具体事件与人物互动推进剧情',
+      '补充与当前情节直接相关的信息',
+      '自然收尾并引出下一章内容',
+    ]
+
+  return {
+    chapterNumber: index + 1,
+    act: ACT_LABELS[index],
+    dramaticQuestion: dramaticQuestions[index],
+    prerequisites,
+    mustGround: mustGroundByChapter[index],
+    unlockedConsequences,
+    toneDirective,
+    paragraphShape,
+  }
+}
+
+// 为阅读器提供不剧透未来的「故事脉络」档案（仅聚合至 lastAccessibleIndex）。
+export function storyNarrativeDossier(story, maxChapterIndex = 0) {
+  validateStory(story)
+  const limit = Math.max(0, Math.min(LAST_INDEX, Number.isInteger(maxChapterIndex) ? maxChapterIndex : 0))
+  const genre = genreFor(story.genreId || story.config.genreId)
+  const currentBeat = storyBeatPlan(story, limit)
+  const groundedSet = new Set(currentBeat.prerequisites)
+  for (let i = 0; i <= limit; i += 1) {
+    const plan = storyBeatPlan(story, i)
+    for (const item of plan.mustGround) groundedSet.add(item)
+  }
+  const activeConsequences = []
+  for (const gate of [1, 3]) {
+    if (gate <= limit) {
+      const chosenId = validChoiceAt(story, gate)
+      const option = choiceAt(story, gate)?.options.find((opt) => opt.id === chosenId)
+      if (option) {
+        activeConsequences.push({
+          chapterNumber: gate + 1,
+          choiceId: option.id,
+          label: option.label,
+          detail: option.detail,
+          consequence: option.consequence,
+        })
+      }
+    }
+  }
+  const timeline = []
+  for (let i = 0; i <= limit; i += 1) {
+    const chapter = chapterForReading(story, i) || story.chapters?.[i]
+    if (!chapter) continue
+    const chosenId = validChoiceAt(story, i)
+    const option = choiceAt(story, i)?.options.find((opt) => opt.id === chosenId)
+    timeline.push({
+      chapterIndex: i,
+      chapterNumber: i + 1,
+      title: chapter.title,
+      act: ACT_LABELS[i],
+      summary: chapter.summary || '',
+      choiceLabel: option ? option.label : null,
+    })
+  }
+  return {
+    worldName: genre.world,
+    location: genre.location,
+    premise: story.worldBible?.premise || '',
+    rules: Array.isArray(story.worldBible?.rules) ? [...story.worldBible.rules] : [],
+    endingAnchor: story.worldBible?.endingAnchor || '',
+    currentBeat,
+    groundedConcepts: [...groundedSet],
+    activeConsequences,
+    timeline,
+  }
+}
+
 // Exact signatures of the early local templates, which narrated a decision's
 // result inside the decision chapter. Never use a broad text replacement here:
 // prose written by a user or a future model must remain untouched.

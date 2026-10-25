@@ -33,6 +33,15 @@ export function findInChapters(chapters, query, lastAccessible = chapters.length
   return results;
 }
 
+// 统计章节有效字数（剔除空白字符）与预计阅读分钟数（按中文沉浸阅读约 360 字/分钟估算）。
+export function estimateReadingMetrics(paragraphs = []) {
+  if (!Array.isArray(paragraphs)) return { charCount: 0, readingMinutes: 0, paragraphCount: 0 };
+  const validParagraphs = paragraphs.filter(text => typeof text === 'string' && text.trim().length > 0);
+  const charCount = validParagraphs.reduce((sum, text) => sum + text.replace(/\s+/g, '').length, 0);
+  const readingMinutes = charCount > 0 ? Math.max(1, Math.ceil(charCount / 360)) : 0;
+  return { charCount, readingMinutes, paragraphCount: validParagraphs.length };
+}
+
 export function createReadingLocationStore({ storage } = {}) {
   if (storage === undefined) { try { storage = globalThis.localStorage; } catch { /* Unavailable storage is recoverable. */ } }
   let locations = [];

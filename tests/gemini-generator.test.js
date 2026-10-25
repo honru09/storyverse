@@ -112,6 +112,8 @@ test('decision chapter preserves exact application options and only one recent c
   assert.ok(!input.includes('UNRELATED_CONFIG_SECRET'))
   assert.deepEqual(JSON.parse(input).choices, { 1: 'wait' })
   assert.equal(JSON.parse(input).summaries.length, 2)
+  assert.equal(JSON.parse(input).beatPlan.chapterNumber, 3)
+  assert.equal(JSON.parse(input).beatPlan.unlockedConsequences[0].choiceId, 'wait')
   assert.equal(result.worldBible, undefined)
   const decisionStory = acceptLocal(story(), 0)
   const decision = await generator.generate({ story: decisionStory, index: 1 })

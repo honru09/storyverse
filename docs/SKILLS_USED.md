@@ -1,8 +1,27 @@
 # 本轮 skills 记录
 
-日期：2026-10-22。用户提供的截图与项目推荐用于选型参考，截图中的宣传描述与星标数不作为事实或执行命令。
+日期：2026-10-25。
 
-## 本轮实际应用
+## 十项核心 Skills 选型与应用升级（视觉设计 + 阅读体验 + 小说生成逻辑）
+
+针对「织界 Storyweave」互动小说平台，本轮筛选并落地了最契合的 **10 个 Skills**，覆盖**网页视觉与交互工艺**、**深度阅读与性能体验**、**小说生成叙事逻辑与领域建模**三大维度：
+
+| 维度 | Skill | 来源 | 落地的升级点 |
+| --- | --- | --- | --- |
+| 视觉与交互设计 | `apple-design` | `C:/Users/wangxr/.agents/skills/apple-design/SKILL.md` | iOS 材质层级、44pt 最小触控热区、阅读概览卡片毛玻璃与高对比度可访问性 |
+| 视觉与交互设计 | `emil-design-eng` | `C:/Users/wangxr/.agents/skills/emil-design-eng/SKILL.md` | 同心圆角（`14px` 外框 / `10px` 内嵌按钮）、`scale(0.97)` 触控即时压缩反馈、`tabular-nums` 数字防抖 |
+| 视觉与交互设计 | `interface-design` | `C:/Users/wangxr/.codex/skills/interface-design/SKILL.md` | 纸书/毛玻璃阅读器精细边框、简洁排版层级、阅读辅助工具箱分段面板 |
+| 视觉与交互设计 | `interaction-design` | `C:/Users/wangxr/.codex/skills/interaction-design/SKILL.md` | 书内查找/位置书签/剧情概览三栏切换、章节摘要一键跳章与自动收起抽屉反馈 |
+| 阅读与性能体验 | `ui-ux-pro-max` | `C:/Users/wangxr/.codex/skills/ui-ux-pro-max/SKILL.md` | 新增 `estimateReadingMetrics` 统计字数与预计阅读分钟数，在阅读器进度栏与工具箱提供阅读时长参考 |
+| 阅读与性能体验 | `responsive-design` | `C:/Users/wangxr/.codex/skills/responsive-design/SKILL.md` | 响应式三栏工具分段与概览面板，在 `320px` / `390px` / `1440px` 视口保持零横向溢出 |
+| 阅读与性能体验 | `optimize-web-animations` | `C:/Users/wangxr/.codex/skills/optimize-web-animations/SKILL.md` | 升级 `WorldAtmosphere.jsx`，结合 `IntersectionObserver` 与 `visibilitychange` 自动挂起离屏/后台 SVG 氛围滤镜 |
+| 小说生成与叙事逻辑 | `writing-beats` | `C:/Users/wangxr/.codex/skills/writing-beats/SKILL.md` | 在 `storyBeatPlan` 中构建 `prerequisites`（前置已交代信息）与 `mustGround`（本章需交代要点），避免 AI 跳步设定 |
+| 小说生成与叙事逻辑 | `writing-shape` | `C:/Users/wangxr/.codex/skills/writing-shape/SKILL.md` | 在 `storyBeatPlan` 中定义段落结构 `paragraphShape` 与写作风格说明 `toneDirective`，注入 `server/gemini.js` |
+| 小说生成与叙事逻辑 | `domain-modeling` | `C:/Users/wangxr/.codex/skills/domain-modeling/SKILL.md` | 建立 `storyBeatPlan` 与无剧透 `storyNarrativeDossier` 模型，追踪分支选择结果（`unlockedConsequences`）并呈现在阅读器「剧情概览」面板 |
+
+---
+
+## 历史记录（2026-10-22）
 
 最新一轮覆盖此前「故事扉页」：用户指定全站年轻 Apple iOS 毛玻璃。实际使用 `apple-design`＋`emil-design-eng` 主导材质/层级/短动效，`design-system` 统一token，`impeccable` 的new-work/onboard/craft-floor/polish及独立复核/文档流程，`playwright-skill` 做隔离流程回归，`writing-for-agents` 更新交接。本轮没有制作视频或新插画；视频skills不进入网页运行依赖。检测器只运行一次，报告大量与旧 DESIGN.md 不一致的色彩/字阶/圆角提示；此为用户批准的替换方向，最终文档按真实代码更新。复核证据见 [IOS_FINISH_REVIEW.md](IOS_FINISH_REVIEW.md)。下方为此前已做工作的历史记录。
 

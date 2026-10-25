@@ -6,6 +6,9 @@ import "./atmosphere.css";
 export default function WorldAtmosphere({ variant = "tide" }) {
   const hostRef = useRef(null);
   const [inView, setInView] = useState(false);
+  const [pageVisible, setPageVisible] = useState(
+    () => typeof document === "undefined" || document.visibilityState !== "hidden",
+  );
   const [failed, setFailed] = useState(false);
   const [live, setLive] = useState(false);
   const { atmosphere } = useMotionPolicy();
@@ -15,10 +18,15 @@ export default function WorldAtmosphere({ variant = "tide" }) {
       { threshold: 0.02 },
     );
     observer.observe(hostRef.current);
-    return () => observer.disconnect();
+    const onVisibility = () => setPageVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
   useEffect(() => {
-    if (!atmosphere || !inView || failed) return;
+    if (!atmosphere || !inView || !pageVisible || failed) return;
     let disposed = false;
     let effect;
     let renderer;
@@ -93,22 +101,23 @@ export default function WorldAtmosphere({ variant = "tide" }) {
       release();
       setLive(false);
     };
-  }, [atmosphere, inView, failed, variant]);
+  }, [atmosphere, inView, pageVisible, failed, variant]);
   const status = failed
     ? "unavailable"
     : !atmosphere
       ? "device-policy"
-      : !inView
+      : !inView || !pageVisible
         ? "offscreen"
         : live
           ? "ready"
           : "loading";
   return (
     <div
-      className={`world-atmosphere atmosphere-${variant}`}
+      className={`world-atmosphere atmosphere-${variant} ${!inView || !pageVisible ? "is-offscreen" : ""}`}
       aria-hidden="true"
       data-atmosphere={live ? "live" : "static"}
       data-atmosphere-status={status}
+      data-animation-active={live && inView && pageVisible ? "true" : "false"}
     >
       <div className="world-atmosphere-fallback">
         <svg

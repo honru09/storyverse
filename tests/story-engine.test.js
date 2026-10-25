@@ -14,6 +14,8 @@ import {
   createMergedStory,
   createStory,
   publicSnapshot,
+  storyBeatPlan,
+  storyNarrativeDossier,
 } from '../src/story-engine.js'
 
 const draft = (overrides = {}) => ({
@@ -416,4 +418,51 @@ test('community fixtures are distinct, contain enough chapters and include merge
   assert.equal(FRIEND_BOOK.genreId, 'cultivation')
   assert.equal(new Set(COMMUNITY_BOOKS.map((book) => book.title)).size, COMMUNITY_BOOKS.length)
   assert.ok(COMMUNITY_BOOKS.every((book) => !('readers' in book) && !('views' in book)))
+})
+
+test('storyBeatPlan models prerequisites, concept grounding, tone shape, and branch consequences', () => {
+  let story = createStory(draft({ tone: '悬疑推进' }))
+  const beat0 = storyBeatPlan(story, 0)
+  assert.equal(beat0.chapterNumber, 1)
+  assert.equal(beat0.act, '第 1 章 · 开篇')
+  assert.equal(beat0.prerequisites.length, 4)
+  assert.ok(beat0.mustGround.some((item) => item.includes('会呼吸的雾海')))
+  assert.ok(beat0.mustGround.some((item) => item.includes('听见潮汐')))
+  assert.match(beat0.toneDirective, /时间压力|因果逻辑/)
+  assert.equal(beat0.paragraphShape.length, 4)
+
+  const beat1 = storyBeatPlan(story, 1)
+  assert.equal(beat1.paragraphShape.length, 3)
+
+  story = accept(accept(story, 0), 1)
+  story = chooseBranch(story, 1, 'wait')
+  const beat2 = storyBeatPlan(story, 2)
+  assert.equal(beat2.chapterNumber, 3)
+  assert.equal(beat2.prerequisites.length, 5)
+  assert.equal(beat2.unlockedConsequences.length, 1)
+  assert.equal(beat2.unlockedConsequences[0].choiceId, 'wait')
+  assert.match(beat2.unlockedConsequences[0].consequence, /稳定度上升/)
+
+  const merged = createMergedStory(story, createStory(draft({ name: '烬野', genreId: 'cultivation' })))
+  const mergedBeat = storyBeatPlan(merged, 2)
+  assert.ok(mergedBeat.prerequisites.some((item) => item.includes('双主角合流')))
+  assert.ok(mergedBeat.mustGround.some((item) => item.includes('双主角在合流点的配合与新冲突')))
+})
+
+test('storyNarrativeDossier builds a spoiler-free narrative dossier bounded by maxChapterIndex', () => {
+  let story = createStory(draft())
+  story = accept(story, 0)
+  story = accept(story, 1)
+  story = chooseBranch(story, 1, 'open')
+  story = accept(story, 2)
+
+  const earlyDossier = storyNarrativeDossier(story, 0)
+  assert.equal(earlyDossier.timeline.length, 1)
+  assert.equal(earlyDossier.activeConsequences.length, 0)
+
+  const midDossier = storyNarrativeDossier(story, 2)
+  assert.equal(midDossier.timeline.length, 3)
+  assert.equal(midDossier.activeConsequences.length, 1)
+  assert.equal(midDossier.activeConsequences[0].choiceId, 'open')
+  assert.ok(midDossier.groundedConcepts.length >= 2)
 })

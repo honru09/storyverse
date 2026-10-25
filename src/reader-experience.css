@@ -31,8 +31,22 @@
 .reader-location-warning{font-size:.8125rem;color:var(--reader-secondary);max-width:40rem;margin:1rem auto}
 .reading-tools{font-family:var(--font-ui);color:var(--reader-text)}
 .reading-tools-tabs{display:grid;grid-template-columns:1fr 1fr;padding:4px;border-radius:14px;background:var(--reader-soft)}
-.reading-tools-tabs button{min-height:44px;padding:8px;border-radius:11px;background:transparent;font-size:.875rem;font-weight:600}
+.reading-tools-tabs.has-dossier{grid-template-columns:repeat(3,minmax(0,1fr))}
+.reading-tools-tabs button{min-height:44px;padding:8px 6px;border-radius:10px;background:transparent;font-size:.8125rem;font-weight:600;transition:background-color 140ms var(--ease-out),color 140ms var(--ease-out),transform 120ms var(--ease-out)}
+.reading-tools-tabs button:active{transform:scale(.97)}
 .reading-tools-tabs button[aria-pressed="true"]{background:var(--reader-surface);color:var(--reader-accent);box-shadow:0 2px 6px rgba(17,30,48,.08)}
+.reading-tools-metrics{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;margin:14px 0 0;padding:10px 12px;border-radius:12px;background:var(--reader-soft);color:var(--reader-secondary);font-size:.75rem;font-variant-numeric:tabular-nums}
+.reading-dossier{display:grid;gap:14px;margin-top:16px}
+.reading-dossier-card{display:grid;gap:6px;padding:14px;border:1px solid var(--reader-border);border-radius:16px;background:var(--reader-surface)}
+.reading-dossier-kicker{font-size:.75rem;font-weight:600;color:var(--reader-accent);letter-spacing:.01em}
+.reading-dossier-card strong{font-size:.9375rem;line-height:1.55;color:var(--reader-text)}
+.reading-dossier-card p{margin:2px 0 0;font-size:.8125rem;line-height:1.7;color:var(--reader-secondary)}
+.reading-dossier-section{display:grid;gap:8px}
+.reading-dossier-section h3{margin:0;font-size:.8125rem;font-weight:650;color:var(--reader-secondary)}
+.reading-dossier-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.reading-dossier-list li{display:grid;gap:4px;padding:10px 12px;border-radius:12px;background:var(--reader-soft);font-size:.8125rem;line-height:1.65}
+.reading-dossier-list li strong{color:var(--reader-accent);font-weight:600}
+.reading-dossier-list li span{color:var(--reader-text)}
 .reading-search-label{display:grid;gap:8px;font-size:.8125rem;font-weight:600;margin-top:20px}
 .reading-tools input{color:var(--reader-text);background:var(--reader-surface);border-color:var(--reader-border)}
 .reading-tools input::placeholder{color:var(--reader-secondary)}
