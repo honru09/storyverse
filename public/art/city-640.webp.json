@@ -1,0 +1,4 @@
+{
+  "prompt": "Use case: precise-object-edit.\nInput image: the provided city tram illustration is the edit target.\nPrimary request: remove ONLY the tiny circular badge with a glyph on the red tram nose, centered directly below the front windows and above the main round headlamp. Replace that small badge area with uninterrupted vermilion-red painted tram body matching the surrounding printed-ink texture.\nConstraints: preserve the entire existing composition, dimensions, full-bleed framing, lone person, red tram shape, windows, lamps, overhead wires, street, buildings, dawn sky, paper texture, navy contours, golden light, palette, camera angle and all other details exactly. Do not add or rearrange anything. Keep the blank destination display blank. No words, letters, numbers, symbols, logos, watermarks or fake writing anywhere. This is a surgical removal of one small badge, not a redesign or global style transfer.",
+  "createdAt": "2026-10-21T16:32:04.029Z"
+}

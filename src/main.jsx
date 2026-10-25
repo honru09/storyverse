@@ -16,7 +16,15 @@ import { createLibraryStore } from "./library-store.js";
 import { parseRoute, routeHash } from "./navigation.js";
 import { downloadText } from "./downloads.js";
 import { acceptGeneratedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter } from "./generation.js";
-import WorldAtmosphere from "./motion/WorldAtmosphere.jsx";
+import WorldArtwork from "./components/WorldArtwork.jsx";
+import AccountPanel from "./components/AccountPanel.jsx";
+import { createAuthClient } from "./auth/client.js";
+import ReadingPreferences from "./components/ReadingPreferences.jsx";
+import { createReadingPreferencesStore, getReaderAppearance } from "./reading-preferences.js";
+import { chapterLocationKey } from "./reading-location.js";
+import { useReaderExperience } from "./useReaderExperience.js";
+import ReadingTools from "./components/ReadingTools.jsx";
+import "./reader-experience.css";
 import {
   MotionProvider,
   MotionToggle,
@@ -55,7 +63,7 @@ import {
   upsertStory,
 } from "./persistence";
 
-const Icon = ({ name, size = 18, stroke = 2.2, className = "" }) => {
+const Icon = ({ name, size = 18, stroke = 1.8, className = "" }) => {
   const common = {
     width: size,
     height: size,
@@ -108,6 +116,7 @@ const Icon = ({ name, size = 18, stroke = 2.2, className = "" }) => {
       </>
     ),
     chevron: <path d="m9 18 6-6-6-6" />,
+    search: <><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></>,
     clock: (
       <>
         <circle cx="12" cy="12" r="9" />
@@ -244,6 +253,10 @@ function displayName(story, fallback = "未命名旅人") {
   return story?.config?.name?.trim() || fallback;
 }
 
+const coverSources = (story) => story?.kind === "merged"
+  ? story.config?.protagonists?.map((person) => person.genreId).slice(0, 2)
+  : undefined;
+
 function Button({
   children,
   variant = "primary",
@@ -269,8 +282,11 @@ function Button({
 function Brand({ onClick }) {
   return (
     <button className="brand-mark" onClick={onClick} aria-label="回到我的世界">
-      <span className="brand-glyph">
-        <span />
+      <span className="brand-glyph" aria-hidden="true">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 5h7l4 5h7v13h-7l-4-5H5V5Z" />
+          <path d="M5 10h7l4 8h7M12 5v13M16 10v13" />
+        </svg>
       </span>
       <span className="brand-copy">
         <strong>织界</strong>
@@ -311,15 +327,14 @@ function Sidebar({ view, onNavigate }) {
   );
 }
 
-function Topbar({ onNavigate, onOpenLibrary }) {
+function Topbar({ onNavigate, onOpenLibrary, onOpenAccount, account }) {
   return (
     <header className="topbar">
       <Brand onClick={() => onNavigate("home")} />
       <div className="topbar-actions">
-        <span className="local-badge">
-          <i />
-          体验版
-        </span>
+        <button className="account-entry" onClick={onOpenAccount} aria-label={account.user ? "我的账号" : "登录与注册"} aria-haspopup="dialog">
+          {account.user ? <span>{(account.user.displayName || account.user.email || "你").slice(0, 1).toUpperCase()}</span> : <><Icon name="users" size={18}/><span>登录</span></>}
+        </button>
         <MotionToggle />
         <button className="icon-button" onClick={onOpenLibrary} aria-label="书架与备份" aria-haspopup="dialog">
           <Icon name="sliders" size={20} />
@@ -355,7 +370,7 @@ function MobileBottomNav({ view, onNavigate }) {
   );
 }
 
-function Home({ onNavigate, onOpenStory, activeStory, stories }) {
+function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, onOpenAccount }) {
   const genre = genreOf(activeStory);
   const currentChapter = activeStory
     ? Math.min(CHAPTER_COUNT, readerIndexFor(activeStory) + 1)
@@ -364,27 +379,34 @@ function Home({ onNavigate, onOpenStory, activeStory, stories }) {
 
   return (
     <div className="page page-home page-enter">
+      <div className="home-heading">
+        <p className="home-welcome">{activeStory ? "故事还在，等你回来。" : "你的世界，从这一页开始。"}</p>
+        {!account.user && <button className="home-account-link" onClick={onOpenAccount}>登录 / 注册<Icon name="chevron" size={14}/></button>}
+      </div>
       <section className={`home-hero ${activeStory ? "has-story" : "first-story"}`}>
+        <div className="hero-scene">
+          <WorldArtwork genreId={genre.id} sources={coverSources(activeStory)} eager sizes="(min-width: 1200px) 1050px, 100vw" />
+        </div>
         <div className="hero-copy">
           <h1>
             {activeStory ? (
               activeStory.title
             ) : (
               <>
-                翻开一页，
+                这一次，
                 <br />
-                <em>成为另一个你。</em>
+                <em>你是主角。</em>
               </>
             )}
           </h1>
           <p>
             {activeStory ? (
               <>
-                {genre.label} · {activeStory.kind === "merged" ? "双主角" : displayName(activeStory)}
-                <span className="resume-position">读到第 {currentChapter} 章</span>
+                <span>{genre.label} · {activeStory.kind === "merged" ? "双主角" : displayName(activeStory)}</span>
+                <span className="resume-position">第 {currentChapter} / {CHAPTER_COUNT} 章</span>
               </>
             ) : (
-              "选一个世界，在关键时刻决定故事。"
+              "选一个世界。让故事，因你不同。"
             )}
           </p>
           <div className="hero-actions">
@@ -402,13 +424,11 @@ function Home({ onNavigate, onOpenStory, activeStory, stories }) {
             </Button>
           </div>
         </div>
-        <div className="hero-scene" aria-hidden="true">
-          <WorldAtmosphere />
-          <div className="hero-scene-art" aria-hidden="true">
-            <span className="hero-door" />
-          </div>
-        </div>
       </section>
+
+      {draft && <button className="home-draft-row" onClick={() => onNavigate("forge")}>
+        <Icon name="book" size={20}/><span><strong>继续上次设定</strong><small>第 {Math.min(4, Math.max(1, Number(draft.step) || 1))} 步 · 已保存在本机</small></span><Icon name="chevron" size={16}/>
+      </button>}
 
       {activeStory ? <section className="home-section home-lower">
         {otherStories.length > 0 ? <>
@@ -438,7 +458,8 @@ function Home({ onNavigate, onOpenStory, activeStory, stories }) {
           className="first-story-browse small-link"
           onClick={() => onNavigate("store")}
         >
-          先逛逛书城 <Icon name="chevron" size={16} />
+          <span className="browse-art"><WorldArtwork genreId="neon" /></span>
+          <span>先逛逛书城</span><Icon name="arrow" size={19} />
         </button>
       )}
     </div>
@@ -462,11 +483,8 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory }) {
               className="sw-library-row"
               onClick={() => onOpenStory(story.id)}
             >
-              <span
-                className={`sw-library-sigil tone-${genre.color}`}
-                aria-hidden="true"
-              >
-                {genre.symbol}
+              <span className="library-cover">
+                <WorldArtwork genreId={genre.id} sources={coverSources(story)} />
               </span>
               <span className="sw-library-copy">
                 <b>{story.title}</b>
@@ -474,7 +492,6 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory }) {
                   {genre.label} · 读到第 {chapter} 章
                 </small>
               </span>
-              <Icon name="chevron" size={16} />
             </button>
           );
         })}
@@ -519,11 +536,11 @@ function WorldCard({ world, selected, onSelect }) {
         onClick={() => onSelect(world.id)}
       >
         <div className="world-card-visual" aria-hidden="true">
-          <Icon name={{ mist: "compass", cultivation: "spark", neon: "sliders", city: "book" }[world.id]} size={28} />
+          <WorldArtwork genreId={world.id} eager />
         </div>
         <div className="world-card-copy">
-          <h3>{world.label.split(" · ")[0]}</h3>
-          <p>{world.name}</p>
+          <h3>{world.name}</h3>
+          <p>{world.label.split(" · ")[0]}</p>
         </div>
         {selected && (
           <span className="selected-mark">
@@ -541,6 +558,7 @@ function PreviewPanel({ world, draft, ability, tone }) {
     <aside className="preview-panel">
       <h3>当前设定</h3>
       <div className={`preview-cover world-${world.color}`}>
+        <WorldArtwork genreId={world.id} />
         <div>
           <strong>{world.name}</strong>
         </div>
@@ -564,7 +582,7 @@ function GenerationMode({ provider, value, onChange, disabled }) {
     </div>
     <p className="experience-note">{value === "gemini"
       ? "设定与剧情会发送给 Gemini。请使用昵称或虚构资料；每次续写会使用服务端额度。"
-      : provider.configured ? "无需等待，体验六章预设故事。" : "预设剧情体验 · Gemini 尚未连接"}</p>
+      : provider.configured ? "无需等待，体验六章预设故事。" : provider.reason === "generation-disabled" ? "在线创作暂未开放，可先体验预设故事。" : "预设剧情体验 · Gemini 尚未连接"}</p>
   </div>;
 }
 
@@ -643,12 +661,12 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
       ? `来自${draft.hometown}的${draft.role || "旅人"}，会在${world.location}听见第一声回响。`
       : `${draft.name || "未命名旅人"}会在${world.location}收到一条无法解释的信号。`;
   return (
-    <div ref={forgeRef} className="page page-forge page-enter">
-      <div className="forge-heading">
-        <h1>新故事</h1>
+    <div ref={forgeRef} className="page page-forge page-enter" data-step={step}>
+      <div className="forge-progress">
+        <h1 className="sr-only">新故事</h1>
+        <Stepper step={step} setStep={(value) => { if (!busy) setStep(value); }} />
         <span className="step-count" aria-label={`第 ${step} 步，共 4 步`}>{step} / 4</span>
       </div>
-      <Stepper step={step} setStep={(value) => { if (!busy) setStep(value); }} />
       <div className="forge-layout">
         <main className="forge-main">
           {step === 1 && (
@@ -668,6 +686,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                   />
                 ))}
               </div>
+              <p className="world-selection-note" aria-live="polite">{world.subtitle}</p>
             </>
           )}
           {step === 2 && (
@@ -863,6 +882,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                 </div>
               </div>
               <div className="opening-preview">
+                <div className="opening-art"><WorldArtwork genreId={world.id} eager /></div>
                 <h3>{world.name}</h3>
                 <p>{previewText}</p>
                 <div className="opening-details" aria-label="确认故事设定">
@@ -918,7 +938,7 @@ function ShareSheet({ story, onClose, onPublish }) {
         {requiresReview ? "仅保存在本机书城。已替换设定中的原始资料，但正文仍可能含有可识别的线索，请逐章检查。" : "匿名只读副本，仅保存在本机书城，不会上传。姓名与现实资料已移除。"}
       </p>
       <div className="sw-share-preview">
-        <span className="sw-share-symbol">{genreOf(story).symbol}</span>
+        <span className="share-cover"><WorldArtwork genreId={genreOf(story).id} sources={coverSources(story)} /></span>
         <div>
           <b>{preview.title}</b>
           <small>
@@ -988,6 +1008,7 @@ function ReadingDialog({ title, children, onClose }) {
           onClose();
       }}
     >
+      <div className="sheet-grabber" aria-hidden="true" />
       <div className="reading-dialog-heading">
         <h2 id={titleId}>{title}</h2>
         <button
@@ -1059,6 +1080,14 @@ function Reader({
   const [snapshotIndex, setSnapshotIndex] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
   const [directoryOpen, setDirectoryOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [bookmarkVersion, setBookmarkVersion] = useState(0);
+  const bookmarkAnchor = useRef(null);
+  const requestedLocation = useRef(null);
+  const [preferencesStore] = useState(() => createReadingPreferencesStore());
+  const preferences = useSyncExternalStore(preferencesStore.subscribe, preferencesStore.getSnapshot);
   const [rewriteMode, setRewriteMode] = useState(false);
   const [pendingChoice, setPendingChoice] = useState(null);
   const [error, setError] = useState("");
@@ -1071,6 +1100,15 @@ function Reader({
   const index = readOnly
     ? readerIndexFor({ ...story, readerIndex: snapshotIndex }, true)
     : readerIndexFor(story);
+  const readingChapters = useMemo(() => story?.chapters.map((_, i) => chapterForReading(story, i)) || [], [story]);
+  const chapter = story ? (readingChapters[index] || buildChapter(story, index)) : null;
+  const locationKey = story && chapterLocationKey(story.id, index, chapter.paragraphs, readOnly);
+  const reading = useReaderExperience({ readerRef, locationKey, settings: preferences.settings,
+    blocked: preferencesOpen || toolsOpen || directoryOpen || shareOpen || Boolean(pendingChoice) });
+  const bookContextId = `${readOnly ? 'public' : 'private'}:${story?.id}`;
+  const bookmarkKeys = readingChapters.map((item, i) => chapterLocationKey(story.id, i, item?.paragraphs || [], readOnly));
+  const bookmarks = useMemo(() => reading.store.bookmarks(bookContextId, bookmarkKeys), [bookContextId, story, bookmarkVersion, toolsOpen, reading.store]);
+  const changePreferences = (patch, options) => { reading.preserve(); preferencesStore.update(patch, options); };
   useSceneMotion(
     readerRef,
     `${story?.id}:${index}`,
@@ -1082,6 +1120,7 @@ function Reader({
     setSnapshotIndex(0);
     setShareOpen(false);
     setDirectoryOpen(false);
+    setToolsOpen(false);
     setRewriteMode(false);
     setPendingChoice(null);
     setError("");
@@ -1119,9 +1158,15 @@ function Reader({
   }, [story?.id, story?.revision, pendingIndex, retry, onPrepareChapter]);
 
   useEffect(() => {
-    scrollToTop();
     titleRef.current?.focus({ preventScroll: true });
   }, [story?.id, index]);
+
+  useEffect(() => {
+    if (!requestedLocation.current || requestedLocation.current.index !== index) return;
+    const destination = requestedLocation.current;
+    const frame = requestAnimationFrame(() => { reading.jump(destination.anchor); requestedLocation.current = null; });
+    return () => cancelAnimationFrame(frame);
+  }, [index, toolsOpen, reading.jump]);
 
   if (!story)
     return (
@@ -1144,7 +1189,6 @@ function Reader({
       <Button variant="ghost" onClick={() => onNavigate("home")}>返回书架</Button>
     </div>
   );
-  const chapter = chapterForReading(story, index) || buildChapter(story, index);
   const selected = selectedChoice(story, index);
   const selection = chapter.choice?.options.find(
     (option) => option.id === selected,
@@ -1206,9 +1250,22 @@ function Reader({
       setError("下一章暂时没能接上，请再试一次。");
     }
   };
+  const selectLocation = (target, anchor) => {
+    requestedLocation.current = { index: target, anchor };
+    setToolsOpen(false);
+    if (target === index) reading.jump(anchor);
+    else goToChapter(target);
+  };
+  const openTools = () => { bookmarkAnchor.current = reading.capture(); setToolsOpen(true); };
+  const togglePositionBookmark = () => {
+    const anchor = bookmarkAnchor.current || { paragraph: 0, offset: 0 };
+    reading.store.toggleBookmark({ key: locationKey, storyId: bookContextId, chapterIndex: index,
+      anchor, title: chapter.title, excerpt: chapter.paragraphs[anchor.paragraph] || '' });
+    setBookmarkVersion(value => value + 1);
+  };
 
   return (
-    <div ref={readerRef} className="page page-reader page-enter">
+    <div ref={readerRef} className="page page-reader page-enter" data-reader-focused={focused ? 'true' : 'false'} {...getReaderAppearance(preferences.settings, { inputMethod: preferences.inputMethod })}>
       <div className="reader-topline">
         <button
           className="back-link"
@@ -1281,11 +1338,13 @@ function Reader({
           <h1 ref={titleRef} tabIndex={-1}>
             {chapter.title}
           </h1>
-          <p className="article-lede">{chapter.paragraphs[0]}</p>
+          <div className="reader-prose" lang="zh-CN">
+          <p className="article-lede" data-reading-paragraph="0">{chapter.paragraphs[0]}</p>
           <div className="article-body">
             {chapter.paragraphs.slice(1).map((paragraph, paragraphIndex) => (
-              <p key={`${chapter.id}-${paragraphIndex}`}>{paragraph}</p>
+              <p data-reading-paragraph={paragraphIndex + 1} key={`${chapter.id}-${paragraphIndex}`}>{paragraph}</p>
             ))}
+          </div>
           </div>
           {chapter.choice && (
             <div className={`choice-block ${selected ? "resolved" : ""}`}>
@@ -1424,6 +1483,30 @@ function Reader({
           )}
         </article>
       </div>
+      <div className="reader-floating-dock" role="region" aria-label="阅读工具栏">
+        <div className="reader-live-progress"><span>第 {index + 1} 章</span><span>本章 {reading.progress}%</span></div>
+        {focused ? <button type="button" className="reader-focus-exit" onClick={() => setFocused(false)}>退出专注阅读</button> :
+          <div className="reader-dock-actions">
+            <button type="button" onClick={() => setDirectoryOpen(true)} aria-haspopup="dialog"><Icon name="menu" size={19}/><span>目录</span></button>
+            <button type="button" className="reader-dock-settings" aria-label="阅读设置" aria-haspopup="dialog" onClick={() => setPreferencesOpen(true)}><b aria-hidden="true">Aa</b><span>设置</span></button>
+            <button type="button" onClick={openTools} aria-haspopup="dialog"><Icon name="search" size={19}/><span>查找</span></button>
+            <button type="button" onClick={() => setFocused(true)}><Icon name="book" size={19}/><span>专注</span></button>
+          </div>}
+        {preferences.settings.readingMode === 'page' && <div className="reader-page-controls" role="group" aria-label="逐屏阅读">
+          <button type="button" onClick={() => reading.pageBy(-1)}><Icon name="chevron" className="rotate-180" size={17}/>上一屏</button>
+          <button type="button" onClick={() => reading.pageBy(1)}>下一屏<Icon name="chevron" size={17}/></button>
+        </div>}
+      </div>
+      {reading.warning && <p className="reader-location-warning" role="status">{reading.warning}</p>}
+      {preferencesOpen && <ReadingDialog title="阅读设置" onClose={() => setPreferencesOpen(false)}>
+        <ReadingPreferences value={preferences.settings} onChange={changePreferences} storageWarning={preferences.storageWarning}/>
+        {reading.wakeStatus && <p className="reading-tools-status" role="status">{reading.wakeStatus}</p>}
+      </ReadingDialog>}
+      {toolsOpen && <ReadingDialog title="查找与书签" onClose={() => setToolsOpen(false)}>
+        <ReadingTools chapters={readingChapters} lastAccessible={lastAccessibleIndex(story, readOnly)} bookmarks={bookmarks}
+          onSelect={selectLocation} onBookmark={togglePositionBookmark} warning={reading.store.warning()}
+          onRemove={item => { reading.store.removeBookmark(item.key, item.anchor.paragraph); setBookmarkVersion(value => value + 1); }}/>
+      </ReadingDialog>}
       {directoryOpen && (
         <ChapterDirectory
           story={story}
@@ -1557,7 +1640,7 @@ function Store({ onNavigate, onOpenBook, onOpenOwn, publications }) {
               onClick={() => onOpenBook(book.snapshot)}
             >
               <div className="book-cover">
-                <span className="book-source">{book.sourceLabel}</span>
+                <WorldArtwork genreId={genreOf(book.snapshot).id} sources={coverSources(book.snapshot)} />
                 <div>
                   <b>{book.title}</b>
                 </div>
@@ -1565,8 +1648,8 @@ function Store({ onNavigate, onOpenBook, onOpenOwn, publications }) {
               <div className="book-card-copy">
                 <div className="book-card-meta">
                   <span>{book.category} · {book.type}</span>
+                  <span className="book-source">{book.sourceLabel}</span>
                 </div>
-                <p>{book.note}</p>
                 <div className="book-author">
                   <span>{book.author}</span>
                   <Icon name="arrow" size={17} />
@@ -1678,13 +1761,9 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider }) {
         </label>
       </div>}
       <div className="merge-stage">
-        <WorldAtmosphere variant="merge" />
         <div className="merge-world-card mine">
-          <div className="merge-card-top">
-            <span>你的主角</span>
-          </div>
           <div className="merge-art merge-art-coral">
-            <span className="merge-art-symbol">{mineGenre.symbol}</span>
+            <WorldArtwork genreId={mineGenre.id} eager />
             <span className="merge-art-label">{mineGenre.world}</span>
           </div>
           <div className="merge-card-bottom">
@@ -1693,6 +1772,7 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider }) {
             </div>
             <div>
               <b>{displayName(sourceStory)}</b>
+              <small>你的主角</small>
               <span>
                 {mineGenre.label} · {sourceStory.config.ability}
               </span>
@@ -1705,17 +1785,15 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider }) {
           </div>
         </div>
         <div className="merge-world-card friend">
-          <div className="merge-card-top">
-            <span>{partnerStory.id === FRIEND_BOOK.id ? "示例角色" : "书架中的主角"}</span>
-          </div>
           <div className="merge-art merge-art-mint">
-            <span className="merge-art-symbol">{friendGenre.symbol}</span>
+            <WorldArtwork genreId={friendGenre.id} eager />
             <span className="merge-art-label">{friendGenre.world}</span>
           </div>
           <div className="merge-card-bottom">
             <div className="avatar avatar-mint">{displayName(partnerStory).slice(0, 1)}</div>
             <div>
               <b>{displayName(partnerStory)}</b>
+              <small>{partnerStory.id === FRIEND_BOOK.id ? "示例角色" : "书架中的主角"}</small>
               <span>
                 {friendGenre.label} · {partnerStory.config.ability}
               </span>
@@ -1956,6 +2034,11 @@ function LibraryTools({ store, library, onClose, onRestored }) {
 
 function App() {
   const sceneRef = useRef(null);
+  const [authClient] = useState(() => createAuthClient());
+  const account = useSyncExternalStore(authClient.subscribe, authClient.getSnapshot);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountIntent, setAccountIntent] = useState(null);
+  useEffect(() => { void authClient.start(); return () => authClient.stop(); }, [authClient]);
   const [store] = useState(() => createLibraryStore());
   const { library, warning, unsaved } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const setLibrary = store.update;
@@ -2185,6 +2268,9 @@ function App() {
         onOpenStory={openOwnReader}
         activeStory={activeStory}
         stories={library.stories}
+        draft={library.draft}
+        account={account}
+        onOpenAccount={() => { setAccountIntent(activeStory ? null : "forge"); setAccountOpen(true); }}
       />
     );
   return (
@@ -2196,7 +2282,7 @@ function App() {
     >
       <Sidebar view={view} onNavigate={navigate} />
       <main className="main-shell">
-        <Topbar view={view} onNavigate={navigate} onOpenLibrary={() => setLibraryOpen(true)} />
+        <Topbar onNavigate={navigate} onOpenLibrary={() => setLibraryOpen(true)} account={account} onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }} />
         {warning && (
           <div className="sw-storage-warning" role="alert">
             <Icon name="lock" size={14} />
@@ -2207,6 +2293,13 @@ function App() {
         <MobileBottomNav view={view} onNavigate={navigate} />
         {page}
       </main>
+      {accountOpen && <ReadingDialog title={account.user ? "我的账号" : "登录与注册"} onClose={() => setAccountOpen(false)}>
+        <AccountPanel client={authClient} account={account} onContinue={() => {
+          setAccountOpen(false);
+          if (accountIntent === "forge") navigate("forge");
+          setAccountIntent(null);
+        }}/>
+      </ReadingDialog>}
       {libraryOpen && <LibraryTools store={store} library={library} onClose={() => setLibraryOpen(false)} onRestored={() => {
         setLibraryOpen(false);
         navigate("home");

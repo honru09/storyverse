@@ -45,7 +45,7 @@ export async function generationStatus({ fetchImpl = globalThis.fetch, signal } 
     const response = await fetchImpl('/api/status', { signal: AbortSignal.any([AbortSignal.timeout(5000), ...(signal ? [signal] : [])]) })
     if (!response.ok) throw new Error('unavailable')
     const result = await response.json()
-    return { configured: result.configured === true, provider: 'gemini' }
+    return { configured: result.configured === true, provider: 'gemini', ...(result.reason === 'generation-disabled' ? { reason: 'generation-disabled' } : {}) }
   } catch {
     return { configured: false, provider: 'gemini' }
   }
@@ -67,7 +67,7 @@ export async function requestChapter(story, index, { fetchImpl = globalThis.fetc
   let result
   try { result = await response.json() } catch { throw new Error('章节暂时未能接上，请重试。') }
   if (!response.ok) {
-    const messages = { 429: '请求较多，请稍后再试。', 503: 'Gemini 尚未配置，请检查服务端设置。', 504: '这一章等待较久，进度已保留，请重试。' }
+    const messages = { 429: '请求较多，请稍后再试。', 503: '在线创作暂不可用，已保存的章节仍可阅读。请稍后再试。', 504: '这一章等待较久，进度已保留，请重试。' }
     throw new Error(messages[response.status] || '这一章暂时没能接上，进度已保留，请重试。')
   }
   if (result?.chapter?.index !== index || result?.key !== chapterKey(story, index) || acceptGeneratedChapter(story, result) === story) {

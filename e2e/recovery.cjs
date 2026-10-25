@@ -16,6 +16,11 @@ async function readLibrary(page) {
 }
 
 async function createBook(page, name) {
+  // Backup is now reachable without leaving the reader. Navigate explicitly
+  // rather than relying on the old toolbar visibility to do it for this test.
+  if (!(await page.getByRole('navigation', { name: '移动端主导航' }).isVisible())) {
+    await page.getByRole('button', { name: '我的世界', exact: true }).click();
+  }
   await page.getByRole('navigation', { name: '移动端主导航' }).getByRole('button', { name: '造世', exact: true }).click();
   await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByLabel('主角昵称（选填）').fill(name);

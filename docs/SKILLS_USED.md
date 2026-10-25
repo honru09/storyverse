@@ -4,17 +4,24 @@
 
 ## 本轮实际应用
 
-用户最新指定 [emilkowalski/skills](https://github.com/emilkowalski/skills) 为 UI 和动效的主规范。已完整读取本机 `emil-design-eng` 与 `find-animation-opportunities`；前者决定频率、反馈、即时键盘与动效预算，后者只用于机会筛选。GSAP 等实现技能不得反过来决定审美。已落实的对照与测试见 [MOTION_REVIEW.md](MOTION_REVIEW.md)。用户随后明确否定现有视觉画风，最新任务是全面重设计，而不是继续微调旧版。`frontend-design`、`design-system`、`impeccable` 已进入本轮重设计流程，尚待流程范围与效果图/代码优先的回答；不要将旧画风视为已获认可。
+最新一轮覆盖此前「故事扉页」：用户指定全站年轻 Apple iOS 毛玻璃。实际使用 `apple-design`＋`emil-design-eng` 主导材质/层级/短动效，`design-system` 统一token，`impeccable` 的new-work/onboard/craft-floor/polish及独立复核/文档流程，`playwright-skill` 做隔离流程回归，`writing-for-agents` 更新交接。本轮没有制作视频或新插画；视频skills不进入网页运行依赖。检测器只运行一次，报告大量与旧 DESIGN.md 不一致的色彩/字阶/圆角提示；此为用户批准的替换方向，最终文档按真实代码更新。复核证据见 [IOS_FINISH_REVIEW.md](IOS_FINISH_REVIEW.md)。下方为此前已做工作的历史记录。
+
+用户指定 [emilkowalski/skills](https://github.com/emilkowalski/skills) 为 UI 和动效的主规范。`emil-design-eng` 决定频率、反馈、即时键盘与动效预算，`find-animation-opportunities` 用于机会筛选；GSAP 负责实现。用户已确认保留流程、直接改可操作页面，并选择「故事扉页」。`frontend-design`、`design-system`、`impeccable` 已指导完整页面替换，不再处于方向待选状态。对照见 [MOTION_REVIEW.md](MOTION_REVIEW.md)。
 
 | Skill | 来源 | 应用 |
 | --- | --- | --- |
+| emil-design-eng | `C:/Users/wangxr/.agents/skills/emil-design-eng/SKILL.md` | 主规范：选择即时确认、封面短收束、正文稳定、键盘与减少动态优先 |
+| impeccable | `C:/Users/wangxr/.codex/skills/impeccable/SKILL.md` | 产品约束、方向选择、code-first合同、素材制作、两轮截图与独立复核/文档流程 |
+| frontend-design / design-system | 本机对应 skills | 全页面对齐书封视觉、共享 WorldArtwork、色彩字体控件原语 |
+| imagegen | 系统 imagegen skill | 原生工具生成四组叙事插画与一次细节修正；完整原文提示词见 ART_PROVENANCE.md |
+| writing-for-agents | 本机对应 skill | 将当前事实、完成证据、来源和后续上线工作分开交接 |
 | gsap-react | 本机 `C:/Users/wangxr/.codex/skills/gsap-react/SKILL.md`；[官方仓库](https://github.com/greensock/gsap-skills) | scoped useGSAP、生命周期清理、事件解绑；保留组件卸载时回滚 |
 | gsap-core | 本机 `C:/Users/wangxr/.codex/skills/gsap-core/SKILL.md`；同上 | transform/opacity、内置 easing、保留减少动态和即时可点击 |
 | gsap-performance | 本机 `C:/Users/wangxr/.codex/skills/gsap-performance/SKILL.md`；同上 | Lenis 惯性停止后移除 GSAP ticker 回调；移除标题淡入的全局 refresh |
 | playwright-skill | 本机 `C:/Users/wangxr/.codex/skills/playwright-skill/SKILL.md` | 可见浏览器、隔离上下文、语义定位、真实流程与结果检查；可复现脚本存于 `e2e/` |
 | huashu-art-motion | [官方 SKILL.md](https://github.com/alchaincyf/huashu-art-motion/blob/main/SKILL.md)，读取版本 1.2.0 | 查阅用户点名的 skill，借鉴阅读时保持画面稳定、过渡与重点区别处理、统一色板；其成片工作流不适用于本轮网页业务验收，因此未生成或渲染视频 |
 
-Apple Design 的触控、反馈、层级和减少动态规则继续沿用已有设计系统。旧轮次的 Impeccable 使用记录在 `PROJECT_HANDOFF.md`；本轮没有重新运行其检测器。
+Apple Design 的触控、反馈、层级和减少动态规则继续沿用。本轮 Impeccable 检测器执行一次：报告桌面侧栏的2px右边线，已删除该冗余边线；没有用循环扫描代替独立设计复核。图片制作、独立复核和最终文档是对应skill明确要求的三个子任务。复核唯一触控区发现已resolved；文档代理在最后UI修复之后从最终代码提取根DESIGN.md及schemaVersion2侧车，记录10个实际组件原语。
 
 ## 补充安装与职责
 
@@ -35,4 +42,4 @@ Apple Design 的触控、反馈、层级和减少动态规则继续沿用已有�
 
 ## 可移植性
 
-项目运行只需要 npm 依赖，不要求上述本机路径存在。下一位 agent 可从官方链接重新读取 skills，依据 `DESIGN_SYSTEM.md` 和验收脚本继续工作。React Bits 组件的第三方许可保留在 `src/components/react-bits/LICENSE.md`。
+项目运行只需要 npm 依赖，不要求上述本机路径存在。下一位 agent 可从官方链接重新读取 skills，依据 PRODUCT.md、UI_SURFACE_BRIEF.md、最终 DESIGN.md 和验收脚本继续工作。DESIGN_SYSTEM.md 的旧绿橙风格仅作历史。React Bits 第三方许可保留在 `src/components/react-bits/LICENSE.md`。

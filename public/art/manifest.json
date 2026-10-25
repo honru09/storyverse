@@ -1,0 +1,363 @@
+{
+  "schema_version": 1,
+  "created_date": "2026-10-22",
+  "direction": "故事扉页 — manga volume frontispiece × modern illustrated book jacket",
+  "generation_mode": "Built-in image_gen",
+  "fictional_illustration": true,
+  "approved_ui_comp": null,
+  "palette": [
+    "#172c42",
+    "#f04b36",
+    "#f4f2ea",
+    "#eac647",
+    "deep petroleum turquoise"
+  ],
+  "produce": [
+    {
+      "id": "mist",
+      "description": "Rust-red sailboat crossing cloud layers toward a floating lighthouse city with an unnumbered tidal clock; red-coated traveller on a navy foreground ledge.",
+      "source_crop": null,
+      "output_path": "public/art/mist-1122.webp",
+      "source_path": "assets/art-source/mist.png",
+      "strategy": "Native generation, then uncropped responsive WebP conversion",
+      "prompt_used": "Use case: illustration-story.\nAsset type: standalone full-bleed fictional narrative illustration for a mobile novel app and small book-cover crop, not a UI mockup or a book photographed as an object.\nStyle/medium: sophisticated bold screen-printed editorial adventure illustration, manga volume frontispiece meets modern illustrated book jacket. Crisp dark ink navy #172c42 contour drawing, confident large flat shapes, selective fine ink hatching, sparing authentic printed-ink texture only. Detailed authored narrative scene with a strong graphic composition, not clip art.\nColor palette: dark ink navy #172c42, dominant energetic vermilion #f04b36, warm pale paper #f4f2ea, golden yellow #eac647, deep petroleum turquoise. Restrict to this coherent ink palette with no purple, violet, pink, rainbow, or fluorescent gradients.\nComposition/framing: one portrait image approximately 4:5, high-resolution production illustration. Establish the key subject and environment in the upper 75 percent, with a small anonymous adult seen from behind and no visible face. The lower quarter must remain continuous scenic dark navy foreground with quiet detail, suitable for later semantic HTML title and CTA overlay; do not draw any title, caption strip, or controls. Full bleed to every edge, no padding, border, rounded corners, or mockup shadows.\nConstraints: original fictional illustrative artwork only. Absolutely no words, letters, numbers, faux writing, logotypes, watermarks, UI, controls, icons, panel grid, 3D blobs, generic geometric portal, glossy 3D rendering, photorealism, or embedded text. No baked-in card presentation.\nPrimary request: a rust-red old sailboat crosses immense layered pale storm clouds toward an elevated lighthouse city on floating islands, carrying the feeling of a perilous beginning.\nScene/backdrop: wind-carved cloud banks in warm pale paper and muted turquoise layers surround dark floating rock islands. An old compact lighthouse city rises at the upper middle distance, with a single large tidal clock integrated into its architecture; the clock has simple hands and no numerals or glyphs. The lighthouse casts a restrained golden beam through broken clouds.\nSubject: a large beautifully drawn old sailboat with rust-red sails and dark ink rigging glides across the middle distance. In the foreground, a lone small adult traveller in a vermilion coat, seen from behind, watches from an uneven dark rocky ledge; keep the figure near the lower-middle of the composition, above the quiet bottom foreground.\nMood and hierarchy: mysterious and windswept, narrative wonder without cuteness. The red sail shape is the bold graphic focal point, balanced by the distant vertical lighthouse and layered cloud perspective. Keep the city and rigging sharply intentional at full size while the silhouette still reads at small cover size.",
+      "generation_history": [
+        {
+          "operation": "generate",
+          "tool": "image_gen.imagegen",
+          "input_images": [],
+          "output_source": "C:/Users/wangxr/.codex/generated_images/01a15f46-233c-77d1-86d9-bb229527c8b3/exec-80265437-561a-4693-b983-ff68f334351a.png",
+          "prompt": "Use case: illustration-story.\nAsset type: standalone full-bleed fictional narrative illustration for a mobile novel app and small book-cover crop, not a UI mockup or a book photographed as an object.\nStyle/medium: sophisticated bold screen-printed editorial adventure illustration, manga volume frontispiece meets modern illustrated book jacket. Crisp dark ink navy #172c42 contour drawing, confident large flat shapes, selective fine ink hatching, sparing authentic printed-ink texture only. Detailed authored narrative scene with a strong graphic composition, not clip art.\nColor palette: dark ink navy #172c42, dominant energetic vermilion #f04b36, warm pale paper #f4f2ea, golden yellow #eac647, deep petroleum turquoise. Restrict to this coherent ink palette with no purple, violet, pink, rainbow, or fluorescent gradients.\nComposition/framing: one portrait image approximately 4:5, high-resolution production illustration. Establish the key subject and environment in the upper 75 percent, with a small anonymous adult seen from behind and no visible face. The lower quarter must remain continuous scenic dark navy foreground with quiet detail, suitable for later semantic HTML title and CTA overlay; do not draw any title, caption strip, or controls. Full bleed to every edge, no padding, border, rounded corners, or mockup shadows.\nConstraints: original fictional illustrative artwork only. Absolutely no words, letters, numbers, faux writing, logotypes, watermarks, UI, controls, icons, panel grid, 3D blobs, generic geometric portal, glossy 3D rendering, photorealism, or embedded text. No baked-in card presentation.\nPrimary request: a rust-red old sailboat crosses immense layered pale storm clouds toward an elevated lighthouse city on floating islands, carrying the feeling of a perilous beginning.\nScene/backdrop: wind-carved cloud banks in warm pale paper and muted turquoise layers surround dark floating rock islands. An old compact lighthouse city rises at the upper middle distance, with a single large tidal clock integrated into its architecture; the clock has simple hands and no numerals or glyphs. The lighthouse casts a restrained golden beam through broken clouds.\nSubject: a large beautifully drawn old sailboat with rust-red sails and dark ink rigging glides across the middle distance. In the foreground, a lone small adult traveller in a vermilion coat, seen from behind, watches from an uneven dark rocky ledge; keep the figure near the lower-middle of the composition, above the quiet bottom foreground.\nMood and hierarchy: mysterious and windswept, narrative wonder without cuteness. The red sail shape is the bold graphic focal point, balanced by the distant vertical lighthouse and layered cloud perspective. Keep the city and rigging sharply intentional at full size while the silhouette still reads at small cover size."
+        }
+      ],
+      "dimensions": {
+        "width": 1122,
+        "height": 1402
+      },
+      "format": "webp",
+      "transparency": false,
+      "source": {
+        "id": "mist",
+        "path": "assets/art-source/mist.png",
+        "width": 1122,
+        "height": 1402,
+        "format": "png",
+        "bytes": 3086977,
+        "transparency": false,
+        "sha256": "e65b7a941b51a5ca52ed8e49817425e10b9a7f8ef0b9df9c386f4e75b45a1bde",
+        "provenance": "PNG tEXt keyword impeccable:prompt"
+      },
+      "variants": [
+        {
+          "output_path": "public/art/mist-640.webp",
+          "public_url": "/art/mist-640.webp",
+          "dimensions": {
+            "width": 640,
+            "height": 800
+          },
+          "bytes": 144698,
+          "format": "webp",
+          "transparency": false,
+          "sha256": "536662e2ead621826b6469c69dda00ef7483a2110f720dd6351be72d265b60d3",
+          "provenance_path": "public/art/mist-640.webp.json",
+          "quality": 82
+        },
+        {
+          "output_path": "public/art/mist-1122.webp",
+          "public_url": "/art/mist-1122.webp",
+          "dimensions": {
+            "width": 1122,
+            "height": 1402
+          },
+          "bytes": 353156,
+          "format": "webp",
+          "transparency": false,
+          "sha256": "3ada2e3f747bcee7e0005a9606c95ae8909da093a06c6dee4667666670ef67b3",
+          "provenance_path": "public/art/mist-1122.webp.json",
+          "quality": 82
+        }
+      ],
+      "deviations": [],
+      "qa_status": "accepted",
+      "qa_notes": "Accepted after opening the workspace PNG and 640 px derivative. No semantic text, UI chrome, letterboxing or visible face. Dark lower foreground retained."
+    },
+    {
+      "id": "cultivation",
+      "description": "Angular golden mountain cliffs, a vermilion sun, ink pines and an ascending route; tiny flame-bearing pilgrim.",
+      "source_crop": null,
+      "output_path": "public/art/cultivation-1122.webp",
+      "source_path": "assets/art-source/cultivation.png",
+      "strategy": "Native generation, then uncropped responsive WebP conversion",
+      "prompt_used": "Use case: illustration-story.\nAsset type: standalone full-bleed fictional narrative illustration for a mobile novel app and small book-cover crop, not a UI mockup or a book photographed as an object.\nStyle/medium: sophisticated bold screen-printed editorial adventure illustration, manga volume frontispiece meets modern illustrated book jacket. Crisp dark ink navy #172c42 contour drawing, confident large flat shapes, selective fine ink hatching, sparing authentic printed-ink texture only. Detailed authored narrative scene with a strong graphic composition, not clip art.\nColor palette: dark ink navy #172c42, dominant energetic vermilion #f04b36, warm pale paper #f4f2ea, golden yellow #eac647, deep petroleum turquoise. Restrict to this coherent ink palette with no purple, violet, pink, rainbow, or fluorescent gradients.\nComposition/framing: one portrait image approximately 4:5, high-resolution production illustration. Establish the key subject and environment in the upper 75 percent, with a small anonymous adult seen from behind and no visible face. The lower quarter must remain continuous scenic dark navy foreground with quiet detail, suitable for later semantic HTML title and CTA overlay; do not draw any title, caption strip, or controls. Full bleed to every edge, no padding, border, rounded corners, or mockup shadows.\nConstraints: original fictional illustrative artwork only. Absolutely no words, letters, numbers, faux writing, logotypes, watermarks, UI, controls, icons, panel grid, 3D blobs, generic geometric portal, glossy 3D rendering, photorealism, or embedded text. No baked-in card presentation.\nPrimary request: immense angular golden cliff mountains tower over an impossibly precarious ascending route, with ink pine silhouettes and a bright vermilion sun.\nScene/backdrop: deeply cut golden rock faces rise through pale paper mist in monumental jagged tiers. A narrow stone stair and ledge route winds upward across the cliffs. Sparse dark navy pine silhouettes cling to angular edges. A large flat vermilion sun occupies the upper sky without glow gradients.\nSubject: one tiny anonymous adult pilgrim seen from behind, standing on the ascending path near the lower-middle, carries a small warm flame that is a compact golden point of resolve. The figure is small enough that the scale of the mountains dominates.\nMood and hierarchy: austere, courageous and expansive cultivation-fantasy journey. Golden cliff planes and the vermilion disc carry the composition; ink hatching articulates stone and pines. Dark blue rock and pine foreground at the bottom is continuous landscape, not a blank caption panel. No temple lettering, runes, glyphs, or supernatural geometric portals.",
+      "generation_history": [
+        {
+          "operation": "generate",
+          "tool": "image_gen.imagegen",
+          "input_images": [],
+          "output_source": "C:/Users/wangxr/.codex/generated_images/01a15f46-233c-77d1-86d9-bb229527c8b3/exec-848d8d73-1730-463d-8df0-af02f9735b00.png",
+          "prompt": "Use case: illustration-story.\nAsset type: standalone full-bleed fictional narrative illustration for a mobile novel app and small book-cover crop, not a UI mockup or a book photographed as an object.\nStyle/medium: sophisticated bold screen-printed editorial adventure illustration, manga volume frontispiece meets modern illustrated book jacket. Crisp dark ink navy #172c42 contour drawing, confident large flat shapes, selective fine ink hatching, sparing authentic printed-ink texture only. Detailed authored narrative scene with a strong graphic composition, not clip art.\nColor palette: dark ink navy #172c42, dominant energetic vermilion #f04b36, warm pale paper #f4f2ea, golden yellow #eac647, deep petroleum turquoise. Restrict to this coherent ink palette with no purple, violet, pink, rainbow, or fluorescent gradients.\nComposition/framing: one portrait image approximately 4:5, high-resolution production illustration. Establish the key subject and environment in the upper 75 percent, with a small anonymous adult seen from behind and no visible face. The lower quarter must remain continuous scenic dark navy foreground with quiet detail, suitable for later semantic HTML title and CTA overlay; do not draw any title, caption strip, or controls. Full bleed to every edge, no padding, border, rounded corners, or mockup shadows.\nConstraints: original fictional illustrative artwork only. Absolutely no words, letters, numbers, faux writing, logotypes, watermarks, UI, controls, icons, panel grid, 3D blobs, generic geometric portal, glossy 3D rendering, photorealism, or embedded text. No baked-in card presentation.\nPrimary request: immense angular golden cliff mountains tower over an impossibly precarious ascending route, with ink pine silhouettes and a bright vermilion sun.\nScene/backdrop: deeply cut golden rock faces rise through pale paper mist in monumental jagged tiers. A narrow stone stair and ledge route winds upward across the cliffs. Sparse dark navy pine silhouettes cling to angular edges. A large flat vermilion sun occupies the upper sky without glow gradients.\nSubject: one tiny anonymous adult pilgrim seen from behind, standing on the ascending path near the lower-middle, carries a small warm flame that is a compact golden point of resolve. The figure is small enough that the scale of the mountains dominates.\nMood and hierarchy: austere, courageous and expansive cultivation-fantasy journey. Golden cliff planes and the vermilion disc carry the composition; ink hatching articulates stone and pines. Dark blue rock and pine foreground at the bottom is continuous landscape, not a blank caption panel. No temple lettering, runes, glyphs, or supernatural geometric portals."
+        }
+      ],
+      "dimensions": {
+        "width": 1122,
+        "height": 1402
+      },
+      "format": "webp",
+      "transparency": false,
+      "source": {
+        "id": "cultivation",
+        "path": "assets/art-source/cultivation.png",
+        "width": 1122,
+        "height": 1402,
+        "format": "png",
+        "bytes": 3075461,
+        "transparency": false,
+        "sha256": "3d00f0ef16b8fe26626e264e96b604d365bf1c45f3dd078a1dd1c3d30342c2e0",
+        "provenance": "PNG tEXt keyword impeccable:prompt"
+      },
+      "variants": [
+        {
+          "output_path": "public/art/cultivation-640.webp",
+          "public_url": "/art/cultivation-640.webp",
+          "dimensions": {
+            "width": 640,
+            "height": 800
+          },
+          "bytes": 140392,
+          "format": "webp",
+          "transparency": false,
+          "sha256": "509edd4d58cc2c939f2fdc028f658c106a3811dc37c217c0f7e25c4f60d5b9d4",
+          "provenance_path": "public/art/cultivation-640.webp.json",
+          "quality": 82
+        },
+        {
+          "output_path": "public/art/cultivation-1122.webp",
+          "public_url": "/art/cultivation-1122.webp",
+          "dimensions": {
+            "width": 1122,
+            "height": 1402
+          },
+          "bytes": 356740,
+          "format": "webp",
+          "transparency": false,
+          "sha256": "3b1478e7c5a69d612184f678ef02e381c7b95cfb71ffe7d8b394de6d5c505660",
+          "provenance_path": "public/art/cultivation-1122.webp.json",
+          "quality": 82
+        }
+      ],
+      "deviations": [
+        "Generated secondary unlettered mountaintop buildings enrich the route without changing the assigned world."
+      ],
+      "qa_status": "accepted",
+      "qa_notes": "Accepted after opening the workspace PNG and 640 px derivative. Main cliff/path hierarchy and ink palette read at small cover size. Secondary mountaintop buildings are unlettered."
+    },
+    {
+      "id": "neon",
+      "description": "Navy futuristic rain street, blank vermilion and muted turquoise sign planes, solitary coat-wearing traveller and reflected light.",
+      "source_crop": null,
+      "output_path": "public/art/neon-1122.webp",
+      "source_path": "assets/art-source/neon.png",
+      "strategy": "Native generation, then uncropped responsive WebP conversion",
+      "prompt_used": "Use case: illustration-story.\nAsset type: standalone full-bleed fictional narrative illustration for a mobile novel app and small book-cover crop, not a UI mockup or a book photographed as an object.\nStyle/medium: sophisticated bold screen-printed editorial adventure illustration, manga volume frontispiece meets modern illustrated book jacket. Crisp dark ink navy #172c42 contour drawing, confident large flat shapes, selective fine ink hatching, sparing authentic printed-ink texture only. Detailed authored narrative scene with a strong graphic composition, not clip art.\nColor palette: dark ink navy #172c42, dominant energetic vermilion #f04b36, warm pale paper #f4f2ea, golden yellow #eac647, deep petroleum turquoise. Restrict to this coherent ink palette with no purple, violet, pink, rainbow, or fluorescent gradients.\nComposition/framing: one portrait image approximately 4:5, high-resolution production illustration. Establish the key subject and environment in the upper 75 percent, with a small anonymous adult seen from behind and no visible face. The lower quarter must remain continuous scenic dark navy foreground with quiet detail, suitable for later semantic HTML title and CTA overlay; do not draw any title, caption strip, or controls. Full bleed to every edge, no padding, border, rounded corners, or mockup shadows.\nConstraints: original fictional illustrative artwork only. Absolutely no words, letters, numbers, faux writing, logotypes, watermarks, UI, controls, icons, panel grid, 3D blobs, generic geometric portal, glossy 3D rendering, photorealism, or embedded text. No baked-in card presentation.\nPrimary request: a rain-soaked narrow futuristic city street with dark navy architecture, vermilion and muted petroleum-turquoise light, and one solitary coat-wearing figure.\nScene/backdrop: dense but carefully composed tall angular city buildings form a deep narrow street canyon. Projecting geometric sign panels are purely unlettered color planes and simple light bars, absolutely no text, numerals, symbols, glyphs or pseudo-writing. Weathered pipes, ledges, cables and rain streaks give the architecture lived-in detail. Wet ground reflects vermilion, muted turquoise and a few quiet gold lights as flat ink shapes, not glossy rainbow gradients.\nSubject: a small adult traveller in a long coat seen only from behind near the lower-middle, walking toward the depth of the street; face not visible, no additional characters required.\nMood and hierarchy: rain, solitude and controlled urban tension. Navy building masses enclose one strong vermilion light path and the tiny figure. The environment is sophisticated illustrated speculative fiction, not violet cyberpunk, not an interface wallpaper. Preserve a dark continuous rainy street foreground in the bottom quarter for later HTML overlay.",
+      "generation_history": [
+        {
+          "operation": "generate",
+          "tool": "image_gen.imagegen",
+          "input_images": [],
+          "output_source": "C:/Users/wangxr/.codex/generated_images/01a15f46-233c-77d1-86d9-bb229527c8b3/exec-79bdf711-994d-49ec-92c0-46818160b215.png",
+          "prompt": "Use case: illustration-story.\nAsset type: standalone full-bleed fictional narrative illustration for a mobile novel app and small book-cover crop, not a UI mockup or a book photographed as an object.\nStyle/medium: sophisticated bold screen-printed editorial adventure illustration, manga volume frontispiece meets modern illustrated book jacket. Crisp dark ink navy #172c42 contour drawing, confident large flat shapes, selective fine ink hatching, sparing authentic printed-ink texture only. Detailed authored narrative scene with a strong graphic composition, not clip art.\nColor palette: dark ink navy #172c42, dominant energetic vermilion #f04b36, warm pale paper #f4f2ea, golden yellow #eac647, deep petroleum turquoise. Restrict to this coherent ink palette with no purple, violet, pink, rainbow, or fluorescent gradients.\nComposition/framing: one portrait image approximately 4:5, high-resolution production illustration. Establish the key subject and environment in the upper 75 percent, with a small anonymous adult seen from behind and no visible face. The lower quarter must remain continuous scenic dark navy foreground with quiet detail, suitable for later semantic HTML title and CTA overlay; do not draw any title, caption strip, or controls. Full bleed to every edge, no padding, border, rounded corners, or mockup shadows.\nConstraints: original fictional illustrative artwork only. Absolutely no words, letters, numbers, faux writing, logotypes, watermarks, UI, controls, icons, panel grid, 3D blobs, generic geometric portal, glossy 3D rendering, photorealism, or embedded text. No baked-in card presentation.\nPrimary request: a rain-soaked narrow futuristic city street with dark navy architecture, vermilion and muted petroleum-turquoise light, and one solitary coat-wearing figure.\nScene/backdrop: dense but carefully composed tall angular city buildings form a deep narrow street canyon. Projecting geometric sign panels are purely unlettered color planes and simple light bars, absolutely no text, numerals, symbols, glyphs or pseudo-writing. Weathered pipes, ledges, cables and rain streaks give the architecture lived-in detail. Wet ground reflects vermilion, muted turquoise and a few quiet gold lights as flat ink shapes, not glossy rainbow gradients.\nSubject: a small adult traveller in a long coat seen only from behind near the lower-middle, walking toward the depth of the street; face not visible, no additional characters required.\nMood and hierarchy: rain, solitude and controlled urban tension. Navy building masses enclose one strong vermilion light path and the tiny figure. The environment is sophisticated illustrated speculative fiction, not violet cyberpunk, not an interface wallpaper. Preserve a dark continuous rainy street foreground in the bottom quarter for later HTML overlay."
+        }
+      ],
+      "dimensions": {
+        "width": 1122,
+        "height": 1402
+      },
+      "format": "webp",
+      "transparency": false,
+      "source": {
+        "id": "neon",
+        "path": "assets/art-source/neon.png",
+        "width": 1122,
+        "height": 1402,
+        "format": "png",
+        "bytes": 3397088,
+        "transparency": false,
+        "sha256": "7265e30e03816d5134dcf299a6de7a3a0607c0714c9d369c1c71f9eec51584a5",
+        "provenance": "PNG tEXt keyword impeccable:prompt"
+      },
+      "variants": [
+        {
+          "output_path": "public/art/neon-640.webp",
+          "public_url": "/art/neon-640.webp",
+          "dimensions": {
+            "width": 640,
+            "height": 800
+          },
+          "bytes": 162590,
+          "format": "webp",
+          "transparency": false,
+          "sha256": "348c420096318934d2cdf4cb9707e1a3b14f10b8a6297dd753568e5989d90d84",
+          "provenance_path": "public/art/neon-640.webp.json",
+          "quality": 82
+        },
+        {
+          "output_path": "public/art/neon-1122.webp",
+          "public_url": "/art/neon-1122.webp",
+          "dimensions": {
+            "width": 1122,
+            "height": 1402
+          },
+          "bytes": 425850,
+          "format": "webp",
+          "transparency": false,
+          "sha256": "63a3ba21ac39c4d437d30235398eca777d047e10d38d0a95b5663c2719e7d6d7",
+          "provenance_path": "public/art/neon-1122.webp.json",
+          "quality": 82
+        }
+      ],
+      "deviations": [
+        "Generated a vermilion sun/disc behind the skyline; bright lower street reflections remain part of the scene."
+      ],
+      "qa_status": "accepted",
+      "qa_notes": "Accepted after opening the workspace PNG and 640 px derivative. Sign planes contain no writing; no purple. Bottom reflections need a code-owned contrast scrim if HTML title or CTA overlaps them."
+    },
+    {
+      "id": "city",
+      "description": "Quiet dawn tram street, red tram, ink-blue buildings and golden windows, lone waiting person.",
+      "source_crop": null,
+      "output_path": "public/art/city-1122.webp",
+      "source_path": "assets/art-source/city.png",
+      "strategy": "Native generation, one precise-object edit, then uncropped responsive WebP conversion",
+      "prompt_used": "Use case: precise-object-edit.\nInput image: the provided city tram illustration is the edit target.\nPrimary request: remove ONLY the tiny circular badge with a glyph on the red tram nose, centered directly below the front windows and above the main round headlamp. Replace that small badge area with uninterrupted vermilion-red painted tram body matching the surrounding printed-ink texture.\nConstraints: preserve the entire existing composition, dimensions, full-bleed framing, lone person, red tram shape, windows, lamps, overhead wires, street, buildings, dawn sky, paper texture, navy contours, golden light, palette, camera angle and all other details exactly. Do not add or rearrange anything. Keep the blank destination display blank. No words, letters, numbers, symbols, logos, watermarks or fake writing anywhere. This is a surgical removal of one small badge, not a redesign or global style transfer.",
+      "generation_history": [
+        {
+          "operation": "generate",
+          "tool": "image_gen.imagegen",
+          "input_images": [],
+          "output_source": "C:/Users/wangxr/.codex/generated_images/01a15f46-233c-77d1-86d9-bb229527c8b3/exec-29cf3267-3566-4c4a-9812-b5f9123274ad.png",
+          "prompt": "Use case: illustration-story.\nAsset type: standalone full-bleed fictional narrative illustration for a mobile novel app and small book-cover crop, not a UI mockup or a book photographed as an object.\nStyle/medium: sophisticated bold screen-printed editorial adventure illustration, manga volume frontispiece meets modern illustrated book jacket. Crisp dark ink navy #172c42 contour drawing, confident large flat shapes, selective fine ink hatching, sparing authentic printed-ink texture only. Detailed authored narrative scene with a strong graphic composition, not clip art.\nColor palette: dark ink navy #172c42, dominant energetic vermilion #f04b36, warm pale paper #f4f2ea, golden yellow #eac647, deep petroleum turquoise. Restrict to this coherent ink palette with no purple, violet, pink, rainbow, or fluorescent gradients.\nComposition/framing: one portrait image approximately 4:5, high-resolution production illustration. Establish the key subject and environment in the upper 75 percent, with a small anonymous adult seen from behind and no visible face. The lower quarter must remain continuous scenic dark navy foreground with quiet detail, suitable for later semantic HTML title and CTA overlay; do not draw any title, caption strip, or controls. Full bleed to every edge, no padding, border, rounded corners, or mockup shadows.\nConstraints: original fictional illustrative artwork only. Absolutely no words, letters, numbers, faux writing, logotypes, watermarks, UI, controls, icons, panel grid, 3D blobs, generic geometric portal, glossy 3D rendering, photorealism, or embedded text. No baked-in card presentation.\nPrimary request: an ordinary quiet East Asian tram stop at dawn, with a red tram, deep ink-blue buildings, warm yellow windows, and a tiny lone person on the street.\nScene/backdrop: a believable fictional neighborhood of modest low- and mid-rise buildings, overhead tram wires, narrow sidewalks and tram rails receding in perspective. A warm pale paper dawn sky opens above the buildings. Several windows glow golden yellow. Signboards and tram destination plates are blank unlettered shapes; no writing, numbers or pictograms anywhere.\nSubject: an elegant ordinary vermilion-red tram at the stop in the middle distance. A single small anonymous adult seen from behind waits on the street near the lower-middle of the frame, not close-up. No face is needed.\nMood and hierarchy: bittersweet urban novel, intimate and quietly hopeful, not fantasy. Make the red tram the clear graphic focal point within an ink-blue architectural street scene, with delicate controlled hatching for rails, wires and facades. Keep the bottom quarter a natural dark navy street foreground with quiet detail for later semantic HTML title and CTA overlay."
+        },
+        {
+          "operation": "edit",
+          "tool": "image_gen.imagegen",
+          "input_images": [
+            "public/art/city.png (initial generated asset before relocation)"
+          ],
+          "output_source": "C:/Users/wangxr/.codex/generated_images/01a15f46-233c-77d1-86d9-bb229527c8b3/exec-e50c274e-b96f-4515-a357-1b52551fa0e3.png",
+          "prompt": "Use case: precise-object-edit.\nInput image: the provided city tram illustration is the edit target.\nPrimary request: remove ONLY the tiny circular badge with a glyph on the red tram nose, centered directly below the front windows and above the main round headlamp. Replace that small badge area with uninterrupted vermilion-red painted tram body matching the surrounding printed-ink texture.\nConstraints: preserve the entire existing composition, dimensions, full-bleed framing, lone person, red tram shape, windows, lamps, overhead wires, street, buildings, dawn sky, paper texture, navy contours, golden light, palette, camera angle and all other details exactly. Do not add or rearrange anything. Keep the blank destination display blank. No words, letters, numbers, symbols, logos, watermarks or fake writing anywhere. This is a surgical removal of one small badge, not a redesign or global style transfer."
+        }
+      ],
+      "dimensions": {
+        "width": 1122,
+        "height": 1402
+      },
+      "format": "webp",
+      "transparency": false,
+      "source": {
+        "id": "city",
+        "path": "assets/art-source/city.png",
+        "width": 1122,
+        "height": 1402,
+        "format": "png",
+        "bytes": 2445419,
+        "transparency": false,
+        "sha256": "5ff1018fca53de8944725ac338d4caabfa45041a27f67ce2bf4774aed0b5d345",
+        "provenance": "PNG tEXt keyword impeccable:prompt"
+      },
+      "variants": [
+        {
+          "output_path": "public/art/city-640.webp",
+          "public_url": "/art/city-640.webp",
+          "dimensions": {
+            "width": 640,
+            "height": 800
+          },
+          "bytes": 117308,
+          "format": "webp",
+          "transparency": false,
+          "sha256": "c1e764064bf6d38f510f64ef2960fdf5eaaf6e6df69750ee8f40d56aa48c16aa",
+          "provenance_path": "public/art/city-640.webp.json",
+          "quality": 82
+        },
+        {
+          "output_path": "public/art/city-1122.webp",
+          "public_url": "/art/city-1122.webp",
+          "dimensions": {
+            "width": 1122,
+            "height": 1402
+          },
+          "bytes": 243666,
+          "format": "webp",
+          "transparency": false,
+          "sha256": "09929d71410b5e2b62e484d3b400b3d8a5b8a772b39230ba96026186b2592e47",
+          "provenance_path": "public/art/city-1122.webp.json",
+          "quality": 82
+        }
+      ],
+      "deviations": [
+        "Generated a coastal background and wet street at dawn; a single targeted edit removed the unwanted glyph-like badge."
+      ],
+      "qa_status": "accepted",
+      "qa_notes": "One targeted native edit removed the glyph-like tram-nose detail. Accepted after inspecting the edited tool result and final 640 px derivative; no readable lettering. A faint unlabeled circular hardware impression remains at full resolution."
+    }
+  ],
+  "direct": [],
+  "semantic": [
+    {
+      "id": "artwork-title-actions",
+      "implementation": "Render the world title, supporting text and primary action as semantic HTML headings, paragraphs and buttons above WorldArtwork. Position these in the bottom scenic area; code owns a navy contrast scrim wherever the actual text overlap requires it, especially neon.",
+      "notes": "Do not bake text or CTA graphics into an illustration. Test rendered text contrast and preserve accessible button labels.",
+      "qa_status": "needs_parent_review"
+    },
+    {
+      "id": "artwork-framing-responsive",
+      "implementation": "WorldArtwork should render an img with 640w and 1122w srcSet, route-appropriate sizes, explicit intrinsic width/height, object-fit: cover, and a deliberate object-position. CSS owns radius, clipping, frame, border, shadows, layout and any transform. Preserve the scene's main landmark and small traveller in hero crops; use the same raster family for book covers.",
+      "notes": "No crop or presentation chrome is baked into the files. Above-the-fold hero may load eagerly; offscreen covers should lazy-load. UI screenshot QA belongs to the builder.",
+      "qa_status": "needs_parent_review"
+    },
+    {
+      "id": "navigation-and-symbols",
+      "implementation": "Keep navigation, selection states, icons and progress indicators in HTML plus the project's vector/icon system; render focus, pressed, selected and loading states in code adjacent to the raster art.",
+      "notes": "Generated art is fictional atmosphere, never proof of functionality or a replacement for an operable control.",
+      "qa_status": "needs_parent_review"
+    }
+  ],
+  "optimization": {
+    "tool": "Bundled sharp",
+    "tool_path": "C:/Users/wangxr/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/sharp",
+    "quality": 82,
+    "effort": 6,
+    "crop": false,
+    "variants": [
+      640,
+      1122
+    ],
+    "shipping_raster_bytes": 1944400,
+    "all_640w_bytes": 564988,
+    "all_1122w_bytes": 1379412
+  },
+  "provenance": {
+    "png": "Exact latest tool prompt embedded via Impeccable embed-prompt.mjs in PNG tEXt.",
+    "webp": "Exact latest tool prompt in adjacent .webp.json sidecar generated by embed-prompt.mjs; preserve each sidecar with its asset.",
+    "full_history": "Every generation/edit prompt is preserved in generation_history and docs/ART_PROVENANCE.md.",
+    "scan": "12 rasters, 0 missing"
+  },
+  "execution_order": [
+    "Generate four individual images in parallel",
+    "Inspect each local PNG",
+    "Apply one city badge-cleanup edit",
+    "Embed exact prompts",
+    "Move generated PNG masters to assets/art-source",
+    "Create uncropped 640w/1122w WebP at quality 82",
+    "Embed exact prompt sidecars",
+    "Inspect final 640w derivatives and verify dimensions, hashes, prompt round-trip"
+  ],
+  "blockers": [],
+  "assumptions": [
+    "The parent supplied the settled code-first visual direction and scene briefs; no UI comp was created.",
+    "All images are original fictional illustrative atmosphere, not real-world photography or evidence.",
+    "PNG masters are non-public source assets; responsive WebP files are the only shipping raster set.",
+    "Native generated originals remain untouched in the Codex generated-images directory.",
+    "Semantic UI implementation and final crop/contrast testing are owned by the builder."
+  ]
+}

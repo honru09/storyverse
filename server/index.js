@@ -3,10 +3,16 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import { ApiError, createGeminiGenerator, MAX_REQUEST_BYTES } from './gemini.js'
+import { createAuthService } from './auth.js'
 
 const DEFAULT_DIST = fileURLToPath(new URL('../dist/', import.meta.url))
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2' }
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]'])
+const GENERATION_PAUSED = {
+  configured: false,
+  reason: 'generation-disabled',
+  message: '在线创作暂未开放。你仍可阅读已有故事和体验预设故事。',
+}
 
 function sendJson(response, status, payload) {
   if (response.destroyed || response.writableEnded) return
@@ -87,18 +93,28 @@ async function serveStatic(request, response, pathname, distDir) {
   response.end(request.method === 'HEAD' ? undefined : bytes)
 }
 
-export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), distDir = DEFAULT_DIST } = {}) {
+export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth = createAuthService({ env }), distDir = DEFAULT_DIST } = {}) {
+  // Explicit opt-out preserves existing deployments until the release owner sets it.
+  const generationEnabled = env.GENERATION_ENABLED !== 'false'
+  const authConfig = auth.config()
+  const authOrigin = authConfig.enabled ? `https://${authConfig.firebase.authDomain}` : null
+  const authScripts = authOrigin ? ' https://apis.google.com' : ''
+  const authConnections = authOrigin ? ` https://identitytoolkit.googleapis.com https://securetoken.googleapis.com ${authOrigin}` : ''
+  const authFrames = authOrigin ? `; frame-src ${authOrigin}` : ''
   const server = httpCreateServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff')
     response.setHeader('Referrer-Policy', 'no-referrer')
     response.setHeader('Cross-Origin-Resource-Policy', 'same-origin')
-    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+    response.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self'${authScripts}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${authConnections}; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'${authFrames}`)
     try {
       allowedRequest(request, server, env, request.method === 'POST')
       const pathname = new URL(request.url, 'http://localhost').pathname
       if ((pathname === '/api/health' || pathname === '/healthz') && request.method === 'GET') return sendJson(response, 200, { ok: true })
-      if (pathname === '/api/status' && request.method === 'GET') return sendJson(response, 200, generator.status())
+      if (pathname === '/api/status' && request.method === 'GET') return sendJson(response, 200, generationEnabled ? generator.status() : GENERATION_PAUSED)
+      if (pathname === '/api/auth/config' && request.method === 'GET') return sendJson(response, 200, auth.config())
+      if (pathname === '/api/account' && request.method === 'GET') return sendJson(response, 200, await auth.account(request.headers.authorization))
       if (pathname === '/api/generate' && request.method === 'POST') {
+        if (!generationEnabled) throw new ApiError(503, GENERATION_PAUSED.message)
         const body = await readJson(request)
         const result = await generator.generate(body)
         return sendJson(response, 200, result)

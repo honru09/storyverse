@@ -2,6 +2,12 @@
 
 本项目以一个 Cloud Run 服务同时承载 Vite 构建产物和 Node API。生产 AI 使用 Vertex AI 工作负载身份，不保存 API Key 或服务账号 JSON。
 
+## 当前状态与重放边界
+
+2026-10-22来源任务已确认：项目 `project-175c4bc7-52ff-4b6d-b53`、东京 `asia-northeast1`、服务 `storyweave`、公开访问、min=1/max=1、Global Standard PayGo。完整正式模型与成本规则见 [AI_CLOUD_DECISIONS.md](AI_CLOUD_DECISIONS.md)。本次仅接收同步，没有再次部署。
+
+**下方“首次配置／部署”是历史初次建站示例，min=0和私有访问不是当前配置。** 继续部署前核对现有服务、身份、环境变量和修订；不要直接照搬历史命令重建资源、改变用户确认的公开访问或最小实例设置。当前应用层身份、可信权益和用户额度仍需补齐，Cloud Run公开访问不等于生成请求已有授权和费用保障。
+
 ## 资源边界
 
 - Cloud Run 服务：`storyweave`

@@ -1,5 +1,9 @@
 .git/
 .github/
+.impeccable/
+assets/
+DESIGN.md
+PRODUCT.md
 .env
 .env.*
 !.env.example

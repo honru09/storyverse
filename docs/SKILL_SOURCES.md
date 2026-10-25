@@ -2,6 +2,20 @@
 
 核对日期：2026-10-22。本文是来源索引，记录可核对的原始仓库与入口路径；不表示这些 Skill 已安装、已应用或已生成视频。执行任务的主 Agent 应自行阅读对应 `SKILL.md` 及其要求的引用文件。
 
+## 当前UI重设计实际入口
+
+以下是本轮环境已提供并读取的入口，不把本机绝对路径当作其他机器也存在的安装保证。实际用途见 [SKILLS_USED.md](SKILLS_USED.md)。设计成果已固化于根DESIGN.md、页面简报和验收脚本，运行项目不依赖这些技能目录。
+
+| 入口 | 本机路径 | 可移植说明 |
+| --- | --- | --- |
+| Emil主规范 | `C:/Users/wangxr/.agents/skills/emil-design-eng/SKILL.md` | 用户指定的 [emilkowalski/skills](https://github.com/emilkowalski/skills) |
+| Impeccable | `C:/Users/wangxr/.codex/skills/impeccable/SKILL.md` | 本机4.1.2；使用new-work、craft-floor、visualize和document参考及规定的素材/复核/文档代理 |
+| frontend-design | `C:/Users/wangxr/.codex/skills/frontend-design/SKILL.md` | 本机可用设计指引；不为它虚构下载仓库 |
+| design-system | `C:/Users/wangxr/.codex/skills/frontend-design-system/SKILL.md` | 跨页面共享系统与组件约束 |
+| imagegen | `C:/Users/wangxr/.codex/skills/.system/imagegen/SKILL.md` | 系统提供的原生图像工具工作流；提示词已单独完整归档 |
+| writing-for-agents | `C:/Users/wangxr/.codex/skills/writing-for-agents/SKILL.md` | 事实、证据、限制与下一步分开记录 |
+| Playwright | `C:/Users/wangxr/.codex/skills/playwright-skill/SKILL.md` | 验证脚本已在仓库e2e/，可用项目Playwright依赖直接运行 |
+
 ## 已核对的仓库入口
 
 以下路径通过 GitHub 仓库 metadata 与 `git/trees/main?recursive=1` 核实；默认分支均为 `main`。

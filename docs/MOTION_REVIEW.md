@@ -43,7 +43,17 @@
 
 ## CSS 配合点
 
-输入属性由 `MotionProvider` 安装的观察器写入 `<html>`。已在 `styles.css` 合并 `html[data-input="keyboard"]` 样式：取消 transition / animation / smooth scrolling；键盘按下按钮不缩放；原生对话框打开时保持 `opacity: 1; transform: none`。用户随后要求全面重设计视觉，以上输入规则继续保留，配色与构图尚待新方向确认。
+输入属性由 `MotionProvider` 安装的观察器写入 `<html>`。已在 `styles.css` 合并 `html[data-input="keyboard"]` 样式：取消 transition / animation / smooth scrolling；键盘按下按钮不缩放；原生对话框打开时保持 `opacity: 1; transform: none`。用户选定「故事扉页」后，以上输入规则继续保留。
+
+## 故事扉页补充
+
+| Before | After | Why |
+| --- | --- | --- |
+| 世界用小图标表达，选中主要依靠底色。 | 同一世界的插画在选择、书架、预览与合流复用；选中立即出现勾选，图片在220ms内从1.04收至1。 | 状态先确认，动效只是收束注意力。 |
+| 桌面存在装饰性Vanta波浪。 | 新页面不导入Vanta/Three，背景由静态叙事插画承担。 | 画面承担故事信息，减少加载与闲置渲染；不是用持续动效装饰阅读。 |
+| 固定造世动作栏覆盖窄屏下方选择和模型告知。 | 继续/进入按钮随内容排列，设置与告知不被遮挡。 | 少一次界面干扰优于额外转场；动作仍可通过正常滚动触达。 |
+
+常规按压80ms/松开160ms、标题140ms、阶段220ms、面板180ms保持。全局关闭动效和系统减少动态会停止CSS过渡；键盘触发不等待图片收束。
 
 ## 验证
 

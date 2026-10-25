@@ -6,7 +6,7 @@
   gap: 0.5rem;
   min-height: 44px;
   padding: 0.6rem 0.85rem;
-  color: var(--paper);
+  color: var(--coral-soft);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 12px;
@@ -14,7 +14,7 @@
   font-size: 0.8rem;
   font-weight: 650;
   cursor: pointer;
-  transition: background-color 120ms ease;
+  transition: background-color 160ms ease;
 }
 .reader-directory-button:not(:disabled):active,
 button.chapter-item:not(:disabled):active,
@@ -96,25 +96,29 @@ button.chapter-item:disabled {
   cursor: pointer;
 }
 .reading-dialog {
-  --dialog-enter-y: 8px;
+  --dialog-enter-y: 12px;
   box-sizing: border-box;
-  width: min(100% - 2rem, 460px);
+  width: min(100% - 2rem, 480px);
   max-height: min(80dvh, 680px);
   padding: 1.5rem;
   color: var(--paper);
-  background: var(--ink-soft);
-  border: 2px solid var(--line-strong);
-  border-radius: 24px;
-  box-shadow: 0 18px 64px #1e242329;
+  background: var(--glass-strong, rgba(250, 252, 255, .86));
+  border: 1px solid rgba(255, 255, 255, .86);
+  border-radius: 28px;
+  box-shadow: 0 24px 70px rgba(22, 38, 66, .23);
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
+  backdrop-filter: blur(24px) saturate(165%);
   overscroll-behavior: contain;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #afbdd1 transparent;
 }
 .reading-dialog[open] {
   opacity: 1;
   transform: translateY(0);
   transition:
-    opacity 180ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
-    transform 180ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+    opacity 200ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform 220ms var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1));
 }
 /* Entry only: native close/React unmount still dismisses immediately. */
 @starting-style {
@@ -124,7 +128,10 @@ button.chapter-item:disabled {
   }
 }
 .reading-dialog::backdrop {
-  background: #1e242361;
+  background: rgba(23, 35, 56, .32);
+}
+.sheet-grabber {
+  display: none;
 }
 .reading-dialog-heading {
   display: flex;
@@ -134,7 +141,9 @@ button.chapter-item:disabled {
 }
 .reading-dialog h2 {
   margin: 0;
-  font-size: 1.2rem;
+  font-family: var(--font-ui);
+  font-weight: 750;
+  font-size: 1.4rem;
   letter-spacing: -0.02em;
 }
 .reading-dialog p {
@@ -145,11 +154,17 @@ button.chapter-item:disabled {
 .reading-dialog .icon-button {
   min-width: 44px;
   min-height: 44px;
+  background: var(--surface-tide);
+  border-radius: 50%;
 }
 .chapter-directory-list {
   display: grid;
   gap: 0;
   margin-top: 1rem;
+  padding-inline: 0.75rem;
+  border-radius: 18px;
+  background: var(--surface);
+  overflow: hidden;
 }
 .chapter-directory-list button {
   display: flex;
@@ -157,7 +172,7 @@ button.chapter-item:disabled {
   gap: 0.85rem;
   width: 100%;
   min-height: 56px;
-  padding: 0.9rem 0.6rem;
+  padding: 1rem 0.5rem;
   color: var(--paper);
   text-align: left;
   background: transparent;
@@ -166,15 +181,16 @@ button.chapter-item:disabled {
   border-radius: 0;
   font: inherit;
   cursor: pointer;
-  transition: background-color 120ms ease;
+  transition: background-color 160ms ease;
 }
 .chapter-directory-list button:last-child {
   border-bottom: 0;
 }
 .chapter-directory-list button[aria-current="page"] {
   border-color: transparent;
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface-tide);
+  color: var(--coral-soft);
 }
 .chapter-directory-list button:disabled {
   color: var(--muted);
@@ -193,7 +209,7 @@ button.chapter-item:disabled {
 }
 .chapter-directory-list strong {
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 650;
   overflow-wrap: anywhere;
 }
 .chapter-directory-list small {
@@ -213,7 +229,7 @@ button.chapter-item:disabled {
 .reading-dialog .rewrite-summary {
   padding: 1rem;
   background: var(--surface-peach);
-  border-radius: 14px;
+  border-radius: 16px;
 }
 @media (max-width: 700px) {
   .reading-dialog {
@@ -222,10 +238,18 @@ button.chapter-item:disabled {
     max-height: 85dvh;
     margin: auto 0 0;
     border-bottom: 0;
-    border-radius: 24px 24px 0 0;
+    border-radius: 28px 28px 0 0;
     padding: 1.25rem 1.25rem max(1.25rem, env(safe-area-inset-bottom));
     padding-left: max(1.25rem, env(safe-area-inset-left));
     padding-right: max(1.25rem, env(safe-area-inset-right));
+  }
+  .sheet-grabber {
+    display: block;
+    width: 36px;
+    height: 5px;
+    margin: -0.5rem auto 1rem;
+    border-radius: 3px;
+    background: #aeb9c9;
   }
   .reader-actions .reader-directory-button {
     min-width: 44px;
@@ -260,10 +284,17 @@ button.chapter-item:disabled {
 @media (prefers-reduced-transparency: reduce) {
   .reading-dialog {
     background: var(--ink-soft);
+    -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
+  .chapter-directory-list { background: var(--surface); }
 }
 @media (prefers-contrast: more) {
+  .reading-dialog {
+    background: var(--ink-soft);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
   .reading-dialog,
   .chapter-directory-list button {
     border-color: var(--paper);
@@ -272,4 +303,7 @@ button.chapter-item:disabled {
   .chapter-directory-list small {
     color: var(--paper);
   }
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .reading-dialog { background: var(--ink-soft); }
 }

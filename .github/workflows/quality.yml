@@ -20,13 +20,15 @@ jobs:
           PW_HEADLESS: 'true'
           PW_ARTIFACT_DIR: playwright-artifacts
         run: |
-          npm run preview -- --host 127.0.0.1 --port 4173 --strictPort &
+          PORT=4173 HOST=127.0.0.1 AUTH_ENABLED=false GENERATION_ENABLED=false GENAI_BACKEND=developer GEMINI_API_KEY='' node server/index.js &
           trap 'kill $(jobs -p)' EXIT
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:4173/ > /dev/null; then break; fi
             sleep 1
           done
           npm run test:e2e
+          npm run test:onboarding
+          npm run test:reader
       - uses: actions/upload-artifact@v4
         if: always()
         with:
