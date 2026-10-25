@@ -1,27 +1,28 @@
 ---
 name: "织界 Storyweave"
-description: "轻快 iOS 玻璃界面：原有叙事插画、清晰操作与安静阅读。"
+description: "一条朱线织世界：瓷白与墨的安静界面，蓝染做动作，朱线做签名，正文保持实色。"
 colors:
-  action-blue: "#0064d9"
-  action-hover: "#0059bf"
-  accent-blue: "#007aff"
-  link-blue: "#005ac4"
-  canvas: "#f5f7fb"
-  surface: "#fff"
-  text: "#172338"
-  secondary-text: "#46566d"
-  muted-text: "#526279"
-  divider: "#d6dfea"
-  soft-blue: "#e8f0ff"
-  soft-lavender: "#edf0ff"
-  secondary-action: "#e7effc"
-  selected-text: "#0053b5"
-  selected-surface: "#e6f0ff"
-  selected-border: "#7bb3f8"
-  glass: "rgba(255,255,255,.66)"
-  glass-strong: "rgba(250,252,255,.86)"
-  glass-dark: "rgba(17,30,48,.76)"
-  glass-edge: "rgba(255,255,255,.8)"
+  canvas: "#f2f3ef"
+  surface: "#ffffff"
+  ink: "#1a201c"
+  secondary-text: "#46524a"
+  muted-text: "#5a675d"
+  divider: "#d8dcd2"
+  line-strong: "#a9b3a4"
+  action: "#2f4bd2"
+  action-hover: "#263fae"
+  action-ink: "#ffffff"
+  soft-indigo: "#e3e8fa"
+  selected-text: "#22388f"
+  selected-surface: "#e3e8fa"
+  selected-border: "#2f4bd2"
+  thread: "#c23a1e"
+  thread-soft: "#f7ded4"
+  thread-ink: "#1a201c"
+  on-ink: "#f2f3ef"
+  on-ink-muted: "#b9c4ba"
+  error: "#b3261e"
+  success: "#2e7d43"
   reader-light-bg: "#f8faff"
   reader-light-text: "#24304a"
   reader-warm-bg: "#f6f0e5"
@@ -36,18 +37,17 @@ colors:
   reader-oled-text: "#d9dde5"
   reader-soft: "#e9f0fb"
   reader-border: "#d1dbe9"
-  reader-glass: "rgba(248, 250, 255, .88)"
 typography:
   display:
     fontFamily: '-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif'
     fontSize: "clamp(2rem, 8.4vw, 3rem)"
-    fontWeight: 750
+    fontWeight: 800
     lineHeight: 1.2
-    letterSpacing: "-0.035em"
+    letterSpacing: "-0.03em"
   headline:
     fontFamily: '-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif'
     fontSize: "clamp(1.6rem, 6.5vw, 2.2rem)"
-    fontWeight: 750
+    fontWeight: 800
     lineHeight: 1.3
     letterSpacing: "-0.025em"
   title:
@@ -76,14 +76,12 @@ typography:
     fontSize: "16px"
     fontWeight: 650
 rounded:
-  control: "14px"
-  selection: "16px"
-  grouped: "18px"
-  card: "20px"
-  overlay: "22px"
-  surface: "24px"
-  sheet: "28px"
-  nav: "30px"
+  control: "10px"
+  selection: "12px"
+  card: "16px"
+  surface: "20px"
+  sheet: "24px"
+  nav: "16px"
 spacing:
   small: "8px"
   field-gap: "10px"
@@ -95,35 +93,39 @@ spacing:
   group: "24px"
   section: "28px"
   wide-gutter: "36px"
+motion:
+  press: "120ms cubic-bezier(.23,1,.32,1)"
+  standard: "180ms cubic-bezier(.23,1,.32,1)"
+  sheet: "240ms cubic-bezier(.32,.72,0,1)"
 components:
   button-primary:
-    backgroundColor: "{colors.action-blue}"
-    textColor: "{colors.surface}"
+    backgroundColor: "{colors.action}"
+    textColor: "{colors.action-ink}"
     typography: "{typography.action}"
     rounded: "{rounded.control}"
     padding: "14px 21px"
   button-primary-hover:
     backgroundColor: "{colors.action-hover}"
   button-secondary:
-    backgroundColor: "{colors.secondary-action}"
-    textColor: "{colors.link-blue}"
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
     typography: "{typography.action}"
     rounded: "{rounded.control}"
     padding: "14px 21px"
   button-ghost:
-    backgroundColor: "{colors.secondary-action}"
-    textColor: "{colors.link-blue}"
+    backgroundColor: "{colors.soft-indigo}"
+    textColor: "{colors.selected-text}"
     typography: "{typography.action}"
     rounded: "{rounded.control}"
     padding: "14px 21px"
   text-field:
     backgroundColor: "{colors.surface}"
-    textColor: "{colors.text}"
+    textColor: "{colors.ink}"
     rounded: "{rounded.control}"
     padding: "12px 14px"
   choice-chip:
     backgroundColor: "{colors.surface}"
-    textColor: "{colors.text}"
+    textColor: "{colors.ink}"
     rounded: "{rounded.selection}"
     padding: "10px 8px"
   choice-chip-selected:
@@ -137,172 +139,139 @@ components:
   decision-card-selected:
     backgroundColor: "{colors.reader-soft}"
     textColor: "{colors.reader-light-text}"
-  reader-dock:
-    backgroundColor: "{colors.reader-glass}"
-    textColor: "{colors.reader-light-text}"
-    rounded: "26px"
-    padding: "9px 10px 7px"
-  reading-option:
-    backgroundColor: "{colors.reader-soft}"
-    rounded: "0.75rem"
-    padding: "0.4375rem"
-  reading-sheet:
-    backgroundColor: "{colors.glass-strong}"
-    textColor: "{colors.text}"
-    rounded: "{rounded.sheet}"
-    padding: "1.5rem"
+  nav-bar:
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.on-ink}"
+    rounded: "{rounded.nav}"
+    padding: "7px"
   grouped-surface:
-    backgroundColor: "{colors.glass}"
-    textColor: "{colors.text}"
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
     rounded: "{rounded.surface}"
 ---
 
-# Design System: 织界 Storyweave
+# Design System: 织界 Storyweave（2026-10-25 重构）
 
 ## Overview
 
-**Creative North Star: "轻盈的 iOS 故事界面"**
+**Design read：** 织界是一个由读者的选择一针一线织出来的故事世界；界面把「织线」定为全站唯一的签名，其余一切安静下来，让世界插画和故事正文做主角。
 
-以轻快、熟悉的 Apple iOS 材质承载个人故事：冷白画布、清晰蓝色动作、半透明界面层、系统字体与原有叙事插画。玻璃属于控件与导航，故事正文属于稳定实色页面；大圆角、细边界和柔和阴影表达层级，不恢复厚墨线的旧方案。
+**Creative North Star：「一条朱线，织出一个世界」**
 
-本规范记录已实现的界面，不是效果图提案。2026-10-22 用户明确指定的年轻、全站 iOS 毛玻璃方向覆盖旧「故事扉页」；系统字体、连续圆角与玻璃是明确选择。页面策略见 docs/UI_SURFACE_BRIEF.md，产品与上线边界见 PRODUCT.md。
+- **签名（boldness 只花在一处）：朱线 The Thread。** 一条 3px 朱红线以五种形态出现：首页主视觉标题上方的起针线、造世四步的线与结（stepper)、书架封面的书脊线、阅读进度的线、双书合流时两线并织。它是产品名字（织界）的字面兑现，不是装饰渐变。
+- **底色安静：** 冷调瓷白画布 + 实白表面 + 墨绿黑文字。没有玻璃、没有模糊、没有环境渐变。层级靠 1px 边线、留白和一档平阴影。
+- **动作单一：** 蓝染靛蓝只做可点的东西（按钮、链接、选中、焦点）。朱线永不做按钮底色，靛蓝永不做进度线。两个强调色各司其职，这是与「近黑+单一酸色」默认款拉开距离的结构。
+
+**反默认审查（design-qa §A)：** 不是暖奶油+高对比衬线+陶土（画布是冷调瓷白，展示字体是系统黑体，衬线只作为读者自选的正文字体）；不是近黑底+酸色（浅底、双强调色分工、朱红非酸色）；不是报纸细线密排（圆角 10–20px、单列呼吸感排版）。旧版「全站 Apple iOS 毛玻璃」是通用 Reflex 默认，本次按用户 2026-10-25 指令整体退役，理由记录于 docs/REDESIGN-2026-10-25.md。
 
 **Key Characteristics:**
 
-- 四个世界沿用原有插画；同一世界在首页、造世、书架、书城和合流中保持一致。
-- 蓝色表达操作与选择，实色正文和清楚的文字反馈保证可读性。
-- 手机优先、44px 触控、原生阅读滚动；专用阅读条与玻璃工具栏围绕实色正文，材质有实色替代。
+- 四个世界沿用原有插画与来源记录；同一世界在首页、造世、书架、书城和合流中保持一致。
+- 手机优先、44px 触控、原生阅读滚动；阅读六主题与全部阅读偏好原样保留（功能 token，不随品牌重构变动）。
 - 一次性、可中断的短动效；键盘、关闭动效和减少动态时立即到达终态。
 
 ## Colors
 
-冷白与深蓝灰构成基础，动作蓝提供清楚的操作方向，淡蓝／淡紫区分状态。frontmatter 是提取 token 的规范层；实际主题覆盖仍以样式源为准。
+frontmatter 是规范 token 层，与 src/styles.css 的 :root 变量一一对应（历史变量名 --ink/--paper 语义反转的别名问题在本次重构中一并改正：--ink 回到文字墨色，--paper 回到画布）。
 
 ### Primary
 
-- **动作蓝 / action-blue**：主要确认按钮；accent-blue 用于已选世界轮廓，link-blue 用于文字操作与焦点，action-hover 仅用于精细指针悬停。
-- **选择蓝**：selected-text、selected-surface、selected-border 同时服务性格、出身、语气与合流规则。
+- **蓝染 / action**：唯一动作色。主要按钮、链接、焦点环、选中边框。悬停只在精细指针下加深为 action-hover。
+- **选择靛**：selected-text / selected-surface / selected-border，服务性格、出身、语气与合流规则的已选状态。
+- **朱线 / thread**：只用于线形图形元素——进度、步进线与结、书脊线、标题起针线、导航当前项的结。永不做大面积底色，永不做正文文字色；thread-soft 仅作线结的浅色衬底。
 
 ### Neutral
 
-- **冷白画布 / canvas**、**实白表面 / surface**：普通页面与表单基底。
-- **深蓝灰 / text**、**次级蓝灰 / secondary-text**、**辅助蓝灰 / muted-text**：正文、说明和元数据；divider 用于细边界。
-- **淡蓝 / soft-blue**、**淡紫 / soft-lavender**：已完成选择、图标反馈与分组状态。
-- **浅玻璃 / glass**、**强玻璃 / glass-strong**、**深玻璃 / glass-dark**：分别服务分组表面、浮层与插画文字区；glass-edge 是高光边界，不是文字颜色。
-- **阅读主题**：浅色 light、暖色 warm、青绿 green、夜间 night、纯黑 oled，以及跟随设备浅／深外观的 system。颜色作用于正文、预览、阅读工具、面板与当前阅读视图外壳／桌面导航；离开阅读后不改其他页面。night 与自动深色共用夜间角色，纯黑有独立表面；完整角色见 src/reading-preferences.css，不将阅读主题升级为全站品牌配色。
+- **瓷白 / canvas**：冷调（带极轻绿灰）页面底色，与暖奶油明确区分。
+- **实白 / surface**：卡片、表单、面板基底。全部表面实色，`backdrop-filter` 全站退役。
+- **墨 / ink**、**secondary-text**、**muted-text**：三级文字，均在 canvas 与 surface 上达到 WCAG AA（实测值记入重构报告）。
+- **墨底 / ink 作为深色表面**：只用于三处——移动端底栏、首页主视觉文案板、桌面侧栏当前项。on-ink / on-ink-muted 是其上的文字对。
 
-**The Color Roles Rule.** 蓝色用于主要动作、链接与选中反馈；选中、错误和保存状态同时保留文字、勾选或语义属性，不只换颜色。
+### Reader themes（功能 token，豁免品牌审查）
 
-**The Alias Truth Rule.** 历史别名按当前值使用：--paper 是主文字，--ink 是页面底色，--serif 已指向系统 UI 字体；名称不是恢复旧视觉的理由。
+浅色、暖色、青绿、夜间、纯黑、跟随系统六主题的颜色对保持重构前数值不变。它们是读者偏好数据，不是品牌表面；阅读工具与面板继续按 reader-* 变量取色，但去掉玻璃模糊，改为实色 reader 表面。
+
+**The Two Accents Rule.** 靛蓝 = 能点的；朱线 = 故事走到哪了。任何新元素先回答属于哪一类，不许第三种用法。
+
+**The No Glass Rule.** 层级用边线、实色和阴影表达。降低透明度/高对比模式下不需要任何替代逻辑，因为本来就没有透明层。
 
 ## Typography
 
-**Display / UI Font:** 系统字体。--font-ui 是 UI 字体栈，--serif 仍只是该栈的历史别名，不恢复旧宋体展示标题。
+**Display / UI Font：** 系统字体栈，零下载。标题字重 800、字距 -0.03em，与旧版 750 拉开一档识别度；不使用衬线做展示（衬线展示+暖底是被禁的默认款）。
 
-**Reading Font:** 正文默认系统黑体，可明确选择设备宋体栈；章节标题随正文选择。设备没有指定宋体时回退浏览器 serif，不下载额外字体；操作和决策仍用 UI 栈。
-
-**Character:** 圆润、清楚、轻快。标题较紧，长文更松；这是一套按阅读任务形成的层级，不是固定比例字号阶梯。
+**Reading Font：** 正文默认系统黑体，可明确选择设备宋体栈；章节标题随正文选择。操作和决策控件永远用 UI 栈。
 
 ### Hierarchy
 
-- **Display**：首页插画上的书名；宽屏采用 clamp(2.6rem, 4.8vw, 3.4rem)，360px 及以下缩至 30px。已有书名另有更紧凑规格，允许长标题安全换行。
-- **Headline / Title**：当前造世问题与重复分区标题；通用 h1 为 clamp(2rem, 5vw, 3rem)，具体场景可收紧。
-- **Body**：frontmatter 记录实际阅读默认值。字号 14–32 号、每次 2 号，CSS 换算为 0.875–2rem，显示数值以 16px 根字号为基准，保留浏览器文字缩放；16／18／20／22 只是四个快捷预设。行高可选 1.6／1.8／2.05／2.3；字重 400／600。章节标题使用正文字体、650 字重、1.5 行高与 clamp(1.65rem, calc(var(--reader-font-size) * 1.45), 2.75rem)。
-- **Label / Action**：字段与按钮保持短中文；输入文字为 16px，辅助说明通常 12–14px，紧凑元数据有局部 10–11px 规格，不提升为正文标准。
-- **Wrapping**：标题 balance；标题与用户内容允许 anywhere 换行；只在书架摘要和阅读栏书名等紧凑位置截断，不截断正文。进度和章节编号用 tabular-nums。
-
-**The One System Voice Rule.** 界面标题与操作使用系统字体；阅读正文及章节标题可切换设备宋体，不把这个偏好传播到导航和决策控件。书名和操作文字始终是 HTML，不烘焙进插画。
+- **Display**：首页主视觉书名，clamp(2rem, 8.4vw, 3rem)；标题上方一条 36×3px 朱线（起针线）。
+- **Headline / Title**：造世问题与分区标题。
+- **Body**：阅读默认值沿用（14–32 号可调、行高 1.6/1.8/2.05/2.3、字重 400/600 等高级排版全部保留，见阅读偏好表，数值不变）。
+- **Label / Action**：短中文；输入文字 16px；进度与章节编号 tabular-nums。
+- **Wrapping**：标题 balance；用户内容 anywhere 换行；只在书架摘要等紧凑位截断，不截断正文。
 
 ## Layout
 
-手机单列优先，普通页上限 1120px、合流页上限 860px。常规横向留白是 mobile-gutter；360px 及以下为 16px，700px 起为 wide-gutter。顶部、底部、页边与面板保留 safe-area-inset。
+手机单列优先，普通页上限 1120px、合流页上限 860px。横向留白 mobile-gutter，360px 及以下 16px，700px 起 wide-gutter。安全区继续生效。
 
-- **导航**：非阅读页面保留粘性顶栏与四项悬浮胶囊底栏；底栏最大 480px，底部距安全区至少 12px。1050px 起切换为 88px 左导航。阅读时隐藏全局顶栏和手机导航，改用粘性阅读条与独立工具栏；桌面侧栏继续存在并服从当前阅读主题。
-- **造世**：四步、每页一个问题；世界选项手机两列。1049px 及以下主动作粘在底部导航上方，必须保留正文与错误提示的滚动空间。桌面增加 250px 侧预览。
-- **书籍**：书架横向原生滚动与 proximity 吸附；书城手机／700px／1050px 为两／三／四列。合流并置两本原书世界，不造第三主角。
-- **阅读**：实色区域铺满可用宽度，外围最大 58rem；窄／标准／宽页边距分别为 1／1.375／2rem，同时将正文最大行宽设为 44／38／32em。安全区继续生效，不再沿用固定 68ch。字号、排版和颜色立即生效，保留段落锚点，不插值文字几何。阅读工具栏最大 460px，底部至少 10px；页面预留 150px 底部空间，逐屏模式增至 210px，均叠加安全区。
-- **面板**：宽度 min(100% - 2rem, 480px)，通常最大高度 min(80dvh, 680px)；700px 及以下贴底，通常最高 85dvh，顶部圆角、底角接屏。内容较长的阅读设置单独允许 min(88dvh, 850px)，在面板内部原生滚动。
-- **滚动**：手机和阅读页始终保留原生上下滚动。可选「逐屏阅读」通过上一屏／下一屏即时纵向移动，按可用视口保留重叠；不是横向分页、滑动翻书或锁定滚动。PageUp／PageDown 与左右方向键仅在非输入、非按钮、非模态上下文处理。Lenis 仍仅用于符合原有条件的非阅读宽屏精细指针滚轮，空闲无 ticker。
+- **导航**：顶栏改实色 canvas + 1px 底边线，粘性保留。移动端底栏改墨底实色条（rounded nav 16px），当前项为白字 + 上方一枚朱线结（4px 圆点＋短线）。1050px 起 88px 左侧栏，实色 surface，当前项软靛底 + 左侧 3px 朱线。
+- **造世**：四步一问不变。步进器改「线与结」：一条底线贯通四步，已完成段为朱线、当前结为朱红实心圆环、未到段为线色；主动作在移动端继续粘底并保留滚动空间。
+- **书籍**：书架横向滚动与吸附不变；封面左缘加 3px 书脊线（该世界主题色或朱线）。书城两/三/四列断点不变。网格卡片固定几何：同行同高、槽位一致（design-qa §B)。
+- **阅读**：实色区域、行宽三档（44/38/32em）、150px 底部预留、逐屏模式等全部数值不变。章节进度条改朱线（3px，thread 色），这是朱线在阅读中的唯一形态。
+- **面板**：实色 surface + 1px 边线 + 平阴影；宽度/高度/贴底规则不变；把手保留为视觉提示。
 
 ## Elevation & Depth
 
-浅玻璃（16–20px blur）承载界面分组与导航，深玻璃承接插画文字，模态面板使用更强玻璃（24px blur）。深度来自透明层、1px 边界与软投影；首页和书封的投影略高，正文不制造悬浮感。阴影与材质精确值放在 .impeccable/design.json 的 extensions。
+两档：flat（0 1px 2px rgba(26,32,28,.06)）给卡片与分组；raised（0 8px 24px rgba(26,32,28,.10)）给主视觉、面板与底栏。深度不来自透明或模糊。
 
-**The Glass Around Prose Rule.** 玻璃建立导航、面板、分组操作与插画标签的层级；正文不透出插画、不套玻璃卡、不参与位移动画。
+**The Thread Is Flat Rule.** 朱线永远是平面图形，不带阴影、不发光、不渐变。
 
-**The Solid Fallback Rule.** 降低透明度、提高对比或不支持 backdrop-filter 时保留实色表面与清晰边界；任何信息都不能依赖模糊效果才可读。
-
-动效是有限的操作反馈：常规按下 80ms／缩放 0.98，松开与颜色过渡 160ms；阅读偏好控件用 120ms 反馈，亮屏开关拇指 140ms，专注模式仅让阅读条 160ms／8px 收起。GSAP 入场 220ms／8px、最多 30ms 间隔，章节标题仅 140ms 淡入；面板打开为 200ms 透明度与 220ms／12px 位移，关闭立即完成。键盘、关闭动效、系统减少动态时直接终态；省流量停用 JS 入场。排版、主题、跳转与逐屏移动不动画，业务状态不等动画回调。
+动效 tokens 见 frontmatter motion：按下 120ms / scale(.98)，常规过渡 180ms（只动 transform/opacity 与颜色），面板 240ms。自旧版继承的 GSAP 入场（220ms/8px、间隔 ≤30ms）、章节标题 140ms 淡入等数值不变；排版、主题、跳转不动画；业务状态不等动画回调；prefers-reduced-motion 时立即终态。
 
 ## Shapes
 
-主语言为连续、柔和的大圆角：14px 控件、16–20px 选择与分组、22–24px 玻璃面板、28px 首页／模态、30px 浮动导航。一般边界为 1px，世界选中框保留 2px；不是把所有局部轮廓统一成粗线。图标按钮为圆形，命中区仍至少 44×44px。标准图标使用内联 SVG，书名和状态文字保持可选择。
+圆角收紧一档以区别于旧玻璃语言：控件 10px、选择 12px、卡片 16px、表面 20px、面板 24px（顶部）、导航 16px。边线 1px 为常态，世界选中框 2px 靛蓝、书脊线与进度线 3px 朱线是仅有的加粗线。图标按钮圆形、命中区 ≥44×44px 不变。功能图标一律内联 SVG，不用 emoji（design-qa Floor）。
 
 ## Components
 
 ### Buttons
 
-主要按钮是蓝底白字、最小 52px；secondary 与 ghost 当前共享浅蓝底／蓝字，不代表透明按钮。首页深玻璃里的主要阅读动作是白底深字例外。只在精细指针下使用 hover；通用焦点为 3px 蓝色外轮廓、4px 偏移。disabled 真实阻止操作并降低透明度；等待状态保留文字。阅读目录行按下只换底色、不缩放。
+主要按钮：靛蓝底白字、最小 52px、圆角 10px。次要按钮：白底、1px line-strong 边、墨字（与旧版「secondary 与 ghost 同样式」明确分家）。ghost: 软靛底、选择靛字。焦点：3px 靛蓝外轮廓、4px 偏移。disabled 真实禁用。首页主视觉内的主动作是墨板上的白底墨字例外，其上方有起针线。
 
 ### Chips and grouped controls
 
-性格、出身与合流选项使用细线、白底和淡蓝选中态，保留勾选与 aria-pressed；命中高度 46–48px。步骤条、账号登录／注册和故事方式使用分段控件。可选经历是语义 switch：52×44px 外命中区，绿色开启轨道与白色拇指；状态位移无需等待动画。
+白底细线、软靛选中态 + 勾选与 aria-pressed 并存；命中高度 46–48px。可选经历 switch 的开启轨道改靛蓝（动作语义），不用绿色冒充品牌色；success 绿只用于「已保存」等真实状态文字与图标。
 
 ### Cards / containers
 
-分组表面使用浅玻璃和 soft shadow；能力是有分隔线的列表，不强制变成独立卡片。当前阅读决策卡最小 100px、1rem 内边距、1.125rem 圆角；高优先级主题规则让卡片使用 reader-surface／reader-soft，选中边界 reader-accent。说明与后果随阅读字号适度增大，但字体保留 UI 栈，选中同时有文字／图标语义。四个世界由 WorldArtwork 复用 640／1122 WebP，首屏 eager，其余 lazy；合流只并置两张来源图。
+实白表面 + 1px divider 边 + flat 阴影。能力列表用分隔线，不强拆成卡中卡。决策卡沿用 reader 变量（阅读上下文），选中同时有文字/图标语义。世界卡：插画满幅、底部文案改为实色墨板条（不再用深玻璃），选中时 2px 靛蓝框 + 左上朱线结标记。
 
 ### Inputs / fields
 
-16px 系统字、最小 52px、实白底、1px 边界、14px 圆角。标签在字段外，密码显示按钮保留可触达命中区。错误用真实 alert，进度和结果用 status；不凭文档发明未实现的通用错误字段变体。
+16px、最小 52px、实白底、1px 边线、10px 圆角。错误用真实 alert，进度与结果用 status。聚焦时边线变靛蓝 + 焦点环，不用发光阴影。
 
 ### Navigation and sheets
 
-普通底栏／桌面栏以 SVG、短标签和当前态表达位置。阅读专用粘性条承载返回、书名、章节与收藏；底部玻璃工具栏保留章节／本章百分比和目录、Aa 设置、查找、专注四项，主要触控高 48px。专注模式隐藏阅读条并将四项操作替换为明确的「退出专注阅读」；工具栏进度与逐屏按钮仍保留，不宣称浏览器全屏。
+见 Layout。ReadingDialog 保持原生模态、焦点归还、Esc/遮罩关闭。阅读条与工具栏改实色 reader 表面 + 1px reader-border。
 
-ReadingDialog 使用原生模态、锁定背景滚动、Esc／遮罩／关闭按钮退出，并恢复触发焦点。手机把手只是视觉提示，不承诺拖拽功能。
+### Reading preferences / location / tools / account
 
-### Reading preferences
-
-基础设置直接显示字号、六主题、字体、双段落预览、行距、阅读方式与亮屏开关；更多排版放入原生 details，选项用真实 radio，亮屏用语义 switch。面板内先玻璃容器、再实色分组，不层层叠加模糊。高级排版真实范围如下：
-
-| 设置 | 已实现选项 | 默认 |
-| --- | --- | --- |
-| 字重 | 400／600 | 400 |
-| 页边距／正文行宽 | 窄 1rem／44em；标准 1.375rem／38em；宽 2rem／32em | 标准 |
-| 段间距 | 0.6／1／1.4em | 1em |
-| 首行缩进 | 2em／0 | 2em |
-| 字间距 | 0／0.03／0.06em | 0 |
-| 对齐 | 左对齐／两端对齐，末行从起始侧对齐 | 左对齐 |
-
-偏好独立本机保存，兼容原三字段设置；失败时本页继续生效并告知，不改故事或章节进度。常亮默认关闭，仅在阅读页、浏览器支持且设备允许时请求 Screen Wake Lock；失败显示状态，离开阅读或关闭常亮开关时释放锁，不代替系统亮度控制。
-
-### Reading location and tools
-
-阅读位置按章节正文内容身份保存段落序号与段内比例，独立于故事书架；排版、窗口尺寸变化和返回阅读保留锚点。当前位置的「位置书签」可增删，与书籍「收藏」是两件事；只读副本与原作隔离，重写内容不复用旧分支锚点。存储失败明确提示，不影响正文。
-
-查找使用与正文同一 chapterForReading 输出，只搜索已开启章节；结果提供章节标题和片段，定位到对应段落，不提前开放剧情。保留空查询、无结果、本机书签为空等真实反馈，不把查找包装成全书剧透或语义检索。
-
-### Account
-
-账号面板保留 Google、邮箱登录／注册、重设密码、验证状态、重试与游客路径。未配置服务时禁用提交并优先提供游客继续；登录后仍明确本机书架、不自动上传或跨设备同步。Firebase 接入存在不等于真实远程账号已验收；UI 不可宣称付费权益或在线多人已经完成。
+功能、文案语义与数值全部不变；仅材质层跟随 No Glass Rule 改实色。账号面板的未配置禁用态、游客路径、本机书架提示保持诚实口径（见 PRODUCT.md)。
 
 ## Do's and Don'ts
 
 ### Do:
 
-- Do 复用当前系统字体、蓝色动作、细边界与大圆角；插画保持原文件与来源记录。
-- Do 保留至少 44px 的操作命中区、16px 输入文字、safe-area 与可见键盘焦点。
-- Do 把阅读偏好、段落位置和位置书签与故事数据分开；排版即时生效并保持锚点，搜索只用已开启的实际正文。
-- Do 让选择、生成、保存、失败与重试状态由真实业务数据驱动；关闭面板后恢复触发点焦点。
-- Do 在低透明度和高对比模式使用实色材质；六主题同时检查正文、阅读工具栏、面板和桌面导航。
-- Do 保留游客路径、本机书架与草稿；合流创建独立第三本书，不改写两本原作。
+- Do 让每个新表面先过 Two Accents Rule：能点的靛蓝，表进度的朱线，其余墨与瓷白。
+- Do 保留 ≥44px 命中区、16px 输入文字、safe-area 与可见焦点。
+- Do 让阅读偏好、段落定位、位置书签与故事数据分离保存，排版即时生效保持锚点。
+- Do 让选择、生成、保存、失败与重试状态由真实业务数据驱动。
+- Do 在 DESIGN.md token 之外不发明新颜色/圆角/时长；需要新值先改这里。
 
 ### Don't:
 
-- Don’t 恢复旧朱红／金黄粗轮廓或全站宋体展示标题；设备宋体只作为用户明确选择的阅读字体。
-- Don’t 为每段文字套卡片，或把装饰性英文眉题、单次局部数值变成全站规范。
-- Don’t 对正文做装饰性位移动画、逐字播放全文、添加循环粒子／WebGL 氛围或接管手机滚动；逐屏是用户发起的即时纵向导航，不是横向分页。
-- Don’t 因玻璃底色好看而降低文字对比，也不要把侧车合成色阶当作运行时 token。
-- Don’t 把未配置账号按钮做成可提交假入口，或宣称登录已经带来云同步、支付或多人书城。
-- Don’t 以动画完成作为选择确认、导航或存档的前提。
+- Don’t 恢复毛玻璃、backdrop-filter、环境径向渐变或把玻璃变量名带回来。
+- Don’t 把朱线做成按钮、底色块、渐变或发光效果；它永远是 3px 平面线。
+- Don’t 用暖奶油底 + 衬线展示标题（被禁默认款）；衬线只做读者自选正文。
+- Don’t 为每段文字套卡片，或把装饰性英文眉题变成规范。
+- Don’t 对正文做装饰位移动画、循环粒子/WebGL 氛围或接管手机滚动。
+- Don’t 把未配置账号按钮做成可提交假入口，或宣称云同步、支付、多人已完成。

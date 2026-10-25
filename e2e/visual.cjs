@@ -1,4 +1,4 @@
-// Bounded visual capture for the user-pinned iOS glass design. Fresh profiles only.
+// Bounded visual capture for the porcelain-and-thread design. Fresh profiles only.
 const { chromium } = require('playwright');
 const fs = require('node:fs');
 const os = require('node:os');

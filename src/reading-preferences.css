@@ -1,4 +1,4 @@
-/* Reader materials are scoped to this route. Prose stays solid; controls float. */
+/* Reader materials are scoped to this route. Prose and controls stay solid. */
 .page-reader[data-reader-theme],
 .reading-preferences-preview[data-reader-theme],
 .app-shell:has(.page-reader[data-reader-theme]) {
@@ -11,7 +11,7 @@
   --reader-accent: #005ac4;
   --reader-action: #0064d9;
   --reader-action-text: #ffffff;
-  --reader-glass: rgba(248, 250, 255, .88);
+  --reader-glass: #ffffff;
   --reader-shadow: 0 8px 28px rgba(27, 46, 79, .08);
   color-scheme: light;
 }
@@ -21,7 +21,7 @@
   --reader-bg: #f6f0e5; --reader-text: #443e36; --reader-secondary: #6d6051;
   --reader-surface: #fffaf1; --reader-soft: #ebe2d2; --reader-border: #d3c6b2;
   --reader-accent: #765035; --reader-action: #775035;
-  --reader-glass: rgba(255, 250, 241, .9);
+  --reader-glass: #fffaf1;
 }
 .page-reader[data-reader-theme="green"],
 .reading-preferences-preview[data-reader-theme="green"],
@@ -29,7 +29,7 @@
   --reader-bg: #e9f1e9; --reader-text: #293c32; --reader-secondary: #4f6759;
   --reader-surface: #f4faf3; --reader-soft: #dce9df; --reader-border: #bdd2c3;
   --reader-accent: #24613e; --reader-action: #24613e;
-  --reader-glass: rgba(239, 248, 239, .9);
+  --reader-glass: #f4faf3;
 }
 .page-reader[data-reader-theme="night"],
 .reading-preferences-preview[data-reader-theme="night"],
@@ -37,7 +37,7 @@
   --reader-bg: #19202c; --reader-text: #dbe2ee; --reader-secondary: #a8b4c9;
   --reader-surface: #242e3e; --reader-soft: #2d394e; --reader-border: #4a5a72;
   --reader-accent: #bed7ff; --reader-action: #aacdff; --reader-action-text: #142840;
-  --reader-glass: rgba(32, 43, 61, .91); --reader-shadow: 0 8px 28px rgba(0, 0, 0, .18);
+  --reader-glass: #242e3e; --reader-shadow: 0 8px 28px rgba(0, 0, 0, .18);
   color-scheme: dark;
 }
 .page-reader[data-reader-theme="oled"],
@@ -46,7 +46,7 @@
   --reader-bg: #000000; --reader-text: #d9dde5; --reader-secondary: #a5afbd;
   --reader-surface: #14171d; --reader-soft: #252c37; --reader-border: #434c5a;
   --reader-accent: #b9d6ff; --reader-action: #aacdff; --reader-action-text: #142840;
-  --reader-glass: rgba(14, 17, 23, .93); --reader-shadow: 0 8px 28px rgba(0, 0, 0, .3);
+  --reader-glass: #14171d; --reader-shadow: 0 8px 28px rgba(0, 0, 0, .3);
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -56,24 +56,26 @@
     --reader-bg: #19202c; --reader-text: #dbe2ee; --reader-secondary: #a8b4c9;
     --reader-surface: #242e3e; --reader-soft: #2d394e; --reader-border: #4a5a72;
     --reader-accent: #bed7ff; --reader-action: #aacdff; --reader-action-text: #142840;
-    --reader-glass: rgba(32, 43, 61, .91); --reader-shadow: 0 8px 28px rgba(0, 0, 0, .18);
+    --reader-glass: #242e3e; --reader-shadow: 0 8px 28px rgba(0, 0, 0, .18);
     color-scheme: dark;
   }
 }
 .page-reader[data-reader-theme],
 .app-shell:has(.page-reader[data-reader-theme]) {
-  --ink: var(--reader-bg); --ink-soft: var(--reader-surface); --ink-card: var(--reader-surface);
-  --paper: var(--reader-text); --paper-soft: var(--reader-secondary);
-  --muted: var(--reader-secondary); --muted-2: var(--reader-secondary);
-  --line: var(--reader-border); --line-strong: var(--reader-border); --surface: var(--reader-surface);
-  --surface-tide: var(--reader-soft); --surface-peach: var(--reader-soft);
+  --paper: var(--reader-bg); --canvas: var(--reader-bg);
+  --ink: var(--reader-text); --ink-soft: var(--reader-surface); --ink-card: var(--reader-surface);
+  --secondary-text: var(--reader-secondary); --paper-soft: var(--reader-secondary);
+  --muted: var(--reader-secondary); --muted-2: var(--reader-secondary); --muted-text: var(--reader-secondary);
+  --line: var(--reader-border); --line-strong: var(--reader-border); --divider: var(--reader-border); --surface: var(--reader-surface);
+  --surface-tide: var(--reader-soft); --surface-peach: var(--reader-soft); --soft-indigo: var(--reader-soft);
+  --selected-text: var(--reader-accent); --selected-surface: var(--reader-soft); --selected-border: var(--reader-accent);
   --coral-soft: var(--reader-accent); --mint: var(--reader-accent); --coral: var(--reader-action);
-  --action: var(--reader-action); --action-ink: var(--reader-action-text);
-  --glass: var(--reader-glass); --glass-strong: var(--reader-glass); --glass-edge: var(--reader-border);
+  --action: var(--reader-action); --action-hover: var(--reader-action); --action-ink: var(--reader-action-text);
+  --glass: var(--reader-surface); --glass-strong: var(--reader-surface); --glass-edge: var(--reader-border);
   color: var(--reader-text); background: var(--reader-bg);
 }
 .app-shell:has(.page-reader[data-reader-theme]) :is(.topbar, .sidebar, .mobile-bottom-nav) {
-  color: var(--reader-text); background: var(--reader-glass); border-color: var(--reader-border);
+  color: var(--reader-text); background: var(--reader-surface); border-color: var(--reader-border);
 }
 .app-shell:has(.page-reader[data-reader-theme]) :is(.side-nav-item.active, .mobile-bottom-nav button.active) {
   color: var(--reader-accent); background: var(--reader-soft);
@@ -106,14 +108,14 @@
 .page-reader[data-reader-theme] .reader-topline {
   padding: .5rem .625rem .75rem; margin-inline: -.375rem;
   border: 1px solid var(--reader-border); border-radius: 1.375rem;
-  background: var(--reader-glass); box-shadow: var(--reader-shadow);
-  -webkit-backdrop-filter: blur(18px) saturate(145%); backdrop-filter: blur(18px) saturate(145%);
+  background: var(--reader-surface); box-shadow: var(--reader-shadow);
+   
 }
 .page-reader[data-reader-theme] .reader-chapter { padding-inline: .375rem; }
 .page-reader[data-reader-theme] .chapter-progress { background: var(--reader-border); }
 .page-reader[data-reader-theme] .chapter-progress i { background: var(--reader-accent); }
 .page-reader[data-reader-theme] .reading-dialog {
-  color: var(--reader-text); background: var(--reader-glass); border-color: var(--reader-border);
+  color: var(--reader-text); background: var(--reader-surface); border-color: var(--reader-border);
 }
 .page-reader[data-reader-theme] :is(.choice-block, .sw-next-action, .reading-end, .chapter-navigation, .article-footer) {
   font-family: var(--font-ui); letter-spacing: 0; font-weight: 400;
@@ -133,9 +135,9 @@
 .page-reader[data-reader-theme] .button-secondary { color: var(--reader-accent); background: var(--reader-soft); }
 .page-reader[data-reader-theme] ::selection { color: var(--reader-text); background: var(--reader-soft); }
 
-/* One primary layer of glass, then solid grouped controls for dependable contrast. */
+/* Solid reader surfaces and grouped controls for dependable contrast. */
 .reading-preferences {
-  --preferences-accent: var(--reader-accent, #005ac4); --preferences-soft: var(--reader-soft, #e9f0fb);
+  --preferences-accent: var(--reader-accent, #2f4bd2); --preferences-soft: var(--reader-soft, #e9f0fb);
   --preferences-surface: var(--reader-surface, #fff); --preferences-border: var(--reader-border, #d1dbe9);
   --preferences-text: var(--reader-text, #24304a); --preferences-secondary: var(--reader-secondary, #59667c);
   color: var(--preferences-text); font-family: var(--font-ui); font-size: 1rem;
@@ -220,7 +222,7 @@ html[data-input="keyboard"] .reading-preference-option:active > span { transform
 @media (prefers-reduced-transparency: reduce) {
   .page-reader[data-reader-theme] :is(.reader-topline, .reading-dialog),
   .app-shell:has(.page-reader[data-reader-theme]) :is(.topbar, .sidebar, .mobile-bottom-nav) {
-    background: var(--reader-surface); -webkit-backdrop-filter: none; backdrop-filter: none;
+    background: var(--reader-surface);  
   }
 }
 @media (prefers-contrast: more) {
@@ -228,10 +230,6 @@ html[data-input="keyboard"] .reading-preference-option:active > span { transform
   .reading-preference-option input:checked + span { outline: 2px solid currentColor; outline-offset: -3px; }
   .page-reader[data-reader-theme] :is(.reader-topline, .reading-dialog),
   .app-shell:has(.page-reader[data-reader-theme]) :is(.topbar, .sidebar, .mobile-bottom-nav) {
-    background: var(--reader-surface); border-color: var(--reader-text); -webkit-backdrop-filter: none; backdrop-filter: none;
+    background: var(--reader-surface); border-color: var(--reader-text);  
   }
-}
-@supports not (backdrop-filter: blur(1px)) {
-  .page-reader[data-reader-theme] :is(.reader-topline, .reading-dialog),
-  .app-shell:has(.page-reader[data-reader-theme]) :is(.topbar, .sidebar, .mobile-bottom-nav) { background: var(--reader-surface); }
 }

@@ -6,7 +6,7 @@
   gap: 0.5rem;
   min-height: 44px;
   padding: 0.6rem 0.85rem;
-  color: var(--coral-soft);
+  color: var(--action);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 12px;
@@ -56,7 +56,7 @@ button.chapter-item:disabled {
 }
 .chapter-navigation .reader-directory-button {
   flex-shrink: 0;
-  color: var(--paper-soft);
+  color: var(--secondary-text);
 }
 .reading-end {
   margin-block: 2rem 1rem;
@@ -73,7 +73,7 @@ button.chapter-item:disabled {
   margin-block: 0.6rem;
 }
 .reading-end p {
-  color: var(--paper-soft);
+  color: var(--secondary-text);
   font-size: 0.9rem;
   line-height: 1.7;
 }
@@ -101,17 +101,17 @@ button.chapter-item:disabled {
   width: min(100% - 2rem, 480px);
   max-height: min(80dvh, 680px);
   padding: 1.5rem;
-  color: var(--paper);
-  background: var(--glass-strong, rgba(250, 252, 255, .86));
-  border: 1px solid rgba(255, 255, 255, .86);
-  border-radius: 28px;
-  box-shadow: 0 24px 70px rgba(22, 38, 66, .23);
-  -webkit-backdrop-filter: blur(24px) saturate(165%);
-  backdrop-filter: blur(24px) saturate(165%);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sheet, 24px);
+  box-shadow: var(--shadow-raised, 0 8px 24px rgba(26,32,28,.10));
+  
+  
   overscroll-behavior: contain;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: #afbdd1 transparent;
+  scrollbar-color: var(--line-strong) transparent;
 }
 .reading-dialog[open] {
   opacity: 1;
@@ -147,7 +147,7 @@ button.chapter-item:disabled {
   letter-spacing: -0.02em;
 }
 .reading-dialog p {
-  color: var(--paper-soft);
+  color: var(--secondary-text);
   font-size: 0.85rem;
   line-height: 1.7;
 }
@@ -162,7 +162,7 @@ button.chapter-item:disabled {
   gap: 0;
   margin-top: 1rem;
   padding-inline: 0.75rem;
-  border-radius: 18px;
+  border-radius: var(--radius-card, 16px);
   background: var(--surface);
   overflow: hidden;
 }
@@ -173,7 +173,7 @@ button.chapter-item:disabled {
   width: 100%;
   min-height: 56px;
   padding: 1rem 0.5rem;
-  color: var(--paper);
+  color: var(--ink);
   text-align: left;
   background: transparent;
   border: 0;
@@ -188,9 +188,9 @@ button.chapter-item:disabled {
 }
 .chapter-directory-list button[aria-current="page"] {
   border-color: transparent;
-  border-radius: 14px;
+  border-radius: var(--radius-selection, 12px);
   background: var(--surface-tide);
-  color: var(--coral-soft);
+  color: var(--action);
 }
 .chapter-directory-list button:disabled {
   color: var(--muted);
@@ -214,7 +214,7 @@ button.chapter-item:disabled {
 }
 .chapter-directory-list small {
   font-size: 0.72rem;
-  color: var(--paper-soft);
+  color: var(--secondary-text);
 }
 .reading-dialog-actions {
   display: flex;
@@ -238,7 +238,7 @@ button.chapter-item:disabled {
     max-height: 85dvh;
     margin: auto 0 0;
     border-bottom: 0;
-    border-radius: 28px 28px 0 0;
+    border-radius: 24px 24px 0 0;
     padding: 1.25rem 1.25rem max(1.25rem, env(safe-area-inset-bottom));
     padding-left: max(1.25rem, env(safe-area-inset-left));
     padding-right: max(1.25rem, env(safe-area-inset-right));
@@ -249,7 +249,7 @@ button.chapter-item:disabled {
     height: 5px;
     margin: -0.5rem auto 1rem;
     border-radius: 3px;
-    background: #aeb9c9;
+    background: var(--line-strong);
   }
   .reader-actions .reader-directory-button {
     min-width: 44px;
@@ -284,26 +284,19 @@ button.chapter-item:disabled {
 @media (prefers-reduced-transparency: reduce) {
   .reading-dialog {
     background: var(--ink-soft);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
   }
   .chapter-directory-list { background: var(--surface); }
 }
 @media (prefers-contrast: more) {
   .reading-dialog {
     background: var(--ink-soft);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
   }
   .reading-dialog,
   .chapter-directory-list button {
-    border-color: var(--paper);
+    border-color: var(--ink);
   }
   .reading-dialog p,
   .chapter-directory-list small {
-    color: var(--paper);
+    color: var(--ink);
   }
-}
-@supports not (backdrop-filter: blur(1px)) {
-  .reading-dialog { background: var(--ink-soft); }
 }
