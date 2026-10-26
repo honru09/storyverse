@@ -1756,7 +1756,7 @@ function Store({ onNavigate, onOpenBook, onOpenOwn, publications }) {
   );
 }
 
-function Merge({ activeStory, stories, onNavigate, onMerged, provider }) {
+function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClient, onAuthRequired }) {
   const operation = useRef(null);
   const candidate = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -1806,7 +1806,11 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider }) {
       let next = candidate.current.story;
       if (engine === "gemini") {
         next = { ...next, engine: "gemini" };
-        next = acceptGeneratedChapter(next, await requestChapter(next, 0, { signal: controller.signal }));
+        next = acceptGeneratedChapter(next, await requestChapter(next, 0, {
+          signal: controller.signal,
+          getAccessToken: () => authClient.getAccessToken(),
+          onAuthRequired,
+        }));
       } else next = materialize(next, 2);
       if (controller.signal.aborted) return;
       onMerged?.(next);
@@ -2208,7 +2212,7 @@ function App() {
   const prepareChapter = useCallback(async (id, index, signal) => {
     const source = store.getSnapshot().library.stories.find((book) => book.id === id);
     if (!source || nextGenerationIndex(source) !== index) return;
-    const result = await requestChapter(source, index, { signal });
+    const result = await requestChapter(source, index, { signal, getAccessToken: () => authClient.getAccessToken() });
     if (signal.aborted) return;
     setLibrary((current) => {
       const latest = current.stories.find((book) => book.id === id);
@@ -2239,7 +2243,11 @@ function App() {
       let story = opening.current.story;
       if (engine === "gemini") {
         story = { ...story, engine: "gemini" };
-        story = acceptGeneratedChapter(story, await requestChapter(story, 0, { signal }));
+        story = acceptGeneratedChapter(story, await requestChapter(story, 0, {
+          signal,
+          getAccessToken: () => authClient.getAccessToken(),
+          onAuthRequired: () => { setAccountIntent(null); setAccountOpen(true); },
+        }));
       } else story = seedStory(story);
       if (signal.aborted) return;
       setLibrary((current) => ({
@@ -2339,6 +2347,8 @@ function App() {
         }
         onNavigate={(next, id) => (id ? openOwnReader(id) : navigate(next))}
         onMerged={addMergedStory}
+        authClient={authClient}
+        onAuthRequired={() => { setAccountIntent(null); setAccountOpen(true); }}
       />
     );
   else

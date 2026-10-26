@@ -61,7 +61,7 @@ test('Google authentication waits for the server identity check before becoming 
   reply.resolve(Response.json({ user: profile }))
   await login
   assert.equal(client.getSnapshot().status, 'authenticated')
-  assert.deepEqual(client.getSnapshot().user, profile)
+  assert.deepEqual(client.getSnapshot().user, { ...profile, provider: 'firebase' })
   assert.equal(await client.getIdToken(), 'fixture-token')
   await client.signOut()
   assert.equal(client.getSnapshot().status, 'guest')

@@ -54,12 +54,21 @@ export async function generationStatus({ fetchImpl = globalThis.fetch, signal } 
   }
 }
 
-export async function requestChapter(story, index, { fetchImpl = globalThis.fetch, signal } = {}) {
+export async function requestChapter(story, index, { fetchImpl = globalThis.fetch, signal, getAccessToken, onAuthRequired } = {}) {
   const timeout = AbortSignal.timeout(65000)
+  const headers = { 'Content-Type': 'application/json' }
+  if (getAccessToken) {
+    // Either sign-in channel can supply the bearer token. A guest simply
+    // sends no header: the server answers 401 when auth is switched on.
+    try {
+      const token = await getAccessToken()
+      if (typeof token === 'string' && token) headers.Authorization = `Bearer ${token}`
+    } catch { /* token unavailable; the server decides */ }
+  }
   let response
   try {
     response = await fetchImpl('/api/generate', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers,
       body: JSON.stringify({ story, index }),
       signal: AbortSignal.any([timeout, ...(signal ? [signal] : [])]),
     })
@@ -70,6 +79,12 @@ export async function requestChapter(story, index, { fetchImpl = globalThis.fetc
   let result
   try { result = await response.json() } catch { throw new Error('章节暂时未能接上，请重试。') }
   if (!response.ok) {
+    // Server error text is never shown; stable codes map to fixed copy here.
+    if (response.status === 401 || result?.code === 'auth-required') {
+      onAuthRequired?.()
+      throw new Error('请先登录，再继续在线创作。登录后这一章会接着生成。')
+    }
+    if (result?.code === 'quota-exceeded') throw new Error('今天的生成额度已用完，请明天再继续创作。你的故事和进度都已保存。')
     const messages = { 429: '请求较多，请稍后再试。', 503: '在线创作暂不可用，已保存的章节仍可阅读。请稍后再试。', 504: '这一章等待较久，进度已保留，请重试。' }
     throw new Error(messages[response.status] || '这一章暂时没能接上，进度已保留，请重试。')
   }

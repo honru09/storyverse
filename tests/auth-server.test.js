@@ -69,6 +69,8 @@ test('account uses verified claims and grants neither paid privileges nor cloud 
   assert.equal(response.status, 200)
   assert.deepEqual(await response.json(), {
     user: { uid: 'reader-1', email: 'reader@example.com', displayName: '读者', emailVerified: true },
+    provider: 'firebase',
+    usage: { prompt: 0, candidates: 0, thoughts: 0, cached: 0, total: 0, generations: 0, updatedAt: null },
     storage: 'local', entitlements: null, subscription: null,
   })
 })

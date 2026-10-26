@@ -70,6 +70,25 @@ async function readJson(request) {
   } catch { throw new ApiError(400, '章节请求格式有误，请重试。') }
 }
 
+async function readAuthJson(request) {
+  if (request.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
+    throw new ApiError(415, '请使用 JSON 格式提交。')
+  }
+  if (Number(request.headers['content-length']) > 16 * 1024) throw new ApiError(413, '请求数据过大。')
+  const chunks = []
+  let length = 0
+  for await (const chunk of request) {
+    length += chunk.length
+    if (length > 16 * 1024) throw new ApiError(413, '请求数据过大。')
+    chunks.push(chunk)
+  }
+  try {
+    const result = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error()
+    return result
+  } catch { throw new ApiError(400, '请求格式有误，请重试。') }
+}
+
 async function serveStatic(request, response, pathname, distDir) {
   let decoded
   try { decoded = decodeURIComponent(pathname) } catch { throw new ApiError(400, '页面地址无效。') }
@@ -125,15 +144,47 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
       }
       if (pathname === '/api/auth/config' && request.method === 'GET') return sendJson(response, 200, auth.config())
       if (pathname === '/api/account' && request.method === 'GET') return sendJson(response, 200, await auth.account(request.headers.authorization))
+      if (pathname === '/api/auth/email/start' && request.method === 'POST') {
+        if (typeof auth.emailStart !== 'function') throw new ApiError(503, '邮箱验证码服务尚未配置，请使用其他方式登录。')
+        return sendJson(response, 200, await auth.emailStart(await readAuthJson(request)))
+      }
+      if (pathname === '/api/auth/email/verify' && request.method === 'POST') {
+        if (typeof auth.emailVerify !== 'function') throw new ApiError(503, '邮箱验证码服务尚未配置，请使用其他方式登录。')
+        return sendJson(response, 200, await auth.emailVerify(await readAuthJson(request)))
+      }
+      if (pathname === '/api/auth/email/signout' && request.method === 'POST') {
+        if (typeof auth.emailSignOut !== 'function') throw new ApiError(503, '邮箱验证码服务尚未配置，请使用其他方式登录。')
+        return sendJson(response, 200, await auth.emailSignOut(request.headers.authorization))
+      }
       if (pathname === '/api/generate' && request.method === 'POST') {
         if (!generationEnabled) throw new ApiError(503, GENERATION_PAUSED.message)
+        // Once auth is switched on, paid generation is no longer public: a
+        // valid identity from either channel is required, with a per-user
+        // daily token cap checked before the provider is called. Usage
+        // storage outages fail open (see server/usage.js) so bookkeeping
+        // problems can never take generation down with them.
+        let identity = null
+        if (typeof auth.requiresIdentity === 'function' && auth.requiresIdentity()) {
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再继续在线创作。', 'auth-required')
+            throw error
+          }
+          const usedToday = await auth.usageDailyTotal(identity.uid)
+          if (usedToday !== null && usedToday >= auth.dailyTokenCap()) {
+            throw new ApiError(429, '今天的生成额度已用完，请明天再继续创作。', 'quota-exceeded')
+          }
+        }
         const body = await readJson(request)
         const result = await generator.generate(body)
-        // Usage ledger: model, story/chapter ids and token counts only — never
-        // prose. Best effort: a logging failure must not fail the chapter.
+        // Usage ledger: identity, model, story/chapter ids and token counts
+        // only — never prose. Best effort: a logging failure must not fail
+        // the chapter.
         try {
           process.stdout.write(`${JSON.stringify({
             type: 'generation-usage',
+            uid: identity?.uid ?? null,
             model: modelForLedger(),
             storyId: typeof body.story?.id === 'string' ? body.story.id : null,
             chapter: body.index + 1,
@@ -141,13 +192,16 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             usage: result?.usage ?? 'unknown',
           })}\n`)
         } catch { /* ledger is best-effort */ }
+        if (identity) await auth.recordUsage(identity.uid, result?.usage ?? 'unknown')
         return sendJson(response, 200, result)
       }
       if (pathname.startsWith('/api/')) throw new ApiError(404, '接口不存在。')
       if (request.method !== 'GET' && request.method !== 'HEAD') throw new ApiError(405, '此操作不支持。')
       await serveStatic(request, response, pathname, distDir)
     } catch (error) {
-      sendJson(response, error instanceof ApiError ? error.status : 502, { error: error instanceof ApiError ? error.message : '服务暂时无法完成请求，请稍后重试。' })
+      const payload = { error: error instanceof ApiError ? error.message : '服务暂时无法完成请求，请稍后重试。' }
+      if (error instanceof ApiError && error.code) payload.code = error.code
+      sendJson(response, error instanceof ApiError ? error.status : 502, payload)
     }
   })
   server.requestTimeout = 70_000

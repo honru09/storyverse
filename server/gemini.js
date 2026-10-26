@@ -15,7 +15,14 @@ const record = (value) => value !== null && typeof value === 'object' && !Array.
 const clone = (value) => structuredClone(value)
 
 export class ApiError extends Error {
-  constructor(status, message) { super(message); this.name = 'ApiError'; this.status = status }
+  constructor(status, message, code) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    // Optional stable machine code the client maps to its own fixed copy; the
+    // human message stays server-side and is never trusted by the client.
+    if (code !== undefined) this.code = code
+  }
 }
 
 const textSchema = (description) => ({ type: 'string', description })

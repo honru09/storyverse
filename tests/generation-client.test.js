@@ -103,3 +103,30 @@ test('chapter requests carry the pinned genre template id to the server', async 
   assert.equal(sent.story.config.genreTemplateId, 'scifi')
   assert.equal(sent.index, 0)
 })
+
+test('chapter requests attach the current access token when one is available', async () => {
+  const story = fresh()
+  const result = resultFor(story, 0)
+  let headers
+  const fetchImpl = async (_url, options) => { headers = options.headers; return Response.json(result) }
+  await requestChapter(story, 0, { fetchImpl, getAccessToken: async () => 'session-token-1' })
+  assert.equal(headers.Authorization, 'Bearer session-token-1')
+  await requestChapter(story, 0, { fetchImpl, getAccessToken: async () => null })
+  assert.equal(headers.Authorization, undefined, 'guests send no authorization header')
+  await requestChapter(story, 0, { fetchImpl, getAccessToken: async () => { throw new Error('token store unavailable') } })
+  assert.equal(headers.Authorization, undefined, 'a failing token source never blocks the request itself')
+})
+
+test('a 401 from generation tells the user to sign in first and fires the hook once', async () => {
+  let prompts = 0
+  const fetchImpl = async () => Response.json({ error: 'server copy is not shown', code: 'auth-required' }, { status: 401 })
+  await assert.rejects(requestChapter(fresh(), 0, { fetchImpl, onAuthRequired: () => { prompts++ } }), /请先登录，再继续在线创作/)
+  assert.equal(prompts, 1)
+  const bareFetch = async () => Response.json({ error: 'x' }, { status: 401 })
+  await assert.rejects(requestChapter(fresh(), 0, { fetchImpl: bareFetch }), /请先登录/)
+})
+
+test('the daily quota response maps to a clear quota message, not the generic 429 copy', async () => {
+  const fetchImpl = async () => Response.json({ error: 'server copy is not shown', code: 'quota-exceeded' }, { status: 429 })
+  await assert.rejects(requestChapter(fresh(), 0, { fetchImpl }), /今天的生成额度已用完/)
+})
