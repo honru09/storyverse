@@ -72,13 +72,13 @@ function validateConfig(config, prefix, errors, merged = false) {
     return
   }
   validateOptionalFields(config, prefix, CONFIG_TEXT_FIELDS, 'string', errors)
-  validateOptionalFields(config, prefix, ['immersive'], 'boolean', errors)
+  validateOptionalFields(config, prefix, ['immersive', 'worldChosen'], 'boolean', errors)
   validateOptionalFields(config, prefix, ['seasonNumber'], 'number', errors)
   if (config.storyLengthMode !== undefined && !['short', 'season', 'long'].includes(config.storyLengthMode)) {
     errors.push(`${prefix}.storyLengthMode is invalid`)
   }
-  if (config.step !== undefined && (!Number.isInteger(config.step) || config.step < 1 || config.step > 6)) {
-    errors.push(`${prefix}.step must be an integer from 1 to 6`)
+  if (config.step !== undefined && (!Number.isInteger(config.step) || config.step < 1 || config.step > 7)) {
+    errors.push(`${prefix}.step must be an integer from 1 to 7`)
   }
   if (config.sourceGenres !== undefined) validateStringArray(config.sourceGenres, `${prefix}.sourceGenres`, errors)
   if (merged || config.protagonists !== undefined) {

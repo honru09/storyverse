@@ -11,6 +11,8 @@ function GoogleMark() {
 export default function AccountPanel({ client, account, onContinue }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [usernameRegister, setUsernameRegister] = useState(false);
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [cooldown, setCooldown] = useState(0);
@@ -31,16 +33,21 @@ export default function AccountPanel({ client, account, onContinue }) {
       setLocalError("");
       setPassword("");
       setCode("");
+      setUsername("");
+      setUsernameRegister(false);
     }
   }, [account.user]);
   const busy = pending || account.busy || account.status === "loading";
   const passwordAvailable = Boolean(account.config?.providers?.email);
   const codeAvailable = Boolean(account.config?.emailCode);
-  const configured = Boolean(account.config?.enabled || codeAvailable);
+  const usernameAvailable = Boolean(account.config?.providers?.username);
+  const configured = Boolean(account.config?.enabled || codeAvailable || usernameAvailable);
   // The full form is always rendered; unavailable channels are disabled in
-  // place. Untouched, the form prefers the email-code channel when it is the
-  // only one this deployment actually offers.
-  const activeMode = mode === "reset" ? "reset" : (!modeTouched.current && mode === "login" && !passwordAvailable && codeAvailable ? "code" : mode);
+  // place. Untouched, the form prefers a site channel when it is the only
+  // one this deployment actually offers (email code first, then username).
+  const preferCode = !modeTouched.current && mode === "login" && !passwordAvailable && codeAvailable;
+  const preferUsername = !modeTouched.current && mode === "login" && !passwordAvailable && !codeAvailable && usernameAvailable;
+  const activeMode = mode === "reset" ? "reset" : preferUsername ? "username" : preferCode ? "code" : mode;
   const error = localError || account.error;
   const usage = account.user ? account.usage : null;
   useEffect(() => {
@@ -48,7 +55,7 @@ export default function AccountPanel({ client, account, onContinue }) {
     const timer = window.setTimeout(() => setCooldown((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearTimeout(timer);
   }, [cooldown]);
-  const changeMode = (next) => { modeTouched.current = true; setMode(next); setLocalError(""); setPassword(""); setCode(""); setShowPassword(false); };
+  const changeMode = (next) => { modeTouched.current = true; setMode(next); setLocalError(""); setPassword(""); setCode(""); setShowPassword(false); setUsernameRegister(false); };
   const run = async (operation) => {
     if (inFlight.current || account.busy) return;
     inFlight.current = true;
@@ -61,6 +68,12 @@ export default function AccountPanel({ client, account, onContinue }) {
   const submit = (event) => {
     event.preventDefault();
     if (!configured || busy) return;
+    if (activeMode === "username") {
+      if (!usernameAvailable) return;
+      const name = username.trim();
+      void run(() => usernameRegister ? client.registerWithUsername(name, password) : client.signInWithUsername(name, password));
+      return;
+    }
     const address = email.trim();
     if (activeMode === "code") {
       if (!codeAvailable) return;
@@ -79,11 +92,11 @@ export default function AccountPanel({ client, account, onContinue }) {
     {account.user ? <>
       <div className="account-profile">
         <span className="account-avatar" aria-hidden="true">{(account.user.displayName || account.user.email || "你").slice(0, 1).toUpperCase()}</span>
-        <div><h3>{account.user.displayName || "欢迎回来"}</h3><p>{account.user.email}</p></div>
+        <div><h3>{account.user.displayName || "欢迎回来"}</h3><p>{account.user.email || (account.user.provider === "username" ? "用户名账号" : "")}</p></div>
       </div>
-      <div className="account-detail-row"><span>邮箱状态</span><strong>{account.user.emailVerified ? "已验证" : "等待验证"}</strong></div>
-      <div className="account-detail-row"><span>登录方式</span><strong>{account.user.provider === "email-code" ? "邮箱验证码" : "Google / 邮箱密码"}</strong></div>
-      {!account.user.emailVerified && <div className="account-verification">
+      {account.user.email && <div className="account-detail-row"><span>邮箱状态</span><strong>{account.user.emailVerified ? "已验证" : "等待验证"}</strong></div>}
+      <div className="account-detail-row"><span>登录方式</span><strong>{account.user.provider === "username" ? "用户名密码" : account.user.provider === "email-code" ? "邮箱验证码" : "Google / 邮箱密码"}</strong></div>
+      {!account.user.emailVerified && account.user.provider !== "username" && <div className="account-verification">
         <p>请打开邮件中的验证链接，再回来刷新状态。你可以先继续阅读。</p>
         <div><button type="button" disabled={busy} onClick={() => void run(() => client.sendVerification())}>重发验证邮件</button><button type="button" disabled={busy} onClick={() => void run(() => client.refreshUser())}>我已验证</button></div>
       </div>}
@@ -107,20 +120,30 @@ export default function AccountPanel({ client, account, onContinue }) {
       <p className="account-intro">从这里，进入你的故事。</p>
       {!configured && <button className="account-guest" type="button" onClick={onContinue}>先不登录，继续体验 <span aria-hidden="true">→</span></button>}
       <button className="account-google" type="button" disabled={busy || !configured || !account.config?.providers?.google} onClick={() => void run(() => client.signInWithGoogle())}><GoogleMark/>使用 Google 继续</button>
-      <div className="account-divider"><span>或使用邮箱</span></div>
+      <div className="account-divider"><span>{usernameAvailable ? "或使用邮箱 / 用户名" : "或使用邮箱"}</span></div>
       {activeMode !== "reset" ? <div className="account-tabs" role="group" aria-label="账号操作">
         <button type="button" aria-pressed={activeMode === "login"} disabled={busy} onClick={() => changeMode("login")}>登录</button>
         <button type="button" aria-pressed={activeMode === "register"} disabled={busy} onClick={() => changeMode("register")}>注册</button>
         {codeAvailable && <button type="button" aria-pressed={activeMode === "code"} disabled={busy} onClick={() => changeMode("code")}>验证码</button>}
+        {usernameAvailable && <button type="button" aria-pressed={activeMode === "username"} disabled={busy} onClick={() => changeMode("username")}>用户名</button>}
       </div> : <h3 className="account-reset-heading">重设密码</h3>}
       <form onSubmit={submit} className="account-form">
-        <label>邮箱<input type="email" name="email" autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} required maxLength={254} value={email} disabled={busy || !configured} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com"/></label>
+        {activeMode !== "username" && <label>邮箱<input type="email" name="email" autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} required maxLength={254} value={email} disabled={busy || !configured} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com"/></label>}
+        {activeMode === "username" && <>
+          <div className="account-tabs" role="group" aria-label="用户名登录或注册">
+            <button type="button" aria-pressed={!usernameRegister} disabled={busy} onClick={() => { setUsernameRegister(false); setLocalError(""); }}>登录</button>
+            <button type="button" aria-pressed={usernameRegister} disabled={busy} onClick={() => { setUsernameRegister(true); setLocalError(""); }}>注册</button>
+          </div>
+          <label>用户名<input type="text" name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} required maxLength={20} value={username} disabled={busy || !usernameAvailable} onChange={(event) => setUsername(event.target.value)} placeholder="字母、数字、下划线或点"/></label>
+          <label>密码<div className="account-password"><input type={showPassword ? "text" : "password"} name="password" autoComplete={usernameRegister ? "new-password" : "current-password"} required minLength={usernameRegister ? 8 : undefined} maxLength={128} value={password} disabled={busy || !usernameAvailable} onChange={(event) => setPassword(event.target.value)} placeholder={usernameRegister ? "至少 8 位" : "输入密码"}/><button type="button" aria-label={showPassword ? "隐藏密码" : "显示密码"} aria-pressed={showPassword} disabled={busy || !usernameAvailable} onClick={() => setShowPassword((value) => !value)}>{showPassword ? "隐藏" : "显示"}</button></div></label>
+          <p className="account-storage-note">用户名 3–20 个字符，大小写不敏感；注册后直接登录，不用邮箱，也不用验证码。</p>
+        </>}
         {activeMode === "code" && <label>验证码<div className="account-password"><input type="text" name="code" autoComplete="one-time-code" inputMode="numeric" autoCapitalize="none" spellCheck={false} required maxLength={6} value={code} disabled={busy || !codeAvailable} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} placeholder="6 位数字"/><button type="button" disabled={busy || !codeAvailable || cooldown > 0} onClick={sendCode}>{cooldown > 0 ? `${cooldown} 秒后重发` : "发送验证码"}</button></div></label>}
-        {activeMode !== "reset" && activeMode !== "code" && <label>密码<div className="account-password"><input type={showPassword ? "text" : "password"} name="password" autoComplete={activeMode === "register" ? "new-password" : "current-password"} required minLength={activeMode === "register" ? 8 : undefined} maxLength={128} value={password} disabled={busy || !passwordAvailable} onChange={(event) => setPassword(event.target.value)} placeholder={activeMode === "register" ? "至少 8 位" : "输入密码"}/><button type="button" aria-label={showPassword ? "隐藏密码" : "显示密码"} aria-pressed={showPassword} disabled={busy || !passwordAvailable} onClick={() => setShowPassword((value) => !value)}>{showPassword ? "隐藏" : "显示"}</button></div></label>}
+        {activeMode !== "reset" && activeMode !== "code" && activeMode !== "username" && <label>密码<div className="account-password"><input type={showPassword ? "text" : "password"} name="password" autoComplete={activeMode === "register" ? "new-password" : "current-password"} required minLength={activeMode === "register" ? 8 : undefined} maxLength={128} value={password} disabled={busy || !passwordAvailable} onChange={(event) => setPassword(event.target.value)} placeholder={activeMode === "register" ? "至少 8 位" : "输入密码"}/><button type="button" aria-label={showPassword ? "隐藏密码" : "显示密码"} aria-pressed={showPassword} disabled={busy || !passwordAvailable} onClick={() => setShowPassword((value) => !value)}>{showPassword ? "隐藏" : "显示"}</button></div></label>}
         {error && <p className="account-message is-error" role="alert">{error}</p>}
         {account.notice && <p className="account-message" role="status">{account.notice}</p>}
         {account.status === "loading" && <p className="account-message" role="status">正在连接账号服务…</p>}
-        <button type="submit" className="button button-primary account-primary" disabled={busy || !configured || (activeMode === "code" ? !codeAvailable || code.length !== 6 : !passwordAvailable)}>{busy ? "正在处理…" : activeMode === "register" ? "创建账号" : activeMode === "reset" ? "发送重设邮件" : activeMode === "code" ? "验证码登录" : "登录账号"}</button>
+        <button type="submit" className="button button-primary account-primary" disabled={busy || !configured || (activeMode === "username" ? !usernameAvailable || !username.trim() || password.length < (usernameRegister ? 8 : 1) : activeMode === "code" ? !codeAvailable || code.length !== 6 : !passwordAvailable)}>{busy ? "正在处理…" : activeMode === "username" ? (usernameRegister ? "创建账号" : "登录账号") : activeMode === "register" ? "创建账号" : activeMode === "reset" ? "发送重设邮件" : activeMode === "code" ? "验证码登录" : "登录账号"}</button>
       </form>
       <div className="account-links">
         {activeMode === "login" ? <button type="button" disabled={busy} onClick={() => changeMode("reset")}>忘记密码？</button> : <button type="button" disabled={busy} onClick={() => changeMode("login")}>返回登录</button>}
@@ -128,7 +151,7 @@ export default function AccountPanel({ client, account, onContinue }) {
         {configured && account.status === "error" && <button type="button" disabled={busy} onClick={() => void run(() => client.refreshUser())}>重试验证</button>}
       </div>
       {configured && <button className="account-guest" type="button" onClick={onContinue}>先不登录，继续体验 <span aria-hidden="true">→</span></button>}
-      <p className="account-storage-note">登录后书架仍保存在本机；不会自动上传故事或个人设定。没有 Google 账号也可以用邮箱验证码登录。</p>
+      <p className="account-storage-note">登录后书架仍保存在本机；不会自动上传故事或个人设定。没有 Google 账号，也可以用用户名或邮箱验证码登录。</p>
     </>}
   </div>;
 }

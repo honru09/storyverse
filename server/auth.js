@@ -1,11 +1,12 @@
 import { ApiError } from './gemini.js'
 import { loadFirebaseApp } from './firebase-app.js'
 import { createEmailCodeService, validEmailAddress } from './email-code.js'
+import { createUsernameAuthService } from './username-auth.js'
 import { createUsageService, dailyTokenCap } from './usage.js'
 
 const textValue = (value) => typeof value === 'string' && value.length < 512 && !/[\r\n]/.test(value) ? value.trim() : ''
 
-function publicConfig(env, emailCode) {
+function publicConfig(env, emailCode, usernameEnabled = false) {
   const firebase = {
     apiKey: textValue(env.FIREBASE_API_KEY), authDomain: textValue(env.FIREBASE_AUTH_DOMAIN),
     projectId: textValue(env.FIREBASE_PROJECT_ID), appId: textValue(env.FIREBASE_APP_ID),
@@ -19,7 +20,7 @@ function publicConfig(env, emailCode) {
     && (env.AUTH_GOOGLE_ENABLED !== 'false' || env.AUTH_EMAIL_ENABLED !== 'false')
   return {
     enabled,
-    providers: { google: enabled && env.AUTH_GOOGLE_ENABLED !== 'false', email: enabled && env.AUTH_EMAIL_ENABLED !== 'false' },
+    providers: { google: enabled && env.AUTH_GOOGLE_ENABLED !== 'false', email: enabled && env.AUTH_EMAIL_ENABLED !== 'false', username: usernameEnabled },
     emailCode,
     firebase: enabled ? firebase : null,
     storage: 'local',
@@ -27,7 +28,9 @@ function publicConfig(env, emailCode) {
       ? '账号仅用于身份识别。故事和阅读进度仍保存在本机，不会自动云同步。'
       : emailCode
         ? '邮箱验证码登录可用。故事和阅读进度仍保存在本机，不会自动云同步。'
-        : '账号服务尚未配置。故事和阅读进度仍保存在本机。',
+        : usernameEnabled
+          ? '用户名登录可用。故事和阅读进度仍保存在本机，不会自动云同步。'
+          : '账号服务尚未配置。故事和阅读进度仍保存在本机。',
   }
 }
 
@@ -53,9 +56,10 @@ function identityFailure(kind, cause) {
   return Object.assign(new Error('identity-resolution-failed'), { kind, cause })
 }
 
-export function createAuthService({ env = process.env, verifyIdToken, usageService, emailCode } = {}) {
+export function createAuthService({ env = process.env, verifyIdToken, usageService, emailCode, usernameAuth } = {}) {
   const email = emailCode ?? createEmailCodeService({ env })
-  const config = publicConfig(env, email.enabled === true)
+  const username = usernameAuth ?? createUsernameAuthService({ env })
+  const config = publicConfig(env, email.enabled === true, username.enabled === true)
   const usage = usageService ?? createUsageService({ env })
   const cap = dailyTokenCap(env)
   let verifierPromise
@@ -86,7 +90,7 @@ export function createAuthService({ env = process.env, verifyIdToken, usageServi
   async function identity(authorization) {
     const token = bearerToken(authorization)
     if (!token || token.length > 16_384) throw new ApiError(401, '请先登录后再查看账号。')
-    if (!config.enabled && !email.enabled) throw new ApiError(503, '账号服务尚未配置，请先继续本机阅读。')
+    if (!config.enabled && !email.enabled && !username.enabled) throw new ApiError(503, '账号服务尚未配置，请先继续本机阅读。')
     let failure
     if (config.enabled) {
       try {
@@ -98,6 +102,10 @@ export function createAuthService({ env = process.env, verifyIdToken, usageServi
     }
     if (email.enabled) {
       const session = await email.resolveSession(token)
+      if (session) return session
+    }
+    if (username.enabled) {
+      const session = await username.resolveSession(token)
       if (session) return session
     }
     if (failure?.kind === 'infra') throw new ApiError(503, '账号验证服务暂时不可用，请稍后重试。本机故事不受影响。')
@@ -124,6 +132,13 @@ export function createAuthService({ env = process.env, verifyIdToken, usageServi
     return body.email
   }
 
+  const bodyCredentials = (body) => {
+    if (!body || typeof body !== 'object' || typeof body.username !== 'string' || typeof body.password !== 'string') {
+      throw new ApiError(400, '请求格式有误，请重试。')
+    }
+    return { username: body.username, password: body.password }
+  }
+
   return {
     config: () => config,
     identity,
@@ -136,8 +151,16 @@ export function createAuthService({ env = process.env, verifyIdToken, usageServi
       return email.verify(address, body.code)
     },
     emailSignOut: (authorization) => email.revokeSession(bearerToken(authorization)),
+    usernameRegister: (body, clientKey) => {
+      const credentials = bodyCredentials(body)
+      return username.register(credentials.username, credentials.password, clientKey)
+    },
+    usernameLogin: (body, clientKey) => {
+      const credentials = bodyCredentials(body)
+      return username.login(credentials.username, credentials.password, clientKey)
+    },
     /** Generation requires a signed-in identity once the operator turns auth on and at least one channel works. */
-    requiresIdentity: () => env.AUTH_ENABLED === 'true' && (config.enabled || email.enabled),
+    requiresIdentity: () => env.AUTH_ENABLED === 'true' && (config.enabled || email.enabled || username.enabled),
     dailyTokenCap: () => cap,
     usageDailyTotal: (uid) => usage.dailyTotal(uid),
     recordUsage: (uid, value) => usage.record(uid, value),

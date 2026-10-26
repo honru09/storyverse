@@ -376,6 +376,143 @@ const originBeatLine = (genre, config) => {
 }
 
 /*
+ * Ability candidates. There is no global ability menu any more: each
+ * preset world owns a pool written in its own vocabulary, and each craft
+ * template brings two signature abilities that travel with the category.
+ * The start flow composes the list for the current (world × template)
+ * pair — signatures first, then the world pool, de-duplicated by name.
+ * A god-mode (custom) world has no pool of its own: it offers the pinned
+ * template's signatures, or a small generic pool when nothing is pinned.
+ * Custom text and a random roll from the composed list complete the step.
+ */
+export const WORLD_ABILITY_POOLS = {
+  mist: [
+    { id: 'tide', name: '听见潮汐', desc: '从水与回声里读取被隐藏的记忆' },
+    { id: 'mist-fogpath', name: '雾里认路', desc: '雾再大也认得回港的航线，走失的人会先找到你' },
+    { id: 'mist-salvage', name: '沉物打捞', desc: '能把沉进水底的东西，连同它的故事一起捞上来' },
+    { id: 'mist-tidemark', name: '潮痕预读', desc: '从退潮留下的痕迹里，读出昨夜发生过什么' },
+  ],
+  cultivation: [
+    { id: 'ember', name: '借火一瞬', desc: '让即将熄灭的事物再燃一次' },
+    { id: 'cult-windsword', name: '御剑听风', desc: '剑未出鞘，先听见三丈内的风声与杀意' },
+    { id: 'cult-lingxi', name: '灵息内视', desc: '闭上眼，能看见自己与旁人灵脉的走向' },
+    { id: 'cult-shadowmark', name: '云阶留影', desc: '在走过的地方留下一道只有自己看得见的影子标记' },
+  ],
+  neon: [
+    { id: 'echo', name: '读取备份', desc: '从残留的声音里找回被删除的真相' },
+    { id: 'neon-ghost', name: '幽灵进程', desc: '在任何系统里留一个不被日志记录的分身' },
+    { id: 'neon-sniff', name: '信号嗅探', desc: '隔着三堵墙，也能闻到未加密数据的味道' },
+    { id: 'neon-blackout', name: '断电行走', desc: '全城断电时，你的义体照常运转' },
+  ],
+  city: [
+    { id: 'city-ear', name: '街巷耳报', desc: '一条街的风吹草动，总比消息早一步到你耳朵里' },
+    { id: 'city-ledger', name: '人情账本', desc: '谁欠过谁的人情，你过目不忘，也从不记错' },
+    { id: 'city-oldshop', name: '老店直觉', desc: '走进任何一家老店，一眼看穿它真正的招牌' },
+    { id: 'city-keepsake', name: '旧物认主', desc: '经你手的旧物会「开口」，说出上一任主人的一个习惯' },
+  ],
+  court: [
+    { id: 'court-readface', name: '察言观色', desc: '一句话没说完，你已经听出对方真正想要什么' },
+    { id: 'court-memory', name: '过目成诵', desc: '看过的诏令、名单与账册，一字不差刻在脑子里' },
+    { id: 'court-ritual', name: '礼制破局', desc: '任何规矩到了你手里，都能找到一条合礼的活路' },
+    { id: 'court-poison', name: '宴前知毒', desc: '杯盏未动，先知道哪一道菜不能碰' },
+  ],
+  frontier: [
+    { id: 'thread', name: '缝合裂隙', desc: '把两个不相容的事物短暂地连在一起' },
+    { id: 'front-deepspace', name: '深空听噪', desc: '从宇宙背景噪声里，分辨出人工信号的节律' },
+    { id: 'front-revive', name: '废件复活', desc: '报废的设备在你手里，总能再撑一班岗' },
+    { id: 'front-gravity', name: '重力微调', desc: '在一臂之内，让轻的东西再轻一点、重的东西再慢一点' },
+  ],
+}
+
+export const TEMPLATE_SIGNATURE_ABILITIES = {
+  xuanhuan: [
+    { id: 'sig-xuanhuan-1', name: '气运加身', desc: '机缘总先一步落到你头上，绝境里也留着一线生机' },
+    { id: 'sig-xuanhuan-2', name: '吞噬进化', desc: '吞下天材地宝与妖丹，直接化作自己的修为' },
+  ],
+  xianxia: [
+    { id: 'sig-xianxia-1', name: '丹火不熄', desc: '你炼的火永不无故熄灭，废丹也能回收三成' },
+    { id: 'sig-xianxia-2', name: '斩念', desc: '把一种执念暂时斩出体外，换片刻清明' },
+  ],
+  gaowu: [
+    { id: 'sig-gaowu-1', name: '气血可视', desc: '一眼看穿对手的气血数值与最薄的那处破绽' },
+    { id: 'sig-gaowu-2', name: '越战越勇', desc: '伤得越重，出手越重，榜单为你实时跳动' },
+  ],
+  'romance-ancient': [
+    { id: 'sig-romance-ancient-1', name: '记账入心', desc: '府里每一笔人情与银钱往来，你都记得分毫不差' },
+    { id: 'sig-romance-ancient-2', name: '察色知心', desc: '从一个人的眉眼之间，读出他藏得最深的那件事' },
+  ],
+  scifi: [
+    { id: 'sig-scifi-1', name: '维度折叠', desc: '把一小段路程折起来，跨过去——只够一个人用' },
+    { id: 'sig-scifi-2', name: '熵减之手', desc: '被你碰过的东西，损坏的速度会慢下来' },
+  ],
+  wuxianliu: [
+    { id: 'sig-wuxianliu-1', name: '点数嗅觉', desc: '能闻出哪个任务的奖励，被主神低估了' },
+    { id: 'sig-wuxianliu-2', name: '结算预知', desc: '结算之前，你先看见自己这一趟的评分' },
+  ],
+  'guize-guatan': [
+    { id: 'sig-guize-guatan-1', name: '规则显形', desc: '看过的规则会在你眼里标出自相矛盾的那一条' },
+    { id: 'sig-guize-guatan-2', name: '字缝求生', desc: '从规则的字缝里，找到没写出来的那个例外' },
+  ],
+  horror: [
+    { id: 'sig-horror-1', name: '厉鬼标价', desc: '看任何一只鬼，你都能估出它值多少、怕什么' },
+    { id: 'sig-horror-2', name: '鬼市通行', desc: '在人和鬼都摆摊的地方，能谈成一笔买卖' },
+  ],
+  lishi: [
+    { id: 'sig-lishi-1', name: '大势预读', desc: '能看见一件事三年后的余波，先一步落子' },
+    { id: 'sig-lishi-2', name: '名将旧梦', desc: '睡梦里能旁观一场打过的仗，醒来记得每个细节' },
+  ],
+  'romance-modern': [
+    { id: 'sig-romance-modern-1', name: '情绪听诊', desc: '听一个人说话，能听出他没说出口的那层意思' },
+    { id: 'sig-romance-modern-2', name: '体面收场', desc: '再难堪的场面，你都能留住双方的体面' },
+  ],
+  'suspense-supernatural': [
+    { id: 'sig-suspense-supernatural-1', name: '阴阳半眼', desc: '能看见不该看见的东西，但只在天黑之后' },
+    { id: 'sig-suspense-supernatural-2', name: '寒意定位', desc: '寒意最重的地方，就是真相藏得最深的地方' },
+  ],
+  campus: [
+    { id: 'sig-campus-1', name: '错题回声', desc: '做错的题会在梦里重播，直到你彻底搞懂' },
+    { id: 'sig-campus-2', name: '榜单在心', desc: '任何榜单看过一遍，名次与分数都刻在心里' },
+  ],
+  urban: [
+    { id: 'sig-urban-1', name: '城市嗅觉', desc: '能闻出一桩生意里，钱和风险各占几成' },
+    { id: 'sig-urban-2', name: '人脉活水', desc: '你帮过的人，总会在你需要时以意想不到的方式出现' },
+  ],
+  'zhihu-short': [
+    { id: 'sig-zhihu-short-1', name: '反转直觉', desc: '一件事的走向，你总能提前一步猜到拐点' },
+    { id: 'sig-zhihu-short-2', name: '一句翻盘', desc: '在最关键的场合，你总能说出扭转局势的那句话' },
+  ],
+}
+
+export const GENERIC_ABILITY_POOL = [
+  { id: 'gen-verse', name: '言出法随', desc: '说出口的小事，总会以某种方式成真' },
+  { id: 'gen-halfbeat', name: '时间慢半拍', desc: '危险临头的那一瞬，你比别人多半秒' },
+  { id: 'gen-mindglimpse', name: '读心余光', desc: '与人对视时，能瞥见对方没说出口的半句话' },
+  { id: 'gen-luck', name: '逢凶化吉', desc: '坏事落到你身上时，总差最后临门一脚' },
+]
+
+export const ALL_ABILITIES = [
+  ...Object.values(WORLD_ABILITY_POOLS).flat(),
+  ...Object.values(TEMPLATE_SIGNATURE_ABILITIES).flat(),
+  ...GENERIC_ABILITY_POOL,
+]
+
+// The composed candidate list for the ability step. Preset worlds: the
+// pinned template's signatures first, then the world's own pool (a template
+// that is not pinned contributes nothing). Custom worlds: signatures of
+// the pinned craft, or the generic pool when completely free.
+export const abilityCandidatesFor = ({ genreId, genreTemplateId, custom = false } = {}) => {
+  const signatures = TEMPLATE_SIGNATURE_ABILITIES[genreTemplateId] || []
+  if (custom) return signatures.length ? [...signatures] : [...GENERIC_ABILITY_POOL]
+  const pool = WORLD_ABILITY_POOLS[genreId] || []
+  const seen = new Set()
+  return [...signatures, ...pool].filter((item) => {
+    if (seen.has(item.name)) return false
+    seen.add(item.name)
+    return true
+  })
+}
+
+/*
  * Story types are the fourteen knowledge-base templates (knowledge/
  * genres.json). The ids here must stay identical to that file — a test locks
  * them together. A template is a pure category: it governs ONLY the writing
@@ -409,6 +546,11 @@ export const genreTemplateById = (id) => GENRE_TEMPLATE_BY_ID[id] || null
 export const DEFAULT_DRAFT = {
   genreId: 'mist',
   genreTemplateId: '',
+  // UI-only flow marker: true once the user has actually picked (or rolled)
+  // a world on the world screen. The engine ignores it; the start flow uses
+  // it to tell a deliberate world apart from the default and to recognise
+  // pre-world-screen drafts, which carry no marker at all.
+  worldChosen: false,
   storyLengthMode: 'short',
   seasonNumber: 1,
   originIdentityId: '',
@@ -418,8 +560,12 @@ export const DEFAULT_DRAFT = {
   startPointHook: '',
   name: '',
   trait: '冷静观察者',
-  origin: '无名漂泊者',
-  ability: '听见潮汐',
+  // No preset origin or ability: the origin comes only from the identity
+  // step (resolved per world at read time), and the ability only from the
+  // ability step's (world × template) candidate list. A pre-identity-step
+  // story may still carry its own stored origin text; that stays readable.
+  origin: '',
+  ability: '',
   tone: '诗性冒险',
   immersive: false,
   hometown: '',
@@ -584,7 +730,7 @@ export const resolveStartPoint = (genre, config = {}) => {
 
 const asStep = (value) => {
   const number = Number(value)
-  return Number.isFinite(number) ? Math.max(1, Math.min(6, Math.floor(number))) : 1
+  return Number.isFinite(number) ? Math.max(1, Math.min(7, Math.floor(number))) : 1
 }
 
 const clone = (value) => {
@@ -640,7 +786,16 @@ const normalizeDraft = (draft = {}) => {
 
 const protagonistName = (config, fallback = '未命名旅人') => cleanText(config?.name, '') || fallback
 
-const displayIdentity = (config) => cleanText(config?.role, '') || cleanText(config?.origin, '') || '无名旅人'
+const displayIdentity = (config, genre) => {
+  const role = cleanText(config?.role, '')
+  if (role) return role
+  // The origin is resolved from the identity step now, in this world's own
+  // words; a pre-identity-step story keeps displaying its stored origin
+  // text, and only a story with neither falls back to the nameless label.
+  const summary = originSummaryFor(genre || genreFor(config?.genreId), config)
+  if (summary) return summary.localTitle
+  return cleanText(config?.origin, '') || '无名旅人'
+}
 
 const realityDetail = (config) => {
   if (!config?.immersive) return ''
@@ -670,7 +825,7 @@ const OUTLINE_STAGE_SUFFIXES = ['', '——局势推进，代价初显', '——
 
 const outlineFor = (genre, config) => {
   const name = protagonistName(config)
-  const identity = displayIdentity(config)
+  const identity = displayIdentity(config, genre)
   const destination = cleanText(config.destination, '') || genre.location
   const spawn = resolveStartPoint(genre, config)
   const total = totalChaptersFor({ config })
@@ -919,10 +1074,11 @@ const sceneFor = (story, index) => {
   const config = story.config || {}
   const genre = genreFor(story.genreId || config.genreId)
   const name = protagonistName(config)
-  const identity = displayIdentity(config)
+  const identity = displayIdentity(config, genre)
   const ability = cleanText(config.ability, '') || '尚未命名的能力'
   const trait = cleanText(config.trait, '') || '还没有被定义的性格'
-  const origin = cleanText(config.origin, '') || '无名来处'
+  const summary = originSummaryFor(genre, config)
+  const origin = cleanText(config.origin, '') || summary?.name || '无名来处'
   const identityWithOrigin = identity === origin ? identity : `${identity}（${origin}）`
   const friend = cleanText(config.friend, '') || '一个尚未现身的同行者'
   const destination = cleanText(config.destination, '') || genre.location
@@ -1214,7 +1370,7 @@ export function storyBeatPlan(story, index) {
   const name = merged
     ? (config.protagonists || []).map((item, idx) => protagonistName(item, `旅者${idx === 0 ? '甲' : '乙'}`)).join('与')
     : protagonistName(config)
-  const identity = displayIdentity(config)
+  const identity = displayIdentity(config, genre)
   const ability = cleanText(config.ability, '') || '尚未命名的能力'
   const isCustom = genre.id === CUSTOM_GENRE_ID
   const worldDisplay = worldNameOf(genre, config)

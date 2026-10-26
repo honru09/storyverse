@@ -163,10 +163,66 @@ async function runOnboarding(browser, width) {
       await noOverflow(page, 'guest creation');
     });
 
+    await step('legacy six-step draft migrates into the seven-step flow', async () => {
+      const legacyContext = await browser.newContext({
+        viewport: { width, height: 844 },
+        isMobile: true,
+        hasTouch: true,
+        reducedMotion: 'reduce',
+        locale: 'zh-CN',
+      });
+      try {
+        const legacyPage = await legacyContext.newPage();
+        legacyPage.setDefaultTimeout(12000);
+        // A draft saved by the six-step flow: no worldChosen marker, and its
+        // step numbers predate the world screen (step 5 meant 能力 there).
+        await legacyContext.addInitScript(({ key, library }) => {
+          localStorage.setItem(key, JSON.stringify(library));
+        }, {
+          key: storageKey,
+          library: {
+            version: 2,
+            stories: [],
+            activeStoryId: null,
+            publications: [],
+            favorites: [],
+            draft: {
+              genreId: 'mist',
+              genreTemplateId: 'xuanhuan',
+              name: '旧稿旅人',
+              originIdentityId: 'mystery',
+              startPointName: '灯塔守夜屋',
+              step: 5,
+            },
+          },
+        });
+        await legacyPage.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+        const resume = legacyPage.getByRole('button', { name: /继续上次设定/ });
+        await resume.waitFor();
+        assert.match(await resume.innerText(), /第 6 步/, 'the home banner shows the migrated step number');
+        await resume.click();
+        // Old step 5 （能力） is step 6 once the world screen exists.
+        await legacyPage.getByRole('heading', { name: '想拥有什么能力？', exact: true }).waitFor();
+        await legacyPage.waitForFunction(key => {
+          const library = JSON.parse(localStorage.getItem(key));
+          return library?.draft?.worldChosen === true && library?.draft?.step === 6;
+        }, storageKey);
+        const migrated = JSON.parse(await legacyPage.evaluate(key => localStorage.getItem(key), storageKey));
+        assert.equal(migrated.draft.genreId, 'mist', 'the legacy world is kept as chosen, never re-picked');
+        assert.equal(migrated.draft.originIdentityId, 'mystery');
+        await noOverflow(legacyPage, 'migrated draft');
+      } finally {
+        await legacyContext.close();
+      }
+    });
+
     await step('creation draft survives leaving, returning and reloading', async () => {
-      await page.locator('.stage-chips').getByRole('button', { name: '沉潮港', exact: true }).click();
+      // Step one is only the category now; the world lives on its own screen.
       await page.getByRole('button', { name: '继续', exact: true }).click();
-      // Step two: the identity concept frames which spawn points exist.
+      await page.getByRole('heading', { name: '故事发生在哪个世界？', exact: true }).waitFor();
+      await page.locator('.world-grid').getByRole('button', { name: /沉潮港/ }).click();
+      await page.getByRole('button', { name: '继续', exact: true }).click();
+      // Step three: the identity concept frames which spawn points exist.
       await page.getByRole('heading', { name: '你以什么身份醒来？', exact: true }).waitFor();
       // Skipping the pick must not reopen the whole-world spawn list:
       // leaving the step rolls an identity, lands it on the draft, and the
@@ -191,7 +247,7 @@ async function runOnboarding(browser, width) {
         'going back shows the rolled identity as the landed pick');
       await page.locator('.spawn-grid').getByRole('button', { name: /身世成谜/ }).click();
       await page.getByRole('button', { name: '继续', exact: true }).click();
-      // Step three: the spawn point belongs to the identity in this world.
+      // Step four: the spawn point belongs to the identity in this world.
       await page.getByRole('heading', { name: '故事从哪里醒来？', exact: true }).waitFor();
       await page.locator('.spawn-grid').getByRole('button', { name: /灯塔守夜屋/ }).click();
       await page.getByRole('button', { name: '继续', exact: true }).click();
@@ -200,19 +256,35 @@ async function runOnboarding(browser, width) {
       await page.getByLabel('成长的地方（选填）').fill('回归海岸镇');
       await page.getByRole('button', { name: '继续', exact: true }).click();
       await page.getByRole('heading', { name: '想拥有什么能力？', exact: true }).waitFor();
+      // The ability list belongs to this (world × template) pair: the mist
+      // world was picked on the world screen and 玄幻 is the flow's default
+      // template, so its signature abilities lead, the mist pool follows,
+      // and no other world's abilities appear.
+      const abilityList = page.locator('.ability-list');
+      assert.match(await abilityList.locator('.ability-card').first().innerText(), /气运加身/,
+        'the pinned template signature leads the list');
+      await abilityList.getByRole('button', { name: /吞噬进化/ }).waitFor();
+      await abilityList.getByRole('button', { name: /雾里认路/ }).waitFor();
+      assert.equal(await abilityList.getByRole('button', { name: /借火一瞬/ }).count(), 0,
+        'another world pool stays out of the list');
+      assert.equal(await abilityList.getByRole('button', { name: /察言观色/ }).count(), 0);
+      await abilityList.getByRole('button', { name: /听见潮汐/ }).click();
+      assert.equal(await abilityList.getByRole('button', { name: /听见潮汐/ }).getAttribute('aria-pressed'), 'true');
       await page.getByRole('navigation', { name: '移动端主导航' }).getByRole('button', { name: '世界', exact: true }).click();
       const resume = page.getByRole('button', { name: /继续上次设定/ });
       await resume.waitFor();
       const saved = await readLibrary(page);
       assert.equal(saved.draft.name, testName);
       assert.equal(saved.draft.hometown, '回归海岸镇');
-      assert.equal(saved.draft.step, 5);
+      assert.equal(saved.draft.step, 6);
+      assert.equal(saved.draft.worldChosen, true);
       assert.equal(saved.draft.originIdentityId, 'mystery');
       assert.equal(saved.draft.startPointName, '灯塔守夜屋');
+      assert.equal(saved.draft.ability, '听见潮汐');
       assert.equal(saved.stories.length, 0);
       await resume.click();
       await page.getByRole('heading', { name: '想拥有什么能力？', exact: true }).waitFor();
-      await page.getByRole('navigation', { name: '创作步骤' }).getByRole('button', { name: '第 4 步：主角', exact: true }).click();
+      await page.getByRole('navigation', { name: '创作步骤' }).getByRole('button', { name: '第 5 步：主角', exact: true }).click();
       assert.equal(await page.getByLabel('主角昵称（选填）').inputValue(), testName);
       assert.equal(await page.getByLabel('成长的地方（选填）').inputValue(), '回归海岸镇');
       assert.equal(await page.getByRole('switch', { name: '带入人生经历（选填）' }).getAttribute('aria-checked'), 'true');
@@ -244,6 +316,7 @@ async function runOnboarding(browser, width) {
       assert.equal(await page.getByRole('progressbar', { name: '阅读进度' }).getAttribute('aria-valuemax'), '100');
       assert.equal(saved.stories[0].config.name, testName);
       assert.equal(saved.stories[0].config.originIdentityId, 'mystery');
+      assert.equal(saved.stories[0].config.ability, '听见潮汐');
       assert.equal(saved.stories[0].config.startPointName, '灯塔守夜屋');
       assert.ok(saved.stories[0].worldBible.premise.includes('灯塔守夜屋'));
       assert.ok((await page.locator('.reader-article').innerText()).includes('守夜日志'), 'chapter one opens at the chosen spawn point');
@@ -275,11 +348,12 @@ async function runOnboarding(browser, width) {
       await assertAppearance(page, { fontSize: 32, lineHeight: 2.05, theme: 'light' });
       assert.equal(await dialog.getByRole('button', { name: '放大字号', exact: true }).isDisabled(), true);
       await noOverflow(page, 'maximum reading size');
-      await sizes.getByText('特大', { exact: true }).click();
-      // Click the visible label, matching touch usage; the native radios remain
-      // keyboard-operable even though their custom visual lives in the label.
-      await spacing.getByText('紧凑', { exact: true }).click();
-      await themes.getByText('夜间', { exact: true }).click();
+      await sizes.getByRole('radio', { name: '特大', exact: true }).click();
+      // Click the radio itself, matching touch usage: the input now covers
+      // the whole label as the tap target (see reading-preferences.css), so
+      // a tap anywhere on the visible label lands on the radio directly.
+      await spacing.getByRole('radio', { name: '紧凑', exact: true }).click();
+      await themes.getByRole('radio', { name: '夜间', exact: true }).click();
       assert.equal(await spacing.getByRole('radio', { name: '紧凑', exact: true }).isChecked(), true);
       assert.equal(await themes.getByRole('radio', { name: '夜间', exact: true }).isChecked(), true);
       await assertAppearance(page, { fontSize: 22, lineHeight: 1.8, theme: 'night' });

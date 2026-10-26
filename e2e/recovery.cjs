@@ -25,6 +25,7 @@ async function createBook(page, name) {
   await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByRole('button', { name: '继续', exact: true }).click();
+  await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByLabel('主角昵称（选填）').fill(name);
   await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByRole('button', { name: '继续', exact: true }).click();

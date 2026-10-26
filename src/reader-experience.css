@@ -1,7 +1,12 @@
 /* Read mode shares the porcelain material system; prose stays on solid surfaces. */
 .app-shell[data-view="reader"] > .main-shell > .topbar{display:none}
-.page-reader[data-reader-theme]{padding-top:0;padding-bottom:calc(150px + env(safe-area-inset-bottom));min-height:100dvh}
-.page-reader[data-reader-mode="page"]{padding-bottom:calc(210px + env(safe-area-inset-bottom))}
+/* Bottom clearance ledger: the floating dock is ~85px tall (9+7 padding,
+   ~21 progress row, 48 actions) and floats max(10px, safe-area) above the
+   viewport edge; prose needs that plus ~15px of air — no more. (It used
+   to reserve 150px + the safe area a second time.) Page mode adds the
+   ~51px page-controls row on top of the same ledger. */
+.page-reader[data-reader-theme]{padding-top:0;padding-bottom:calc(100px + max(10px,env(safe-area-inset-bottom)));min-height:100dvh}
+.page-reader[data-reader-mode="page"]{padding-bottom:calc(151px + max(10px,env(safe-area-inset-bottom)))}
 .page-reader[data-reader-theme] .reader-topline{position:sticky;top:0;z-index:11;margin-top:0;padding-top:calc(8px + env(safe-area-inset-top));border-radius:0 0 22px 22px;transition:opacity 160ms var(--ease-out),transform 160ms var(--ease-out)}
 .page-reader .reader-chapter{margin-top:0;gap:4px 12px}
 .page-reader .reader-book-title{font-size:.875rem;font-weight:550}
@@ -10,7 +15,7 @@
 .page-reader .reader-article h1{margin-bottom:1.75rem;font-size:clamp(1.625rem,6vw,2.25rem);letter-spacing:-.02em;line-height:1.5}
 .reader-prose{overflow-wrap:break-word;word-break:normal;line-break:strict;hyphens:auto;text-wrap:pretty}
 .reader-prose p{scroll-margin-top:160px}
-.page-reader .choice-block{border-top:1px solid var(--reader-border);padding-top:1.5rem;margin-top:2.5rem;font-family:var(--font-ui);font-weight:400;text-align:left;letter-spacing:normal}
+.page-reader .choice-block{border-top:1px solid var(--reader-border);padding-top:1.5rem;margin-top:2rem;font-family:var(--font-ui);font-weight:400;text-align:left;letter-spacing:normal}
 .page-reader .choice-heading h2{font-size:1.25rem;line-height:1.5}
 .page-reader .decision-card{min-height:100px;padding:1rem;border-radius:20px;background:var(--reader-surface);border-color:var(--reader-border);gap:1rem}
 .page-reader .decision-copy b{font-size:max(1rem,calc(var(--reader-font-size) * .9));line-height:1.55;font-weight:650}
@@ -26,6 +31,7 @@
 .reader-dock-actions .reader-dock-settings{background:var(--reader-soft);color:var(--reader-accent)}
 .reader-focus-exit{display:block;width:100%;min-height:44px;border-radius:16px;color:var(--reader-accent);background:var(--reader-soft);font-size:.875rem;font-weight:600}
 .page-reader[data-reader-focused="true"] .reader-topline{visibility:hidden;pointer-events:none;opacity:0;transform:translateY(-8px)}
+.page-reader[data-topline-hidden="true"] .reader-topline{visibility:hidden;pointer-events:none;opacity:0;transform:translateY(-8px)}
 .reader-page-controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-top:6px;border-top:1px solid var(--reader-border)}
 .reader-page-controls button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;background:transparent;border-radius:14px;font-size:.875rem;color:var(--reader-accent)}
 .reader-location-warning{font-size:.8125rem;color:var(--reader-secondary);max-width:40rem;margin:1rem auto}

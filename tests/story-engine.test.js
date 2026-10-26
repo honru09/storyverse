@@ -2,14 +2,19 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  ALL_ABILITIES,
   COMMUNITY_BOOKS,
   DEFAULT_DRAFT,
   FRIEND_BOOK,
+  GENERIC_ABILITY_POOL,
   GENRES,
   GENRE_TEMPLATES,
   ORIGIN_IDENTITIES,
   START_POINT_HOOK_MAX,
   START_POINT_NAME_MAX,
+  TEMPLATE_SIGNATURE_ABILITIES,
+  WORLD_ABILITY_POOLS,
+  abilityCandidatesFor,
   acceptChapter,
   buildChapter,
   chapterForReading,
@@ -975,4 +980,95 @@ test('pre-mode saves stay short stories and keep reading, merging and sharing', 
   assert.equal(seasonSnapshot.status, 'complete')
   assert.equal(seasonSnapshot.chapters.length, 24)
   assert.equal(seasonSnapshot.config.storyLengthMode, 'season')
+})
+
+test('the default draft carries no preset origin or ability', () => {
+  assert.equal(DEFAULT_DRAFT.origin, '')
+  assert.equal(DEFAULT_DRAFT.ability, '')
+  // Normalizing an untouched draft must not smuggle the old menu back in.
+  const story = createStory({})
+  assert.equal(story.config.origin, '')
+  assert.equal(story.config.ability, '')
+})
+
+test('a new story takes its origin from the identity step, resolved in the world', () => {
+  const story = createStory({ genreId: 'court', originIdentityId: 'heir', name: '阿遥' })
+  assert.equal(story.config.origin, '')
+  // Bible premise, beat plan and the local narrative all speak the
+  // identity's local title — never a fixed origin menu entry.
+  assert.match(story.worldBible.premise, /身为皇室嫡系（顶级势力核心）的阿遥/)
+  const plan = storyBeatPlan(story, 0)
+  assert.ok(plan.prerequisites.some((line) => line.includes('身份“皇室嫡系”')))
+  assert.ok(plan.prerequisites.some((line) => line.includes('出身：皇室嫡系（顶级势力核心）')))
+  const text = buildChapter(story, 0).paragraphs.join('\n')
+  assert.match(text, /皇室嫡系（顶级势力核心）/)
+  assert.doesNotMatch(text, /无名漂泊者|旧贵族旁支|失忆的继承人|被放逐的学徒/)
+  // The empty ability falls back to the unnamed placeholder, never a crash.
+  assert.ok(plan.prerequisites.some((line) => line.includes('能力：尚未命名的能力')))
+})
+
+test('a pre-identity-step story keeps its stored origin text readable', () => {
+  const story = createStory({ genreId: 'mist', origin: '无名漂泊者', name: '旧客' })
+  assert.equal(story.config.origin, '无名漂泊者')
+  const text = buildChapter(story, 0).paragraphs.join('\n')
+  assert.match(text, /无名漂泊者/)
+  const plan = storyBeatPlan(story, 0)
+  assert.ok(plan.prerequisites.some((line) => line.includes('身份“无名漂泊者”')))
+})
+
+test('ability pools: every world has four, and the four legacy abilities went home', () => {
+  for (const genre of GENRES) {
+    const pool = WORLD_ABILITY_POOLS[genre.id]
+    assert.ok(Array.isArray(pool), `${genre.id} has a pool`)
+    assert.equal(pool.length, 4, `${genre.id} pool has four abilities`)
+  }
+  const namesIn = (id) => WORLD_ABILITY_POOLS[id].map((item) => item.name)
+  assert.ok(namesIn('mist').includes('听见潮汐'))
+  assert.ok(namesIn('cultivation').includes('借火一瞬'))
+  assert.ok(namesIn('neon').includes('读取备份'))
+  assert.ok(namesIn('frontier').includes('缝合裂隙'))
+  // Ids are unique across every pool, or a restored pick could cross wires.
+  const ids = ALL_ABILITIES.map((item) => item.id)
+  assert.equal(new Set(ids).size, ids.length)
+  assert.equal(GENERIC_ABILITY_POOL.length, 4)
+})
+
+test('every craft template brings exactly two signature abilities', () => {
+  assert.equal(Object.keys(TEMPLATE_SIGNATURE_ABILITIES).length, GENRE_TEMPLATES.length)
+  for (const template of GENRE_TEMPLATES) {
+    const signatures = TEMPLATE_SIGNATURE_ABILITIES[template.id]
+    assert.ok(Array.isArray(signatures), `${template.id} has signatures`)
+    assert.equal(signatures.length, 2, `${template.id} has two signatures`)
+  }
+})
+
+test('ability candidates compose from the (world × template) pair', () => {
+  // Pinned template: signatures first, then the world pool.
+  const mistXuanhuan = abilityCandidatesFor({ genreId: 'mist', genreTemplateId: 'xuanhuan' })
+  assert.equal(mistXuanhuan.length, 6)
+  assert.equal(mistXuanhuan[0].name, '气运加身')
+  assert.equal(mistXuanhuan[1].name, '吞噬进化')
+  assert.ok(mistXuanhuan.some((item) => item.name === '听见潮汐'))
+  assert.ok(!mistXuanhuan.some((item) => item.name === '借火一瞬'))
+  // No pinned template: the world pool alone.
+  const mistBare = abilityCandidatesFor({ genreId: 'mist', genreTemplateId: '' })
+  assert.deepEqual(mistBare.map((item) => item.name), WORLD_ABILITY_POOLS.mist.map((item) => item.name))
+  // Switching the world changes the list; the other axis stays put.
+  const courtLishi = abilityCandidatesFor({ genreId: 'court', genreTemplateId: 'lishi' })
+  assert.ok(courtLishi.some((item) => item.name === '大势预读'))
+  assert.ok(courtLishi.some((item) => item.name === '察言观色'))
+  assert.ok(!courtLishi.some((item) => item.name === '听见潮汐'))
+  assert.notDeepEqual(
+    abilityCandidatesFor({ genreId: 'mist', genreTemplateId: 'lishi' }).map((item) => item.name),
+    courtLishi.map((item) => item.name),
+  )
+  // God mode: the pinned craft's signatures only, or the generic pool.
+  assert.deepEqual(
+    abilityCandidatesFor({ genreId: 'custom', genreTemplateId: 'lishi', custom: true }).map((item) => item.name),
+    ['大势预读', '名将旧梦'],
+  )
+  assert.deepEqual(
+    abilityCandidatesFor({ genreId: 'custom', genreTemplateId: '', custom: true }).map((item) => item.name),
+    GENERIC_ABILITY_POOL.map((item) => item.name),
+  )
 })

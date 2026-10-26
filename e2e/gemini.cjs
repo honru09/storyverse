@@ -38,9 +38,11 @@ async function savedChapters(page, count) {
 
 async function prepareOpening(page, name, genre = '奇幻') {
   await page.getByRole('navigation', { name: '移动端主导航' }).getByRole('button', { name: '造世', exact: true }).click();
-  // The start flow leads with genre templates now; the mist stage chip is the
-  // equivalent of the old mist world card this helper used to click.
-  await page.locator('.stage-chips').getByRole('button', { name: '沉潮港', exact: true }).click();
+  // The start flow leads with genre templates, then the world on its own
+  // screen; the mist world card is the equivalent of the old mist stage
+  // chip this helper used to click.
+  await page.getByRole('button', { name: '继续', exact: true }).click();
+  await page.locator('.world-grid').getByRole('button', { name: /沉潮港/ }).click();
   await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByRole('button', { name: '继续', exact: true }).click();

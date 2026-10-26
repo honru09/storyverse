@@ -2,15 +2,19 @@ import { dataStoreKind } from './data-store.js'
 import { loadFirestore } from './firebase-app.js'
 
 /**
- * Persistence for email login codes and site sessions. Records are keyed by
- * hashes (of the normalised email / of the session token), never by the raw
- * email or token, so a store leak exposes neither credentials nor addresses.
- * Every method is async; the memory implementation exists for tests and
- * explicitly-configured local development only.
+ * Persistence for email login codes, site sessions and username accounts.
+ * Code and session records are keyed by hashes (of the normalised email /
+ * of the session token), never by the raw email or token, so a store leak
+ * exposes neither credentials nor addresses. Username records are keyed by
+ * the normalised username itself — a public identifier, shown as the
+ * display name — and hold only a salted password hash. Every method is
+ * async; the memory implementation exists for tests and explicitly-
+ * configured local development only.
  */
 export function createMemoryIdentityStore() {
   const codes = new Map()
   const sessions = new Map()
+  const users = new Map()
   return {
     kind: 'memory',
     async getCode(key) { return codes.get(key) ?? null },
@@ -19,6 +23,8 @@ export function createMemoryIdentityStore() {
     async getSession(key) { return sessions.get(key) ?? null },
     async putSession(key, record) { sessions.set(key, record) },
     async deleteSession(key) { sessions.delete(key) },
+    async getUser(key) { return users.get(key) ?? null },
+    async putUser(key, record) { users.set(key, record) },
   }
 }
 
@@ -37,6 +43,8 @@ export function createFirestoreIdentityStore(loadDb) {
     getSession: (key) => read('site_sessions', key),
     async putSession(key, record) { await (await db()).collection('site_sessions').doc(key).set(record) },
     async deleteSession(key) { await (await db()).collection('site_sessions').doc(key).delete() },
+    getUser: (key) => read('site_users', key),
+    async putUser(key, record) { await (await db()).collection('site_users').doc(key).set(record) },
   }
 }
 

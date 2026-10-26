@@ -20,6 +20,12 @@ function sendJson(response, status, payload) {
   response.end(JSON.stringify(payload))
 }
 
+/** Per-client key for auth throttling: the first forwarded hop when a proxy reports it, else the socket peer. */
+function clientKeyOf(request) {
+  const forwarded = String(request.headers['x-forwarded-for'] || '').split(',')[0].trim()
+  return forwarded || request.socket?.remoteAddress || 'unknown'
+}
+
 function allowedRequest(request, server, env, write) {
   const localPort = server.address()?.port
   let host
@@ -155,6 +161,14 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
       if (pathname === '/api/auth/email/signout' && request.method === 'POST') {
         if (typeof auth.emailSignOut !== 'function') throw new ApiError(503, '邮箱验证码服务尚未配置，请使用其他方式登录。')
         return sendJson(response, 200, await auth.emailSignOut(request.headers.authorization))
+      }
+      if (pathname === '/api/auth/username/register' && request.method === 'POST') {
+        if (typeof auth.usernameRegister !== 'function') throw new ApiError(503, '用户名登录尚未配置，请使用其他方式登录。')
+        return sendJson(response, 200, await auth.usernameRegister(await readAuthJson(request), clientKeyOf(request)))
+      }
+      if (pathname === '/api/auth/username/login' && request.method === 'POST') {
+        if (typeof auth.usernameLogin !== 'function') throw new ApiError(503, '用户名登录尚未配置，请使用其他方式登录。')
+        return sendJson(response, 200, await auth.usernameLogin(await readAuthJson(request), clientKeyOf(request)))
       }
       if (pathname === '/api/generate' && request.method === 'POST') {
         if (!generationEnabled) throw new ApiError(503, GENERATION_PAUSED.message)

@@ -155,7 +155,14 @@
 .reading-option-grid { grid-template-columns: repeat(var(--option-count, 2), minmax(0, 1fr)); }
 .reading-theme-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .reading-preference-option { display: block; position: relative; min-width: 0; cursor: pointer; }
-.reading-preference-option input, .reading-toggle-row input { position: absolute; width: 1px; height: 1px; min-height: 0; margin: 0; padding: 0; border: 0; opacity: 0; }
+/* The input itself is the tap target: it covers the whole label instead of
+   sitting in a 1x1 corner and relying on the browser to forward taps from
+   the visible span to the control — that forwarding is exactly the layer
+   that failed on the user's iPhone Safari (options looked tappable but the
+   radio never changed). It stays fully transparent, so nothing renders
+   differently; keyboard focus and the :checked + span styling are
+   unaffected because the input remains the span's previous sibling. */
+.reading-preference-option input, .reading-toggle-row input { position: absolute; inset: 0; z-index: 1; width: auto; height: auto; min-height: 0; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
 .reading-preference-option > span {
   display: flex; align-items: center; justify-content: center; gap: .4375rem; min-height: 44px; padding: .4375rem;
   border: 1px solid transparent; border-radius: .75rem; color: var(--preferences-secondary); background: var(--preferences-soft);

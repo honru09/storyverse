@@ -49,6 +49,7 @@ import {
   selectedChoice,
 } from "./reading-flow.js";
 import {
+  ALL_ABILITIES,
   COMMUNITY_BOOKS,
   CUSTOM_GENRE,
   CUSTOM_WORLD_NAME_MAX,
@@ -59,6 +60,7 @@ import {
   GENRE_TEMPLATES,
   ORIGIN_IDENTITIES,
   START_POINT_NAME_MAX,
+  abilityCandidatesFor,
   buildChapter,
   chapterForReading,
   chooseBranch,
@@ -219,34 +221,7 @@ const Icon = ({ name, size = 18, stroke = 1.8, className = "" }) => {
   return <svg {...common}>{paths[name] || paths.spark}</svg>;
 };
 
-const abilities = [
-  {
-    id: "tide",
-    name: "听见潮汐",
-    desc: "从水与回声里读取被隐藏的记忆",
-    icon: "◒",
-  },
-  {
-    id: "thread",
-    name: "缝合裂隙",
-    desc: "把两个不相容的事物短暂地连在一起",
-    icon: "⌁",
-  },
-  {
-    id: "ember",
-    name: "借火一瞬",
-    desc: "让即将熄灭的事物再燃一次",
-    icon: "✦",
-  },
-  {
-    id: "echo",
-    name: "读取备份",
-    desc: "从残留的声音里找回被删除的真相",
-    icon: "◌",
-  },
-];
 const traits = ["冷静观察者", "温柔理想派", "危险好奇心", "嘴硬心软"];
-const origins = ["旧贵族旁支", "无名漂泊者", "失忆的继承人", "被放逐的学徒"];
 // One-tap sparks for the god-mode setting field: each is a complete world
 // rule a creator can adopt as-is or keep writing from.
 const GOD_MODE_FRAGMENTS = [
@@ -519,7 +494,7 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
       </section>
 
       {draft && <button className="home-draft-row" onClick={() => onNavigate("forge")}>
-        <Icon name="book" size={20}/><span><strong>继续上次设定</strong><small>第 {Math.min(6, Math.max(1, Number(draft.step) || 1))} 步 · 已保存在本机</small></span><Icon name="chevron" size={16}/>
+        <Icon name="book" size={20}/><span><strong>继续上次设定</strong><small>第 {migratedDraftStep(draft)} 步 · 已保存在本机</small></span><Icon name="chevron" size={16}/>
       </button>}
 
       {activeStory ? <section className="home-section home-lower">
@@ -602,12 +577,13 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory }) {
 
 function Stepper({ step, setStep }) {
   const steps = [
-    { id: 1, label: "背景" },
-    { id: 2, label: "身份" },
-    { id: 3, label: "出生点" },
-    { id: 4, label: "主角" },
-    { id: 5, label: "能力" },
-    { id: 6, label: "开局" },
+    { id: 1, label: "题材" },
+    { id: 2, label: "世界" },
+    { id: 3, label: "身份" },
+    { id: 4, label: "出生点" },
+    { id: 5, label: "主角" },
+    { id: 6, label: "能力" },
+    { id: 7, label: "开局" },
   ];
   return (
     <nav className="stepper" aria-label="创作步骤">
@@ -658,24 +634,52 @@ function TemplateBrick({ template, selected, featured, index = 0, onSelect }) {
   );
 }
 
-function StageChip({ world, selected, onSelect }) {
+function WorldCard({ world, selected, onSelect }) {
   return (
     <button
       type="button"
-      className={`stage-chip ${selected ? "selected" : ""}`}
+      className={`world-card ${selected ? "selected" : ""}`}
       aria-pressed={selected}
-      title={world.subtitle}
       onClick={() => onSelect(world.id)}
     >
-      <span className="stage-chip-symbol" aria-hidden="true">{world.symbol}</span>
-      {world.name}
+      <span className="world-card-cover">
+        <WorldArtwork genreId={world.id} />
+      </span>
+      <span className="world-card-copy">
+        <strong>{world.name}</strong>
+        <em>{world.subtitle}</em>
+        <small>{world.description}</small>
+      </span>
+      {selected && (
+        <span className="selected-mark">
+          <Icon name="check" size={13} />
+        </span>
+      )}
     </button>
   );
 }
 
-function PreviewPanel({ world, template, draft, ability, tone, spawn }) {
+function PreviewPanel({ world, template, draft, ability, tone, spawn, onJump }) {
   const person = draft.name || "未命名的旅人";
   const origin = originSummaryFor(genreById[draft.genreId] || GENRES[0], draft);
+  const isCustom = draft.genreId === CUSTOM_GENRE.id;
+  // The category and the world are independent picks, so their rows jump
+  // back independently: category to step one, world to step two. In god
+  // mode both live on the world step, where the form holds name, setting
+  // and craft together.
+  const factRow = (label, value, jumpStep, jumpLabel) => onJump ? (
+    <button
+      type="button"
+      className="preview-fact-jump"
+      aria-label={jumpLabel}
+      onClick={() => onJump(jumpStep)}
+    >
+      <span>{label}</span>
+      <b>{value}</b>
+    </button>
+  ) : (
+    <div><dt>{label}</dt><dd>{value}</dd></div>
+  );
   return (
     <aside className="preview-panel">
       <h3>当前设定</h3>
@@ -686,18 +690,17 @@ function PreviewPanel({ world, template, draft, ability, tone, spawn }) {
         </div>
       </div>
       <dl className="preview-facts">
-        <div><dt>题材</dt><dd>{template ? template.fullName : "完全自由"}</dd></div>
-        <div><dt>世界</dt><dd>{world.name}</dd></div>
+        {factRow("题材", template ? template.fullName : "完全自由", isCustom ? 2 : 1, "修改题材")}
+        {factRow("世界", world.name, 2, "修改世界")}
         <div><dt>篇幅</dt><dd>{draft.storyLengthMode === "long" ? "长线 · 100 章" : draft.storyLengthMode === "season" ? "一季 · 24 章" : "短季 · 6 章"}</dd></div>
-        <div><dt>身份</dt><dd>{origin ? (origin.localTitle !== origin.name ? `${origin.name} · ${origin.localTitle}` : origin.name) : "未定"}</dd></div>
+        <div><dt>身份</dt><dd>{origin ? (origin.localTitle !== origin.name ? `${origin.name} · ${origin.localTitle}` : origin.name) : (draft.origin || "未定")}</dd></div>
         <div><dt>出生点</dt><dd>{spawn ? spawn.name : "由设定决定"}</dd></div>
         {draft.genreId === CUSTOM_GENRE.id && (
           <div><dt>设定</dt><dd>{(draft.customWorldSetting || "").trim().slice(0, 80) || "尚未写下设定"}</dd></div>
         )}
         <div><dt>主角</dt><dd>{person}</dd></div>
         <div><dt>性格</dt><dd>{draft.trait}</dd></div>
-        <div><dt>出身</dt><dd>{draft.origin}</dd></div>
-        <div><dt>能力</dt><dd>{ability.name}</dd></div>
+        <div><dt>能力</dt><dd>{ability?.name || "未定"}</dd></div>
         <div><dt>风格</dt><dd>{tone.name}</dd></div>
       </dl>
     </aside>
@@ -725,10 +728,14 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
   const engine = mode || (provider.configured ? "gemini" : "local");
   useEffect(() => () => operation.current?.abort(), []);
   const [step, setStep] = useState(
-    Math.min(6, Math.max(1, Number(initialDraft?.step) || 1)),
+    clampForgeStep(initialDraft?.step),
   );
   const [draft, setDraft] = useState(() => {
     const base = { ...DEFAULT_DRAFT, ...(initialDraft || {}) };
+    // The world marker must always be a real boolean inside the flow: the
+    // restore funnel (legacyDraftToDraft) supplies it for saved drafts;
+    // anything else is a fresh draft whose world is still unchosen.
+    if (typeof base.worldChosen !== "boolean") base.worldChosen = false;
     // Creation only offers season / long: anything else (including the
     // engine's legacy 'short' default baked into restored drafts) lands on
     // the season default. An explicit long pick survives a restore.
@@ -743,17 +750,32 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
     }
     return base;
   });
-  const [abilityId, setAbilityId] = useState(
-    abilities.find((item) => item.id === initialDraft?.abilityId)?.id ||
-      abilities.find((item) => item.name === initialDraft?.ability)?.id ||
-      "tide",
-  );
+  // Ability restore: a known candidate id (or a name matching any pool)
+  // wins; any other stored name is a custom ability the reader wrote; no
+  // stored ability means the step opens unselected — never a preset.
+  const [abilityId, setAbilityId] = useState(() => {
+    const byId = ALL_ABILITIES.find((item) => item.id === initialDraft?.abilityId)?.id;
+    if (byId) return byId;
+    const byName = ALL_ABILITIES.find((item) => item.name === initialDraft?.ability)?.id;
+    if (byName) return byName;
+    return initialDraft?.ability ? "custom" : "";
+  });
+  const [customAbility, setCustomAbility] = useState(() => {
+    const known = ALL_ABILITIES.some(
+      (item) => item.id === initialDraft?.abilityId || item.name === initialDraft?.ability,
+    );
+    return !known && initialDraft?.ability ? initialDraft.ability : "";
+  });
   const [toneId, setToneId] = useState(
     tones.find((item) => item.id === initialDraft?.toneId)?.id ||
       tones.find((item) => item.name === initialDraft?.tone)?.id ||
       "poetic",
   );
   const isCustom = draft.genreId === CUSTOM_GENRE.id;
+  // True only once a world was deliberately picked, rolled or combo-rolled
+  // (or the draft predates the world screen — see legacyDraftToDraft). The
+  // bare genreId default never counts as a choice.
+  const worldChosen = draft.worldChosen === true;
   const customWorldName = (draft.customWorldName || "").trim();
   const world = isCustom
     ? { ...toWorld(CUSTOM_GENRE), name: customWorldName || CUSTOM_GENRE.world, location: customWorldName || CUSTOM_GENRE.location }
@@ -772,6 +794,20 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
   const spawn = resolveStartPoint(spawnGenre, draft);
   const identityPoints = identity && !isCustom ? spawnPointsForIdentity(spawnGenre, identity.id) : [];
   const spawnPoints = identityPoints.length ? identityPoints : (spawnGenre.spawnPoints || []);
+  // God mode can still borrow spawn points, but the source is the world the
+  // user had chosen before entering god mode (stashed on entry) crossed
+  // with the picked identity — a craft template never lends its world.
+  const borrowGenre = isCustom ? GENRES.find((genre) => genre.id === draft.godBorrowWorldId) : null;
+  const borrowPoints = borrowGenre && identity ? spawnPointsForIdentity(borrowGenre, identity.id) : [];
+  // The ability step's candidates follow the (world × template) pair:
+  // the pinned template's signature abilities first, then the world's own
+  // pool; a god-mode world offers its pinned craft's signatures, or the
+  // generic pool when completely free.
+  const abilityCandidates = abilityCandidatesFor({
+    genreId: draft.genreId,
+    genreTemplateId: draft.genreTemplateId,
+    custom: isCustom,
+  });
   const lastGenreId = useRef(draft.genreId);
   useEffect(() => {
     if (lastGenreId.current === draft.genreId) return;
@@ -808,20 +844,54 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
     const rolledIdentity = pool[Math.floor(Math.random() * pool.length)] || ORIGIN_IDENTITIES[0];
     if (rolledIdentity) selectIdentity(rolledIdentity.id);
   };
-  // 题材与世界彻底解耦：点题材砖只改分类，点世界只改世界，两边互不跟随。
+  // 题材与世界彻底解耦：题材屏只写分类，世界屏只写世界，两边互不跟随。
+  // Picking a category touches the category field and nothing else — never
+  // the world, never the world marker.
   const selectTemplate = (item) => {
     set({ genreTemplateId: item.id });
   };
+  const rollTemplate = () => {
+    const pool = templateWall.filter((item) => item.id !== template?.id);
+    const rolledTemplate = pool[Math.floor(Math.random() * pool.length)] || templateWall[0];
+    if (rolledTemplate) selectTemplate(rolledTemplate);
+  };
+  // Picking a world touches the world field and lands the world marker —
+  // never the category. The marker is what separates a deliberate world
+  // from the untouched default when the step is left without a pick.
   const selectStage = (genreId) => {
-    set({ genreId });
+    set({ genreId, worldChosen: true });
+  };
+  const rollWorld = () => {
+    const pool = GENRES.filter((genre) => genre.id !== draft.genreId);
+    const rolledWorld = pool[Math.floor(Math.random() * pool.length)] || GENRES[0];
+    if (rolledWorld) selectStage(rolledWorld.id);
+  };
+  // The ability roll, shared between the random card and next(): draw any
+  // candidate other than the current pick, from the CURRENT list only.
+  const rollAbility = () => {
+    const pool = abilityCandidates.filter((item) => item.id !== abilityId);
+    const rolledAbility = pool[Math.floor(Math.random() * pool.length)] || abilityCandidates[0];
+    if (rolledAbility) {
+      setCustomAbility("");
+      setAbilityId(rolledAbility.id);
+    }
   };
   const enterGodMode = () => {
-    set({ genreId: CUSTOM_GENRE.id, genreTemplateId: "" });
+    // Remember the world the user had chosen before going god: god mode's
+    // spawn step may borrow that world's spawn points (crossed with the
+    // identity). Entering without a chosen world stashes nothing.
+    const borrow = draft.genreId !== CUSTOM_GENRE.id
+      ? (worldChosen ? draft.genreId : "")
+      : (draft.godBorrowWorldId || "");
+    set({ genreId: CUSTOM_GENRE.id, genreTemplateId: "", godBorrowWorldId: borrow });
   };
   const exitGodMode = () => {
-    // Back to the default preset world; a craft picked as 写法 in god mode
-    // stays picked — it never implied a world in the first place.
-    set({ genreId: DEFAULT_DRAFT.genreId });
+    // Back to the world the user came from when there is one; a craft
+    // picked as 写法 in god mode stays picked — it never implied a world.
+    const backTo = GENRES.some((genre) => genre.id === draft.godBorrowWorldId)
+      ? draft.godBorrowWorldId
+      : DEFAULT_DRAFT.genreId;
+    set({ genreId: backTo, ...(draft.godBorrowWorldId ? { worldChosen: true } : {}) });
   };
   const appendFragment = (fragment) => {    const current = (draft.customWorldSetting || "").trim();
     const needsStop = current && !"。！？".includes(current.slice(-1));
@@ -841,32 +911,48 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
     set({
       genreTemplateId: nextTemplate.id,
       genreId: stageGenre.id,
+      worldChosen: true,
       originIdentityId: nextIdentity.id,
       startPointName: point ? point.name : "",
       startPointHook: point ? point.hook : "",
     });
     setRolled({ template: nextTemplate, world: stageGenre.world, identity: nextIdentity, point });
   };
-  const ability =
-    abilities.find((item) => item.id === abilityId) || abilities[0];
+  // A pick only counts while it belongs to the current candidate list (or
+  // is the reader's own custom text): switching world or template retires
+  // a stale pick instead of silently carrying another world's ability.
+  const abilityPick = abilityId === "custom"
+    ? (customAbility.trim() ? { id: "custom", name: customAbility.trim(), desc: "你亲手写下的能力" } : null)
+    : abilityCandidates.find((item) => item.id === abilityId) || null;
+  const abilityName = abilityPick?.name || "";
   const tone = tones.find((item) => item.id === toneId) || tones[0];
   const set = (patch) => setDraft((current) => ({ ...current, ...patch }));
   const next = () => {
-    // God-mode settings are checked when leaving step one, not while typing:
-    // a refused setting stays on screen, editable, with the reason shown.
-    if (step === 1 && isCustom) {
+    // God-mode settings are checked when leaving the world step (the god
+    // form lives there now), not while typing: a refused setting stays on
+    // screen, editable, with the reason shown.
+    if (step === 2 && isCustom) {
       const violation = findSettingViolation(draft.customWorldSetting);
       if (violation) { setError(violation); return; }
     }
+    // Leaving the world step with no world picked rolls one and lands it,
+    // exactly like the identity step below: the default world on the draft
+    // is not a choice, and silently keeping it would re-couple the world
+    // to whatever the draft happened to start with.
+    if (step === 2 && !isCustom && !worldChosen) rollWorld();
     // Leaving the identity step with nothing picked must not fall through
     // to the spawn step's whole-world fallback list — that would resurrect
     // the old "pick a proper noun before knowing the world" problem through
     // the back door. Roll an identity instead, exactly like the random
     // card; a draft that already carries one is never re-rolled, and the
     // pick can still be changed by going back a step.
-    if (step === 2 && !identity) rollIdentity();
+    if (step === 3 && !identity) rollIdentity();
+    // Leaving the ability step with nothing picked rolls from the current
+    // (world × template) list and lands it — the same rule as the world
+    // and identity steps. There is no default ability to fall back to.
+    if (step === 6 && !abilityPick) rollAbility();
     setError("");
-    setStep((value) => Math.min(6, value + 1));
+    setStep((value) => Math.min(7, value + 1));
   };
   const back = () => setStep((value) => Math.max(1, value - 1));
   useSceneMotion(
@@ -877,13 +963,13 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
   useEffect(() => {
     onDraftChange?.({
       ...draft,
-      ability: ability.name,
+      ability: abilityName,
       tone: tone.name,
-      abilityId,
+      abilityId: abilityPick?.id || "",
       toneId,
       step,
     });
-  }, [draft, ability.name, tone.name, abilityId, toneId, step, onDraftChange]);
+  }, [draft, abilityName, abilityPick?.id, tone.name, toneId, step, onDraftChange]);
   useEffect(() => {
     scrollToTop();
     forgeRef.current
@@ -894,7 +980,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
     if (operation.current) return;
     if (isCustom) {
       const violation = findSettingViolation(draft.customWorldSetting);
-      if (violation) { setError(violation); setStep(1); return; }
+      if (violation) { setError(violation); setStep(2); return; }
     }
     const controller = new AbortController();
     operation.current = controller;
@@ -902,10 +988,10 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
     setError("");
     try { await onGenerate({
       ...draft,
-      ability: ability.name,
+      ability: abilityName,
       tone: tone.name,
       world,
-      abilityOption: ability,
+      abilityOption: abilityPick || { id: "", name: "", desc: "" },
       toneOption: tone,
     }, { engine, signal: controller.signal }); }
     catch (failure) { if (!controller.signal.aborted) setError(failure.message || "暂时没能打开故事，草稿还在。"); }
@@ -922,7 +1008,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
       <div className="forge-progress">
         <h1 className="sr-only">新故事</h1>
         <Stepper step={step} setStep={(value) => { if (!busy) setStep(value); }} />
-        <span className="step-count" aria-label={`第 ${step} 步，共 6 步`}>{step} / 6</span>
+        <span className="step-count" aria-label={`第 ${step} 步，共 7 步`}>{step} / 7</span>
       </div>
       <div className="forge-layout">
         <main className="forge-main">
@@ -930,7 +1016,54 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
             <>
               <div className="forge-section-heading">
                 <div>
-                  <h2 tabIndex={-1}>{isCustom ? "这个世界，由你写。" : "想写哪种故事？"}</h2>
+                  <h2 tabIndex={-1}>想写哪种故事？</h2>
+                </div>
+              </div>
+              <div className="template-wall" role="group" aria-label="题材">
+                {templateWall.map((item, index) => (
+                  <TemplateBrick
+                    key={item.id}
+                    template={item}
+                    index={index}
+                    featured={index === 0}
+                    selected={template?.id === item.id}
+                    onSelect={selectTemplate}
+                  />
+                ))}
+                <AnimatedContent className="template-brick-wrap" distance={8} delay={0.42}>
+                  <button type="button" className="template-brick template-brick-random" onClick={rollTemplate}>
+                    <span
+                      className="template-brick-visual template-brick-visual--craft"
+                      style={{ background: "linear-gradient(150deg, rgba(110, 231, 255, 0.28), rgba(10, 20, 48, 0.25) 62%)" }}
+                      aria-hidden="true"
+                    >
+                      <span className="template-brick-symbol" style={{ color: "var(--cyan)" }}>掷</span>
+                    </span>
+                    <span className="template-brick-copy">
+                      <strong>随机</strong>
+                      <small>从十四种题材里抽一个——分类交给命运。</small>
+                    </span>
+                  </button>
+                </AnimatedContent>
+              </div>
+              <div className="random-combo-row">
+                <p>{rolled
+                  ? <>已配好：<b>{rolled.template.fullName} · {rolled.world}</b>，以「{rolled.identity.name}」的身份{rolled.point ? <>，从「{rolled.point.name}」醒来</> : null}。不满意就再掷一次。</>
+                  : <>没想好？<b>随机组合</b>一次配好题材、世界、身份和出生点。</>}</p>
+                <Button variant="secondary" icon="spark" className="random-combo-button" onClick={rollCombo}>
+                  {rolled ? "再掷一次" : "随机组合"}
+                </Button>
+              </div>
+              <p className="world-selection-note" aria-live="polite">{template
+                ? `${template.blurb} 题材只是分类——故事发生在哪个世界，下一步由你自己选。`
+                : `不绑任何题材模板，写法完全自由。世界在下一步由你决定。`}</p>
+            </>
+          )}
+          {step === 2 && (
+            <>
+              <div className="forge-section-heading">
+                <div>
+                  <h2 tabIndex={-1}>{isCustom ? "这个世界，由你写。" : "故事发生在哪个世界？"}</h2>
                 </div>
               </div>
               {isCustom ? (
@@ -1004,47 +1137,37 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                 </div>
               ) : (
                 <>
-                  <div className="template-wall" role="group" aria-label="题材">
-                    {templateWall.map((item, index) => (
-                      <TemplateBrick
+                  <div className="world-grid" role="group" aria-label="世界">
+                    {worlds.map((item) => (
+                      <WorldCard
                         key={item.id}
-                        template={item}
-                        index={index}
-                        featured={index === 0}
-                        selected={template.id === item.id}
-                        onSelect={selectTemplate}
+                        world={item}
+                        selected={draft.worldChosen && draft.genreId === item.id}
+                        onSelect={selectStage}
                       />
                     ))}
+                    <button type="button" className="world-card world-card-god" onClick={enterGodMode}>
+                      <span className="world-card-cover world-card-cover--symbol" aria-hidden="true">
+                        <span className="world-card-symbol">{CUSTOM_GENRE.symbol}</span>
+                      </span>
+                      <span className="world-card-copy">
+                        <strong>创世神模式</strong>
+                        <em>世界由你亲手写</em>
+                        <small>不选现成世界——自己写下世界的名字、规则与氛围。</small>
+                      </span>
+                      <Icon name="chevron" size={15} />
+                    </button>
+                    <button type="button" className="world-card world-card-random" onClick={rollWorld}>
+                      <span className="world-card-cover world-card-cover--symbol" aria-hidden="true">
+                        <span className="world-card-symbol">掷</span>
+                      </span>
+                      <span className="world-card-copy">
+                        <strong>随机</strong>
+                        <em>交给命运</em>
+                        <small>从六个世界里抽一个，抽中哪个就去哪个世界。</small>
+                      </span>
+                    </button>
                   </div>
-                  <div className="stage-picker">
-                    <span className="stage-picker-label" id="stage-picker-label">选择世界</span>
-                    <div className="stage-chips" role="group" aria-labelledby="stage-picker-label">
-                      {worlds.map((item) => (
-                        <StageChip
-                          key={item.id}
-                          world={item}
-                          selected={draft.genreId === item.id}
-                          onSelect={selectStage}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <div className="random-combo-row">
-                    <p>{rolled
-                      ? <>已配好：<b>{rolled.template.fullName} · {rolled.world}</b>，以「{rolled.identity.name}」的身份{rolled.point ? <>，从「{rolled.point.name}」醒来</> : null}。不满意就再掷一次。</>
-                      : <>没想好？<b>随机组合</b>一次配好题材、世界、身份和出生点。</>}</p>
-                    <Button variant="secondary" icon="spark" className="random-combo-button" onClick={rollCombo}>
-                      {rolled ? "再掷一次" : "随机组合"}
-                    </Button>
-                  </div>
-                  <button type="button" className="god-entry" onClick={enterGodMode}>
-                    <span className="god-entry-symbol" aria-hidden="true">{CUSTOM_GENRE.symbol}</span>
-                    <span className="god-entry-copy">
-                      <strong>创世神模式</strong>
-                      <small>世界由你亲手写——不选现成世界，自己写下世界的名字与规则。</small>
-                    </span>
-                    <Icon name="chevron" size={15} />
-                  </button>
                   <p className="god-ip-note">请勿直接使用他人作品或 IP 的设定——换上你自己的世界，故事才真正属于你。</p>
                 </>
               )}
@@ -1052,10 +1175,12 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                 ? template
                   ? `${template.blurb} 世界由你亲手写——${world.name}。`
                   : `不绑任何题材模板，写法完全由你的设定决定。世界是${world.name}。`
-                : `${template.blurb} 世界是${world.name}——${world.subtitle}`}</p>
+                : worldChosen
+                  ? `世界是${world.name}——${world.subtitle}。题材和世界互相独立：换世界不会动你选好的题材。`
+                  : `还没选也行：点「继续」会替你掷一个世界。题材和世界互相独立，掷世界不会动题材。`}</p>
             </>
           )}
-          {step === 2 && (
+          {step === 3 && (
             <>
               <div className="forge-section-heading">
                 <div>
@@ -1101,7 +1226,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
               <p className="field-hint">先定身份，再选出生点：身份决定你在这个世界里是谁，出生点只是你睁开眼的那一处地方。{identity && !isCustom ? <>在{world.name}，人们会称你为「{localIdentityTitle(spawnGenre, identity.id)}」。</> : null}</p>
             </>
           )}
-          {step === 3 && (
+          {step === 4 && (
             <>
               <div className="forge-section-heading">
                 <div>
@@ -1121,6 +1246,25 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                     />
                   </label>
                   <p className="field-hint">留空也行：出生点由你的背景设定决定。写一个小而具体的地方——主角睁开眼时，就在那里。</p>
+                  {borrowPoints.length > 0 && (
+                    <div className="form-block">
+                      <span className="field-label">也可以借用「{borrowGenre.world}」的出生点</span>
+                      <div className="stage-chips" role="group" aria-label="可借用的出生点">
+                        {borrowPoints.map((point) => (
+                          <button
+                            type="button"
+                            key={point.name}
+                            className={`stage-chip ${draft.startPointName === point.name ? "selected" : ""}`}
+                            aria-pressed={draft.startPointName === point.name}
+                            onClick={() => set({ startPointName: point.name, startPointHook: point.hook })}
+                          >
+                            {point.name}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="field-hint">来自你选过的世界「{borrowGenre.world}」里，这个身份能落脚的地方；点一下填进来，也可以再改。</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
@@ -1162,7 +1306,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
               )}
             </>
           )}
-          {step === 4 && (
+          {step === 5 && (
             <>
               <div className="forge-section-heading">
                 <div>
@@ -1194,25 +1338,6 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                         {trait}
                         {draft.trait === trait && (
                           <Icon name="check" size={13} />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="form-block">
-                  <span className="field-label">出身</span>
-                  <div className="origin-grid">
-                    {origins.map((origin) => (
-                      <button
-                        type="button"
-                        key={origin}
-                        className={`origin-card ${draft.origin === origin ? "active" : ""}`}
-                        aria-pressed={draft.origin === origin}
-                        onClick={() => set({ origin })}
-                      >
-                        <span>{origin}</span>
-                        {draft.origin === origin && (
-                          <Icon name="check" size={14} />
                         )}
                       </button>
                     ))}
@@ -1299,21 +1424,24 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
               </div>
             </>
           )}
-          {step === 5 && (
+          {step === 6 && (
             <>
               <div className="forge-section-heading">
                 <div>
                   <h2 tabIndex={-1}>想拥有什么能力？</h2>
+                  <p className="field-hint">{isCustom
+                    ? "创世神世界没有现成的能力池：候选来自你选的写法，或写一个自己的。不选直接继续，会从候选里随机落定一个。"
+                    : "候选随世界与题材而变：先是所选题材的招牌能力，再是这个世界的本事。不选直接继续，会从候选里随机落定一个。"}</p>
                 </div>
               </div>
               <div className="ability-list">
-                {abilities.map((item) => (
+                {abilityCandidates.map((item) => (
                   <button
                     type="button"
                     key={item.id}
                     className={`ability-card ${abilityId === item.id ? "active" : ""}`}
                     aria-pressed={abilityId === item.id}
-                    onClick={() => setAbilityId(item.id)}
+                    onClick={() => { setAbilityId(item.id); setCustomAbility(""); }}
                   >
                     <span>
                       <b>{item.name}</b>
@@ -1324,7 +1452,31 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                     </span>
                   </button>
                 ))}
+                <button
+                  type="button"
+                  className="ability-card ability-card-random"
+                  onClick={rollAbility}
+                >
+                  <span>
+                    <b>随机能力</b>
+                    <small>从上面的候选里抽一个，抽到就是它</small>
+                  </span>
+                  <span className="ability-radio" />
+                </button>
               </div>
+              <label className="field-label ability-custom">
+                自定义能力（选填）
+                <input
+                  maxLength={40}
+                  autoComplete="off"
+                  value={customAbility}
+                  onChange={(event) => {
+                    setCustomAbility(event.target.value);
+                    setAbilityId(event.target.value.trim() ? "custom" : "");
+                  }}
+                  placeholder="也可以写一个只属于你的能力"
+                />
+              </label>
               <div className="tone-block">
                 <div className="forge-section-heading mini">
                   <div>
@@ -1347,7 +1499,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
               </div>
             </>
           )}
-          {step === 6 && (
+          {step === 7 && (
             <>
               <div className="forge-section-heading">
                 <div>
@@ -1386,11 +1538,18 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                     : "二十四章一季：分 4 幕，幕末小升格、季终大升格；读完一季可以开启下一季。"}</p>
                 </div>
                 <div className="opening-details" aria-label="确认故事设定">
-                  <button disabled={busy} onClick={() => setStep(1)} aria-label={isCustom ? "修改创世设定" : "修改题材与世界"}><span>{isCustom ? "创世" : "题材"}</span><b>{template ? template.fullName : "完全自由"} · {world.name}</b><Icon name="chevron" size={15} /></button>
-                  <button disabled={busy} onClick={() => setStep(2)} aria-label="修改身份"><span>身份</span><b>{identity ? (localIdentityTitle(spawnGenre, identity.id) !== identity.name ? `${identity.name} · ${localIdentityTitle(spawnGenre, identity.id)}` : identity.name) : "未定"}</b><Icon name="chevron" size={15} /></button>
-                  <button disabled={busy} onClick={() => setStep(3)} aria-label="修改出生点"><span>出生点</span><b>{spawn ? spawn.name : "由设定决定"}</b><Icon name="chevron" size={15} /></button>
-                  <button disabled={busy} onClick={() => setStep(4)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "未命名旅人"}</b><Icon name="chevron" size={15} /></button>
-                  <button disabled={busy} onClick={() => setStep(5)} aria-label="修改能力与风格"><span>能力</span><b>{ability.name} · {tone.name}</b><Icon name="chevron" size={15} /></button>
+                  {isCustom ? (
+                    <button disabled={busy} onClick={() => setStep(2)} aria-label="修改创世设定"><span>创世</span><b>{template ? template.fullName : "完全自由"} · {world.name}</b><Icon name="chevron" size={15} /></button>
+                  ) : (
+                    <>
+                      <button disabled={busy} onClick={() => setStep(1)} aria-label="修改题材"><span>题材</span><b>{template ? template.fullName : "完全自由"}</b><Icon name="chevron" size={15} /></button>
+                      <button disabled={busy} onClick={() => setStep(2)} aria-label="修改世界"><span>世界</span><b>{world.name}</b><Icon name="chevron" size={15} /></button>
+                    </>
+                  )}
+                  <button disabled={busy} onClick={() => setStep(3)} aria-label="修改身份"><span>身份</span><b>{identity ? (localIdentityTitle(spawnGenre, identity.id) !== identity.name ? `${identity.name} · ${localIdentityTitle(spawnGenre, identity.id)}` : identity.name) : (draft.origin || "未定")}</b><Icon name="chevron" size={15} /></button>
+                  <button disabled={busy} onClick={() => setStep(4)} aria-label="修改出生点"><span>出生点</span><b>{spawn ? spawn.name : "由设定决定"}</b><Icon name="chevron" size={15} /></button>
+                  <button disabled={busy} onClick={() => setStep(5)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "未命名旅人"}</b><Icon name="chevron" size={15} /></button>
+                  <button disabled={busy} onClick={() => setStep(6)} aria-label="修改能力与风格"><span>能力</span><b>{(abilityName || "未定")} · {tone.name}</b><Icon name="chevron" size={15} /></button>
                   <div className="opening-detail-static"><span>篇幅</span><b>{draft.storyLengthMode === "long" ? "长线 · 100 章" : "一季 · 24 章"}</b></div>
                 </div>
               </div>
@@ -1406,7 +1565,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                 </button>
               )}
               <div className="forge-actions-right">
-                {step < 6 ? (
+                {step < 7 ? (
                   <Button icon="arrow" onClick={next}>
                     继续
                   </Button>
@@ -1425,9 +1584,10 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
           world={world}
           template={template}
           draft={draft}
-          ability={ability}
+          ability={abilityPick}
           tone={tone}
           spawn={spawn}
+          onJump={(value) => { if (!busy) setStep(value); }}
         />
       </div>
     </div>
@@ -1600,6 +1760,33 @@ function Reader({
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [focused, setFocused] = useState(false);
+  // The floating topline card must never sit half over a line of prose:
+  // while the reader scrolls down it slides away, and it comes back on
+  // the first upward scroll or near the top — the same hide the focus
+  // mode applies, driven by scroll direction instead of a toggle. The
+  // flag is written straight to the DOM, not React state: a scroll
+  // listener must never re-render the reader mid-gesture (it would swap
+  // DOM nodes under the reader's own taps).
+  useEffect(() => {
+    const root = readerRef.current;
+    if (!root) return undefined;
+    let lastY = window.scrollY;
+    const apply = (hidden) => { root.dataset.toplineHidden = hidden ? "true" : "false"; };
+    apply(false);
+    const onScroll = () => {
+      const y = window.scrollY;
+      const delta = y - lastY;
+      lastY = y;
+      // A single leap is a programmatic jump (position restore, anchor or
+      // search jump), never a reading gesture: the chrome stays for it.
+      if (Math.abs(delta) > 240) { apply(false); return; }
+      if (y < 80) apply(false);
+      else if (delta > 4) apply(true);
+      else if (delta < -4) apply(false);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [story.id]);
   const [bookmarkVersion, setBookmarkVersion] = useState(0);
   const bookmarkAnchor = useRef(null);
   const requestedLocation = useRef(null);
@@ -1639,6 +1826,7 @@ function Reader({
     setShareOpen(false);
     setDirectoryOpen(false);
     setToolsOpen(false);
+    if (readerRef.current) readerRef.current.dataset.toplineHidden = "false";
     setRewriteMode(false);
     setPendingChoice(null);
     setError("");
@@ -2482,9 +2670,25 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
   );
 }
 
+const clampForgeStep = (value) =>
+  Math.min(7, Math.max(1, Math.floor(Number(value) || 1)));
+
+// Draft step numbers are only comparable within one flow shape. Drafts saved
+// by the six-step flow predate the world screen and carry no worldChosen
+// marker: their step 1 stays 1 and steps 2..6 shift one forward (identity
+// was 2, becomes 3, and so on). Marked drafts are already seven-step.
+const migratedDraftStep = (source) => {
+  const step = clampForgeStep(source?.step);
+  if (typeof source?.worldChosen === "boolean") return step;
+  return step <= 1 ? 1 : Math.min(7, step + 1);
+};
+
 function legacyDraftToDraft(library) {
   const source =
     library?.draft && typeof library.draft === "object" ? library.draft : {};
+  const hasSavedDraft = Boolean(
+    library?.draft && typeof library.draft === "object",
+  );
   const worldId = source.genreId || source.worldId;
   const textValue = (...values) =>
     values.find(
@@ -2509,7 +2713,15 @@ function legacyDraftToDraft(library) {
     ability:
       textValue(source.ability, source.abilityName) || DEFAULT_DRAFT.ability,
     tone: textValue(source.tone, source.toneName) || DEFAULT_DRAFT.tone,
-    step: Math.min(6, Math.max(1, Number(source.step) || 1)),
+    // A saved draft without the marker predates the world screen: the world
+    // on it was picked under the old combined step, so it counts as chosen
+    // and its genreId is kept as-is. Only a truly fresh start (no saved
+    // draft at all) begins unchosen.
+    worldChosen:
+      typeof source.worldChosen === "boolean"
+        ? source.worldChosen
+        : hasSavedDraft,
+    step: migratedDraftStep(source),
   };
 }
 

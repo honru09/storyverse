@@ -17,6 +17,9 @@ const ERROR_MESSAGES = {
   'auth/account-unavailable': '账号验证服务暂时无法连接，请重试。本机故事不受影响。',
   'auth/session-invalid': '登录凭证无效或已过期，请重新登录。',
   'auth/invalid-code': '验证码不正确或已过期，请重新获取。',
+  'auth/username-taken': '这个用户名已被占用，换个名字试试。',
+  'auth/username-invalid': '用户名或密码不正确。',
+  'auth/username-format': '用户名只能用字母、数字、下划线和点（3–20 个字符），密码至少 8 个字符。',
   'auth/requires-recent-login': '为了保护账号，请重新登录后再试。',
   'auth/user-disabled': '此账号暂时无法登录，请联系站点维护者。',
   'auth/account-exists-with-different-credential': '此邮箱已使用其他方式注册，请用原来的方式登录。',
@@ -53,6 +56,12 @@ function passwordInput(password, registration = false) {
   return password
 }
 
+function usernameInput(username) {
+  const value = typeof username === 'string' ? username.trim().toLowerCase() : ''
+  if (!/^[a-z0-9_.]{3,20}$/.test(value)) throw authError('auth/username-format')
+  return value
+}
+
 function normalizeUsage(value) {
   const usage = { prompt: 0, candidates: 0, thoughts: 0, cached: 0, total: 0, generations: 0, updatedAt: null }
   if (!value || typeof value !== 'object') return usage
@@ -81,13 +90,14 @@ function defaultSessionStore() {
 }
 
 /**
- * Two sign-in channels share one snapshot:
+ * Three sign-in channels share one snapshot:
  * - Firebase (Google / email password): the SDK owns credential persistence;
  *   this module never stores passwords or Firebase tokens.
- * - Email code (this site's own API): the server issues an opaque session
- *   token and keeps only its hash. The token is kept in web storage, the
- *   same persistence level the Firebase SDK uses on this device, for up to
- *   30 days; the server can revoke it at any time.
+ * - Email code and username + password (this site's own API): the server
+ *   issues an opaque session token and keeps only its hash. The token is
+ *   kept in web storage, the same persistence level the Firebase SDK uses
+ *   on this device, for up to 30 days; the server can revoke it at any
+ *   time. The stored session records which site channel issued it.
  * Either way, a session only becomes `authenticated` after this server
  * confirms the identity through GET /api/account.
  */
@@ -225,7 +235,7 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
         email: typeof result.user.email === 'string' ? result.user.email : session.email,
         displayName: typeof result.user.displayName === 'string' ? result.user.displayName : null,
         emailVerified: result.user.emailVerified,
-        provider: 'email-code',
+        provider: session.provider === 'username' ? 'username' : 'email-code',
       }
       publish({ status: 'authenticated', user: verified, usage: normalizeUsage(result.usage), error: null })
       return verified
@@ -261,12 +271,14 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
         publish({ config })
         const firebaseReady = validConfig(config)
         const codeReady = config?.emailCode === true
-        if (!firebaseReady && !codeReady) {
+        const usernameReady = config?.providers?.username === true
+        const siteReady = codeReady || usernameReady
+        if (!firebaseReady && !siteReady) {
           publish({ status: 'unavailable', user: null, error: ERROR_MESSAGES['auth/unavailable'] })
           return snapshot
         }
         if (!firebaseReady) {
-          // Email-code-only deployment: the Firebase SDK is never loaded.
+          // Site-channel-only deployment: the Firebase SDK is never loaded.
           if (!await restoreSiteSession() && active && epoch === startEpoch) {
             publish({ status: 'guest', user: null, error: null })
           }
@@ -286,7 +298,7 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
             const settle = async () => {
               if (user) return confirmUser(user)
               // No Firebase user: a stored site session is a separate sign-in.
-              if (codeReady && await restoreSiteSession()) return undefined
+              if (siteReady && await restoreSiteSession()) return undefined
               return confirmUser(null)
             }
             void settle().catch(() => {}).finally(resolve)
@@ -335,6 +347,12 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
   function runSite(operation) {
     return runInternal(operation, () => {
       if (snapshot.config?.emailCode !== true) throw authError('auth/operation-not-allowed')
+    })
+  }
+
+  function runUsername(operation) {
+    return runInternal(operation, () => {
+      if (snapshot.config?.providers?.username !== true) throw authError('auth/operation-not-allowed')
     })
   }
 
@@ -428,6 +446,60 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
       publish({ notice: '已通过邮箱验证码登录。故事和阅读进度仍保存在本机。' })
       return user
     }),
+    registerWithUsername: (username, password) => runUsername(async (guard) => {
+      const name = usernameInput(username)
+      const response = await request('/api/auth/username/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: name, password: passwordInput(password, true) }),
+      })
+      guard()
+      if (!response.ok) throw authError(response.status === 409 ? 'auth/username-taken' : response.status === 400 ? 'auth/username-format' : response.status === 429 ? 'auth/too-many-requests' : response.status === 503 ? 'auth/unavailable' : 'auth/account-unavailable')
+      const result = await response.json().catch(() => null)
+      if (!result || typeof result.token !== 'string' || !result.token || typeof result.uid !== 'string' || !result.uid) throw authError('auth/account-unavailable')
+      const session = {
+        token: result.token,
+        uid: result.uid,
+        email: null,
+        displayName: typeof result.username === 'string' ? result.username : name,
+        provider: 'username',
+        expiresAt: typeof result.expiresAt === 'number' ? result.expiresAt : Date.now() + SITE_SESSION_FALLBACK_TTL,
+      }
+      writeSiteSession(session)
+      guard()
+      const user = await confirmSiteSession(session)
+      guard()
+      if (!user) throw authError('auth/session-invalid')
+      publish({ notice: '账号已创建，你已登录。故事和阅读进度仍保存在本机。' })
+      return user
+    }),
+    signInWithUsername: (username, password) => runUsername(async (guard) => {
+      const name = usernameInput(username)
+      const response = await request('/api/auth/username/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: name, password: passwordInput(password) }),
+      })
+      guard()
+      if (!response.ok) throw authError(response.status === 401 ? 'auth/username-invalid' : response.status === 400 ? 'auth/username-format' : response.status === 429 ? 'auth/too-many-requests' : response.status === 503 ? 'auth/unavailable' : 'auth/account-unavailable')
+      const result = await response.json().catch(() => null)
+      if (!result || typeof result.token !== 'string' || !result.token || typeof result.uid !== 'string' || !result.uid) throw authError('auth/account-unavailable')
+      const session = {
+        token: result.token,
+        uid: result.uid,
+        email: null,
+        displayName: typeof result.username === 'string' ? result.username : name,
+        provider: 'username',
+        expiresAt: typeof result.expiresAt === 'number' ? result.expiresAt : Date.now() + SITE_SESSION_FALLBACK_TTL,
+      }
+      writeSiteSession(session)
+      guard()
+      const user = await confirmSiteSession(session)
+      guard()
+      if (!user) throw authError('auth/session-invalid')
+      publish({ notice: '已用用户名登录。故事和阅读进度仍保存在本机。' })
+      return user
+    }),
     sendVerification: () => run(async (guard) => {
       const user = auth.currentUser
       if (!user) throw authError('auth/session-invalid')
@@ -436,7 +508,7 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
       publish({ notice: '验证邮件已发出，请在邮箱中确认后返回刷新状态。' })
     }),
     refreshUser: () => {
-      if (snapshot.user?.provider === 'email-code') {
+      if (snapshot.user?.provider === 'email-code' || snapshot.user?.provider === 'username') {
         return runInternal(async (guard) => {
           const session = readSiteSession()
           if (!session) {
@@ -447,7 +519,7 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
           guard()
           return user
         }, () => {
-          if (snapshot.config?.emailCode !== true) throw authError('auth/operation-not-allowed')
+          if (snapshot.config?.emailCode !== true && snapshot.config?.providers?.username !== true) throw authError('auth/operation-not-allowed')
         })
       }
       return run(async (guard) => {
@@ -461,7 +533,7 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
       })
     },
     signOut: () => {
-      if (snapshot.user?.provider === 'email-code' || (!auth && readSiteSession())) {
+      if (snapshot.user?.provider === 'email-code' || snapshot.user?.provider === 'username' || (!auth && readSiteSession())) {
         // Site sessions end locally and on the server; no Firebase involved.
         return runInternal(async (guard) => {
           const session = readSiteSession()
@@ -498,7 +570,7 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
      */
     async getAccessToken() {
       if (snapshot.status !== 'authenticated' || !snapshot.user) return null
-      if (snapshot.user.provider === 'email-code') {
+      if (snapshot.user.provider === 'email-code' || snapshot.user.provider === 'username') {
         const session = readSiteSession()
         return session && session.uid === snapshot.user.uid ? session.token : null
       }

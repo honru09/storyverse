@@ -326,11 +326,11 @@ test('god-mode story with custom fields round-trips through save and load', () =
   assert.doesNotThrow(() => importLibrary(exportLibrary(library)))
 })
 
-test('spawn point fields, origin identity and the sixth forge step round-trip through save and load', () => {
+test('spawn point fields, origin identity and the seventh forge step round-trip through save and load', () => {
   const storage = new MemoryStorage()
   const created = createStory({ name: '阿遥', genreId: 'court', originIdentityId: 'heir', startPointName: '皇帝的卧室', startPointHook: '在龙床边的脚踏上醒来。' })
   const library = upsertStory(emptyLibrary(), created)
-  library.draft = { genreId: 'court', originIdentityId: 'heir', startPointName: '皇帝的卧室', startPointHook: '在龙床边的脚踏上醒来。', step: 6 }
+  library.draft = { genreId: 'court', worldChosen: true, originIdentityId: 'heir', startPointName: '皇帝的卧室', startPointHook: '在龙床边的脚踏上醒来。', step: 7 }
   assert.deepEqual(saveLibrary(storage, library), { ok: true, error: null })
   const loaded = loadLibrary(storage)
   assert.equal(loaded.warning, null)
@@ -339,11 +339,16 @@ test('spawn point fields, origin identity and the sixth forge step round-trip th
   assert.equal(loaded.library.stories[0].config.originIdentityId, 'heir')
   assert.equal(loaded.library.draft.startPointName, '皇帝的卧室')
   assert.equal(loaded.library.draft.originIdentityId, 'heir')
-  assert.equal(loaded.library.draft.step, 6)
-  // A step beyond the six-step flow is structurally invalid.
-  const broken = { ...emptyLibrary(), draft: { genreId: 'court', step: 7 } }
+  assert.equal(loaded.library.draft.worldChosen, true)
+  assert.equal(loaded.library.draft.step, 7)
+  // A step beyond the seven-step flow is structurally invalid.
+  const broken = { ...emptyLibrary(), draft: { genreId: 'court', step: 8 } }
   const brokenStorage = new MemoryStorage({ [STORAGE_KEY]: JSON.stringify(broken) })
   assert.match(loadLibrary(brokenStorage).warning, /结构无效/)
+  // A non-boolean world marker is structurally invalid too.
+  const badMarker = { ...emptyLibrary(), draft: { genreId: 'court', worldChosen: 'yes' } }
+  const badMarkerStorage = new MemoryStorage({ [STORAGE_KEY]: JSON.stringify(badMarker) })
+  assert.match(loadLibrary(badMarkerStorage).warning, /结构无效/)
 })
 
 test('non-string custom world fields fail library validation', () => {

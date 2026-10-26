@@ -71,7 +71,7 @@
 .gen-state.is-waiting{color:var(--dim)}
 .gen-state.is-waiting i{background:transparent;border:1.6px solid currentColor}
 .gen-state.is-action{color:var(--amber)}
-.reader-starmap{margin-top:26px;padding:16px 16px 13px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass)}
+.reader-starmap{margin-top:20px;padding:16px 16px 13px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass)}
 .reader-starmap-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
 .reader-starmap-head b{font-size:13px;font-weight:700}
 .reader-starmap-head span{color:var(--dim);font-size:12px;font-variant-numeric:tabular-nums}
