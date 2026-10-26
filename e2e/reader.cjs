@@ -29,7 +29,7 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
       try {
         await page.goto(target);
         await page.getByRole('button', { name: '开启第一本书', exact: true }).click();
-        for (let i = 0; i < 3; i++) await page.getByRole('button', { name: '继续', exact: true }).click();
+        for (let i = 0; i < 4; i++) await page.getByRole('button', { name: '继续', exact: true }).click();
         await page.getByRole('button', { name: '预设体验', exact: true }).click();
         await page.getByRole('button', { name: '进入第一章', exact: true }).click();
         await page.locator('[data-reading-paragraph]').first().waitFor();

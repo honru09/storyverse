@@ -53,6 +53,7 @@ import {
   FRIEND_BOOK,
   GENRES,
   GENRE_TEMPLATES,
+  START_POINT_NAME_MAX,
   buildChapter,
   chapterForReading,
   chooseBranch,
@@ -61,6 +62,8 @@ import {
   genreTemplateById,
   publicSnapshot,
   recommendedTemplateFor,
+  resolveStartPoint,
+  startPointByName,
 } from "./story-engine";
 import {
   exportLibrary,
@@ -460,7 +463,7 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
       </section>
 
       {draft && <button className="home-draft-row" onClick={() => onNavigate("forge")}>
-        <Icon name="book" size={20}/><span><strong>继续上次设定</strong><small>第 {Math.min(4, Math.max(1, Number(draft.step) || 1))} 步 · 已保存在本机</small></span><Icon name="chevron" size={16}/>
+        <Icon name="book" size={20}/><span><strong>继续上次设定</strong><small>第 {Math.min(5, Math.max(1, Number(draft.step) || 1))} 步 · 已保存在本机</small></span><Icon name="chevron" size={16}/>
       </button>}
 
       {activeStory ? <section className="home-section home-lower">
@@ -535,10 +538,11 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory }) {
 
 function Stepper({ step, setStep }) {
   const steps = [
-    { id: 1, label: "故事" },
-    { id: 2, label: "主角" },
-    { id: 3, label: "能力" },
-    { id: 4, label: "开局" },
+    { id: 1, label: "背景" },
+    { id: 2, label: "出生点" },
+    { id: 3, label: "主角" },
+    { id: 4, label: "能力" },
+    { id: 5, label: "开局" },
   ];
   return (
     <nav className="stepper" aria-label="创作步骤">
@@ -573,7 +577,7 @@ function TemplateBrick({ template, stage, selected, featured, onSelect }) {
         </span>
         <span className="template-brick-copy">
           <strong>{template.fullName}</strong>
-          <small>舞台 · {stage.name}</small>
+          <small>世界 · {stage.name}</small>
         </span>
         {selected && (
           <span className="selected-mark">
@@ -600,7 +604,7 @@ function StageChip({ world, selected, onSelect }) {
   );
 }
 
-function PreviewPanel({ world, template, draft, ability, tone }) {
+function PreviewPanel({ world, template, draft, ability, tone, spawn }) {
   const person = draft.name || "未命名的旅人";
   return (
     <aside className="preview-panel">
@@ -613,7 +617,8 @@ function PreviewPanel({ world, template, draft, ability, tone }) {
       </div>
       <dl className="preview-facts">
         <div><dt>题材</dt><dd>{template ? template.fullName : "完全自由"}</dd></div>
-        <div><dt>舞台</dt><dd>{world.name}</dd></div>
+        <div><dt>世界</dt><dd>{world.name}</dd></div>
+        <div><dt>出生点</dt><dd>{spawn ? spawn.name : "由设定决定"}</dd></div>
         {draft.genreId === CUSTOM_GENRE.id && (
           <div><dt>设定</dt><dd>{(draft.customWorldSetting || "").trim().slice(0, 80) || "尚未写下设定"}</dd></div>
         )}
@@ -648,7 +653,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
   const engine = mode || (provider.configured ? "gemini" : "local");
   useEffect(() => () => operation.current?.abort(), []);
   const [step, setStep] = useState(
-    Math.min(4, Math.max(1, Number(initialDraft?.step) || 1)),
+    Math.min(5, Math.max(1, Number(initialDraft?.step) || 1)),
   );
   const [draft, setDraft] = useState(() => {
     const base = { ...DEFAULT_DRAFT, ...(initialDraft || {}) };
@@ -683,6 +688,29 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
   const template =
     genreTemplateById(draft.genreTemplateId) ||
     (isCustom ? null : recommendedTemplateFor(draft.genreId));
+  // The spawn point belongs to the world chosen in step one. When the world
+  // changes, a picked spawn point survives only if the new world has one with
+  // the same name (its hook is re-read from that world's list); anything else
+  // resets to the new world's default (or, for god mode, to "unset").
+  const spawnGenre = genreById[draft.genreId] || GENRES[0];
+  const spawn = resolveStartPoint(spawnGenre, draft);
+  const spawnPoints = spawnGenre.spawnPoints || [];
+  const lastGenreId = useRef(draft.genreId);
+  useEffect(() => {
+    if (lastGenreId.current === draft.genreId) return;
+    lastGenreId.current = draft.genreId;
+    const nextGenre = genreById[draft.genreId] || GENRES[0];
+    const kept = nextGenre.id !== CUSTOM_GENRE.id ? startPointByName(nextGenre, draft.startPointName) : null;
+    if (kept) {
+      if (draft.startPointHook !== kept.hook) set({ startPointHook: kept.hook });
+    } else if (draft.startPointName || draft.startPointHook) {
+      set({ startPointName: "", startPointHook: "" });
+    }
+    // Only the world switch matters here; the draft fields are read fresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.genreId]);
+  const boundTemplateWorld = isCustom && template ? genreById[template.worldId] : null;
+  const boundSpawnPoints = boundTemplateWorld?.spawnPoints || [];
   const selectTemplate = (item) => {
     templateTouched.current = true;
     set({ genreTemplateId: item.id, genreId: item.worldId });
@@ -723,7 +751,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
       if (violation) { setError(violation); return; }
     }
     setError("");
-    setStep((value) => Math.min(4, value + 1));
+    setStep((value) => Math.min(5, value + 1));
   };
   const back = () => setStep((value) => Math.max(1, value - 1));
   useSceneMotion(
@@ -768,17 +796,18 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
     catch (failure) { if (!controller.signal.aborted) setError(failure.message || "暂时没能打开故事，草稿还在。"); }
     finally { if (operation.current === controller) { operation.current = null; setBusy(false); } }
   };
+  const spawnName = spawn?.name || world.location;
   const previewText = isCustom && (draft.customWorldSetting || "").trim()
     ? `${draft.name || "未命名旅人"}会在${world.name}醒来——${(draft.customWorldSetting || "").trim().slice(0, 56)}`
     : draft.immersive && draft.hometown
-      ? `来自${draft.hometown}的${draft.role || "旅人"}，会在${world.location}听见第一声回响。`
-      : `${draft.name || "未命名旅人"}会在${world.location}收到一条无法解释的信号。`;
+      ? `来自${draft.hometown}的${draft.role || "旅人"}，会在${spawnName}听见第一声回响。`
+      : `${draft.name || "未命名旅人"}会在${spawnName}收到一条无法解释的信号。`;
   return (
     <div ref={forgeRef} className="page page-forge page-enter" data-step={step}>
       <div className="forge-progress">
         <h1 className="sr-only">新故事</h1>
         <Stepper step={step} setStep={(value) => { if (!busy) setStep(value); }} />
-        <span className="step-count" aria-label={`第 ${step} 步，共 4 步`}>{step} / 4</span>
+        <span className="step-count" aria-label={`第 ${step} 步，共 5 步`}>{step} / 5</span>
       </div>
       <div className="forge-layout">
         <main className="forge-main">
@@ -793,7 +822,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                 <div className="god-form">
                   <button type="button" className="god-back" onClick={exitGodMode}>
                     <Icon name="chevron" size={15} className="rotate-180" />
-                    改用预设舞台
+                    改用预设世界
                   </button>
                   <label className="field-label">
                     世界的名字（选填）
@@ -873,7 +902,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                     ))}
                   </div>
                   <div className="stage-picker">
-                    <span className="stage-picker-label" id="stage-picker-label">故事舞台</span>
+                    <span className="stage-picker-label" id="stage-picker-label">选择世界</span>
                     <div className="stage-chips" role="group" aria-labelledby="stage-picker-label">
                       {worlds.map((item) => (
                         <StageChip
@@ -889,7 +918,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                     <span className="god-entry-symbol" aria-hidden="true">{CUSTOM_GENRE.symbol}</span>
                     <span className="god-entry-copy">
                       <strong>创世神模式</strong>
-                      <small>世界由你亲手写——不选现成舞台，自己写下世界的名字与规则。</small>
+                      <small>世界由你亲手写——不选现成世界，自己写下世界的名字与规则。</small>
                     </span>
                     <Icon name="chevron" size={15} />
                   </button>
@@ -897,12 +926,91 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
               )}
               <p className="world-selection-note" aria-live="polite">{isCustom
                 ? template
-                  ? `${template.blurb} 舞台由你亲手写——${world.name}。`
-                  : `不绑任何题材模板，写法完全由你的设定决定。舞台是${world.name}。`
-                : `${template.blurb} 舞台是${world.name}——${world.subtitle}`}</p>
+                  ? `${template.blurb} 世界由你亲手写——${world.name}。`
+                  : `不绑任何题材模板，写法完全由你的设定决定。世界是${world.name}。`
+                : `${template.blurb} 世界是${world.name}——${world.subtitle}`}</p>
             </>
           )}
           {step === 2 && (
+            <>
+              <div className="forge-section-heading">
+                <div>
+                  <h2 tabIndex={-1}>故事从哪里醒来？</h2>
+                </div>
+              </div>
+              {isCustom ? (
+                <div className="spawn-form">
+                  <label className="field-label">
+                    出生点（选填）
+                    <input
+                      maxLength={START_POINT_NAME_MAX}
+                      autoComplete="off"
+                      value={draft.startPointName || ""}
+                      onChange={(event) => set({ startPointName: event.target.value, startPointHook: "" })}
+                      placeholder="破庙里醒来的那张草席"
+                    />
+                  </label>
+                  <p className="field-hint">留空也行：出生点由你的背景设定决定。写一个小而具体的地方——主角睁开眼时，就在那里。</p>
+                  {boundSpawnPoints.length > 0 && (
+                    <div className="form-block">
+                      <span className="field-label">也可以借用「{boundTemplateWorld.world}」的出生点</span>
+                      <div className="stage-chips" role="group" aria-label="可借用的出生点">
+                        {boundSpawnPoints.map((point) => (
+                          <button
+                            type="button"
+                            key={point.name}
+                            className={`stage-chip ${draft.startPointName === point.name ? "selected" : ""}`}
+                            aria-pressed={draft.startPointName === point.name}
+                            onClick={() => set({ startPointName: point.name, startPointHook: point.hook })}
+                          >
+                            {point.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="spawn-grid" role="group" aria-label="出生点">
+                    {spawnPoints.map((point) => (
+                      <button
+                        type="button"
+                        key={point.name}
+                        className={`spawn-card ${spawn?.name === point.name ? "active" : ""}`}
+                        aria-pressed={spawn?.name === point.name}
+                        onClick={() => set({ startPointName: point.name, startPointHook: point.hook })}
+                      >
+                        <span className="spawn-card-head">
+                          <b>{point.name}</b>
+                          <em>{point.situation}</em>
+                          {spawn?.name === point.name && <Icon name="check" size={14} />}
+                        </span>
+                        <small>{point.hook}</small>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="spawn-card spawn-random"
+                      onClick={() => {
+                        const pool = spawnPoints.filter((point) => point.name !== spawn?.name);
+                        const pick = pool[Math.floor(Math.random() * pool.length)] || spawnPoints[0];
+                        if (pick) set({ startPointName: pick.name, startPointHook: pick.hook });
+                      }}
+                    >
+                      <span className="spawn-card-head">
+                        <b>随机</b>
+                        <em>交给命运</em>
+                      </span>
+                      <small>点一下，从{world.name}的出生点里抽一个，抽中哪个就从哪里醒来。</small>
+                    </button>
+                  </div>
+                  <p className="field-hint">出生点只决定第一幕：主角在哪里醒来、睁开眼先撞见什么。之后的故事不会被它框住。不选也行——默认从「{spawnPoints[0]?.name}」开始。</p>
+                </>
+              )}
+            </>
+          )}
+          {step === 3 && (
             <>
               <div className="forge-section-heading">
                 <div>
@@ -1039,7 +1147,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
               </div>
             </>
           )}
-          {step === 3 && (
+          {step === 4 && (
             <>
               <div className="forge-section-heading">
                 <div>
@@ -1087,7 +1195,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
               </div>
             </>
           )}
-          {step === 4 && (
+          {step === 5 && (
             <>
               <div className="forge-section-heading">
                 <div>
@@ -1099,9 +1207,10 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                 <h3>{world.name}</h3>
                 <p>{previewText}</p>
                 <div className="opening-details" aria-label="确认故事设定">
-                  <button disabled={busy} onClick={() => setStep(1)} aria-label={isCustom ? "修改创世设定" : "修改题材与舞台"}><span>{isCustom ? "创世" : "题材"}</span><b>{template ? template.fullName : "完全自由"} · {world.name}</b><Icon name="chevron" size={15} /></button>
-                  <button disabled={busy} onClick={() => setStep(2)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "未命名旅人"}</b><Icon name="chevron" size={15} /></button>
-                  <button disabled={busy} onClick={() => setStep(3)} aria-label="修改能力与风格"><span>能力</span><b>{ability.name} · {tone.name}</b><Icon name="chevron" size={15} /></button>
+                  <button disabled={busy} onClick={() => setStep(1)} aria-label={isCustom ? "修改创世设定" : "修改题材与世界"}><span>{isCustom ? "创世" : "题材"}</span><b>{template ? template.fullName : "完全自由"} · {world.name}</b><Icon name="chevron" size={15} /></button>
+                  <button disabled={busy} onClick={() => setStep(2)} aria-label="修改出生点"><span>出生点</span><b>{spawn ? spawn.name : "由设定决定"}</b><Icon name="chevron" size={15} /></button>
+                  <button disabled={busy} onClick={() => setStep(3)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "未命名旅人"}</b><Icon name="chevron" size={15} /></button>
+                  <button disabled={busy} onClick={() => setStep(4)} aria-label="修改能力与风格"><span>能力</span><b>{ability.name} · {tone.name}</b><Icon name="chevron" size={15} /></button>
                 </div>
               </div>
               <GenerationMode provider={provider} value={engine} onChange={setMode} disabled={busy} />
@@ -1116,7 +1225,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                 </button>
               )}
               <div className="forge-actions-right">
-                {step < 4 ? (
+                {step < 5 ? (
                   <Button icon="arrow" onClick={next}>
                     继续
                   </Button>
@@ -1137,6 +1246,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
           draft={draft}
           ability={ability}
           tone={tone}
+          spawn={spawn}
         />
       </div>
     </div>
@@ -2171,7 +2281,7 @@ function legacyDraftToDraft(library) {
     ability:
       textValue(source.ability, source.abilityName) || DEFAULT_DRAFT.ability,
     tone: textValue(source.tone, source.toneName) || DEFAULT_DRAFT.tone,
-    step: Math.min(4, Math.max(1, Number(source.step) || 1)),
+    step: Math.min(5, Math.max(1, Number(source.step) || 1)),
   };
 }
 
@@ -2372,6 +2482,8 @@ function App() {
           genreTemplateId: payload.genreTemplateId,
           customWorldName: payload.customWorldName,
           customWorldSetting: payload.customWorldSetting,
+          startPointName: payload.startPointName,
+          startPointHook: payload.startPointHook,
           name: payload.name,
           trait: payload.trait,
           origin: payload.origin,

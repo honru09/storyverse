@@ -8,7 +8,7 @@ export const MAX_BACKUP_BYTES = 5 * 1024 * 1024
 // accepted chapter and stays at five once the final chapter exists.
 const CHAPTER_COUNT = 6
 const CONFIG_TEXT_FIELDS = [
-  'genreId', 'genreTemplateId', 'customWorldName', 'customWorldSetting', 'name', 'trait', 'origin', 'ability', 'tone', 'hometown',
+  'genreId', 'genreTemplateId', 'customWorldName', 'customWorldSetting', 'startPointName', 'startPointHook', 'name', 'trait', 'origin', 'ability', 'tone', 'hometown',
   'school', 'company', 'role', 'friend', 'destination', 'protagonist',
 ]
 
@@ -65,8 +65,8 @@ function validateConfig(config, prefix, errors, merged = false) {
   }
   validateOptionalFields(config, prefix, CONFIG_TEXT_FIELDS, 'string', errors)
   validateOptionalFields(config, prefix, ['immersive'], 'boolean', errors)
-  if (config.step !== undefined && (!Number.isInteger(config.step) || config.step < 1 || config.step > 4)) {
-    errors.push(`${prefix}.step must be an integer from 1 to 4`)
+  if (config.step !== undefined && (!Number.isInteger(config.step) || config.step < 1 || config.step > 5)) {
+    errors.push(`${prefix}.step must be an integer from 1 to 5`)
   }
   if (config.sourceGenres !== undefined) validateStringArray(config.sourceGenres, `${prefix}.sourceGenres`, errors)
   if (merged || config.protagonists !== undefined) {

@@ -166,6 +166,10 @@ async function runOnboarding(browser, width) {
     await step('creation draft survives leaving, returning and reloading', async () => {
       await page.locator('.stage-chips').getByRole('button', { name: '沉潮港', exact: true }).click();
       await page.getByRole('button', { name: '继续', exact: true }).click();
+      // Step two: the spawn point belongs to the world picked in step one.
+      await page.getByRole('heading', { name: '故事从哪里醒来？', exact: true }).waitFor();
+      await page.locator('.spawn-grid').getByRole('button', { name: /灯塔守夜屋/ }).click();
+      await page.getByRole('button', { name: '继续', exact: true }).click();
       await page.getByLabel('主角昵称（选填）').fill(testName);
       await page.getByRole('switch', { name: '带入人生经历（选填）' }).click();
       await page.getByLabel('成长的地方（选填）').fill('回归海岸镇');
@@ -177,11 +181,12 @@ async function runOnboarding(browser, width) {
       const saved = await readLibrary(page);
       assert.equal(saved.draft.name, testName);
       assert.equal(saved.draft.hometown, '回归海岸镇');
-      assert.equal(saved.draft.step, 3);
+      assert.equal(saved.draft.step, 4);
+      assert.equal(saved.draft.startPointName, '灯塔守夜屋');
       assert.equal(saved.stories.length, 0);
       await resume.click();
       await page.getByRole('heading', { name: '想拥有什么能力？', exact: true }).waitFor();
-      await page.getByRole('navigation', { name: '创作步骤' }).getByRole('button', { name: '第 2 步：主角', exact: true }).click();
+      await page.getByRole('navigation', { name: '创作步骤' }).getByRole('button', { name: '第 3 步：主角', exact: true }).click();
       assert.equal(await page.getByLabel('主角昵称（选填）').inputValue(), testName);
       assert.equal(await page.getByLabel('成长的地方（选填）').inputValue(), '回归海岸镇');
       assert.equal(await page.getByRole('switch', { name: '带入人生经历（选填）' }).getAttribute('aria-checked'), 'true');
@@ -203,6 +208,9 @@ async function runOnboarding(browser, width) {
       const saved = await readLibrary(page);
       assert.equal(saved.stories.length, 1);
       assert.equal(saved.stories[0].config.name, testName);
+      assert.equal(saved.stories[0].config.startPointName, '灯塔守夜屋');
+      assert.ok(saved.stories[0].worldBible.premise.includes('灯塔守夜屋'));
+      assert.ok((await page.locator('.reader-article').innerText()).includes('守夜日志'), 'chapter one opens at the chosen spawn point');
       assert.notEqual(saved.stories[0].engine, 'gemini');
       assert.equal(saved.draft, null);
       assert.deepEqual(unexpectedGeneration, []);

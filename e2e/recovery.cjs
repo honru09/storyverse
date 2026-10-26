@@ -23,6 +23,7 @@ async function createBook(page, name) {
   }
   await page.getByRole('navigation', { name: '移动端主导航' }).getByRole('button', { name: '造世', exact: true }).click();
   await page.getByRole('button', { name: '继续', exact: true }).click();
+  await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByLabel('主角昵称（选填）').fill(name);
   await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByRole('button', { name: '继续', exact: true }).click();

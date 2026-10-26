@@ -7,6 +7,8 @@ import {
   FRIEND_BOOK,
   GENRES,
   GENRE_TEMPLATES,
+  START_POINT_HOOK_MAX,
+  START_POINT_NAME_MAX,
   acceptChapter,
   buildChapter,
   chapterForReading,
@@ -14,9 +16,12 @@ import {
   chooseBranch,
   createMergedStory,
   createStory,
+  defaultStartPoint,
   genreTemplateById,
   publicSnapshot,
   recommendedTemplateFor,
+  resolveStartPoint,
+  startPointByName,
   storyBeatPlan,
   storyNarrativeDossier,
 } from '../src/story-engine.js'
@@ -514,6 +519,96 @@ test('stage display names are small concrete places while ids stay stable', () =
     assert.ok(genre.tagline.length >= 6, genre.id)
     assert.ok(genre.description.includes(genre.world), genre.id)
   }
+})
+
+test('every world offers 3-4 small concrete spawn points and its location is the default', () => {
+  // The user's own examples must each exist in some world's list.
+  const allNames = GENRES.flatMap((genre) => genre.spawnPoints.map((point) => point.name))
+  for (const example of ['山脚村落', '山神破庙', '下城贫民窟', '皇帝的卧室']) {
+    assert.ok(allNames.includes(example), example)
+  }
+  for (const genre of GENRES) {
+    assert.ok(genre.spawnPoints.length >= 3 && genre.spawnPoints.length <= 4, genre.id)
+    // The default spawn point is the world's location, listed first, so a
+    // pre-spawn-point save (no startPointName) opens exactly where it always did.
+    assert.equal(genre.spawnPoints[0].name, genre.location, genre.id)
+    assert.equal(defaultStartPoint(genre).name, genre.location, genre.id)
+    const seen = new Set()
+    for (const point of genre.spawnPoints) {
+      assert.ok(point.name.length <= 6, `${genre.id}:${point.name}`)
+      assert.ok(point.hook.length > 10, `${genre.id}:${point.name} hook`)
+      assert.ok(point.situation.length >= 2, `${genre.id}:${point.name} situation`)
+      assert.ok(!seen.has(point.name), `${genre.id}:${point.name} duplicate`)
+      seen.add(point.name)
+    }
+  }
+})
+
+test('resolveStartPoint: unset falls back to the world default, listed names use the table hook', () => {
+  const mist = GENRES.find((genre) => genre.id === 'mist')
+  assert.equal(resolveStartPoint(mist, {}).name, '第七码头')
+  assert.equal(resolveStartPoint(mist, { startPointName: '' }).name, '第七码头')
+  const tower = resolveStartPoint(mist, { startPointName: '灯塔守夜屋', startPointHook: '用户乱写的处境' })
+  assert.equal(tower.name, '灯塔守夜屋')
+  assert.ok(tower.hook.includes('守夜日志'), 'a listed spawn point keeps its table hook, not a stale typed one')
+  assert.equal(tower.situation, '隐秘')
+  assert.equal(startPointByName(mist, '灯塔守夜屋').name, '灯塔守夜屋')
+  assert.equal(startPointByName(mist, '不存在的地方'), null)
+  // A hand-written name outside the list is tolerated with its own hook.
+  const foreign = resolveStartPoint(mist, { startPointName: '雾外灯塔', startPointHook: '自己写的处境。' })
+  assert.deepEqual(foreign, { name: '雾外灯塔', hook: '自己写的处境。', situation: '' })
+  // God mode: empty name means the setting decides; a typed name resolves as-is.
+  const custom = { id: 'custom', location: '故事开始的地方' }
+  assert.equal(resolveStartPoint(custom, {}), null)
+  assert.deepEqual(
+    resolveStartPoint(custom, { startPointName: '破庙草席', startPointHook: '借来的处境。' }),
+    { name: '破庙草席', hook: '借来的处境。', situation: '' },
+  )
+})
+
+test('spawn point: createStory bounds the fields and chapter one opens at the spawn point', () => {
+  const story = createStory(draft({ startPointName: '灯塔守夜屋' }))
+  assert.equal(story.config.startPointName, '灯塔守夜屋')
+  assert.ok(story.worldBible.premise.includes('灯塔守夜屋'))
+  assert.ok(story.worldBible.outline[0].includes('灯塔守夜屋'))
+  const first = buildChapter(story, 0)
+  assert.ok(first.paragraphs[0].includes('守夜日志'), 'chapter one opens with the spawn hook')
+  assert.ok(first.summary.includes('灯塔守夜屋'))
+  assert.ok(storyBeatPlan(story, 0).prerequisites[0].includes('出生点：灯塔守夜屋'))
+  assert.ok(storyBeatPlan(story, 0).mustGround[0].includes('灯塔守夜屋'))
+  assert.equal(storyNarrativeDossier(story, 0).location, '灯塔守夜屋')
+  // Later chapters are not bound by the spawn point.
+  const third = buildChapter(story, 2)
+  assert.ok(!third.paragraphs.join('').includes('守夜日志'))
+  // Bounds: over-long free-form values are clipped to the field limits.
+  const bounded = createStory(draft({ genreId: 'custom', startPointName: '点'.repeat(50), startPointHook: '境'.repeat(200) }))
+  assert.equal(bounded.config.startPointName.length, START_POINT_NAME_MAX)
+  assert.equal(bounded.config.startPointHook.length, START_POINT_HOOK_MAX)
+})
+
+test('spawn point: old drafts without the fields open at the world default', () => {
+  const legacy = { ...draft() }
+  delete legacy.startPointName
+  delete legacy.startPointHook
+  const story = createStory(legacy)
+  assert.equal(story.config.startPointName, '')
+  assert.ok(story.worldBible.premise.includes('第七码头'))
+  assert.ok(buildChapter(story, 0).paragraphs[0].includes('不是你的信'))
+})
+
+test('spawn point: god mode typed spawn reaches premise, outline and chapter one; snapshots strip it', () => {
+  const story = createStory(godDraft({ startPointName: '破庙草席' }))
+  assert.ok(story.worldBible.premise.includes('第一幕落在破庙草席'))
+  assert.ok(story.worldBible.outline[0].includes('在破庙草席醒来'))
+  assert.ok(buildChapter(story, 0).paragraphs.join('').includes('破庙草席'))
+  assert.ok(storyBeatPlan(story, 0).prerequisites[0].includes('出生点：破庙草席'))
+  const snapshot = publicSnapshot(story)
+  assert.equal(snapshot.config.startPointName, '')
+  assert.equal(snapshot.config.startPointHook, '')
+  // A merged story keeps the lead side's spawn point in config and never crashes.
+  const merged = createMergedStory(createStory(draft({ startPointName: '沉船甲板' })), story)
+  assert.equal(merged.config.startPointName, '沉船甲板')
+  assert.equal(buildChapter(merged, 0).paragraphs.length > 0, true)
 })
 
 const godDraft = (overrides = {}) => draft({

@@ -325,6 +325,24 @@ test('god-mode story with custom fields round-trips through save and load', () =
   assert.doesNotThrow(() => importLibrary(exportLibrary(library)))
 })
 
+test('spawn point fields and the fifth forge step round-trip through save and load', () => {
+  const storage = new MemoryStorage()
+  const created = createStory({ name: '阿遥', genreId: 'court', startPointName: '皇帝的卧室', startPointHook: '在龙床边的脚踏上醒来。' })
+  const library = upsertStory(emptyLibrary(), created)
+  library.draft = { genreId: 'court', startPointName: '皇帝的卧室', startPointHook: '在龙床边的脚踏上醒来。', step: 5 }
+  assert.deepEqual(saveLibrary(storage, library), { ok: true, error: null })
+  const loaded = loadLibrary(storage)
+  assert.equal(loaded.warning, null)
+  assert.equal(loaded.library.stories[0].config.startPointName, '皇帝的卧室')
+  assert.equal(loaded.library.stories[0].config.startPointHook, '在龙床边的脚踏上醒来。')
+  assert.equal(loaded.library.draft.startPointName, '皇帝的卧室')
+  assert.equal(loaded.library.draft.step, 5)
+  // A step beyond the five-step flow is structurally invalid.
+  const broken = { ...emptyLibrary(), draft: { genreId: 'court', step: 6 } }
+  const brokenStorage = new MemoryStorage({ [STORAGE_KEY]: JSON.stringify(broken) })
+  assert.match(loadLibrary(brokenStorage).warning, /结构无效/)
+})
+
 test('non-string custom world fields fail library validation', () => {
   const custom = createStory({ genreId: 'custom', name: '宁笙', customWorldName: '倒流港' })
   const broken = upsertStory(emptyLibrary(), {

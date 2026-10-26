@@ -101,6 +101,8 @@ async function runJourney(browser, width) {
     await page.locator('.stage-chips').getByRole('button', { name: '沉潮港', exact: true }).click();
     await noOverflow(page, 'world selection');
     await page.getByRole('button', { name: '继续', exact: true }).click();
+    await page.getByRole('heading', { name: '故事从哪里醒来？' }).waitFor();
+    await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByLabel('主角昵称（选填）').fill(privateNames[0]);
     await page.getByRole('switch', { name: '带入人生经历（选填）' }).click();
     await page.getByLabel('成长的地方（选填）').fill(privateNames[1]);
@@ -117,7 +119,7 @@ async function runJourney(browser, width) {
       await page.getByRole('heading', { name: '想拥有什么能力？' }).waitFor({ timeout: 4000 });
       const saved = await library(page);
       assert.equal(saved.draft.name, privateNames[0]);
-      assert.equal(saved.draft.step, 3);
+      assert.equal(saved.draft.step, 4);
     });
     // Keep testing independent features if an older build restores the home page.
     if (!(await page.getByRole('heading', { name: '想拥有什么能力？' }).count())) {
@@ -235,6 +237,7 @@ async function runJourney(browser, width) {
     await navigation(page, '造世');
     await page.getByRole('heading', { name: '想写哪种故事？' }).waitFor();
     await page.locator('.template-wall').getByRole('button', { name: /修仙/ }).click();
+    await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByLabel('主角昵称（选填）').fill('测试剑客星河');
     await page.getByRole('button', { name: '继续', exact: true }).click();

@@ -149,6 +149,12 @@ function compactConfig(config) {
   // the setting is sanitised so it can only ever arrive as story data.
   result.customWorldName = clip(config.customWorldName, 40)
   result.customWorldSetting = sanitizeSettingText(clip(config.customWorldSetting, 600))
+  // Spawn point: ordinary story data (a place name plus one line of opening
+  // circumstance), bounded to the client's limits (30 / 120). It reaches the
+  // model through the story config, the beat plan and the narrative dossier,
+  // so no extra delimited block is needed here.
+  result.startPointName = clip(config.startPointName, 30)
+  result.startPointHook = clip(config.startPointHook, 120)
   result.immersive = Boolean(config.immersive)
   if (result.immersive) {
     for (const field of ['hometown', 'school', 'company', 'role', 'friend']) result[field] = clip(config[field], 240)

@@ -42,6 +42,7 @@ async function prepareOpening(page, name, genre = '奇幻') {
   // equivalent of the old mist world card this helper used to click.
   await page.locator('.stage-chips').getByRole('button', { name: '沉潮港', exact: true }).click();
   await page.getByRole('button', { name: '继续', exact: true }).click();
+  await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByLabel('主角昵称（选填）').fill(name);
   await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByRole('button', { name: '继续', exact: true }).click();

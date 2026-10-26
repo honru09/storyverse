@@ -8,12 +8,26 @@ const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
 const artwork = readFileSync(new URL('../src/components/WorldArtwork.jsx', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 
-test('start flow step one is a template brick wall with a stage picker', () => {
+test('start flow step one is a template brick wall with a world picker', () => {
   assert.match(main, /想写哪种故事？/)
   assert.match(main, /className="template-wall"/)
   assert.match(main, /className="stage-chips"/)
-  assert.match(main, /故事舞台/)
+  assert.match(main, /选择世界/)
+  assert.doesNotMatch(main, /故事舞台|预设舞台/)
   assert.doesNotMatch(main, /world-grid|WorldCard/)
+})
+
+test('start flow step two picks a spawn point for the chosen world', () => {
+  assert.match(main, /故事从哪里醒来？/)
+  assert.match(main, /className="spawn-grid"/)
+  assert.match(main, /resolveStartPoint/)
+  assert.match(main, /startPointName: payload\.startPointName/)
+  assert.match(main, /startPointHook: payload\.startPointHook/)
+  // God mode gets a free-form spawn field plus borrowable template-world points.
+  assert.match(main, /出生点（选填）/)
+  assert.match(main, /boundSpawnPoints/)
+  // The confirmation step links back to the spawn step.
+  assert.match(main, /aria-label="修改出生点"/)
 })
 
 test('the brick wall covers every genre template exactly once', () => {

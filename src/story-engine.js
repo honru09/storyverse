@@ -26,6 +26,12 @@ export const GENRES = [
     color: 'coral',
     symbol: '◒',
     location: '第七码头',
+    spawnPoints: [
+      { name: '第七码头', hook: '在码头仓库的麻袋堆里醒来，潮水正漫过门槛，怀里揣着一封不是你的信。', situation: '市井' },
+      { name: '疍家渔排', hook: '在渔排的吊床上醒来，排主敲着你的船板，说你已经欠了他三网鱼的债。', situation: '落魄' },
+      { name: '沉船甲板', hook: '在一艘搁浅沉船的甲板上醒来，脚下的船舱里传来一下、又一下的敲击声。', situation: '危险' },
+      { name: '灯塔守夜屋', hook: '在灯塔的守夜屋里醒来，昨夜的守夜日志不是你写的，字迹却和你一模一样。', situation: '隐秘' },
+    ],
   },
   {
     id: 'cultivation',
@@ -37,6 +43,12 @@ export const GENRES = [
     color: 'gold',
     symbol: '✦',
     location: '后山灵田',
+    spawnPoints: [
+      { name: '后山灵田', hook: '在灵田看棚的草席上醒来，昨夜借来的火种自己挪了位置，就搁在你枕边。', situation: '落魄' },
+      { name: '山神破庙', hook: '在山神庙的供桌底下醒来，庙里只剩你和一尊裂了的菩萨，香炉里半炷香还没烧完。', situation: '隐秘' },
+      { name: '山脚村落', hook: '在村口老槐树下的草垛里醒来，全村人都假装没看见你，只有村长家的狗一直盯着你。', situation: '市井' },
+      { name: '外门柴房', hook: '在外门柴房的柴堆上醒来，管事在门外说：醒了就先挑三百担水，挑不完不许吃饭。', situation: '落魄' },
+    ],
   },
   {
     id: 'neon',
@@ -48,6 +60,12 @@ export const GENRES = [
     color: 'mint',
     symbol: '⌁',
     location: '下城回收站',
+    spawnPoints: [
+      { name: '下城回收站', hook: '在回收站的窝棚里醒来，手边多了一块发烫的无主芯片，烫得你一下子清醒过来。', situation: '市井' },
+      { name: '下城贫民窟', hook: '在集装箱顶层醒来，楼下整条巷子的人正为一桶净水排队，队尾已经排到了你脚下。', situation: '落魄' },
+      { name: '9号胶囊舱', hook: '在胶囊舱里醒来，舱门上贴着一张欠费单，署名是你从没用过的名字。', situation: '隐秘' },
+      { name: '地下诊所后间', hook: '在地下诊所的后间醒来，医生说你的义体里多了一段记忆，不属于你，也不属于任何登记在册的人。', situation: '危险' },
+    ],
   },
   {
     id: 'city',
@@ -59,6 +77,12 @@ export const GENRES = [
     color: 'violet',
     symbol: '✧',
     location: '长宁街口',
+    spawnPoints: [
+      { name: '长宁街口', hook: '在街口的长椅上醒来，手机只剩百分之一的电，备忘录里多了一行你没写过的字。', situation: '市井' },
+      { name: '面馆后厨', hook: '在面馆后厨的折叠床上醒来，老板娘头也不抬：揉了这盆面，抵昨晚的床钱。', situation: '落魄' },
+      { name: '网吧包间', hook: '在二十四小时网吧的包间里醒来，屏幕上是通宵的游戏，和一条陌生人留给你的话。', situation: '隐秘' },
+      { name: '夜班便利店', hook: '在便利店夜班的柜台后醒来，监控回放里，凌晨三点的你正对着一排空货架说话。', situation: '市井' },
+    ],
   },
   {
     id: 'court',
@@ -70,6 +94,12 @@ export const GENRES = [
     color: 'crimson',
     symbol: '❖',
     location: '长乐宫偏殿',
+    spawnPoints: [
+      { name: '长乐宫偏殿', hook: '在偏殿耳房的窄榻上醒来，掌事姑姑留了话：昨夜的册封礼，你缺席了。', situation: '近权力' },
+      { name: '皇帝的卧室', hook: '在龙床边的脚踏上醒来，你不记得自己是怎么进来的，皇帝也不记得——这才是最麻烦的地方。', situation: '危险' },
+      { name: '冷宫偏殿', hook: '在冷宫的井台边醒来，手边一碗粥还温着，是谁送来的，宫里没人承认。', situation: '落魄' },
+      { name: '御膳房后院', hook: '在御膳房后院的柴棚里醒来，怀里抱着一坛御酒——它不该在你手上。', situation: '市井' },
+    ],
   },
   {
     id: 'frontier',
@@ -81,6 +111,12 @@ export const GENRES = [
     color: 'steel',
     symbol: '◎',
     location: '七号站配给舱',
+    spawnPoints: [
+      { name: '七号站配给舱', hook: '在配给舱的隔间里醒来，你的配给卡余额是全站最低，今天的氧气份额还差一半。', situation: '落魄' },
+      { name: '冷冻休眠舱', hook: '被强制唤醒时，你看见休眠舱盖内侧刻着一行字：别相信唤醒你的人。', situation: '危险' },
+      { name: '观测塔值班室', hook: '在观测塔的值班室里醒来，值班日志停在三十年前，望远镜还对着那片空白星域。', situation: '隐秘' },
+      { name: '货舱夹层', hook: '在货舱的夹层里醒来，这批“货物”里，你是唯一一个会呼吸的。', situation: '危险' },
+    ],
   },
 ]
 
@@ -96,13 +132,15 @@ export const GENRES = [
 export const CUSTOM_GENRE_ID = 'custom'
 export const CUSTOM_WORLD_NAME_MAX = 40
 export const CUSTOM_WORLD_SETTING_MAX = 600
+export const START_POINT_NAME_MAX = 30
+export const START_POINT_HOOK_MAX = 120
 export const CUSTOM_GENRE = {
   id: CUSTOM_GENRE_ID,
   label: '创世神',
   world: '未命名世界',
   title: '未命名世界',
   tagline: '世界由你亲手写',
-  description: '没有现成的舞台：名字、规则和氛围，都由你写下的设定说了算。',
+  description: '没有现成的世界：名字、规则和氛围，都由你写下的设定说了算。',
   color: 'steel',
   symbol: '✎',
   location: '故事开始的地方',
@@ -144,6 +182,8 @@ export const DEFAULT_DRAFT = {
   genreTemplateId: '',
   customWorldName: '',
   customWorldSetting: '',
+  startPointName: '',
+  startPointHook: '',
   name: '',
   trait: '冷静观察者',
   origin: '无名漂泊者',
@@ -180,9 +220,44 @@ const worldNameOf = (genre, config) => genre.id === CUSTOM_GENRE_ID
 
 const customSettingOf = (config) => cleanBounded(config?.customWorldSetting, CUSTOM_WORLD_SETTING_MAX)
 
+/*
+ * 出生点 (spawn point): the small, concrete place where chapter one opens.
+ * Each preset world carries a list; the entry whose name equals the world's
+ * `location` is the default, so saves written before spawn points existed
+ * (no startPointName) resolve to exactly the place they always opened at.
+ * God-mode worlds have no list: the creator may type a free-form spawn point
+ * (name, optionally with a hook borrowed from a bound template's world), and
+ * an empty name means "the setting text decides" — resolveStartPoint then
+ * returns null and every consumer falls back to its previous behaviour.
+ */
+export const startPointsFor = (genre) => (Array.isArray(genre?.spawnPoints) ? genre.spawnPoints : [])
+
+export const defaultStartPoint = (genre) =>
+  startPointsFor(genre).find((point) => point.name === genre.location) || startPointsFor(genre)[0] || null
+
+export const startPointByName = (genre, name) => {
+  const wanted = cleanBounded(name, START_POINT_NAME_MAX)
+  if (!wanted) return null
+  return startPointsFor(genre).find((point) => point.name === wanted) || null
+}
+
+export const resolveStartPoint = (genre, config = {}) => {
+  if (!genre) return null
+  const named = cleanBounded(config?.startPointName, START_POINT_NAME_MAX)
+  const typedHook = cleanBounded(config?.startPointHook, START_POINT_HOOK_MAX)
+  if (genre.id === CUSTOM_GENRE_ID) {
+    return named ? { name: named, hook: typedHook, situation: '' } : null
+  }
+  const listed = startPointByName(genre, named)
+  if (listed) return { ...listed }
+  if (named) return { name: named, hook: typedHook, situation: '' }
+  const fallback = defaultStartPoint(genre)
+  return fallback ? { ...fallback } : null
+}
+
 const asStep = (value) => {
   const number = Number(value)
-  return Number.isFinite(number) ? Math.max(1, Math.min(4, Math.floor(number))) : 1
+  return Number.isFinite(number) ? Math.max(1, Math.min(5, Math.floor(number))) : 1
 }
 
 const clone = (value) => {
@@ -211,6 +286,8 @@ const normalizeDraft = (draft = {}) => {
     genreTemplateId: genreTemplateById(input.genreTemplateId)?.id || '',
     customWorldName: cleanBounded(input.customWorldName, CUSTOM_WORLD_NAME_MAX),
     customWorldSetting: cleanBounded(input.customWorldSetting, CUSTOM_WORLD_SETTING_MAX),
+    startPointName: cleanBounded(input.startPointName, START_POINT_NAME_MAX),
+    startPointHook: cleanBounded(input.startPointHook, START_POINT_HOOK_MAX),
     name: cleanText(input.name, DEFAULT_DRAFT.name),
     trait: cleanText(input.trait, DEFAULT_DRAFT.trait),
     origin: cleanText(input.origin, DEFAULT_DRAFT.origin),
@@ -259,10 +336,13 @@ const outlineFor = (genre, config) => {
   const name = protagonistName(config)
   const identity = displayIdentity(config)
   const destination = cleanText(config.destination, '') || genre.location
+  const spawn = resolveStartPoint(genre, config)
   if (genre.id === CUSTOM_GENRE_ID) {
     const world = worldNameOf(genre, config)
     return [
-      `${name}以${identity}的身份踏入${world}，创世设定落地的第一幕开始。`,
+      spawn
+        ? `${name}以${identity}的身份在${spawn.name}醒来，创世设定落地的第一幕开始。`
+        : `${name}以${identity}的身份踏入${world}，创世设定落地的第一幕开始。`,
       `设定里的第一条规则开始运转，${name}被卷入其中，无人能置身事外。`,
       `一次选择让同行者与${name}站到同一条路上，也留下新的代价。`,
       `旧秩序要求${name}交出能力，真正的对手从设定深处显形。`,
@@ -271,7 +351,7 @@ const outlineFor = (genre, config) => {
     ]
   }
   return [
-    `${name}以${identity}的身份抵达${genre.location}，收到一个无法解释的信号。`,
+    `${name}以${identity}的身份在${spawn?.name || genre.location}醒来，收到一个无法解释的信号。`,
     `信号把${name}带向${destination}，第一条世界规则开始松动。`,
     `一次选择让同行者与${name}站到同一条路上，也留下新的代价。`,
     `旧秩序要求${name}交出能力，真正的敌人从记忆里显形。`,
@@ -286,10 +366,12 @@ const worldBibleFor = (genre, config) => {
   if (genre.id === CUSTOM_GENRE_ID) {
     const world = worldNameOf(genre, config)
     const setting = customSettingOf(config)
+    const spawn = resolveStartPoint(genre, config)
+    const opening = spawn ? `故事从${spawn.name}开始` : '这个世界还没有成文的设定，规则将随故事逐一显形'
     return {
       premise: setting
-        ? `${world}：${setting} ${name}${detail ? `（${detail}）` : ''}的故事，就从这个由创世者亲手写下的世界里开始。`
-        : `${world}里，${name}${detail ? `（${detail}）` : ''}的故事从这里开始；这个世界还没有成文的设定，规则将随故事逐一显形。`,
+        ? `${world}：${setting} ${name}${detail ? `（${detail}）` : ''}的故事，就从这个由创世者亲手写下的世界里开始${spawn ? `，第一幕落在${spawn.name}` : ''}。`
+        : `${world}里，${name}${detail ? `（${detail}）` : ''}的故事从这里开始；${opening}。`,
       rules: [
         ...(setting
           ? [`创世设定（这个世界以此为准）：${setting}`]
@@ -301,8 +383,9 @@ const worldBibleFor = (genre, config) => {
       outline: outlineFor(genre, config),
     }
   }
+  const spawn = resolveStartPoint(genre, config)
   return {
-    premise: `${genre.world}里，${name}${detail ? `（${detail}）` : ''}在${genre.location}发现一条会回应选择的世界线。`,
+    premise: `${genre.world}里，${name}${detail ? `（${detail}）` : ''}在${spawn?.name || genre.location}发现一条会回应选择的世界线。`,
     rules: [
       `${genre.world}的秘密只能通过具体行动被唤醒。`,
       '已经做出的选择会留下可追踪的回声，不能被无痕抹去。',
@@ -492,6 +575,28 @@ const sceneFor = (story, index) => {
       [`世界走到了设定没有覆盖的地方。`, `${name}没有替它写死结局；TA只留下一个可以被后来者继续改写的名字。`, `${customWorld}从这里开始，拥有了自己的第二页。`],
     ],
   }
+  // Chapter one opens AT the spawn point: its hook replaces the generic
+  // establishing line, and later lines in the opening scene that still name
+  // the world's default location are re-pointed at the chosen spawn point.
+  // Later chapters are untouched — a spawn point is a start, not a cage.
+  if (index === 0) {
+    const spawn = resolveStartPoint(genre, config)
+    if (spawn && genre.id === CUSTOM_GENRE_ID) {
+      scenes.custom[0] = [
+        `${customWorld}在${name}睁开眼时显形——它不属于任何一张现成的地图。`,
+        spawn.hook
+          ? `${spawn.hook} ${name}这个${identityWithOrigin}的手里，握着“${ability}”的第一缕回声。`
+          : `${name}作为${identityWithOrigin}在${spawn.name}醒来，手里握着“${ability}”的第一缕回声。`,
+        customSettingLine,
+      ]
+    } else if (spawn) {
+      const opening = scenes[genre.id][0]
+      scenes[genre.id][0] = [
+        spawn.hook || opening[0],
+        ...opening.slice(1).map((line) => (spawn.name === genre.location ? line : line.split(genre.location).join(spawn.name))),
+      ]
+    }
+  }
   return scenes[genre.id]?.[index] || scenes.mist[index]
 }
 
@@ -543,9 +648,12 @@ export function buildChapter(story, index) {
   if (index >= 2 && branchLabel) paragraphs.push(branchLabel)
   if (index >= 4 && lateBranchLabel) paragraphs.push(lateBranchLabel)
   const choice = choiceAt(story, index)
+  const spawn = story.kind === 'merged' ? null : resolveStartPoint(genre, story.config)
   const summary = index === LAST_INDEX
     ? `${name}抵达终局，世界为新的选择留出位置。`
-    : `${name}在${worldNameOf(genre, story.config)}推进到第${index + 1}幕${choice ? '，命运节点即将出现' : '。'}`
+    : index === 0 && spawn
+      ? `${name}在${spawn.name}醒来，故事的第一幕从这里开始。`
+      : `${name}在${worldNameOf(genre, story.config)}推进到第${index + 1}幕${choice ? '，命运节点即将出现' : '。'}`
   return {
     id: `${story.id}:chapter:${index}:r${story.revision}`,
     index,
@@ -591,9 +699,13 @@ export function storyBeatPlan(story, index) {
   const lived = realityDetail(config)
   const tone = cleanText(config.tone, '') || '诗性冒险'
   const toneDirective = TONE_DIRECTIVES[tone] || TONE_DIRECTIVES.诗性冒险
+  const spawn = resolveStartPoint(genre, config)
+  const spawnName = spawn?.name || genre.location
 
   const prerequisites = [
-    isCustom ? `世界：${worldDisplay}（由创世者亲手写定的世界）` : `世界：${genre.world}（${genre.location}）`,
+    isCustom
+      ? (spawn ? `世界：${worldDisplay}（由创世者亲手写定的世界；出生点：${spawn.name}）` : `世界：${worldDisplay}（由创世者亲手写定的世界）`)
+      : `世界：${genre.world}（出生点：${spawnName}）`,
     ...(isCustom && customSetting ? [`创世设定：${customSetting}`] : []),
     merged
       ? `双主角合流：${name}（规则：${config.merge?.rules === 'separate' ? '各自独立' : '互相融合'}，关系：${config.merge?.bond === 'rivals' ? '竞争' : '合作'}）`
@@ -622,7 +734,9 @@ export function storyBeatPlan(story, index) {
 
   const mustGroundByChapter = [
     [
-      isCustom ? `交代${name}在${worldDisplay}的处境与能力“${ability}”` : `交代${name}在${genre.location}的处境与能力“${ability}”`,
+      isCustom
+        ? (spawn ? `交代${name}在${spawn.name}醒来的处境与能力“${ability}”` : `交代${name}在${worldDisplay}的处境与能力“${ability}”`)
+        : `交代${name}在${spawnName}的处境与能力“${ability}”${spawn?.hook ? `；开局处境：${spawn.hook}` : ''}`,
       `引出主线事件与世界基本规则`,
     ],
     [
@@ -731,7 +845,7 @@ export function storyNarrativeDossier(story, maxChapterIndex = 0) {
   }
   return {
     worldName: worldNameOf(genre, story.config),
-    location: genre.location,
+    location: resolveStartPoint(genre, story.config)?.name || genre.location,
     premise: story.worldBible?.premise || '',
     rules: Array.isArray(story.worldBible?.rules) ? [...story.worldBible.rules] : [],
     endingAnchor: story.worldBible?.endingAnchor || '',
@@ -896,6 +1010,10 @@ const redactedSnapshotConfig = (config, name) => ({
   role: '',
   friend: '',
   destination: '',
+  // A god-mode spawn point is free-form creator text; a share snapshot must
+  // not carry it (the snapshot resolves to the world's default spawn point).
+  startPointName: '',
+  startPointHook: '',
 })
 
 export function createMergedStory(a, b, options = {}) {
