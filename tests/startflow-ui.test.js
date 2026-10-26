@@ -35,3 +35,25 @@ test('every world has shipping artwork wired into WorldArtwork', () => {
   assert.match(styles, /\.template-brick\.selected/)
   assert.match(styles, /\.stage-chip\.selected/)
 })
+
+test('god mode: entry, form and wiring live in the first forge step', () => {
+  const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
+  // Entry sits alongside the stage picker, not buried in a later step.
+  assert.ok(main.includes('创世神模式') && main.includes('世界由你亲手写'))
+  assert.ok(main.includes('god-entry') && main.includes('enterGodMode') && main.includes('exitGodMode'))
+  // The form is exactly three things: name, setting, craft choice.
+  assert.ok(main.includes('customWorldName') && main.includes('CUSTOM_WORLD_NAME_MAX'))
+  assert.ok(main.includes('customWorldSetting') && main.includes('CUSTOM_WORLD_SETTING_MAX'))
+  assert.ok(main.includes('完全自由') && main.includes('GOD_MODE_FRAGMENTS'))
+  // Creation forwards every custom field, not just the template id.
+  assert.ok(main.includes('customWorldName: payload.customWorldName'))
+  assert.ok(main.includes('customWorldSetting: payload.customWorldSetting'))
+})
+
+test('god mode: the hard-line setting check gates step one and creation', () => {
+  const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
+  assert.ok(main.includes('findSettingViolation(draft.customWorldSetting)'))
+  assert.ok(main.includes('findSettingViolation(payload.customWorldSetting)'))
+  const guard = readFileSync(new URL('../src/setting-guard.js', import.meta.url), 'utf8')
+  assert.ok(guard.includes('未成年') && guard.includes('真实人物'))
+})

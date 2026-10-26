@@ -152,6 +152,21 @@ em{font-style:normal}
 .stage-chip.selected .stage-chip-symbol{color:var(--thread)}
 .selected-mark{position:absolute;top:12px;right:12px;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--action);color:#fff;box-shadow:0 3px 10px rgba(26,32,28,.18)}
 .world-selection-note{min-height:1.8em;margin:16px 0 0;color:var(--secondary-text);font-size:13px}
+.god-entry{display:flex;align-items:center;gap:12px;width:100%;margin-top:22px;padding:16px;border:1px dashed var(--line-strong);border-radius:var(--radius-card);background:var(--surface);color:var(--ink);text-align:left;box-shadow:var(--shadow-flat)}
+.god-entry-symbol{display:grid;place-items:center;width:38px;height:38px;flex-shrink:0;border-radius:50%;background:var(--ink);color:var(--on-ink);font-size:17px}
+.god-entry-copy{display:grid;gap:2px;min-width:0;flex:1}
+.god-entry-copy strong{font-size:15px;font-weight:700}
+.god-entry-copy small{color:var(--muted);font-size:12px;line-height:1.6}
+.god-form{display:grid;gap:14px}
+.god-back{display:inline-flex;align-items:center;gap:6px;justify-self:start;min-height:44px;padding:8px 4px;background:transparent;color:var(--action);font-size:13px;font-weight:650}
+.god-setting{width:100%;min-width:0;padding:12px 14px;border:1px solid var(--line);border-radius:var(--radius-control);color:var(--ink);background:var(--surface);font:inherit;font-size:16px;line-height:1.7;caret-color:var(--action);resize:vertical}
+.god-setting::placeholder{color:var(--muted)}
+.god-setting:focus{border-color:var(--action)}
+.god-setting:focus-visible{outline:3px solid var(--action);outline-offset:4px}
+.god-setting-meta{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.god-setting-meta .field-hint{margin:0}
+.god-count{flex-shrink:0;color:var(--muted);font-size:12px;line-height:1.8}
+.god-error{margin:0;padding:12px 14px;border:1px solid var(--thread);border-radius:var(--radius-control);background:var(--thread-soft);color:var(--ink);font-size:13px;line-height:1.7}
 .preview-panel{display:none}
 .field-label{display:grid;gap:10px;font-size:14px;font-weight:650}
 .form-block{margin-top:28px}

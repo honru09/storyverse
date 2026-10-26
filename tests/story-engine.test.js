@@ -68,7 +68,7 @@ test('six chapters use real world, identity, ability and life-spark details', ()
   assert.ok(chapters[3].choice?.options.length >= 2)
   assert.equal(chapters[5].choice, null)
   const text = chapters.flatMap((chapter) => chapter.paragraphs).join('\n')
-  for (const value of ['宁笙', '无名漂泊者', '听见潮汐', '海陵', '潮汐档案员', '白潮港', '雾岚群岛']) {
+  for (const value of ['宁笙', '无名漂泊者', '听见潮汐', '海陵', '潮汐档案员', '白潮港', '沉潮港']) {
     assert.match(text, new RegExp(value))
   }
   assert.notEqual(chapters[0].title, chapters[1].title)
@@ -429,7 +429,7 @@ test('storyBeatPlan models prerequisites, concept grounding, tone shape, and bra
   assert.equal(beat0.chapterNumber, 1)
   assert.equal(beat0.act, '第 1 章 · 开篇')
   assert.equal(beat0.prerequisites.length, 4)
-  assert.ok(beat0.mustGround.some((item) => item.includes('会呼吸的雾海')))
+  assert.ok(beat0.mustGround.some((item) => item.includes('第七码头')))
   assert.ok(beat0.mustGround.some((item) => item.includes('听见潮汐')))
   assert.match(beat0.toneDirective, /时间压力|因果逻辑/)
   assert.equal(beat0.paragraphShape.length, 4)
@@ -498,4 +498,109 @@ test('every genre template binds to a real world and recommendations cover all s
   assert.equal(recommendedTemplateFor('city').id, 'romance-modern')
   // The legacy cyber stage has no bound template; it falls back to sci-fi craft.
   assert.equal(recommendedTemplateFor('neon').id, 'scifi')
+})
+
+test('stage display names are small concrete places while ids stay stable', () => {
+  const names = Object.fromEntries(GENRES.map((genre) => [genre.id, genre.world]))
+  assert.deepEqual(names, {
+    mist: '沉潮港',
+    cultivation: '青岚宗',
+    neon: '霓虹下城',
+    city: '长宁街',
+    court: '长乐宫',
+    frontier: '七号前哨站',
+  })
+  for (const genre of GENRES) {
+    assert.ok(genre.tagline.length >= 6, genre.id)
+    assert.ok(genre.description.includes(genre.world), genre.id)
+  }
+})
+
+const godDraft = (overrides = {}) => draft({
+  genreId: 'custom',
+  genreTemplateId: '',
+  customWorldName: '倒流港',
+  customWorldSetting: '海水每晚倒流一小时，倒流时死者会回到岸边说一句话。镇上的人靠替亡者传话为生。',
+  ...overrides,
+})
+
+test('god mode: createStory carries the custom world into config and bible', () => {
+  const story = createStory(godDraft())
+  assert.equal(story.genreId, 'custom')
+  assert.equal(story.config.customWorldName, '倒流港')
+  assert.ok(story.config.customWorldSetting.includes('海水每晚倒流'))
+  assert.equal('genreTemplateId' in story, false)
+  assert.equal(story.title, '倒流港 · 宁笙')
+  assert.ok(story.worldBible.premise.includes('倒流港'))
+  assert.ok(story.worldBible.premise.includes('海水每晚倒流一小时'))
+  assert.ok(story.worldBible.rules.some((rule) => rule.includes('创世设定')))
+  assert.ok(story.worldBible.rules[0].includes('镇上的人靠替亡者传话为生'))
+  assert.equal(story.worldBible.outline.length, 6)
+})
+
+test('god mode: blank name falls back to the unnamed world placeholder', () => {
+  const story = createStory(godDraft({ customWorldName: '   ', customWorldSetting: '' }))
+  assert.equal(story.config.customWorldName, '')
+  assert.equal(story.title, '未命名世界 · 宁笙')
+  assert.ok(story.worldBible.premise.includes('未命名世界'))
+  assert.ok(story.worldBible.rules[0].includes('尚无成文规则'))
+})
+
+test('god mode: name and setting are trimmed and bounded at 40 / 600 chars', () => {
+  const story = createStory(godDraft({
+    customWorldName: `  ${'名'.repeat(50)}  `,
+    customWorldSetting: `  ${'设'.repeat(700)}  `,
+  }))
+  assert.equal(story.config.customWorldName.length, 40)
+  assert.equal(story.config.customWorldSetting.length, 600)
+  const wrongTypes = createStory(godDraft({ customWorldName: 42, customWorldSetting: null }))
+  assert.equal(wrongTypes.config.customWorldName, '')
+  assert.equal(wrongTypes.config.customWorldSetting, '')
+})
+
+test('god mode: local chapters run all six chapters on the generic scaffold', () => {
+  let story = createStory(godDraft())
+  const chapters = Array.from({ length: 6 }, (_, index) => buildChapter(story, index))
+  const text = chapters.flatMap((chapter) => chapter.paragraphs).join('\n')
+  assert.ok(text.includes('倒流港'))
+  assert.ok(text.includes('海水每晚倒流一小时'))
+  assert.equal(chapters[0].title, '倒流港 · 初声')
+  assert.ok(chapters[1].choice?.options.length >= 2)
+  assert.ok(chapters[3].choice?.prompt.includes('倒流港'))
+  assert.equal(chapters[5].choice, null)
+  // The accept/choose protocol works end to end for a custom world.
+  story = accept(story, 0)
+  story = accept(story, 1)
+  story = chooseBranch(story, 1, 'open')
+  const third = buildChapter(story, 2)
+  assert.ok(third.paragraphs.join('').includes('改写了下一行设定'))
+  assert.equal(chapterForReading(story, 1)?.index, 1)
+})
+
+test('god mode: an optional template can still be pinned as the craft', () => {
+  const story = createStory(godDraft({ genreTemplateId: 'suspense-supernatural' }))
+  assert.equal(story.genreTemplateId, 'suspense-supernatural')
+  assert.equal(story.config.genreTemplateId, 'suspense-supernatural')
+  assert.equal(story.genreId, 'custom')
+})
+
+test('god mode: beat plan grounds the story in the creator setting', () => {
+  const story = createStory(godDraft())
+  const beat = storyBeatPlan(story, 0)
+  assert.ok(beat.prerequisites.some((item) => item.includes('倒流港')))
+  assert.ok(beat.prerequisites.some((item) => item.startsWith('创世设定：') && item.includes('海水每晚倒流')))
+  assert.ok(beat.mustGround.some((item) => item.includes('倒流港')))
+  const dossier = storyNarrativeDossier(story, 0)
+  assert.equal(dossier.worldName, '倒流港')
+})
+
+test('god mode: a custom story can merge without crashing', () => {
+  const custom = createStory(godDraft())
+  const merged = createMergedStory(custom, FRIEND_BOOK, { rules: 'bridge', lead: 'a', bond: 'allies' })
+  assert.equal(merged.kind, 'merged')
+  assert.ok(merged.worldBible.premise.includes('倒流港'))
+  const chapter = buildChapter(merged, 0)
+  assert.ok(chapter.paragraphs.length >= 2)
+  const snapshot = publicSnapshot(createStory(godDraft()))
+  assert.equal(snapshot.genreId, 'custom')
 })

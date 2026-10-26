@@ -19,70 +19,94 @@ export const GENRES = [
   {
     id: 'mist',
     label: '奇幻',
-    world: '雾岚群岛',
-    title: '雾岚纪事',
-    tagline: '潮汐会记得每一个名字',
-    description: '漂浮群岛的潮汐钟会改写记忆，雾海深处藏着一封不该抵达的信。',
+    world: '沉潮港',
+    title: '沉潮港纪事',
+    tagline: '潮汐记得每一个名字',
+    description: '沉潮港被潮水围住，镇上的潮汐钟会改写记忆，雾里漂来一封不该抵达的信。',
     color: 'coral',
     symbol: '◒',
-    location: '会呼吸的雾海',
+    location: '第七码头',
   },
   {
     id: 'cultivation',
     label: '修仙',
-    world: '九重天外',
+    world: '青岚宗',
     title: '借火登天',
     tagline: '凡人也能向天借火',
-    description: '灵脉正在枯竭，旧仙门把最后的火种藏进凡人的梦里。',
+    description: '灵脉正在枯竭，青岚宗把最后的火种藏进凡人的梦里，等一个不信命的人来取。',
     color: 'gold',
     symbol: '✦',
-    location: '断云山海',
+    location: '后山灵田',
   },
   {
     id: 'neon',
     label: '赛博',
-    world: '雨幕 2091',
+    world: '霓虹下城',
     title: '雨幕备份',
-    tagline: '城市没有夜晚，只有更深的蓝',
-    description: '情绪可以租赁，记忆可以删改，雨水里藏着一份无主的人格备份。',
+    tagline: '记忆可以删改，雨声不行',
+    description: '霓虹下城是巨型都市的下层区：情绪可以租赁，记忆可以删改，雨水里藏着一份无主的人格备份。',
     color: 'mint',
     symbol: '⌁',
-    location: '蓝雨下城',
+    location: '下城回收站',
   },
   {
     id: 'city',
     label: '都市',
-    world: '未眠之城',
-    title: '凌晨四点的城',
+    world: '长宁街',
+    title: '凌晨四点的长宁街',
     tagline: '所有错过的人，都有一次重逢',
-    description: '一座永不关灯的城市把陌生人的愿望串在一起，等一个人按下回车。',
+    description: '长宁街永不打烊，把陌生人的愿望串在一起，等一个人按下回车。',
     color: 'violet',
     symbol: '✧',
-    location: '南环旧城区',
+    location: '长宁街口',
   },
   {
     id: 'court',
     label: '古言',
-    world: '金阙王朝',
+    world: '长乐宫',
     title: '宫墙深处',
     tagline: '一步走错，满盘皆输',
-    description: '深宫与朝堂之间，位分就是命数；一封家书，能改写三个人的命运。',
+    description: '长乐宫里，位分就是命数；一封没寄出的家书，能改写三个人的命运。',
     color: 'crimson',
     symbol: '❖',
-    location: '朱墙深处',
+    location: '长乐宫偏殿',
   },
   {
     id: 'frontier',
     label: '科幻',
-    world: '边疆星环',
+    world: '七号前哨站',
     title: '星环以远',
     tagline: '旧世界的本事，在这里一文不值',
-    description: '殖民星环之外是辐射废土；每升一层轨道，规则都要重新学一遍。',
+    description: '七号前哨站之外是辐射废土；配给卡决定谁先活下去，旧地图全是错的。',
     color: 'steel',
     symbol: '◎',
-    location: '碎星带前哨站',
+    location: '七号站配给舱',
   },
 ]
+
+/*
+ * God mode: a world the reader writes themselves instead of picking a preset
+ * stage. 'custom' is deliberately NOT part of GENRES (the preset wall and the
+ * artwork set stay preset-only); it is registered in the id lookup so every
+ * engine path — draft normalising, story creation, local scenes, merged
+ * stories — resolves it with safe generic scaffolding, while the world's
+ * actual name and rules come from the draft's customWorldName /
+ * customWorldSetting fields.
+ */
+export const CUSTOM_GENRE_ID = 'custom'
+export const CUSTOM_WORLD_NAME_MAX = 40
+export const CUSTOM_WORLD_SETTING_MAX = 600
+export const CUSTOM_GENRE = {
+  id: CUSTOM_GENRE_ID,
+  label: '创世神',
+  world: '未命名世界',
+  title: '未命名世界',
+  tagline: '世界由你亲手写',
+  description: '没有现成的舞台：名字、规则和氛围，都由你写下的设定说了算。',
+  color: 'steel',
+  symbol: '✎',
+  location: '故事开始的地方',
+}
 
 /*
  * Story types are the eight knowledge-base templates (knowledge/genres.json).
@@ -118,6 +142,8 @@ export const recommendedTemplateFor = (genreId) =>
 export const DEFAULT_DRAFT = {
   genreId: 'mist',
   genreTemplateId: '',
+  customWorldName: '',
+  customWorldSetting: '',
   name: '',
   trait: '冷静观察者',
   origin: '无名漂泊者',
@@ -137,12 +163,22 @@ const MAX_CHAPTERS = 6
 const LAST_INDEX = MAX_CHAPTERS - 1
 let idCounter = 0
 
-const GENRE_BY_ID = Object.fromEntries(GENRES.map((genre) => [genre.id, genre]))
+const GENRE_BY_ID = { ...Object.fromEntries(GENRES.map((genre) => [genre.id, genre])), [CUSTOM_GENRE_ID]: CUSTOM_GENRE }
 
 const cleanText = (value, fallback = '') => {
   if (typeof value !== 'string') return fallback
   return value.trim().slice(0, 240)
 }
+
+const cleanBounded = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : ''
+
+// The name a story's world is actually called. Preset stages use their fixed
+// name; a god-mode world uses the creator's own name (or the placeholder).
+const worldNameOf = (genre, config) => genre.id === CUSTOM_GENRE_ID
+  ? cleanBounded(config?.customWorldName, CUSTOM_WORLD_NAME_MAX) || CUSTOM_GENRE.world
+  : genre.world
+
+const customSettingOf = (config) => cleanBounded(config?.customWorldSetting, CUSTOM_WORLD_SETTING_MAX)
 
 const asStep = (value) => {
   const number = Number(value)
@@ -173,6 +209,8 @@ const normalizeDraft = (draft = {}) => {
   return {
     genreId,
     genreTemplateId: genreTemplateById(input.genreTemplateId)?.id || '',
+    customWorldName: cleanBounded(input.customWorldName, CUSTOM_WORLD_NAME_MAX),
+    customWorldSetting: cleanBounded(input.customWorldSetting, CUSTOM_WORLD_SETTING_MAX),
     name: cleanText(input.name, DEFAULT_DRAFT.name),
     trait: cleanText(input.trait, DEFAULT_DRAFT.trait),
     origin: cleanText(input.origin, DEFAULT_DRAFT.origin),
@@ -209,6 +247,10 @@ const realityDetail = (config) => {
 
 const titleFor = (config, genre) => {
   const name = protagonistName(config, '')
+  if (genre.id === CUSTOM_GENRE_ID) {
+    const world = worldNameOf(genre, config)
+    return name ? `${world} · ${name}` : world
+  }
   if (name) return `${genre.title} · ${name}`
   return genre.title
 }
@@ -217,6 +259,17 @@ const outlineFor = (genre, config) => {
   const name = protagonistName(config)
   const identity = displayIdentity(config)
   const destination = cleanText(config.destination, '') || genre.location
+  if (genre.id === CUSTOM_GENRE_ID) {
+    const world = worldNameOf(genre, config)
+    return [
+      `${name}以${identity}的身份踏入${world}，创世设定落地的第一幕开始。`,
+      `设定里的第一条规则开始运转，${name}被卷入其中，无人能置身事外。`,
+      `一次选择让同行者与${name}站到同一条路上，也留下新的代价。`,
+      `旧秩序要求${name}交出能力，真正的对手从设定深处显形。`,
+      `${name}必须在回到原点与改写规则之间作出最后准备。`,
+      `终局会回答：这个由创世者亲手写下的世界，最终会变成什么样子。`,
+    ]
+  }
   return [
     `${name}以${identity}的身份抵达${genre.location}，收到一个无法解释的信号。`,
     `信号把${name}带向${destination}，第一条世界规则开始松动。`,
@@ -230,6 +283,24 @@ const outlineFor = (genre, config) => {
 const worldBibleFor = (genre, config) => {
   const name = protagonistName(config)
   const detail = realityDetail(config)
+  if (genre.id === CUSTOM_GENRE_ID) {
+    const world = worldNameOf(genre, config)
+    const setting = customSettingOf(config)
+    return {
+      premise: setting
+        ? `${world}：${setting} ${name}${detail ? `（${detail}）` : ''}的故事，就从这个由创世者亲手写下的世界里开始。`
+        : `${world}里，${name}${detail ? `（${detail}）` : ''}的故事从这里开始；这个世界还没有成文的设定，规则将随故事逐一显形。`,
+      rules: [
+        ...(setting
+          ? [`创世设定（这个世界以此为准）：${setting}`]
+          : ['这个世界尚无成文规则，第一章将随主角的行动立下第一条。']),
+        '已经做出的选择会留下可追踪的回声，不能被无痕抹去。',
+        '能力有边界；每一次越界都会改变关系或世界稳定度。',
+      ],
+      endingAnchor: `${name}必须决定${world}的未来走向，以及谁有资格改写它的规则。`,
+      outline: outlineFor(genre, config),
+    }
+  }
   return {
     premise: `${genre.world}里，${name}${detail ? `（${detail}）` : ''}在${genre.location}发现一条会回应选择的世界线。`,
     rules: [
@@ -301,7 +372,7 @@ const choiceAt = (story, index) => {
     }
   }
   return {
-    prompt: `${genre.world}要求你为下一段路选定代价。`,
+    prompt: `${worldNameOf(genre, config)}要求你为下一段路选定代价。`,
     options: [
       { id: 'cross', label: `前往${cleanText(config.destination, '') || genre.location}`, detail: `用“${cleanText(config.ability, '') || '你的能力'}”穿过边界`, consequence: '主动承担风险，打开隐藏章节。' },
       { id: 'return', label: '回到熟悉的地方', detail: `向${cleanText(config.friend, '') || '一个可信的人'}求证`, consequence: '保留退路，也让旧关系重新发声。' },
@@ -358,22 +429,27 @@ const sceneFor = (story, index) => {
   }
 
   const livedLine = lived ? `那一点来自真实生活的火种——${lived}——让这次触碰显得异常熟悉。` : `没有人替${name}解释眼前的异常，只有${trait}让TA没有立刻转身。`
+  const customWorld = worldNameOf(genre, config)
+  const customSetting = customSettingOf(config)
+  const customSettingLine = customSetting
+    ? `创世者为这个世界写下的设定是：「${customSetting}」`
+    : '这个世界还没有成文的设定，第一页将由主角的脚步写下。'
   const scenes = {
     mist: [
       [`${genre.world}的潮汐钟在${genre.location}敲响第七次。`, `${name}作为${identityWithOrigin}站在雾海边，手里握着“${ability}”的微弱回声。`, livedLine],
       [`雾里漂来一封没有落款的信，${name}听见潮水叫出自己的名字。`, '信纸仍然合拢，封口下有一点蓝火，安静地等着一个回答。', '钟声催着潮水倒退，留给TA的时间只剩下一次呼吸。'],
       [...(previousOne ? [previousOne === 'wait' ? 'TA把信压在掌心，没有让钟声替自己做决定。直到找到岸边的旧灯，才借它的光辨清信上的潮痕。' : 'TA让蓝火沿着指尖亮起，信纸背面浮出一条新的航线。'] : []), `${name}沿着倒流的潮痕抵达${destination}。`, `一位陌生的守钟人说，只有真正记得自己的人才能穿过雾门。`, `TA想起${friend}曾经说过的一句话：不要把每个答案都交给钟声。`],
       [`钟塔内部没有楼梯，只有一面把记忆折成房间的墙。`, '门缝里透出陌生的光，身后的旧坐标仍然清晰；两条路都在等待。', `真正的敌人不是潮水，而是被人删掉的那一段历史。`],
-      [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}留下的旧坐标，发现那里藏着一盏仍然温热的灯。` : `TA用“${ability}”缝合裂开的门缝，听见雾海另一端有人回应。`] : []), `风暴把群岛推向同一条轨道，${name}必须决定要保护哪一种记忆。`, `TA把身份、能力与一路收集的回声放在同一架天平上。`, `${destination}的灯亮了三次，像是在等待一个不再犹豫的回答。`],
-      [`潮汐终于落下，露出一座从未出现在地图上的岛。`, `${name}没有替世界写死结局；TA只留下一个可以被后来者继续选择的名字。`, `雾岚群岛记住了这次选择，下一条世界线由此开始。`],
+      [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}留下的旧坐标，发现那里藏着一盏仍然温热的灯。` : `TA用“${ability}”缝合裂开的门缝，听见雾海另一端有人回应。`] : []), `风暴把港镇推向同一条轨道，${name}必须决定要保护哪一种记忆。`, `TA把身份、能力与一路收集的回声放在同一架天平上。`, `${destination}的灯亮了三次，像是在等待一个不再犹豫的回答。`],
+      [`潮汐终于落下，露出一座从未出现在地图上的岛。`, `${name}没有替世界写死结局；TA只留下一个可以被后来者继续选择的名字。`, `沉潮港记住了这次选择，下一条世界线由此开始。`],
     ],
     cultivation: [
       [`${genre.world}的灵脉在${genre.location}裂开一道细缝。`, `${name}这个${identityWithOrigin}被召到山门前，掌心藏着“${ability}”最后一簇火。`, livedLine],
       [`天门落下一枚无主的火印，${name}必须决定要不要接住。`, '火印悬在掌心上方，温度还没有穿透皮肤，旧符也仍在袖中。', `山风把路吹向${destination}，也吹来仙门不愿承认的真相。`],
-      [...(previousOne ? [previousOne === 'wait' ? 'TA先把火印封进旧符，去寻找能证明它来历的证人。' : 'TA将火印按进心口，听见九重天外有人喊出自己的名字。'] : []), `${name}在${destination}遇见一座倒悬的藏经塔。`, `塔中没有经文，只有${friend}留下的三句批注，字迹仍带着未熄的温度。`, `修行不是把自己变得无坚不摧，而是知道哪一处裂缝必须被保护。`],
+      [...(previousOne ? [previousOne === 'wait' ? 'TA先把火印封进旧符，去寻找能证明它来历的证人。' : 'TA将火印按进心口，听见云海之上有人喊出自己的名字。'] : []), `${name}在${destination}遇见一座倒悬的藏经塔。`, `塔中没有经文，只有${friend}留下的三句批注，字迹仍带着未熄的温度。`, `修行不是把自己变得无坚不摧，而是知道哪一处裂缝必须被保护。`],
       [`灵火开始吞噬旧法阵，所有长老都要求${name}交出“${ability}”。`, '旧山门与燃烧的法阵各占据一侧，谁也没有得到TA最后的答复。', `天上第一次传来没有人说过的第三种声音。`],
-      [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}的门下，把证据放在众人面前，先守住可以回来的路。` : `TA以“${ability}”引火入脉，让一条凡人也能走的路从废墟里升起。`] : []), `九重天的门扉向下开启，凡人与仙门的名字同时被写进天榜。`, `${name}在飞升前回望${genre.location}，发现真正的火种从来不属于某一个宗门。`, `选择留下的代价，比选择登天更需要勇气。`],
-      [`火种没有熄灭，它只是从一双手传到了更多双手。`, `${name}让自己的名字成为一道可以被质疑的注脚，而不是新的戒律。`, `九重天外，第一颗不属于仙人的星星亮了。`],
+      [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}的门下，把证据放在众人面前，先守住可以回来的路。` : `TA以“${ability}”引火入脉，让一条凡人也能走的路从废墟里升起。`] : []), `天门向下开启，凡人与仙门的名字同时被写进天榜。`, `${name}在飞升前回望${genre.location}，发现真正的火种从来不属于某一个宗门。`, `选择留下的代价，比选择登天更需要勇气。`],
+      [`火种没有熄灭，它只是从一双手传到了更多双手。`, `${name}让自己的名字成为一道可以被质疑的注脚，而不是新的戒律。`, `青岚宗的夜空里，第一颗不属于仙人的星星亮了。`],
     ],
     neon: [
       [`${genre.world}的雨水把${genre.location}刷成深蓝。`, `${name}作为${identityWithOrigin}接入一份名为“${ability}”的异常人格备份。`, livedLine],
@@ -389,10 +465,10 @@ const sceneFor = (story, index) => {
       [...(previousOne ? [previousOne === 'wait' ? 'TA先把留言留在站牌下，决定查清是谁把自己的名字写了上去。' : 'TA沿着留言登上一班没有终点的电车，听见陌生人叫出自己的名字。'] : []), `${name}在${destination}遇见${friend}，对方说自己已经等了很多年。`, `他们交换了一段不完整的记忆，发现整座城市都在替某个人保守秘密。`, `凌晨四点不是终点，而是所有错过的人短暂重逢的入口。`],
       [`城市广播要求${name}放弃“${ability}”换取一条回家的路。`, '熟悉的街角就在身后，前方熄灭的路灯则等着另一种答案。', '广播重复了最后一个问题，城市还没有等到回答。'],
       [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}熟悉的街角，先把能回来的门留给所有人。` : `TA用“${ability}”让一条旧街重新亮起，路牌开始显示真正的名字。`] : []), `天快亮了，${name}必须决定哪一段夜晚值得被留下。`, `TA把选择写进${genre.location}的公共墙面，允许下一个路人改写最后一行。`, `${destination}的门没有关，像是在给未来预留座位。`],
-      [`凌晨四点终于过去，城市没有忘记那些没能赶上的人。`, `${name}带着一张空白车票走向晨光，知道重逢不是结局而是新的选择。`, `未眠之城第一次拥有了属于所有人的早晨。`],
+      [`凌晨四点终于过去，城市没有忘记那些没能赶上的人。`, `${name}带着一张空白车票走向晨光，知道重逢不是结局而是新的选择。`, `长宁街第一次拥有了属于所有人的早晨。`],
     ],
     court: [
-      [`${genre.world}的册封礼刚过三日，朱墙深处的钟比往日慢了半拍。`, `${name}这个${identityWithOrigin}第一次走进${genre.location}，掌事姑姑把一册写着“${ability}”的旧档推到TA面前，只说了一句：看完就烧。`, livedLine],
+      [`${genre.world}的册封礼刚过三日，宫里的钟比往日慢了半拍。`, `${name}这个${identityWithOrigin}第一次走进${genre.location}，掌事姑姑把一册写着“${ability}”的旧档推到TA面前，只说了一句：看完就烧。`, livedLine],
       [`旧档里夹着一封没有寄出的家书，字迹在半途换了人。`, '家书压在妆奁最底层，封口完好，收信人的名字却被人用朱砂划去。', `姑姑说，${destination}那边的席位已经空了三年，只等一个人坐回去。`],
       [...(previousOne ? [previousOne === 'wait' ? 'TA没有立刻烧档，先把家书的缺页拓了下来，去问经手过这批旧档的人。' : 'TA借着更漏的光读完最后一行，窗外恰好传来升位的钟响——有人欢喜，有人今夜睡不着。'] : []), `${name}在${destination}见到${friend}，对方只问了一句：你想赢，还是想活？`, `两个人隔着一扇屏风谈了一夜，把各自知道的半张棋盘拼到了一起。`, `位分是给外人看的，真正的命数藏在谁先沉不住气里。`],
       [`旧档的来历被翻了出来，太后与陛下同时召见${name}。`, '两道旨意摆在案上，一道给恩宠，一道给出路；殿里的香还没燃尽。', `所有人都看着${name}的手会先伸向哪一道。`],
@@ -400,12 +476,20 @@ const sceneFor = (story, index) => {
       [`朱墙依旧，天光落进来时却不再刺眼。`, `${name}没有赢得所有，只赢回了说“不”的资格——这比位分更难，也更长久。`, `宫墙深处，从此多了一盏为后来者留的灯。`],
     ],
     frontier: [
-      [`${genre.world}的引力锚在${genre.location}第三次失稳。`, `${name}这个${identityWithOrigin}攥着最后一张配给卡，听见广播把“${ability}”列为未登记变量。`, livedLine],
+      [`${genre.location}的引力锚第三次失稳，整座${genre.world}的灯都暗了一瞬。`, `${name}这个${identityWithOrigin}攥着最后一张配给卡，听见广播把“${ability}”列为未登记变量。`, livedLine],
       [`废弃货舱里传出一串重复的求救码，落款是三十年前失踪的殖民船。`, '求救码停在最后一位，没有解完，也没有消失，像一句没说完的话。', `导航把航线标向${destination}——那片星域在所有官方图上都是空白。`],
       [...(previousOne ? [previousOne === 'wait' ? 'TA先把求救码录进离线芯片，去找见过那艘船的老领航员对口供。' : 'TA让“${ability}”接管三秒导航，整条星环的灯顺次暗了一遍，又顺次亮回来。'] : []), `${name}在${destination}遇见${friend}的应急人格备份，对方说自己等这一班船等了三十年。`, `备份交出一张手绘星图：官方版本删掉的航线，全在上面。`, `在边疆，活下去的第一课是承认旧地图是错的。`],
       [`星环议会要求${name}交出“${ability}”的登记权，换全船队的燃料配额。`, '配给表已经发到每个人手里，倒计时挂在舱门上方；没有人先开口。', `真正的敌人不在废土里，在那张永远算不平的账上。`],
       [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}的备份舱，先把星图抄了三份，藏进三艘不同的船。` : `TA用“${ability}”重写了前哨站的配给算法，让最底层的人第一次出现在名单上。`] : []), `废土的信号塔全部转向同一片空白星域，${name}必须决定舰队是启程还是留下。`, `TA把启程的决定交给投票，而不是交给配给表。`, `${destination}的方向升起一颗不在任何图上的星。`],
       [`星环以远，第一艘自愿启程的船点火成功。`, `${name}没有成为新的领航神话，只在航行日志第一页写下：规则可以重学，人不能重来。`, `边疆从此有了自己的第一页历史。`],
+    ],
+    custom: [
+      [`${customWorld}在${name}睁开眼时显形——它不属于任何一张现成的地图。`, `${name}作为${identityWithOrigin}站在故事开始的地方，手里握着“${ability}”的第一缕回声。`, customSettingLine],
+      [`这个世界的第一条规则在${name}面前运转起来，比设定里写的更不讲道理。`, '一件小事被规则放大，四周安静下来，像在等TA先迈出一步。', `而${friend}——如果这个世界里真有这个人——应该已经听说了这件事。`],
+      [...(previousOne ? [previousOne === 'wait' ? 'TA没有立刻顺着规则走，先把异常记下来，去找这个世界真正的裂缝。' : 'TA顺着规则迈出第一步，世界随之改写了下一行设定。'] : []), `${name}循着回声往前走，发现设定里没写到的东西，比写到的更多。`, `一位同行者说，这个世界只对亲手写下它的人留了一扇后门。`],
+      [`旧秩序找上了${name}，要求TA交出“${ability}”，理由写在设定之外的空白处。`, '两条路都摆在面前，一条回头，一条改写；没有人先替TA开口。', `真正的对手还没有露面，只先送来了一句话。`],
+      [...(previousThree ? [previousThree === 'return' ? `TA回到最初醒来的地方，先把能回来的门留给所有人。` : `TA用“${ability}”撬开设定的边界，让一条没人走过的路从空白里升起。`] : []), `${customWorld}开始偏离最初的设定，${name}必须决定：修正它，还是让它长成自己的样子。`, `TA把身份、能力与一路收集的回声放在同一架天平上。`],
+      [`世界走到了设定没有覆盖的地方。`, `${name}没有替它写死结局；TA只留下一个可以被后来者继续改写的名字。`, `${customWorld}从这里开始，拥有了自己的第二页。`],
     ],
   }
   return scenes[genre.id]?.[index] || scenes.mist[index]
@@ -442,9 +526,10 @@ export function buildChapter(story, index) {
   validateIndex(index)
   const genre = genreFor(story.genreId || story.config.genreId)
   const scene = sceneFor(story, index)
+  const titleBase = genre.id === CUSTOM_GENRE_ID ? worldNameOf(genre, story.config) : genre.title
   const titles = story.kind === 'merged'
     ? ['相撞的天空', '合流信号', '共同的回声', '两种规则', '无昼之境', '共同呼吸']
-    : [`${genre.title} · 初声`, `${genre.title} · 信号`, `${genre.title} · 追迹`, `${genre.title} · 越界`, `${genre.title} · 回望`, `${genre.title} · 新页`]
+    : [`${titleBase} · 初声`, `${titleBase} · 信号`, `${titleBase} · 追迹`, `${titleBase} · 越界`, `${titleBase} · 回望`, `${titleBase} · 新页`]
   const name = story.kind === 'merged'
     ? (story.config.protagonists || []).map((item, itemIndex) => protagonistName(item, `旅者${itemIndex === 0 ? '甲' : '乙'}`)).join('与')
     : protagonistName(story.config)
@@ -460,7 +545,7 @@ export function buildChapter(story, index) {
   const choice = choiceAt(story, index)
   const summary = index === LAST_INDEX
     ? `${name}抵达终局，世界为新的选择留出位置。`
-    : `${name}在${genre.world}推进到第${index + 1}幕${choice ? '，命运节点即将出现' : '。'}`
+    : `${name}在${worldNameOf(genre, story.config)}推进到第${index + 1}幕${choice ? '，命运节点即将出现' : '。'}`
   return {
     id: `${story.id}:chapter:${index}:r${story.revision}`,
     index,
@@ -498,14 +583,18 @@ export function storyBeatPlan(story, index) {
     : protagonistName(config)
   const identity = displayIdentity(config)
   const ability = cleanText(config.ability, '') || '尚未命名的能力'
-  const destination = cleanText(config.destination, '') || genre.location
+  const isCustom = genre.id === CUSTOM_GENRE_ID
+  const worldDisplay = worldNameOf(genre, config)
+  const customSetting = customSettingOf(config)
+  const destination = cleanText(config.destination, '') || (isCustom ? worldDisplay : genre.location)
   const friend = cleanText(config.friend, '') || '同行者'
   const lived = realityDetail(config)
   const tone = cleanText(config.tone, '') || '诗性冒险'
   const toneDirective = TONE_DIRECTIVES[tone] || TONE_DIRECTIVES.诗性冒险
 
   const prerequisites = [
-    `世界：${genre.world}（${genre.location}）`,
+    isCustom ? `世界：${worldDisplay}（由创世者亲手写定的世界）` : `世界：${genre.world}（${genre.location}）`,
+    ...(isCustom && customSetting ? [`创世设定：${customSetting}`] : []),
     merged
       ? `双主角合流：${name}（规则：${config.merge?.rules === 'separate' ? '各自独立' : '互相融合'}，关系：${config.merge?.bond === 'rivals' ? '竞争' : '合作'}）`
       : `主角：${name}，身份“${identity}”，性格“${cleanText(config.trait, '') || '冷静观察者'}”`,
@@ -533,7 +622,7 @@ export function storyBeatPlan(story, index) {
 
   const mustGroundByChapter = [
     [
-      `交代${name}在${genre.location}的处境与能力“${ability}”`,
+      isCustom ? `交代${name}在${worldDisplay}的处境与能力“${ability}”` : `交代${name}在${genre.location}的处境与能力“${ability}”`,
       `引出主线事件与世界基本规则`,
     ],
     [
@@ -641,7 +730,7 @@ export function storyNarrativeDossier(story, maxChapterIndex = 0) {
     })
   }
   return {
-    worldName: genre.world,
+    worldName: worldNameOf(genre, story.config),
     location: genre.location,
     premise: story.worldBible?.premise || '',
     rules: Array.isArray(story.worldBible?.rules) ? [...story.worldBible.rules] : [],
@@ -672,7 +761,7 @@ const legacyDecisionSignature = (story, index, currentScene) => {
   }
   const outcomes = index === 1 ? {
     mist: ['TA把信压在掌心，没有让钟声替自己做决定。', 'TA让蓝火沿着指尖亮起，信纸背面浮出一条新的航线。'],
-    cultivation: ['TA先把火印封进旧符，去寻找能证明它来历的证人。', 'TA将火印按进心口，听见九重天外有人喊出自己的名字。'],
+    cultivation: ['TA先把火印封进旧符，去寻找能证明它来历的证人。', 'TA将火印按进心口，听见云海之上有人喊出自己的名字。'],
     neon: ['TA先切断外网，把那句声音写进一块不会联网的旧芯片。', 'TA允许备份读取一秒钟的心跳，城市的广告牌同时暗了下来。'],
     city: ['TA先把留言留在站牌下，决定查清是谁把自己的名字写了上去。', 'TA沿着留言登上一班没有终点的电车，听见陌生人叫出自己的名字。'],
   } : {
@@ -848,7 +937,7 @@ export function createMergedStory(a, b, options = {}) {
     genreId: mergedConfig.genreId,
     config: mergedConfig,
     worldBible: {
-      premise: `${genreA.world}与${genreB.world}在一处新的合流点相遇，两位主角必须共同定义边界。`,
+      premise: `${worldNameOf(genreA, a.config)}与${worldNameOf(genreB, b.config)}在一处新的合流点相遇，两位主角必须共同定义边界。`,
       rules: rules === 'bridge'
         ? ['两种世界规则可以互相翻译，但每次翻译都会消耗稳定度。', '双主角共享合流点的选择，任何一方都不能被静默抹去。', '合流后的新规则必须被两位主角共同见证。']
         : ['两种世界规则保持各自边界，只在合流点短暂交叠。', '双主角可以同行，但不能替对方决定原世界的命运。', '任何跨界行动都必须留下可追溯的回声。'],
@@ -1041,11 +1130,11 @@ const demoMist = withDemoMeta(advanceDemo(createStory({
 }), 3, { 1: 'open' }), { id: 'demo-mist', title: '白潮港的第七次钟声', status: 'ongoing', author: '阿遥' })
 
 const demoNeon = withDemoMeta(advanceDemo(createStory({
-  genreId: 'neon', name: 'Echo', trait: '危险好奇心', origin: '失忆的继承人', ability: '读取备份', tone: '悬疑推进', immersive: false, destination: '蓝雨下城',
+  genreId: 'neon', name: 'Echo', trait: '危险好奇心', origin: '失忆的继承人', ability: '读取备份', tone: '悬疑推进', immersive: false, destination: '下城回收站',
 }), 6, { 1: 'wait', 3: 'cross' }), { id: 'demo-neon', title: '雨幕里的备用人格', status: 'complete', author: 'Echo-404' })
 
 export const FRIEND_BOOK = withDemoMeta(advanceDemo(createStory({
-  genreId: 'cultivation', name: '烬野', trait: '嘴硬心软', origin: '被放逐的学徒', ability: '借火一瞬', tone: '群像治愈', immersive: false, destination: '断云山海',
+  genreId: 'cultivation', name: '烬野', trait: '嘴硬心软', origin: '被放逐的学徒', ability: '借火一瞬', tone: '群像治愈', immersive: false, destination: '后山灵田',
 }), 3, { 1: 'open' }), { id: 'demo-friend-cultivation', title: '火种越过九重天', status: 'ongoing', author: '烬野' })
 
 const demoMerged = withDemoMeta(createMergedStory(demoMist, FRIEND_BOOK, { rules: 'bridge', lead: 'a', bond: 'allies' }), {

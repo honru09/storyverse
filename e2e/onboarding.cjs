@@ -164,7 +164,7 @@ async function runOnboarding(browser, width) {
     });
 
     await step('creation draft survives leaving, returning and reloading', async () => {
-      await page.locator('.stage-chips').getByRole('button', { name: '雾岚群岛', exact: true }).click();
+      await page.locator('.stage-chips').getByRole('button', { name: '沉潮港', exact: true }).click();
       await page.getByRole('button', { name: '继续', exact: true }).click();
       await page.getByLabel('主角昵称（选填）').fill(testName);
       await page.getByRole('switch', { name: '带入人生经历（选填）' }).click();

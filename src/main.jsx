@@ -46,6 +46,9 @@ import {
 } from "./reading-flow.js";
 import {
   COMMUNITY_BOOKS,
+  CUSTOM_GENRE,
+  CUSTOM_WORLD_NAME_MAX,
+  CUSTOM_WORLD_SETTING_MAX,
   DEFAULT_DRAFT,
   FRIEND_BOOK,
   GENRES,
@@ -65,6 +68,7 @@ import {
   STORAGE_KEY,
   upsertStory,
 } from "./persistence";
+import { findSettingViolation } from "./setting-guard";
 
 const Icon = ({ name, size = 18, stroke = 1.8, className = "" }) => {
   const common = {
@@ -228,12 +232,20 @@ const abilities = [
 ];
 const traits = ["冷静观察者", "温柔理想派", "危险好奇心", "嘴硬心软"];
 const origins = ["旧贵族旁支", "无名漂泊者", "失忆的继承人", "被放逐的学徒"];
+// One-tap sparks for the god-mode setting field: each is a complete world
+// rule a creator can adopt as-is or keep writing from.
+const GOD_MODE_FRAGMENTS = [
+  "这里的雨只落在说谎的人头上。",
+  "每个人出生时都带着一把钥匙，却没有人见过锁。",
+  "时间是通货，穷人向富人借明天。",
+  "这座城每晚都会换一个位置醒来。",
+];
 const tones = [
   { id: "poetic", name: "诗性冒险", desc: "慢一点，风会把伏笔吹到你手里" },
   { id: "tense", name: "悬疑推进", desc: "每一次呼吸都离真相更近" },
   { id: "warm", name: "群像治愈", desc: "让角色在世界缝隙里彼此照亮" },
 ];
-const genreById = Object.fromEntries(GENRES.map((genre) => [genre.id, genre]));
+const genreById = { ...Object.fromEntries(GENRES.map((genre) => [genre.id, genre])), [CUSTOM_GENRE.id]: CUSTOM_GENRE };
 
 const toWorld = (genre) => ({
   ...genre,
@@ -579,6 +591,7 @@ function StageChip({ world, selected, onSelect }) {
       type="button"
       className={`stage-chip ${selected ? "selected" : ""}`}
       aria-pressed={selected}
+      title={world.subtitle}
       onClick={() => onSelect(world.id)}
     >
       <span className="stage-chip-symbol" aria-hidden="true">{world.symbol}</span>
@@ -599,8 +612,11 @@ function PreviewPanel({ world, template, draft, ability, tone }) {
         </div>
       </div>
       <dl className="preview-facts">
-        <div><dt>题材</dt><dd>{template.fullName}</dd></div>
+        <div><dt>题材</dt><dd>{template ? template.fullName : "完全自由"}</dd></div>
         <div><dt>舞台</dt><dd>{world.name}</dd></div>
+        {draft.genreId === CUSTOM_GENRE.id && (
+          <div><dt>设定</dt><dd>{(draft.customWorldSetting || "").trim().slice(0, 80) || "尚未写下设定"}</dd></div>
+        )}
         <div><dt>主角</dt><dd>{person}</dd></div>
         <div><dt>性格</dt><dd>{draft.trait}</dd></div>
         <div><dt>出身</dt><dd>{draft.origin}</dd></div>
@@ -637,8 +653,9 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
   const [draft, setDraft] = useState(() => {
     const base = { ...DEFAULT_DRAFT, ...(initialDraft || {}) };
     // Step one always has a craft selected: a restored pick wins, otherwise
-    // the stage's recommended template.
-    if (!genreTemplateById(base.genreTemplateId)) {
+    // the stage's recommended template. God mode is the exception: an empty
+    // template there means "completely free" and must survive the restore.
+    if (base.genreId !== CUSTOM_GENRE.id && !genreTemplateById(base.genreTemplateId)) {
       base.genreTemplateId = recommendedTemplateFor(base.genreId).id;
     }
     return base;
@@ -658,10 +675,14 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
       tones.find((item) => item.name === initialDraft?.tone)?.id ||
       "poetic",
   );
-  const world = toWorld(genreById[draft.genreId] || GENRES[0]);
+  const isCustom = draft.genreId === CUSTOM_GENRE.id;
+  const customWorldName = (draft.customWorldName || "").trim();
+  const world = isCustom
+    ? { ...toWorld(CUSTOM_GENRE), name: customWorldName || CUSTOM_GENRE.world, location: customWorldName || CUSTOM_GENRE.location }
+    : toWorld(genreById[draft.genreId] || GENRES[0]);
   const template =
     genreTemplateById(draft.genreTemplateId) ||
-    recommendedTemplateFor(draft.genreId);
+    (isCustom ? null : recommendedTemplateFor(draft.genreId));
   const selectTemplate = (item) => {
     templateTouched.current = true;
     set({ genreTemplateId: item.id, genreId: item.worldId });
@@ -670,11 +691,40 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
     if (templateTouched.current) set({ genreId });
     else set({ genreId, genreTemplateId: recommendedTemplateFor(genreId).id });
   };
+  const enterGodMode = () => {
+    templateTouched.current = true;
+    set({ genreId: CUSTOM_GENRE.id, genreTemplateId: "" });
+  };
+  const exitGodMode = () => {
+    const picked = genreTemplateById(draft.genreTemplateId);
+    if (picked) {
+      templateTouched.current = true;
+      set({ genreId: picked.worldId });
+    } else {
+      templateTouched.current = false;
+      set({ genreId: DEFAULT_DRAFT.genreId, genreTemplateId: recommendedTemplateFor(DEFAULT_DRAFT.genreId).id });
+    }
+  };
+  const appendFragment = (fragment) => {
+    const current = (draft.customWorldSetting || "").trim();
+    const needsStop = current && !"。！？".includes(current.slice(-1));
+    const joined = current ? `${current}${needsStop ? "。" : ""}${fragment}` : fragment;
+    set({ customWorldSetting: joined.slice(0, CUSTOM_WORLD_SETTING_MAX) });
+  };
   const ability =
     abilities.find((item) => item.id === abilityId) || abilities[0];
   const tone = tones.find((item) => item.id === toneId) || tones[0];
   const set = (patch) => setDraft((current) => ({ ...current, ...patch }));
-  const next = () => setStep((value) => Math.min(4, value + 1));
+  const next = () => {
+    // God-mode settings are checked when leaving step one, not while typing:
+    // a refused setting stays on screen, editable, with the reason shown.
+    if (step === 1 && isCustom) {
+      const violation = findSettingViolation(draft.customWorldSetting);
+      if (violation) { setError(violation); return; }
+    }
+    setError("");
+    setStep((value) => Math.min(4, value + 1));
+  };
   const back = () => setStep((value) => Math.max(1, value - 1));
   useSceneMotion(
     forgeRef,
@@ -699,6 +749,10 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
   }, [step]);
   const submit = async () => {
     if (operation.current) return;
+    if (isCustom) {
+      const violation = findSettingViolation(draft.customWorldSetting);
+      if (violation) { setError(violation); setStep(1); return; }
+    }
     const controller = new AbortController();
     operation.current = controller;
     setBusy(true);
@@ -714,8 +768,9 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
     catch (failure) { if (!controller.signal.aborted) setError(failure.message || "暂时没能打开故事，草稿还在。"); }
     finally { if (operation.current === controller) { operation.current = null; setBusy(false); } }
   };
-  const previewText =
-    draft.immersive && draft.hometown
+  const previewText = isCustom && (draft.customWorldSetting || "").trim()
+    ? `${draft.name || "未命名旅人"}会在${world.name}醒来——${(draft.customWorldSetting || "").trim().slice(0, 56)}`
+    : draft.immersive && draft.hometown
       ? `来自${draft.hometown}的${draft.role || "旅人"}，会在${world.location}听见第一声回响。`
       : `${draft.name || "未命名旅人"}会在${world.location}收到一条无法解释的信号。`;
   return (
@@ -731,35 +786,120 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
             <>
               <div className="forge-section-heading">
                 <div>
-                  <h2 tabIndex={-1}>想写哪种故事？</h2>
+                  <h2 tabIndex={-1}>{isCustom ? "这个世界，由你写。" : "想写哪种故事？"}</h2>
                 </div>
               </div>
-              <div className="template-wall" role="group" aria-label="题材">
-                {templateWall.map((item, index) => (
-                  <TemplateBrick
-                    key={item.id}
-                    template={item}
-                    stage={toWorld(genreById[item.worldId] || GENRES[0])}
-                    featured={index === 0}
-                    selected={template.id === item.id}
-                    onSelect={selectTemplate}
-                  />
-                ))}
-              </div>
-              <div className="stage-picker">
-                <span className="stage-picker-label" id="stage-picker-label">故事舞台</span>
-                <div className="stage-chips" role="group" aria-labelledby="stage-picker-label">
-                  {worlds.map((item) => (
-                    <StageChip
-                      key={item.id}
-                      world={item}
-                      selected={draft.genreId === item.id}
-                      onSelect={selectStage}
+              {isCustom ? (
+                <div className="god-form">
+                  <button type="button" className="god-back" onClick={exitGodMode}>
+                    <Icon name="chevron" size={15} className="rotate-180" />
+                    改用预设舞台
+                  </button>
+                  <label className="field-label">
+                    世界的名字（选填）
+                    <input
+                      maxLength={CUSTOM_WORLD_NAME_MAX}
+                      autoComplete="off"
+                      value={draft.customWorldName || ""}
+                      onChange={(event) => set({ customWorldName: event.target.value })}
+                      placeholder="给你的世界起个名字"
                     />
-                  ))}
+                  </label>
+                  <p className="field-hint">留空也行：故事会先以「未命名世界」开始，回到这一步随时能改名。</p>
+                  <label className="field-label">
+                    背景设定
+                    <textarea
+                      className="god-setting"
+                      rows={6}
+                      maxLength={CUSTOM_WORLD_SETTING_MAX}
+                      value={draft.customWorldSetting || ""}
+                      onChange={(event) => set({ customWorldSetting: event.target.value })}
+                      placeholder="例如：海水每晚倒流一小时，倒流时死者会回到岸边说一句话。镇上的人靠替亡者传话为生，只有我听不见他们说话。"
+                    />
+                  </label>
+                  <div className="god-setting-meta">
+                    <span className="field-hint">时代、地点、规则、氛围都写在这里；写下的设定会原样成为生成的世界依据。</span>
+                    <span className="god-count">{(draft.customWorldSetting || "").length} / {CUSTOM_WORLD_SETTING_MAX}</span>
+                  </div>
+                  <div className="form-block">
+                    <span className="field-label">灵感碎片（点一下，补进设定）</span>
+                    <div className="stage-chips">
+                      {GOD_MODE_FRAGMENTS.map((fragment) => (
+                        <button type="button" key={fragment} className="stage-chip" onClick={() => appendFragment(fragment)}>
+                          {fragment}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="form-block">
+                    <span className="field-label">写法（选填）</span>
+                    <div className="stage-chips" role="group" aria-label="写法">
+                      <button
+                        type="button"
+                        className={`stage-chip ${!template ? "selected" : ""}`}
+                        aria-pressed={!template}
+                        onClick={() => set({ genreTemplateId: "" })}
+                      >
+                        完全自由
+                      </button>
+                      {GENRE_TEMPLATES.map((item) => (
+                        <button
+                          type="button"
+                          key={item.id}
+                          className={`stage-chip ${template?.id === item.id ? "selected" : ""}`}
+                          aria-pressed={template?.id === item.id}
+                          onClick={() => set({ genreTemplateId: item.id })}
+                        >
+                          {item.name}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="field-hint">选一个题材，借它的结构与文风来写你的世界；选「完全自由」，写法不设限。</p>
+                  </div>
+                  {error && <p className="god-error" role="alert">{error}</p>}
                 </div>
-              </div>
-              <p className="world-selection-note" aria-live="polite">{template.blurb} 舞台是{world.name}——{world.subtitle}</p>
+              ) : (
+                <>
+                  <div className="template-wall" role="group" aria-label="题材">
+                    {templateWall.map((item, index) => (
+                      <TemplateBrick
+                        key={item.id}
+                        template={item}
+                        stage={toWorld(genreById[item.worldId] || GENRES[0])}
+                        featured={index === 0}
+                        selected={template.id === item.id}
+                        onSelect={selectTemplate}
+                      />
+                    ))}
+                  </div>
+                  <div className="stage-picker">
+                    <span className="stage-picker-label" id="stage-picker-label">故事舞台</span>
+                    <div className="stage-chips" role="group" aria-labelledby="stage-picker-label">
+                      {worlds.map((item) => (
+                        <StageChip
+                          key={item.id}
+                          world={item}
+                          selected={draft.genreId === item.id}
+                          onSelect={selectStage}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <button type="button" className="god-entry" onClick={enterGodMode}>
+                    <span className="god-entry-symbol" aria-hidden="true">{CUSTOM_GENRE.symbol}</span>
+                    <span className="god-entry-copy">
+                      <strong>创世神模式</strong>
+                      <small>世界由你亲手写——不选现成舞台，自己写下世界的名字与规则。</small>
+                    </span>
+                    <Icon name="chevron" size={15} />
+                  </button>
+                </>
+              )}
+              <p className="world-selection-note" aria-live="polite">{isCustom
+                ? template
+                  ? `${template.blurb} 舞台由你亲手写——${world.name}。`
+                  : `不绑任何题材模板，写法完全由你的设定决定。舞台是${world.name}。`
+                : `${template.blurb} 舞台是${world.name}——${world.subtitle}`}</p>
             </>
           )}
           {step === 2 && (
@@ -959,7 +1099,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                 <h3>{world.name}</h3>
                 <p>{previewText}</p>
                 <div className="opening-details" aria-label="确认故事设定">
-                  <button disabled={busy} onClick={() => setStep(1)} aria-label="修改题材与舞台"><span>题材</span><b>{template.fullName} · {world.name}</b><Icon name="chevron" size={15} /></button>
+                  <button disabled={busy} onClick={() => setStep(1)} aria-label={isCustom ? "修改创世设定" : "修改题材与舞台"}><span>{isCustom ? "创世" : "题材"}</span><b>{template ? template.fullName : "完全自由"} · {world.name}</b><Icon name="chevron" size={15} /></button>
                   <button disabled={busy} onClick={() => setStep(2)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "未命名旅人"}</b><Icon name="chevron" size={15} /></button>
                   <button disabled={busy} onClick={() => setStep(3)} aria-label="修改能力与风格"><span>能力</span><b>{ability.name} · {tone.name}</b><Icon name="chevron" size={15} /></button>
                 </div>
@@ -2223,10 +2363,15 @@ function App() {
     });
   }, [store, setLibrary]);
   const generate = async (payload, { engine, signal }) => {
+      const settingViolation = findSettingViolation(payload.customWorldSetting);
+      if (settingViolation) throw new Error(settingViolation);
       const signature = JSON.stringify([payload, engine]);
       if (opening.current?.signature !== signature) opening.current = { signature, story:
         createStory({
           genreId: payload.genreId,
+          genreTemplateId: payload.genreTemplateId,
+          customWorldName: payload.customWorldName,
+          customWorldSetting: payload.customWorldSetting,
           name: payload.name,
           trait: payload.trait,
           origin: payload.origin,

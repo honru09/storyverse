@@ -98,7 +98,7 @@ async function runJourney(browser, width) {
     await noOverflow(page, 'first visit');
     await page.getByRole('button', { name: '开启第一本书', exact: true }).click();
     await page.getByRole('heading', { name: '想写哪种故事？' }).waitFor();
-    await page.locator('.stage-chips').getByRole('button', { name: '雾岚群岛', exact: true }).click();
+    await page.locator('.stage-chips').getByRole('button', { name: '沉潮港', exact: true }).click();
     await noOverflow(page, 'world selection');
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByLabel('主角昵称（选填）').fill(privateNames[0]);

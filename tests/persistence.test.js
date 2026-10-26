@@ -305,3 +305,32 @@ test('a non-string config genre template id invalidates the story', () => {
   assert.match(result.warning, /结构无效/)
   assert.equal(result.library.stories.length, 0)
 })
+
+test('god-mode story with custom fields round-trips through save and load', () => {
+  const storage = new MemoryStorage()
+  const custom = createStory({
+    genreId: 'custom',
+    name: '宁笙',
+    customWorldName: '倒流港',
+    customWorldSetting: '海水每晚倒流一小时，死者会回到岸边说一句话。',
+  })
+  const library = upsertStory(emptyLibrary(), custom)
+  library.draft = { genreId: 'custom', genreTemplateId: '', customWorldName: '倒流港', customWorldSetting: '海水每晚倒流一小时，死者会回到岸边说一句话。', step: 1 }
+  assert.deepEqual(saveLibrary(storage, library), { ok: true, error: null })
+  const loaded = loadLibrary(storage)
+  assert.equal(loaded.warning, null)
+  assert.equal(loaded.library.stories[0].config.customWorldName, '倒流港')
+  assert.ok(loaded.library.stories[0].config.customWorldSetting.includes('海水每晚倒流'))
+  assert.equal(loaded.library.draft.customWorldSetting, library.draft.customWorldSetting)
+  assert.doesNotThrow(() => importLibrary(exportLibrary(library)))
+})
+
+test('non-string custom world fields fail library validation', () => {
+  const custom = createStory({ genreId: 'custom', name: '宁笙', customWorldName: '倒流港' })
+  const broken = upsertStory(emptyLibrary(), {
+    ...custom,
+    config: { ...custom.config, customWorldSetting: 600 },
+  })
+  const storage = new MemoryStorage()
+  assert.equal(saveLibrary(storage, broken).ok, false)
+})
