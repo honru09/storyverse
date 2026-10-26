@@ -10,6 +10,11 @@ import React, {
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import "./reader-flow.css";
+import "./aurora.css";
+import AuroraBackground from "./components/AuroraBackground.jsx";
+import StoryMap, { StoryMapMini, generationState } from "./components/StoryMap.jsx";
+import GenerationOverlay from "./components/GenerationOverlay.jsx";
+import { installRipple } from "./motion/ripple.js";
 import AnimatedContent from "./components/react-bits/AnimatedContent.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import { createLibraryStore } from "./library-store.js";
@@ -291,6 +296,20 @@ const coverSources = (story) => story?.kind === "merged"
   ? story.config?.protagonists?.map((person) => person.genreId).slice(0, 2)
   : undefined;
 
+function lastChoiceLabel(story) {
+  try {
+    const entries = Object.entries(story?.choices || {})
+      .map(([key, value]) => [Number(key), value])
+      .filter(([index]) => Number.isInteger(index))
+      .sort((a, b) => b[0] - a[0]);
+    for (const [index, choiceId] of entries) {
+      const option = story.chapters?.[index]?.choice?.options?.find((item) => item.id === choiceId);
+      if (option) return option.label;
+    }
+  } catch { /* a hand-edited save must never break the shelf */ }
+  return null;
+}
+
 function Button({
   children,
   variant = "primary",
@@ -318,10 +337,23 @@ function Brand({ onClick }) {
     <button className="brand-mark" onClick={onClick} aria-label="回到我的世界">
       <span className="brand-glyph" aria-hidden="true">
         <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true">
-          <rect width="64" height="64" rx="14" fill="#1a201c" />
-          <path d="M32 15.2c-5.8-4.4-13.1-5.3-19-3.6v30.8c5.9-1.7 13.2-.8 19 3.6 5.8-4.4 13.1-5.3 19-3.6V11.6c-5.9-1.7-13.2-.8-19 3.6Z" fill="none" stroke="#f2f3ef" strokeWidth="3.8" strokeLinejoin="round" />
-          <path d="M32 15.2v33.4" stroke="#c23a1e" strokeWidth="3.8" strokeLinecap="round" />
-          <path d="M27.8 23.6h8.4M27.8 31.4h8.4M27.8 39.2h8.4" stroke="#c23a1e" strokeWidth="3.8" strokeLinecap="round" />
+          <defs>
+            <linearGradient id="brand-book" x1="0" y1="64" x2="64" y2="0" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stopColor="#6ee7ff" />
+              <stop offset=".55" stopColor="#a78bfa" />
+              <stop offset="1" stopColor="#f0a6ff" />
+            </linearGradient>
+            <linearGradient id="brand-stars" x1="0" y1="0" x2="64" y2="0" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stopColor="#7dffce" />
+              <stop offset="1" stopColor="#f0a6ff" />
+            </linearGradient>
+          </defs>
+          <rect x="1" y="1" width="62" height="62" rx="14" fill="#060d1f" />
+          <path d="M17 27 L27 13 L47 9" fill="none" stroke="url(#brand-stars)" strokeWidth="4.6" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx="17" cy="27" r="4.2" fill="#7dffce" />
+          <circle cx="27" cy="13" r="4.6" fill="#ffffff" />
+          <circle cx="47" cy="9" r="4.4" fill="#f0a6ff" />
+          <path d="M10 35 C18 30.5, 26 30.5, 32 36.5 C38 30.5, 46 30.5, 54 35 L54 50 C46 45.5, 38 45.5, 32 51.5 C26 45.5, 18 45.5, 10 50 Z" fill="none" stroke="url(#brand-book)" strokeWidth="5.4" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </span>
       <span className="brand-copy">
@@ -445,6 +477,16 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
               "选一个世界。让故事，因你不同。"
             )}
           </p>
+          {activeStory && (
+            <div className="hero-starmap">
+              <StoryMapMini
+                total={CHAPTER_COUNT}
+                generated={activeStory.chapters?.length || 0}
+                current={readerIndexFor(activeStory)}
+                state={generationState({ total: CHAPTER_COUNT, generated: activeStory.chapters?.length || 0, current: readerIndexFor(activeStory), engine: activeStory.engine, complete: activeStory.status === "complete" })}
+              />
+            </div>
+          )}
           <div className="hero-actions">
             <Button
               icon="arrow"
@@ -525,8 +567,15 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory }) {
               <span className="sw-library-copy">
                 <b>{story.title}</b>
                 <small>
-                  {genre.label} · 读到第 {chapter} 章
+                  {genre.label} · 第 {chapter} / {CHAPTER_COUNT} 章
                 </small>
+                <span className="sw-library-meta">
+                  {(() => {
+                    const state = generationState({ total: CHAPTER_COUNT, generated: story.chapters?.length || 0, current: readerIndexFor(story), engine: story.engine, complete: story.status === "complete" });
+                    return <span className={`gen-state ${state.className}`}><i aria-hidden="true" />{state.label}</span>;
+                  })()}
+                  {lastChoiceLabel(story) && <span className="sw-library-choice">最近的选择：{lastChoiceLabel(story)}</span>}
+                </span>
               </span>
             </button>
           );
@@ -563,9 +612,9 @@ function Stepper({ step, setStep }) {
   );
 }
 
-function TemplateBrick({ template, stage, selected, featured, onSelect }) {
+function TemplateBrick({ template, stage, selected, featured, index = 0, onSelect }) {
   return (
-    <AnimatedContent className={`template-brick-wrap ${featured ? "featured" : ""}`} distance={8}>
+    <AnimatedContent className={`template-brick-wrap ${featured ? "featured" : ""}`} distance={8} delay={Math.min(index, 7) * 0.06}>
       <button
         type="button"
         className={`template-brick ${selected ? "selected" : ""}`}
@@ -733,11 +782,26 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
       set({ genreId: DEFAULT_DRAFT.genreId, genreTemplateId: recommendedTemplateFor(DEFAULT_DRAFT.genreId).id });
     }
   };
-  const appendFragment = (fragment) => {
-    const current = (draft.customWorldSetting || "").trim();
+  const appendFragment = (fragment) => {    const current = (draft.customWorldSetting || "").trim();
     const needsStop = current && !"。！？".includes(current.slice(-1));
     const joined = current ? `${current}${needsStop ? "。" : ""}${fragment}` : fragment;
     set({ customWorldSetting: joined.slice(0, CUSTOM_WORLD_SETTING_MAX) });
+  };
+  const [rolled, setRolled] = useState(null);
+  const rollCombo = () => {
+    const pick = (list) => list[Math.floor(Math.random() * list.length)];
+    const nextTemplate = pick(templateWall);
+    const stageGenre = genreById[nextTemplate.worldId] || GENRES[0];
+    const points = stageGenre.spawnPoints || [];
+    const point = points.length ? pick(points) : null;
+    templateTouched.current = true;
+    set({
+      genreTemplateId: nextTemplate.id,
+      genreId: nextTemplate.worldId,
+      startPointName: point ? point.name : "",
+      startPointHook: point ? point.hook : "",
+    });
+    setRolled({ template: nextTemplate, world: stageGenre.world, point });
   };
   const ability =
     abilities.find((item) => item.id === abilityId) || abilities[0];
@@ -847,7 +911,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                     />
                   </label>
                   <div className="god-setting-meta">
-                    <span className="field-hint">时代、地点、规则、氛围都写在这里；写下的设定会原样成为生成的世界依据。</span>
+                    <span className="field-hint">时代、地点、规则、氛围都写在这里；写下的设定会原样成为生成的世界依据。请勿直接使用他人作品或 IP 的设定。</span>
                     <span className="god-count">{(draft.customWorldSetting || "").length} / {CUSTOM_WORLD_SETTING_MAX}</span>
                   </div>
                   <div className="form-block">
@@ -894,6 +958,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                       <TemplateBrick
                         key={item.id}
                         template={item}
+                        index={index}
                         stage={toWorld(genreById[item.worldId] || GENRES[0])}
                         featured={index === 0}
                         selected={template.id === item.id}
@@ -914,6 +979,14 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                       ))}
                     </div>
                   </div>
+                  <div className="random-combo-row">
+                    <p>{rolled
+                      ? <>已配好：<b>{rolled.template.fullName} · {rolled.world}</b>{rolled.point ? <>，从「{rolled.point.name}」醒来</> : null}。不满意就再掷一次。</>
+                      : <>没想好？<b>随机组合</b>一次配好题材、世界和出生点。</>}</p>
+                    <Button variant="secondary" icon="spark" className="random-combo-button" onClick={rollCombo}>
+                      {rolled ? "再掷一次" : "随机组合"}
+                    </Button>
+                  </div>
                   <button type="button" className="god-entry" onClick={enterGodMode}>
                     <span className="god-entry-symbol" aria-hidden="true">{CUSTOM_GENRE.symbol}</span>
                     <span className="god-entry-copy">
@@ -922,6 +995,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                     </span>
                     <Icon name="chevron" size={15} />
                   </button>
+                  <p className="god-ip-note">请勿直接使用他人作品或 IP 的设定——换上你自己的世界，故事才真正属于你。</p>
                 </>
               )}
               <p className="world-selection-note" aria-live="polite">{isCustom
@@ -1206,6 +1280,9 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                 <div className="opening-art"><WorldArtwork genreId={world.id} eager /></div>
                 <h3>{world.name}</h3>
                 <p>{previewText}</p>
+                <div className="opening-starmap">
+                  <StoryMapMini total={CHAPTER_COUNT} generated={0} current={0} state={null} />
+                </div>
                 <div className="opening-details" aria-label="确认故事设定">
                   <button disabled={busy} onClick={() => setStep(1)} aria-label={isCustom ? "修改创世设定" : "修改题材与世界"}><span>{isCustom ? "创世" : "题材"}</span><b>{template ? template.fullName : "完全自由"} · {world.name}</b><Icon name="chevron" size={15} /></button>
                   <button disabled={busy} onClick={() => setStep(2)} aria-label="修改出生点"><span>出生点</span><b>{spawn ? spawn.name : "由设定决定"}</b><Icon name="chevron" size={15} /></button>
@@ -1238,7 +1315,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
             </div>
           }
           <div className="generation-feedback" role="status" aria-live="polite">{busy ? "第一章准备好后，即可开始阅读。" : error}</div>
-          {busy && <button className="small-link" onClick={() => { operation.current?.abort(); operation.current = null; setBusy(false); }}>取消等待</button>}
+          {busy && <GenerationOverlay kind="story" onCancel={() => { operation.current?.abort(); operation.current = null; setBusy(false); }} />}
         </main>
         <PreviewPanel
           world={world}
@@ -1355,6 +1432,15 @@ function ChapterDirectory({ story, index, readOnly, onSelect, onClose }) {
   return (
     <ReadingDialog title="章节目录" onClose={onClose}>
       <p>{story.title}</p>
+      <div className="directory-starmap">
+        <b>剧情星图</b>
+        <StoryMap
+          total={CHAPTER_COUNT}
+          generated={story.chapters?.length || 0}
+          current={index}
+          onSelect={onSelect}
+        />
+      </div>
       <div className="chapter-directory-list">
         {Array.from({ length: CHAPTER_COUNT }, (_, chapterIndex) => {
           const available = chapterIndex <= last;
@@ -1746,9 +1832,20 @@ function Reader({
               )}
             </div>
           )}
+          <div className="reader-starmap">
+            <div className="reader-starmap-head">
+              <b>剧情星图</b>
+              <span>第 {index + 1} / {CHAPTER_COUNT} 章</span>
+            </div>
+            <StoryMapMini
+              total={CHAPTER_COUNT}
+              generated={story.chapters?.length || 0}
+              current={index}
+              state={readOnly ? null : generationState({ total: CHAPTER_COUNT, generated: story.chapters?.length || 0, current: index, engine: story.engine, preparing, complete: story.status === "complete" })}
+            />
+          </div>
           {!isFinal && (!readOnly || nextAvailable) && (
-            <div className="sw-next-action">
-              <Button
+            <div className="sw-next-action">              <Button
                 icon="arrow"
                 onClick={handleNext}
                 disabled={!readOnly && (!ready || (preparing && !nextAvailable))}
@@ -2374,6 +2471,7 @@ function App() {
   const [accountIntent, setAccountIntent] = useState(null);
   useEffect(() => { void authClient.start(); return () => authClient.stop(); }, [authClient]);
   const [store] = useState(() => createLibraryStore());
+  useEffect(() => { installRipple(); }, []);
   const { library, warning, unsaved } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const setLibrary = store.update;
   const [route, setRoute] = useState(() => parseRoute(window.location.hash));
@@ -2627,6 +2725,7 @@ function App() {
       data-view={view}
       data-motion={animate ? "on" : "off"}
     >
+      <AuroraBackground />
       <Sidebar view={view} onNavigate={navigate} />
       <main className="main-shell">
         <Topbar onNavigate={navigate} onOpenLibrary={() => setLibraryOpen(true)} account={account} onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }} />

@@ -102,7 +102,7 @@ button.chapter-item:disabled {
   max-height: min(80dvh, 680px);
   padding: 1.5rem;
   color: var(--ink);
-  background: var(--surface);
+  background: rgba(9, 16, 36, .95);
   border: 1px solid var(--line);
   border-radius: var(--radius-sheet, 24px);
   box-shadow: var(--shadow-raised, 0 8px 24px rgba(26,32,28,.10));
@@ -112,6 +112,8 @@ button.chapter-item:disabled {
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
 }
 .reading-dialog[open] {
   opacity: 1;
@@ -128,7 +130,7 @@ button.chapter-item:disabled {
   }
 }
 .reading-dialog::backdrop {
-  background: rgba(23, 35, 56, .32);
+  background: rgba(3, 6, 18, .55);
 }
 .sheet-grabber {
   display: none;
@@ -283,13 +285,15 @@ button.chapter-item:disabled {
 }
 @media (prefers-reduced-transparency: reduce) {
   .reading-dialog {
-    background: var(--ink-soft);
+    background: var(--surface-solid, #0d1834);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
   .chapter-directory-list { background: var(--surface); }
 }
 @media (prefers-contrast: more) {
   .reading-dialog {
-    background: var(--ink-soft);
+    background: var(--surface-solid, #0d1834);
   }
   .reading-dialog,
   .chapter-directory-list button {

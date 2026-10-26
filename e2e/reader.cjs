@@ -72,7 +72,7 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
             await noOverflow();
           }
           await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
-          assert.equal(await page.locator('.page-reader').evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(25, 32, 44)');
+          assert.equal(await page.locator('.page-reader').evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(10, 17, 40)');
           await capture('settings-auto-dark');
           await close();
           await capture('reading-auto-dark');

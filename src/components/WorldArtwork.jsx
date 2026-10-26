@@ -1,6 +1,6 @@
 import React from "react";
 
-const ids = new Set(["mist", "cultivation", "neon", "city", "court", "frontier"]);
+const ids = new Set(["mist", "cultivation", "neon", "city", "court", "frontier", "custom"]);
 const safeGenre = (value) => ids.has(value) ? value : "mist";
 
 /** Fictional cover art. Titles and all interactive content stay in HTML. */
@@ -16,7 +16,7 @@ export default function WorldArtwork({ genreId = "mist", sources, eager = false,
           sizes={sizes}
           alt=""
           width="1122"
-          height="1402"
+          height="1496"
           loading={eager ? "eager" : "lazy"}
           fetchPriority={eager ? "high" : "auto"}
           decoding="async"

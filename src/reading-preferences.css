@@ -2,17 +2,17 @@
 .page-reader[data-reader-theme],
 .reading-preferences-preview[data-reader-theme],
 .app-shell:has(.page-reader[data-reader-theme]) {
-  --reader-bg: #f8faff;
-  --reader-text: #24304a;
-  --reader-secondary: #59667c;
-  --reader-surface: #ffffff;
-  --reader-soft: #e9f0fb;
-  --reader-border: #d1dbe9;
-  --reader-accent: #005ac4;
-  --reader-action: #0064d9;
+  --reader-bg: #f7f2e7;
+  --reader-text: #38332a;
+  --reader-secondary: #6f675a;
+  --reader-surface: #fffdf6;
+  --reader-soft: #ece4d2;
+  --reader-border: #d8cdb6;
+  --reader-accent: #7c4a1e;
+  --reader-action: #7c4a1e;
   --reader-action-text: #ffffff;
-  --reader-glass: #ffffff;
-  --reader-shadow: 0 8px 28px rgba(27, 46, 79, .08);
+  --reader-glass: #fffdf6;
+  --reader-shadow: 0 8px 28px rgba(74, 58, 32, .10);
   color-scheme: light;
 }
 .page-reader[data-reader-theme="warm"],
@@ -34,10 +34,10 @@
 .page-reader[data-reader-theme="night"],
 .reading-preferences-preview[data-reader-theme="night"],
 .app-shell:has(.page-reader[data-reader-theme="night"]) {
-  --reader-bg: #19202c; --reader-text: #dbe2ee; --reader-secondary: #a8b4c9;
-  --reader-surface: #242e3e; --reader-soft: #2d394e; --reader-border: #4a5a72;
-  --reader-accent: #bed7ff; --reader-action: #aacdff; --reader-action-text: #142840;
-  --reader-glass: #242e3e; --reader-shadow: 0 8px 28px rgba(0, 0, 0, .18);
+  --reader-bg: #0a1128; --reader-text: #e6eeff; --reader-secondary: #9db1d6;
+  --reader-surface: #131f42; --reader-soft: #1b2a56; --reader-border: #33477a;
+  --reader-accent: #8fd8ff; --reader-action: #6ee7ff; --reader-action-text: #06122b;
+  --reader-glass: #131f42; --reader-shadow: 0 8px 28px rgba(0, 0, 0, .35);
   color-scheme: dark;
 }
 .page-reader[data-reader-theme="oled"],
@@ -45,7 +45,7 @@
 .app-shell:has(.page-reader[data-reader-theme="oled"]) {
   --reader-bg: #000000; --reader-text: #d9dde5; --reader-secondary: #a5afbd;
   --reader-surface: #14171d; --reader-soft: #252c37; --reader-border: #434c5a;
-  --reader-accent: #b9d6ff; --reader-action: #aacdff; --reader-action-text: #142840;
+  --reader-accent: #8fd8ff; --reader-action: #6ee7ff; --reader-action-text: #06122b;
   --reader-glass: #14171d; --reader-shadow: 0 8px 28px rgba(0, 0, 0, .3);
   color-scheme: dark;
 }
@@ -53,10 +53,10 @@
   .page-reader[data-reader-theme="system"],
   .reading-preferences-preview[data-reader-theme="system"],
   .app-shell:has(.page-reader[data-reader-theme="system"]) {
-    --reader-bg: #19202c; --reader-text: #dbe2ee; --reader-secondary: #a8b4c9;
-    --reader-surface: #242e3e; --reader-soft: #2d394e; --reader-border: #4a5a72;
-    --reader-accent: #bed7ff; --reader-action: #aacdff; --reader-action-text: #142840;
-    --reader-glass: #242e3e; --reader-shadow: 0 8px 28px rgba(0, 0, 0, .18);
+    --reader-bg: #0a1128; --reader-text: #e6eeff; --reader-secondary: #9db1d6;
+    --reader-surface: #131f42; --reader-soft: #1b2a56; --reader-border: #33477a;
+    --reader-accent: #8fd8ff; --reader-action: #6ee7ff; --reader-action-text: #06122b;
+    --reader-glass: #131f42; --reader-shadow: 0 8px 28px rgba(0, 0, 0, .35);
     color-scheme: dark;
   }
 }
@@ -137,7 +137,7 @@
 
 /* Solid reader surfaces and grouped controls for dependable contrast. */
 .reading-preferences {
-  --preferences-accent: var(--reader-accent, #2f4bd2); --preferences-soft: var(--reader-soft, #e9f0fb);
+  --preferences-accent: var(--reader-accent, #38bdf8); --preferences-soft: var(--reader-soft, #1b2a56);
   --preferences-surface: var(--reader-surface, #fff); --preferences-border: var(--reader-border, #d1dbe9);
   --preferences-text: var(--reader-text, #24304a); --preferences-secondary: var(--reader-secondary, #59667c);
   color: var(--preferences-text); font-family: var(--font-ui); font-size: 1rem;
@@ -167,12 +167,12 @@
 .reading-preference-option:active > span { transform: scale(.98); }
 .reading-theme-option > span { position: relative; flex-direction: column; gap: .375rem; min-height: 76px; }
 .reading-theme-swatch { width: 1.75rem; height: 1.75rem; border: 1px solid #8995a5; border-radius: 50%; }
-.reading-theme-swatch[data-theme="light"] { background: #f8faff; }
+.reading-theme-swatch[data-theme="light"] { background: #f7f2e7; }
 .reading-theme-swatch[data-theme="warm"] { background: #f6f0e5; }
 .reading-theme-swatch[data-theme="green"] { background: #e9f1e9; }
-.reading-theme-swatch[data-theme="night"] { background: #19202c; }
+.reading-theme-swatch[data-theme="night"] { background: #0a1128; }
 .reading-theme-swatch[data-theme="oled"] { background: #000; }
-.reading-theme-swatch[data-theme="system"] { background: linear-gradient(90deg, #f8faff 50%, #19202c 50%); }
+.reading-theme-swatch[data-theme="system"] { background: linear-gradient(90deg, #f7f2e7 50%, #0a1128 50%); }
 .reading-theme-check { position: absolute; right: .4375rem; top: .4375rem; opacity: 0; }
 .reading-preference-option input:checked + span .reading-theme-check { opacity: 1; }
 .reading-preferences .reading-preference-hint { margin: .5rem 0 0; color: var(--preferences-secondary); font-size: .75rem; line-height: 1.6; }
