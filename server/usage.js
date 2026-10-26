@@ -17,11 +17,26 @@ export function dailyTokenCap(env = {}) {
 
 const count = (value) => typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
 
+// The generation backend reports provider-shaped metadata (Vertex /
+// @google/genai: promptTokenCount, candidatesTokenCount, ...), while the
+// ledger vocabulary is the short form (prompt, candidates, ...). Both
+// shapes are accepted here; the long form is what production sends, the
+// short form is what internal callers and fixtures use. (Before this map
+// existed, every real generation's tokens were read as zero and only the
+// generation counter moved.)
+const PROVIDER_FIELD_MAP = {
+  prompt: 'promptTokenCount',
+  candidates: 'candidatesTokenCount',
+  thoughts: 'thoughtsTokenCount',
+  cached: 'cachedContentTokenCount',
+  total: 'totalTokenCount',
+}
+
 /** Token delta for one generation. 'unknown' usage counts the generation only. */
 export function usageDelta(usage) {
   const delta = { prompt: 0, candidates: 0, thoughts: 0, cached: 0, total: 0 }
   if (!usage || typeof usage !== 'object') return delta
-  for (const field of TOKEN_FIELDS) delta[field] = count(usage[field])
+  for (const field of TOKEN_FIELDS) delta[field] = count(usage[field]) || count(usage[PROVIDER_FIELD_MAP[field]])
   if (!delta.total) delta.total = delta.prompt + delta.candidates + delta.thoughts
   return delta
 }

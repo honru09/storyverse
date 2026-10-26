@@ -16,6 +16,25 @@ test('usageDelta treats unknown usage and junk fields as zero tokens', () => {
   assert.deepEqual(usageDelta({ prompt: -5, candidates: Number.NaN, thoughts: 'many', total: null }), zeros)
 })
 
+test('usageDelta reads provider-shaped metadata (the production Vertex vocabulary)', () => {
+  // server/gemini.js extractUsage returns the provider's own field names;
+  // the ledger must translate them or real generations record zero tokens.
+  const providerUsage = { promptTokenCount: 8123, candidatesTokenCount: 1904, thoughtsTokenCount: 512, cachedContentTokenCount: 128, totalTokenCount: 10667 }
+  assert.deepEqual(usageDelta(providerUsage), { prompt: 8123, candidates: 1904, thoughts: 512, cached: 128, total: 10667 })
+  assert.deepEqual(usageDelta({ promptTokenCount: 10, candidatesTokenCount: 5 }), { prompt: 10, candidates: 5, thoughts: 0, cached: 0, total: 15 })
+})
+
+test('usage service accumulates provider-shaped usage end to end', async () => {
+  const service = createUsageService({ env: {}, store: createMemoryUsageStore() })
+  assert.equal(await service.record('prod-user', { promptTokenCount: 8000, candidatesTokenCount: 2000, thoughtsTokenCount: 0, cachedContentTokenCount: 0, totalTokenCount: 10000 }), true)
+  const totals = await service.totals('prod-user')
+  assert.equal(totals.prompt, 8000)
+  assert.equal(totals.candidates, 2000)
+  assert.equal(totals.total, 10000)
+  assert.equal(totals.generations, 1)
+  assert.equal(await service.dailyTotal('prod-user'), 10000)
+})
+
 test('day keys are UTC calendar days and the cap has a sane default', () => {
   assert.equal(dayKeyFor(new Date('2026-10-26T23:30:00Z')), '2026-10-26')
   assert.equal(dailyTokenCap({}), 1_000_000)
