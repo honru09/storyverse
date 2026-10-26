@@ -131,18 +131,25 @@ em{font-style:normal}
 .forge-main{min-width:0}
 .forge-section-heading h2{font-size:clamp(1.6rem,6.5vw,2.2rem)}
 .forge-section-heading h3{margin:0;font-size:16px}
-.world-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-.world-card-wrap{min-width:0}
-.world-card{position:relative;display:flex;align-items:flex-end;width:100%;min-width:0;aspect-ratio:3 / 4;padding:8px;text-align:left;isolation:isolate;border:2px solid transparent;border-radius:var(--radius-card);overflow:hidden;color:var(--ink);background:var(--divider);box-shadow:var(--shadow-flat)}
-.world-card-visual{position:absolute;inset:0;z-index:-1}
-.world-card-visual img{transform:scale(1)}
-.world-card::after{content:none}
-.world-card.selected{border-color:var(--selected-border);box-shadow:0 0 0 1px var(--selected-border),var(--shadow-flat)}
-.world-card.selected::after{content:"";position:absolute;top:12px;left:12px;width:14px;height:3px;border-radius:2px;background:var(--thread);z-index:1}
-.world-card.selected img{transform:scale(1)}
-.world-card-copy{width:100%;padding:12px 10px;border-radius:var(--radius-selection);background:var(--ink);color:var(--on-ink)}
-.world-card-copy h3{margin:0;font-weight:750;font-size:clamp(1.06rem,4.4vw,1.5rem);text-align:left}
-.world-card-copy p{margin:5px 0 0;color:var(--on-ink-muted);font-size:11px;line-height:1.55}
+.template-wall{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.template-brick-wrap{min-width:0;min-height:0}
+.template-brick-wrap.featured{grid-column:span 2}
+.template-brick{position:relative;display:block;width:100%;min-width:0;aspect-ratio:1 / 1;padding:0;text-align:left;isolation:isolate;border:2px solid transparent;border-radius:var(--radius-card);overflow:hidden;color:var(--ink);background:var(--divider);box-shadow:var(--shadow-flat)}
+.template-brick-wrap.featured .template-brick{aspect-ratio:2 / 1}
+.template-brick-visual{position:absolute;inset:0;z-index:-1}
+.template-brick-visual .world-art img{object-position:50% 38%}
+.template-brick.selected{border-color:var(--selected-border);box-shadow:0 0 0 1px var(--selected-border),var(--shadow-flat)}
+.template-brick.selected::after{content:"";position:absolute;top:10px;left:10px;width:14px;height:3px;border-radius:2px;background:var(--thread);z-index:1}
+.template-brick-copy{position:absolute;left:8px;right:8px;bottom:8px;display:grid;gap:2px;padding:9px 10px;border-radius:var(--radius-selection);background:var(--ink);color:var(--on-ink);text-align:left}
+.template-brick-copy strong{font-weight:750;font-size:15px;line-height:1.35}
+.template-brick-copy small{color:var(--on-ink-muted);font-size:11px;line-height:1.5}
+.stage-picker{margin-top:22px}
+.stage-picker-label{display:block;margin-bottom:10px;font-size:14px;font-weight:650}
+.stage-chips{display:flex;flex-wrap:wrap;gap:8px}
+.stage-chip{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:9px 14px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:13px;font-weight:600}
+.stage-chip-symbol{color:var(--muted);font-size:14px}
+.stage-chip.selected{color:var(--selected-text);background:var(--selected-surface);border-color:var(--selected-border)}
+.stage-chip.selected .stage-chip-symbol{color:var(--thread)}
 .selected-mark{position:absolute;top:12px;right:12px;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--action);color:#fff;box-shadow:0 3px 10px rgba(26,32,28,.18)}
 .world-selection-note{min-height:1.8em;margin:16px 0 0;color:var(--secondary-text);font-size:13px}
 .preview-panel{display:none}
@@ -325,7 +332,7 @@ em{font-style:normal}
 .recovery-page>button{width:100%;margin-top:12px}
 @media(hover:hover) and (pointer:fine){
   .small-link:hover,.back-link:hover,.back-button:hover,.mini-reset:hover{color:var(--action-hover)}
-  .world-card:hover,.choice-chip:hover,.origin-card:hover,.tone-card:hover,.priority-options button:hover,.sw-bond-options button:hover{border-color:var(--action)}
+  .template-brick:hover,.choice-chip:hover,.origin-card:hover,.tone-card:hover,.priority-options button:hover,.sw-bond-options button:hover{border-color:var(--action)}
   .motion-toggle:hover,.icon-button:hover,.sw-share-button:hover{background:var(--soft-indigo)}
   .button-primary:hover,.merge-result>button:hover{background:var(--action-hover)}
   .book-card:hover .book-cover,.sw-library-row:hover .library-cover{border-color:var(--action)}
@@ -338,7 +345,7 @@ em{font-style:normal}
   .hero-copy{width:min(490px,65%);margin:24px;padding:30px;border-radius:var(--radius-card)}.hero-copy h1{font-size:clamp(2.6rem,4.8vw,3.4rem)}
   .has-story .hero-copy h1{font-size:clamp(2.3rem,4vw,3.5rem)}.hero-actions .button{max-width:290px}.hero-copy>p{font-size:14px}
   .first-story-browse{max-width:400px;margin-left:auto}.life-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .world-card{aspect-ratio:4 / 4.1;padding:12px}.world-card-copy h3{font-size:26px}
+  .template-wall{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.template-brick-copy strong{font-size:16px}
   .book-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:36px 24px}.book-cover{aspect-ratio:3 / 4;padding:12px}.book-cover b{padding:16px 12px;font-size:24px}
   .merge-stage{gap:16px;grid-template-columns:minmax(0,1fr) 50px minmax(0,1fr)}.merge-center{padding-top:100px}.merge-core{width:50px}.merge-core svg{width:28px}
   .merge-art{aspect-ratio:1 / 1;padding:12px}.merge-art-label{font-size:26px}.merge-card-bottom b{font-size:20px}.merge-card-bottom span{font-size:12px}
@@ -368,7 +375,7 @@ em{font-style:normal}
 @media(max-width:360px){
   .page,.topbar{padding-inline:16px}.brand-copy strong{font-size:23px}.topbar-actions{gap:0}.local-badge{margin-right:4px;font-size:10px}
   .hero-copy{margin:10px;padding:21px 17px 17px;border-radius:var(--radius-card)}.hero-copy h1{font-size:30px}.has-story .hero-copy h1{font-size:28px}
-  .world-grid{gap:10px}.world-card{padding:6px;border-radius:var(--radius-card)}.world-card-copy{padding:10px 7px;border-radius:11px}.world-card-copy h3{font-size:16px}
+  .template-wall{gap:8px}.template-brick-copy{padding:8px}.template-brick-copy strong{font-size:13px}.template-brick-copy small{font-size:10px}
   .book-grid{gap:28px 12px}.book-cover{padding:7px;border-radius:var(--radius-card)}.book-cover b{padding:10px 8px;font-size:17px}
   .reader-topline{gap:2px}.reader-actions{gap:0}
   .reader-topline>.back-link{font-size:11px}.sw-share-button{padding-inline:4px}.reader-article{font-size:16px}
@@ -416,13 +423,13 @@ input[type="checkbox"]{accent-color:var(--action)}
   .button-secondary:hover{background:var(--paper)}
   .button-ghost:hover{background:#d3dcf5}
   .reader-appearance-button:hover{background:#d3dcf5}
-  .world-card:hover{border-color:var(--selected-border)}
+  .template-brick:hover{border-color:var(--selected-border)}
 }
 @media(min-width:700px){
   .home-heading{margin-bottom:24px}
   .protagonist-form{padding:26px}
-  .world-card-copy{padding:16px}
-  .world-card-copy p{font-size:12px}
+  .template-brick-copy{padding:11px 12px}
+  .template-brick-copy small{font-size:11px}
   .merge-controls{gap:32px;padding:28px}
 }
 @media(max-width:620px){
@@ -441,18 +448,18 @@ input[type="checkbox"]{accent-color:var(--action)}
   .forge-progress{gap:8px}
   .choice-chip,.origin-card{font-size:12px}
   .merge-controls{padding:20px 14px}
-  .world-card-copy p{font-size:10px}
+  .template-brick-copy small{font-size:10px}
 }
 /* Solid alternatives preserve every boundary and label without translucency. */
 @media(prefers-reduced-transparency:reduce){
   :root{--glass:#fff;--glass-strong:#fff;--glass-dark:#1a201c}
   .topbar,.app-shell>.sidebar{background:var(--paper)}
-  .world-card-copy{background:var(--ink)}
+  .template-brick-copy{background:var(--ink)}
 }
 @media(prefers-contrast:more){
   :root{--secondary-text:#2c362e;--muted:#3d4a40;--muted-2:#3d4a40;--line:#a9b3a4;--glass:#fff;--glass-strong:#fff;--glass-dark:#1a201c}
   .topbar,.app-shell>.sidebar{background:var(--paper)}
-  .world-card-copy{background:var(--ink)}
-  .hero-copy,.world-card,.sw-toast{border-color:var(--line-strong)}
+  .template-brick-copy{background:var(--ink)}
+  .hero-copy,.template-brick,.sw-toast{border-color:var(--line-strong)}
   .choice-chip.active,.origin-card.active,.tone-card.active,.priority-options button.active,.sw-bond-options button.active{border-color:var(--selected-border)}
 }

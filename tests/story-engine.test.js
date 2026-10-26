@@ -6,6 +6,7 @@ import {
   DEFAULT_DRAFT,
   FRIEND_BOOK,
   GENRES,
+  GENRE_TEMPLATES,
   acceptChapter,
   buildChapter,
   chapterForReading,
@@ -13,7 +14,9 @@ import {
   chooseBranch,
   createMergedStory,
   createStory,
+  genreTemplateById,
   publicSnapshot,
+  recommendedTemplateFor,
   storyBeatPlan,
   storyNarrativeDossier,
 } from '../src/story-engine.js'
@@ -465,4 +468,34 @@ test('storyNarrativeDossier builds a spoiler-free narrative dossier bounded by m
   assert.equal(midDossier.activeConsequences.length, 1)
   assert.equal(midDossier.activeConsequences[0].choiceId, 'open')
   assert.ok(midDossier.groundedConcepts.length >= 2)
+})
+
+test('createStory pins an explicitly chosen genre template at the top level', () => {
+  const story = createStory({ name: '阿遥', genreId: 'court', genreTemplateId: 'romance-ancient' })
+  assert.equal(story.genreId, 'court')
+  assert.equal(story.genreTemplateId, 'romance-ancient')
+  assert.equal(story.config.genreTemplateId, 'romance-ancient')
+})
+
+test('createStory without a template choice carries no top-level template id', () => {
+  const story = createStory({ name: '阿遥' })
+  assert.equal('genreTemplateId' in story, false)
+  assert.equal(story.config.genreTemplateId, '')
+})
+
+test('every genre template binds to a real world and recommendations cover all stages', () => {
+  const worldIds = new Set(GENRES.map((genre) => genre.id))
+  assert.equal(GENRES.length, 6)
+  assert.equal(GENRE_TEMPLATES.length, 8)
+  for (const template of GENRE_TEMPLATES) {
+    assert.ok(worldIds.has(template.worldId), template.id)
+    assert.equal(genreTemplateById(template.id), template)
+  }
+  assert.equal(recommendedTemplateFor('court').id, 'romance-ancient')
+  assert.equal(recommendedTemplateFor('frontier').id, 'scifi')
+  assert.equal(recommendedTemplateFor('mist').id, 'xuanhuan')
+  assert.equal(recommendedTemplateFor('cultivation').id, 'xianxia')
+  assert.equal(recommendedTemplateFor('city').id, 'romance-modern')
+  // The legacy cyber stage has no bound template; it falls back to sci-fi craft.
+  assert.equal(recommendedTemplateFor('neon').id, 'scifi')
 })

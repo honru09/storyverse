@@ -8,7 +8,7 @@ export const MAX_BACKUP_BYTES = 5 * 1024 * 1024
 // accepted chapter and stays at five once the final chapter exists.
 const CHAPTER_COUNT = 6
 const CONFIG_TEXT_FIELDS = [
-  'genreId', 'name', 'trait', 'origin', 'ability', 'tone', 'hometown',
+  'genreId', 'genreTemplateId', 'name', 'trait', 'origin', 'ability', 'tone', 'hometown',
   'school', 'company', 'role', 'friend', 'destination', 'protagonist',
 ]
 

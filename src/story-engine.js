@@ -60,10 +60,64 @@ export const GENRES = [
     symbol: '✧',
     location: '南环旧城区',
   },
+  {
+    id: 'court',
+    label: '古言',
+    world: '金阙王朝',
+    title: '宫墙深处',
+    tagline: '一步走错，满盘皆输',
+    description: '深宫与朝堂之间，位分就是命数；一封家书，能改写三个人的命运。',
+    color: 'crimson',
+    symbol: '❖',
+    location: '朱墙深处',
+  },
+  {
+    id: 'frontier',
+    label: '科幻',
+    world: '边疆星环',
+    title: '星环以远',
+    tagline: '旧世界的本事，在这里一文不值',
+    description: '殖民星环之外是辐射废土；每升一层轨道，规则都要重新学一遍。',
+    color: 'steel',
+    symbol: '◎',
+    location: '碎星带前哨站',
+  },
 ]
+
+/*
+ * Story types are the eight knowledge-base templates (knowledge/genres.json).
+ * The ids here must stay identical to that file — a test locks them together.
+ * Each type is bound to one stage world: the world supplies the local preset
+ * scenes, the world bible flavour and the cover art, while the template
+ * drives the generated narrative craft on the server via genreTemplateId.
+ */
+export const GENRE_TEMPLATES = [
+  { id: 'romance-ancient', name: '古言', fullName: '言情 · 古言', blurb: '宫斗、宅斗与礼法之下的步步为营', worldId: 'court' },
+  { id: 'romance-modern', name: '现言', fullName: '言情 · 现言', blurb: '成年人的重逢、心动与迟到的真话', worldId: 'city' },
+  { id: 'xianxia', name: '修仙', fullName: '修仙', blurb: '改命登天，代价先行', worldId: 'cultivation' },
+  { id: 'xuanhuan', name: '玄幻', fullName: '玄幻', blurb: '一路打上去，揭开世界的真相', worldId: 'mist' },
+  { id: 'urban', name: '都市', fullName: '都市', blurb: '小人物在城市规则里翻盘', worldId: 'city' },
+  { id: 'scifi', name: '科幻', fullName: '科幻 · 星际/末世', blurb: '从最底层活起，逐层升维', worldId: 'frontier' },
+  { id: 'suspense-supernatural', name: '灵异悬疑', fullName: '灵异悬疑', blurb: '每查一步，寒意就具体一分', worldId: 'mist' },
+  { id: 'zhihu-short', name: '知乎短篇', fullName: '知乎风短篇', blurb: '第一人称，三分钟一个反转', worldId: 'city' },
+]
+
+const GENRE_TEMPLATE_BY_ID = Object.fromEntries(GENRE_TEMPLATES.map((template) => [template.id, template]))
+
+export const genreTemplateById = (id) => GENRE_TEMPLATE_BY_ID[id] || null
+
+// Worlds without a bound template keep a hand-picked closest craft
+// (the cyber stage reads best with the sci-fi template).
+const WORLD_TEMPLATE_FALLBACKS = { neon: 'scifi' }
+
+export const recommendedTemplateFor = (genreId) =>
+  GENRE_TEMPLATES.find((template) => template.worldId === genreId)
+  || genreTemplateById(WORLD_TEMPLATE_FALLBACKS[genreId])
+  || GENRE_TEMPLATES[0]
 
 export const DEFAULT_DRAFT = {
   genreId: 'mist',
+  genreTemplateId: '',
   name: '',
   trait: '冷静观察者',
   origin: '无名漂泊者',
@@ -118,6 +172,7 @@ const normalizeDraft = (draft = {}) => {
   const lifeDetail = (field) => immersive ? cleanText(input[field], DEFAULT_DRAFT[field]) : ''
   return {
     genreId,
+    genreTemplateId: genreTemplateById(input.genreTemplateId)?.id || '',
     name: cleanText(input.name, DEFAULT_DRAFT.name),
     trait: cleanText(input.trait, DEFAULT_DRAFT.trait),
     origin: cleanText(input.origin, DEFAULT_DRAFT.origin),
@@ -336,6 +391,22 @@ const sceneFor = (story, index) => {
       [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}熟悉的街角，先把能回来的门留给所有人。` : `TA用“${ability}”让一条旧街重新亮起，路牌开始显示真正的名字。`] : []), `天快亮了，${name}必须决定哪一段夜晚值得被留下。`, `TA把选择写进${genre.location}的公共墙面，允许下一个路人改写最后一行。`, `${destination}的门没有关，像是在给未来预留座位。`],
       [`凌晨四点终于过去，城市没有忘记那些没能赶上的人。`, `${name}带着一张空白车票走向晨光，知道重逢不是结局而是新的选择。`, `未眠之城第一次拥有了属于所有人的早晨。`],
     ],
+    court: [
+      [`${genre.world}的册封礼刚过三日，朱墙深处的钟比往日慢了半拍。`, `${name}这个${identityWithOrigin}第一次走进${genre.location}，掌事姑姑把一册写着“${ability}”的旧档推到TA面前，只说了一句：看完就烧。`, livedLine],
+      [`旧档里夹着一封没有寄出的家书，字迹在半途换了人。`, '家书压在妆奁最底层，封口完好，收信人的名字却被人用朱砂划去。', `姑姑说，${destination}那边的席位已经空了三年，只等一个人坐回去。`],
+      [...(previousOne ? [previousOne === 'wait' ? 'TA没有立刻烧档，先把家书的缺页拓了下来，去问经手过这批旧档的人。' : 'TA借着更漏的光读完最后一行，窗外恰好传来升位的钟响——有人欢喜，有人今夜睡不着。'] : []), `${name}在${destination}见到${friend}，对方只问了一句：你想赢，还是想活？`, `两个人隔着一扇屏风谈了一夜，把各自知道的半张棋盘拼到了一起。`, `位分是给外人看的，真正的命数藏在谁先沉不住气里。`],
+      [`旧档的来历被翻了出来，太后与陛下同时召见${name}。`, '两道旨意摆在案上，一道给恩宠，一道给出路；殿里的香还没燃尽。', `所有人都看着${name}的手会先伸向哪一道。`],
+      [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}的旧居，把拓下的缺页放在众人面前，先保住能作证的人。` : `TA用“${ability}”换了一次当众对质的机会，让说谎的人自己走完最后一句谎话。`] : []), `王朝的账算到了最后一页，${name}发现最初的那封家书，原是写给自己的。`, `TA把选择权交还给被划去名字的那个人，而不是替TA原谅谁。`, `${destination}的灯次第亮起，像一条终于能走完的路。`],
+      [`朱墙依旧，天光落进来时却不再刺眼。`, `${name}没有赢得所有，只赢回了说“不”的资格——这比位分更难，也更长久。`, `宫墙深处，从此多了一盏为后来者留的灯。`],
+    ],
+    frontier: [
+      [`${genre.world}的引力锚在${genre.location}第三次失稳。`, `${name}这个${identityWithOrigin}攥着最后一张配给卡，听见广播把“${ability}”列为未登记变量。`, livedLine],
+      [`废弃货舱里传出一串重复的求救码，落款是三十年前失踪的殖民船。`, '求救码停在最后一位，没有解完，也没有消失，像一句没说完的话。', `导航把航线标向${destination}——那片星域在所有官方图上都是空白。`],
+      [...(previousOne ? [previousOne === 'wait' ? 'TA先把求救码录进离线芯片，去找见过那艘船的老领航员对口供。' : 'TA让“${ability}”接管三秒导航，整条星环的灯顺次暗了一遍，又顺次亮回来。'] : []), `${name}在${destination}遇见${friend}的应急人格备份，对方说自己等这一班船等了三十年。`, `备份交出一张手绘星图：官方版本删掉的航线，全在上面。`, `在边疆，活下去的第一课是承认旧地图是错的。`],
+      [`星环议会要求${name}交出“${ability}”的登记权，换全船队的燃料配额。`, '配给表已经发到每个人手里，倒计时挂在舱门上方；没有人先开口。', `真正的敌人不在废土里，在那张永远算不平的账上。`],
+      [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}的备份舱，先把星图抄了三份，藏进三艘不同的船。` : `TA用“${ability}”重写了前哨站的配给算法，让最底层的人第一次出现在名单上。`] : []), `废土的信号塔全部转向同一片空白星域，${name}必须决定舰队是启程还是留下。`, `TA把启程的决定交给投票，而不是交给配给表。`, `${destination}的方向升起一颗不在任何图上的星。`],
+      [`星环以远，第一艘自愿启程的船点火成功。`, `${name}没有成为新的领航神话，只在航行日志第一页写下：规则可以重学，人不能重来。`, `边疆从此有了自己的第一页历史。`],
+    ],
   }
   return scenes[genre.id]?.[index] || scenes.mist[index]
 }
@@ -348,6 +419,9 @@ export function createStory(draft = DEFAULT_DRAFT) {
     id: makeId(),
     title: titleFor(config, genre),
     genreId: genre.id,
+    // The server resolves the genre template from this top-level field first;
+    // it is only present when the draft pinned one explicitly.
+    ...(config.genreTemplateId ? { genreTemplateId: config.genreTemplateId } : {}),
     config,
     worldBible: worldBibleFor(genre, config),
     chapterIndex: 0,
@@ -614,7 +688,9 @@ const legacyDecisionSignature = (story, index, currentScene) => {
     neon: '雨幕第一次把所有人的脸还给了他们。',
     city: '有人按下了重启键，城市却选择继续做梦。',
   }
-  return { outcomes: outcomes[genre.id], tail: tails[genre.id] || currentScene[2] }
+  // Worlds added after the legacy templates (court, frontier) never produced
+  // legacy decision prose, so they have no signature to match.
+  return { outcomes: outcomes[genre.id] || [], tail: tails[genre.id] || currentScene[2] }
 }
 
 // A read-time compatibility view: no mutation, revision change, or chapter

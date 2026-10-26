@@ -1,6 +1,6 @@
 import React from "react";
 
-const ids = new Set(["mist", "cultivation", "neon", "city"]);
+const ids = new Set(["mist", "cultivation", "neon", "city", "court", "frontier"]);
 const safeGenre = (value) => ids.has(value) ? value : "mist";
 
 /** Fictional cover art. Titles and all interactive content stay in HTML. */

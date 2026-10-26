@@ -299,6 +299,122 @@
       ],
       "qa_status": "accepted",
       "qa_notes": "One targeted native edit removed the glyph-like tram-nose detail. Accepted after inspecting the edited tool result and final 640 px derivative; no readable lettering. A faint unlabeled circular hardware impression remains at full resolution."
+    },
+    {
+      "id": "court",
+      "kind": "narrative illustration",
+      "description": "Vermilion palace walls and one lamplit gate at dusk, stone steps and bare plum trees below layered tiled roofs",
+      "format": "PNG master with responsive opaque WebP variants",
+      "dimensions": {
+        "width": 1122,
+        "height": 1402
+      },
+      "source_master": {
+        "path": "assets/art-source/court.png",
+        "non_public": true,
+        "bytes": 3903089,
+        "sha256": "9aba7fb061a40f0d587155a0d8b84dd5d06b7ab436b249ec18b7c3cd3574953c"
+      },
+      "prompt_used": "Full-bleed fictional narrative illustration, portrait 4:5, in this exact house style: sophisticated bold screen-printed editorial illustration, manga volume frontispiece meets modern illustrated book jacket, crisp dark ink navy #172c42 contours, large flat shapes, selective fine ink hatching. Palette restricted to: dark ink navy #172c42, dominant energetic vermilion #f04b36, warm pale paper #f4f2ea, golden yellow #eac647, deep petroleum turquoise. No purple, pink, rainbow or fluorescent gradients, no photorealism, no 3D. Establish the key subject in the upper 75 percent; the lower quarter stays continuous scenic dark foreground with quiet detail for a later HTML title overlay. Absolutely no words, letters, numbers, glyphs, watermarks, UI, borders or mockup framing anywhere. Primary request: a vermilion-walled imperial palace at dusk in an old East Asian capital — layered dark tiled roofs and golden-lit latticed windows rising behind high crimson palace walls, one heavy gate standing slightly ajar with warm gold light spilling out. Scene: stone steps climb toward the gate across the middle ground; two rows of bare-branched plum trees in dark ink silhouette line the steps; thin pale mist bands cross the rooftops; a few small paper lanterns glow gold, all unlettered. Subject: one tiny anonymous adult in long dark robes seen only from behind, standing alone at the foot of the steps near the lower-middle, holding a single slim scroll case; no visible face. Mood: still, watchful, high-stakes court intrigue; the vermilion wall mass and the one lit gate carry the composition.",
+      "generation_history": [
+        {
+          "tool": "media.generate_image",
+          "mode": "generate",
+          "prompt": "Full-bleed fictional narrative illustration, portrait 4:5, in this exact house style: sophisticated bold screen-printed editorial illustration, manga volume frontispiece meets modern illustrated book jacket, crisp dark ink navy #172c42 contours, large flat shapes, selective fine ink hatching. Palette restricted to: dark ink navy #172c42, dominant energetic vermilion #f04b36, warm pale paper #f4f2ea, golden yellow #eac647, deep petroleum turquoise. No purple, pink, rainbow or fluorescent gradients, no photorealism, no 3D. Establish the key subject in the upper 75 percent; the lower quarter stays continuous scenic dark foreground with quiet detail for a later HTML title overlay. Absolutely no words, letters, numbers, glyphs, watermarks, UI, borders or mockup framing anywhere. Primary request: a vermilion-walled imperial palace at dusk in an old East Asian capital — layered dark tiled roofs and golden-lit latticed windows rising behind high crimson palace walls, one heavy gate standing slightly ajar with warm gold light spilling out. Scene: stone steps climb toward the gate across the middle ground; two rows of bare-branched plum trees in dark ink silhouette line the steps; thin pale mist bands cross the rooftops; a few small paper lanterns glow gold, all unlettered. Subject: one tiny anonymous adult in long dark robes seen only from behind, standing alone at the foot of the steps near the lower-middle, holding a single slim scroll case; no visible face. Mood: still, watchful, high-stakes court intrigue; the vermilion wall mass and the one lit gate carry the composition."
+        }
+      ],
+      "variants": [
+        {
+          "output_path": "public/art/court-640.webp",
+          "public_url": "/art/court-640.webp",
+          "provenance_path": "public/art/court-640.webp.json",
+          "dimensions": {
+            "width": 640,
+            "height": 800
+          },
+          "format": "WebP",
+          "quality": 82,
+          "transparency": "opaque",
+          "bytes": 147210,
+          "sha256": "29098c1083063956658f390563f51d53e822b73ca60e0fe070af547b2c88fac9"
+        },
+        {
+          "output_path": "public/art/court-1122.webp",
+          "public_url": "/art/court-1122.webp",
+          "provenance_path": "public/art/court-1122.webp.json",
+          "dimensions": {
+            "width": 1122,
+            "height": 1402
+          },
+          "format": "WebP",
+          "quality": 82,
+          "transparency": "opaque",
+          "bytes": 339848,
+          "sha256": "2b26afa768c4d23b3427f32f4e6377f59f0c1143d4042fa5f95dff213469be2e"
+        }
+      ],
+      "qa_status": "accepted",
+      "qa_notes": [
+        "Inspected after generation: house palette and screen-print style match the original four worlds; no letters, UI, watermark or visible face; key subject sits in the upper three quarters with a quiet dark foreground below."
+      ]
+    },
+    {
+      "id": "frontier",
+      "kind": "narrative illustration",
+      "description": "Orbital ring outpost arc above a rust-red planet, a striped supply ship arriving, a lone suited figure on the observation deck",
+      "format": "PNG master with responsive opaque WebP variants",
+      "dimensions": {
+        "width": 1122,
+        "height": 1402
+      },
+      "source_master": {
+        "path": "assets/art-source/frontier.png",
+        "non_public": true,
+        "bytes": 2868959,
+        "sha256": "39d8a8569e4e81db174177cde37c4bec186aa48605ced3c96d68bfcab254f589"
+      },
+      "prompt_used": "Full-bleed fictional narrative illustration, portrait 4:5, in this exact house style: sophisticated bold screen-printed editorial illustration, manga volume frontispiece meets modern illustrated book jacket, crisp dark ink navy #172c42 contours, large flat shapes, selective fine ink hatching. Palette restricted to: dark ink navy #172c42, dominant energetic vermilion #f04b36, warm pale paper #f4f2ea, golden yellow #eac647, deep petroleum turquoise. No purple, pink, rainbow or fluorescent gradients, no photorealism, no 3D. Establish the key subject in the upper 75 percent; the lower quarter stays continuous scenic dark foreground with quiet detail for a later HTML title overlay. Absolutely no words, letters, numbers, glyphs, watermarks, UI, borders or mockup framing anywhere. Primary request: a frontier outpost station on the broken arc of an orbital ring above a rust-red planet — modular habitat blocks, a docking spine and one blinking beacon, all drawn as bold flat ink shapes. Scene: the curved station arc sweeps across the upper middle ground against a pale paper starfield with a few small gold stars; below it the planet's rust-red and ink-navy surface bands curve away; a small supply ship with a vermilion stripe approaches the docking spine leaving a thin turquoise trail. Subject: one tiny anonymous adult in a plain pressure suit seen only from behind, standing on a dark observation deck ledge in the lower-middle foreground, helmet in hand, no visible face. Mood: vast, lonely, rules-yet-unwritten deep frontier; the station arc and the planet curve carry the composition.",
+      "generation_history": [
+        {
+          "tool": "media.generate_image",
+          "mode": "generate",
+          "prompt": "Full-bleed fictional narrative illustration, portrait 4:5, in this exact house style: sophisticated bold screen-printed editorial illustration, manga volume frontispiece meets modern illustrated book jacket, crisp dark ink navy #172c42 contours, large flat shapes, selective fine ink hatching. Palette restricted to: dark ink navy #172c42, dominant energetic vermilion #f04b36, warm pale paper #f4f2ea, golden yellow #eac647, deep petroleum turquoise. No purple, pink, rainbow or fluorescent gradients, no photorealism, no 3D. Establish the key subject in the upper 75 percent; the lower quarter stays continuous scenic dark foreground with quiet detail for a later HTML title overlay. Absolutely no words, letters, numbers, glyphs, watermarks, UI, borders or mockup framing anywhere. Primary request: a frontier outpost station on the broken arc of an orbital ring above a rust-red planet — modular habitat blocks, a docking spine and one blinking beacon, all drawn as bold flat ink shapes. Scene: the curved station arc sweeps across the upper middle ground against a pale paper starfield with a few small gold stars; below it the planet's rust-red and ink-navy surface bands curve away; a small supply ship with a vermilion stripe approaches the docking spine leaving a thin turquoise trail. Subject: one tiny anonymous adult in a plain pressure suit seen only from behind, standing on a dark observation deck ledge in the lower-middle foreground, helmet in hand, no visible face. Mood: vast, lonely, rules-yet-unwritten deep frontier; the station arc and the planet curve carry the composition."
+        }
+      ],
+      "variants": [
+        {
+          "output_path": "public/art/frontier-640.webp",
+          "public_url": "/art/frontier-640.webp",
+          "provenance_path": "public/art/frontier-640.webp.json",
+          "dimensions": {
+            "width": 640,
+            "height": 800
+          },
+          "format": "WebP",
+          "quality": 82,
+          "transparency": "opaque",
+          "bytes": 98464,
+          "sha256": "ec91f140469319b59de90ada5493badb037da58840ff8bcab98b66a2314e2d25"
+        },
+        {
+          "output_path": "public/art/frontier-1122.webp",
+          "public_url": "/art/frontier-1122.webp",
+          "provenance_path": "public/art/frontier-1122.webp.json",
+          "dimensions": {
+            "width": 1122,
+            "height": 1402
+          },
+          "format": "WebP",
+          "quality": 82,
+          "transparency": "opaque",
+          "bytes": 229338,
+          "sha256": "475d07d9fdc5242901786405a67facd17aca2f4fed3e5319d4c459ee0e0ee995"
+        }
+      ],
+      "qa_status": "accepted",
+      "qa_notes": [
+        "Inspected after generation: house palette and screen-print style match the original four worlds; no letters, UI, watermark or visible face; key subject sits in the upper three quarters with a quiet dark foreground below."
+      ]
     }
   ],
   "direct": [],
@@ -323,18 +439,9 @@
     }
   ],
   "optimization": {
-    "tool": "Bundled sharp",
-    "tool_path": "C:/Users/wangxr/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/sharp",
-    "quality": 82,
-    "effort": 6,
-    "crop": false,
-    "variants": [
-      640,
-      1122
-    ],
-    "shipping_raster_bytes": 1944400,
-    "all_640w_bytes": 564988,
-    "all_1122w_bytes": 1379412
+    "total_shipping_raster_bytes": 2759260,
+    "all_640w_bytes": 810662,
+    "all_1122w_bytes": 1948598
   },
   "provenance": {
     "png": "Exact latest tool prompt embedded via Impeccable embed-prompt.mjs in PNG tEXt.",

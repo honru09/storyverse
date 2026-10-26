@@ -179,7 +179,11 @@ function resolveGenreTemplates(templates, story) {
   const byEngineGenre = (genreId) => genreId
     ? templates.find((genre) => Array.isArray(genre.engineGenres) && genre.engineGenres.includes(genreId)) || null
     : null
+  // A story can pin its template at the top level (set at creation or written
+  // back after the first generated chapter); drafts that only carry it inside
+  // config resolve through the same field there.
   let primary = typeof story.genreTemplateId === 'string' ? byId(story.genreTemplateId) : null
+  if (!primary && typeof story.config?.genreTemplateId === 'string') primary = byId(story.config.genreTemplateId)
   let secondary = null
   if (story.kind === 'merged') {
     const people = Array.isArray(story.config?.protagonists) ? story.config.protagonists : []

@@ -97,8 +97,8 @@ async function runJourney(browser, width) {
     await page.getByRole('button', { name: '开启第一本书', exact: true }).waitFor();
     await noOverflow(page, 'first visit');
     await page.getByRole('button', { name: '开启第一本书', exact: true }).click();
-    await page.getByRole('heading', { name: '想去哪个世界？' }).waitFor();
-    await page.getByRole('button', { name: /奇幻/ }).click();
+    await page.getByRole('heading', { name: '想写哪种故事？' }).waitFor();
+    await page.locator('.stage-chips').getByRole('button', { name: '雾岚群岛', exact: true }).click();
     await noOverflow(page, 'world selection');
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByLabel('主角昵称（选填）').fill(privateNames[0]);
@@ -233,8 +233,8 @@ async function runJourney(browser, width) {
     });
     await page.getByRole('button', { name: '返回书城', exact: true }).click();
     await navigation(page, '造世');
-    await page.getByRole('heading', { name: '想去哪个世界？' }).waitFor();
-    await page.getByRole('button', { name: /修仙/ }).click();
+    await page.getByRole('heading', { name: '想写哪种故事？' }).waitFor();
+    await page.locator('.template-wall').getByRole('button', { name: /修仙/ }).click();
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByLabel('主角昵称（选填）').fill('测试剑客星河');
     await page.getByRole('button', { name: '继续', exact: true }).click();

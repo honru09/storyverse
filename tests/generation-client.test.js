@@ -90,3 +90,16 @@ test('accepted chapter remembers the genre template id returned by the server', 
   const untouched = acceptGeneratedChapter(story, resultFor(story, 0))
   assert.equal(untouched.genreTemplateId, undefined)
 })
+
+test('chapter requests carry the pinned genre template id to the server', async () => {
+  const story = { ...createStory({ name: '旅人', genreId: 'frontier', genreTemplateId: 'scifi' }), engine: 'gemini' }
+  let sent
+  const fetchImpl = async (_url, options) => {
+    sent = JSON.parse(options.body)
+    return Response.json(resultFor(story, 0))
+  }
+  await requestChapter(story, 0, { fetchImpl })
+  assert.equal(sent.story.genreTemplateId, 'scifi')
+  assert.equal(sent.story.config.genreTemplateId, 'scifi')
+  assert.equal(sent.index, 0)
+})

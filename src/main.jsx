@@ -49,12 +49,15 @@ import {
   DEFAULT_DRAFT,
   FRIEND_BOOK,
   GENRES,
+  GENRE_TEMPLATES,
   buildChapter,
   chapterForReading,
   chooseBranch,
   createMergedStory,
   createStory,
+  genreTemplateById,
   publicSnapshot,
+  recommendedTemplateFor,
 } from "./story-engine";
 import {
   exportLibrary,
@@ -240,6 +243,22 @@ const toWorld = (genre) => ({
   label: `${genre.label} · 世界线`,
 });
 const worlds = GENRES.map(toWorld);
+// The start flow leads with the craft (genre template); the wall order is a
+// curated shelf, not the engine list order: flagship fantasy first as the
+// large brick, then the remaining crafts in reading-habit order.
+const TEMPLATE_WALL_ORDER = [
+  "xuanhuan",
+  "romance-ancient",
+  "xianxia",
+  "scifi",
+  "romance-modern",
+  "suspense-supernatural",
+  "urban",
+  "zhihu-short",
+];
+const templateWall = TEMPLATE_WALL_ORDER
+  .map((id) => GENRE_TEMPLATES.find((template) => template.id === id))
+  .filter(Boolean);
 
 function seedStory(story) {
   return { ...prepareReadingWindow(story, 0), readerIndex: 0 };
@@ -504,7 +523,7 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory }) {
 
 function Stepper({ step, setStep }) {
   const steps = [
-    { id: 1, label: "世界" },
+    { id: 1, label: "故事" },
     { id: 2, label: "主角" },
     { id: 3, label: "能力" },
     { id: 4, label: "开局" },
@@ -528,22 +547,22 @@ function Stepper({ step, setStep }) {
   );
 }
 
-function WorldCard({ world, selected, onSelect }) {
+function TemplateBrick({ template, stage, selected, featured, onSelect }) {
   return (
-    <AnimatedContent className="world-card-wrap" distance={8}>
+    <AnimatedContent className={`template-brick-wrap ${featured ? "featured" : ""}`} distance={8}>
       <button
         type="button"
-        className={`world-card world-${world.color} ${selected ? "selected" : ""}`}
+        className={`template-brick ${selected ? "selected" : ""}`}
         aria-pressed={selected}
-        onClick={() => onSelect(world.id)}
+        onClick={() => onSelect(template)}
       >
-        <div className="world-card-visual" aria-hidden="true">
-          <WorldArtwork genreId={world.id} eager />
-        </div>
-        <div className="world-card-copy">
-          <h3>{world.name}</h3>
-          <p>{world.label.split(" · ")[0]}</p>
-        </div>
+        <span className="template-brick-visual" aria-hidden="true">
+          <WorldArtwork genreId={template.worldId} eager />
+        </span>
+        <span className="template-brick-copy">
+          <strong>{template.fullName}</strong>
+          <small>舞台 · {stage.name}</small>
+        </span>
         {selected && (
           <span className="selected-mark">
             <Icon name="check" size={13} />
@@ -554,7 +573,21 @@ function WorldCard({ world, selected, onSelect }) {
   );
 }
 
-function PreviewPanel({ world, draft, ability, tone }) {
+function StageChip({ world, selected, onSelect }) {
+  return (
+    <button
+      type="button"
+      className={`stage-chip ${selected ? "selected" : ""}`}
+      aria-pressed={selected}
+      onClick={() => onSelect(world.id)}
+    >
+      <span className="stage-chip-symbol" aria-hidden="true">{world.symbol}</span>
+      {world.name}
+    </button>
+  );
+}
+
+function PreviewPanel({ world, template, draft, ability, tone }) {
   const person = draft.name || "未命名的旅人";
   return (
     <aside className="preview-panel">
@@ -566,6 +599,8 @@ function PreviewPanel({ world, draft, ability, tone }) {
         </div>
       </div>
       <dl className="preview-facts">
+        <div><dt>题材</dt><dd>{template.fullName}</dd></div>
+        <div><dt>舞台</dt><dd>{world.name}</dd></div>
         <div><dt>主角</dt><dd>{person}</dd></div>
         <div><dt>性格</dt><dd>{draft.trait}</dd></div>
         <div><dt>出身</dt><dd>{draft.origin}</dd></div>
@@ -599,10 +634,20 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
   const [step, setStep] = useState(
     Math.min(4, Math.max(1, Number(initialDraft?.step) || 1)),
   );
-  const [draft, setDraft] = useState({
-    ...DEFAULT_DRAFT,
-    ...(initialDraft || {}),
+  const [draft, setDraft] = useState(() => {
+    const base = { ...DEFAULT_DRAFT, ...(initialDraft || {}) };
+    // Step one always has a craft selected: a restored pick wins, otherwise
+    // the stage's recommended template.
+    if (!genreTemplateById(base.genreTemplateId)) {
+      base.genreTemplateId = recommendedTemplateFor(base.genreId).id;
+    }
+    return base;
   });
+  // Until the reader picks a craft brick themselves, changing the stage
+  // re-points the recommendation; an explicit pick is never overridden.
+  const templateTouched = useRef(
+    Boolean(genreTemplateById(initialDraft?.genreTemplateId)),
+  );
   const [abilityId, setAbilityId] = useState(
     abilities.find((item) => item.id === initialDraft?.abilityId)?.id ||
       abilities.find((item) => item.name === initialDraft?.ability)?.id ||
@@ -614,6 +659,17 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
       "poetic",
   );
   const world = toWorld(genreById[draft.genreId] || GENRES[0]);
+  const template =
+    genreTemplateById(draft.genreTemplateId) ||
+    recommendedTemplateFor(draft.genreId);
+  const selectTemplate = (item) => {
+    templateTouched.current = true;
+    set({ genreTemplateId: item.id, genreId: item.worldId });
+  };
+  const selectStage = (genreId) => {
+    if (templateTouched.current) set({ genreId });
+    else set({ genreId, genreTemplateId: recommendedTemplateFor(genreId).id });
+  };
   const ability =
     abilities.find((item) => item.id === abilityId) || abilities[0];
   const tone = tones.find((item) => item.id === toneId) || tones[0];
@@ -675,20 +731,35 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
             <>
               <div className="forge-section-heading">
                 <div>
-                  <h2 tabIndex={-1}>想去哪个世界？</h2>
+                  <h2 tabIndex={-1}>想写哪种故事？</h2>
                 </div>
               </div>
-              <div className="world-grid">
-                {worlds.map((item) => (
-                  <WorldCard
+              <div className="template-wall" role="group" aria-label="题材">
+                {templateWall.map((item, index) => (
+                  <TemplateBrick
                     key={item.id}
-                    world={item}
-                    selected={draft.genreId === item.id}
-                    onSelect={(genreId) => set({ genreId })}
+                    template={item}
+                    stage={toWorld(genreById[item.worldId] || GENRES[0])}
+                    featured={index === 0}
+                    selected={template.id === item.id}
+                    onSelect={selectTemplate}
                   />
                 ))}
               </div>
-              <p className="world-selection-note" aria-live="polite">{world.subtitle}</p>
+              <div className="stage-picker">
+                <span className="stage-picker-label" id="stage-picker-label">故事舞台</span>
+                <div className="stage-chips" role="group" aria-labelledby="stage-picker-label">
+                  {worlds.map((item) => (
+                    <StageChip
+                      key={item.id}
+                      world={item}
+                      selected={draft.genreId === item.id}
+                      onSelect={selectStage}
+                    />
+                  ))}
+                </div>
+              </div>
+              <p className="world-selection-note" aria-live="polite">{template.blurb} 舞台是{world.name}——{world.subtitle}</p>
             </>
           )}
           {step === 2 && (
@@ -888,6 +959,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                 <h3>{world.name}</h3>
                 <p>{previewText}</p>
                 <div className="opening-details" aria-label="确认故事设定">
+                  <button disabled={busy} onClick={() => setStep(1)} aria-label="修改题材与舞台"><span>题材</span><b>{template.fullName} · {world.name}</b><Icon name="chevron" size={15} /></button>
                   <button disabled={busy} onClick={() => setStep(2)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "未命名旅人"}</b><Icon name="chevron" size={15} /></button>
                   <button disabled={busy} onClick={() => setStep(3)} aria-label="修改能力与风格"><span>能力</span><b>{ability.name} · {tone.name}</b><Icon name="chevron" size={15} /></button>
                 </div>
@@ -921,6 +993,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
         </main>
         <PreviewPanel
           world={world}
+          template={template}
           draft={draft}
           ability={ability}
           tone={tone}

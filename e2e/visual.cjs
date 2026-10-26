@@ -70,7 +70,7 @@ fs.mkdirSync(artifactDir, { recursive: true });
         await capture('account');
         await page.getByRole('button', { name: '关闭面板' }).click();
         await page.getByRole('button', { name: '开启第一本书', exact: true }).click();
-        await page.getByRole('heading', { name: '想去哪个世界？' }).waitFor();
+        await page.getByRole('heading', { name: '想写哪种故事？' }).waitFor();
         await capture('worlds');
         await page.getByRole('button', { name: '继续', exact: true }).click();
         await page.getByLabel('主角昵称（选填）').fill('阿遥');

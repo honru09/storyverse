@@ -387,3 +387,17 @@ test('Vertex usage metadata is normalised and passed through', async () => {
   const result = await generator.generate({ story: story(), index: 0 })
   assert.deepEqual(result.usage, { ...usageMetadata, cachedContentTokenCount: null })
 })
+
+test('a template id carried only in config still resolves for generation', async () => {
+  const base = story()
+  const current = { ...base, config: { ...base.config, genreTemplateId: 'xuanhuan' } }
+  let context
+  const generator = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
+    context = contextFrom(options)
+    return response(output(true))
+  } })
+  const result = await generator.generate({ story: current, index: 0 })
+  assert.equal(typeof context.genreBrief, 'string')
+  assert.ok(context.genreBrief.length > 100)
+  assert.equal(result.genreTemplateId, 'xuanhuan')
+})

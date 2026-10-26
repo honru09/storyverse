@@ -157,14 +157,14 @@ async function runOnboarding(browser, width) {
       const dialog = page.getByRole('dialog', { name: '登录与注册', exact: true });
       await dialog.getByRole('button', { name: '先不登录，继续体验', exact: true }).click();
       await dialog.waitFor({ state: 'detached' });
-      await page.getByRole('heading', { name: '想去哪个世界？', exact: true }).waitFor();
+      await page.getByRole('heading', { name: '想写哪种故事？', exact: true }).waitFor();
       assert.equal(new URL(page.url()).hash, '#/forge');
       assert.equal(await page.getByRole('button', { name: '我的账号', exact: true }).count(), 0);
       await noOverflow(page, 'guest creation');
     });
 
     await step('creation draft survives leaving, returning and reloading', async () => {
-      await page.getByRole('button', { name: /奇幻/ }).click();
+      await page.locator('.stage-chips').getByRole('button', { name: '雾岚群岛', exact: true }).click();
       await page.getByRole('button', { name: '继续', exact: true }).click();
       await page.getByLabel('主角昵称（选填）').fill(testName);
       await page.getByRole('switch', { name: '带入人生经历（选填）' }).click();

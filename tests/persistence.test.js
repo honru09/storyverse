@@ -284,3 +284,24 @@ test('legacy migration drops nested display objects that are unsafe to render', 
   assert.equal(migrated.draft.protagonistTrait, undefined)
   assert.equal(migrated.draft.worldId, 'mist')
 })
+
+test('genre template id survives a save/load round-trip at story and config level', () => {
+  const storage = new MemoryStorage()
+  const created = createStory({ name: '阿遥', genreId: 'court', genreTemplateId: 'romance-ancient' })
+  const library = upsertStory(emptyLibrary(), created)
+  assert.deepEqual(saveLibrary(storage, library), { ok: true, error: null })
+  const loaded = loadLibrary(storage)
+  assert.equal(loaded.warning, null)
+  assert.equal(loaded.library.stories[0].genreTemplateId, 'romance-ancient')
+  assert.equal(loaded.library.stories[0].config.genreTemplateId, 'romance-ancient')
+})
+
+test('a non-string config genre template id invalidates the story', () => {
+  const created = createStory({ name: '阿遥', genreId: 'court', genreTemplateId: 'romance-ancient' })
+  const broken = { ...created, config: { ...created.config, genreTemplateId: 42 } }
+  const raw = JSON.stringify({ ...emptyLibrary(), stories: [broken] })
+  const storage = new MemoryStorage({ [STORAGE_KEY]: raw })
+  const result = loadLibrary(storage)
+  assert.match(result.warning, /结构无效/)
+  assert.equal(result.library.stories.length, 0)
+})

@@ -131,3 +131,8 @@ Blockers: none for asset delivery. Final UI contrast, crop and loading behavior 
 
 Assumptions: the selected direction and four world briefs are settled; these are fictional illustrative assets; no text is part of the artwork; source masters are retained for later regeneration and optimization.
 
+
+
+## Addendum 2026-10-26: court and frontier (start-flow expansion)
+
+Two worlds were added for the rebuilt start flow: **court** and **frontier**. Both were generated with `media.generate_image` (one call each, an existing world illustration passed as style reference only) and visually inspected: house palette and screen-print handling match the original four; no letters, UI, watermarks or visible faces. Masters were converted from the generated WebP originals (1408 x 1760) to PNG at `assets/art-source/court.png` (3,903,089 bytes) and `assets/art-source/frontier.png` (2,868,959 bytes); responsive variants were resized with Pillow (LANCZOS) and encoded WebP quality 82 — court 640w 147,210 bytes / 1122w 339,848 bytes, frontier 640w 98,464 bytes / 1122w 229,338 bytes. Exact prompts are embedded in the `.webp.json` sidecars and in `manifest.json` (`prompt_used`). Minor generated details disclosed: court's gate lintel carries abstract decorative patterning (no glyphs); frontier's sky holds one faint dark smudge and its deck hardware one unlabeled box. The four original illustrations were kept unchanged: same style contract, already QA-accepted, and re-generating them would risk drift for no visual gain.
