@@ -19,6 +19,20 @@ export default function AccountPanel({ client, account, onContinue }) {
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
   const modeTouched = useRef(false);
+  const hadUser = useRef(false);
+  // Signing out keeps this component mounted with its last tab selected;
+  // drop back to the login tab so the form is not still in "register" mode.
+  useEffect(() => {
+    if (account.user) { hadUser.current = true; return; }
+    if (hadUser.current) {
+      hadUser.current = false;
+      modeTouched.current = false;
+      setMode("login");
+      setLocalError("");
+      setPassword("");
+      setCode("");
+    }
+  }, [account.user]);
   const busy = pending || account.busy || account.status === "loading";
   const passwordAvailable = Boolean(account.config?.providers?.email);
   const codeAvailable = Boolean(account.config?.emailCode);

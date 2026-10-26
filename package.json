@@ -16,6 +16,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@firebase/app": "0.16.4",
+    "@firebase/auth": "1.13.6",
     "@google/genai": "^2.30.0",
     "@gsap/react": "2.1.2",
     "firebase": "12.19.0",

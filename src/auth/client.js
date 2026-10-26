@@ -32,8 +32,9 @@ function safeError(error) {
 }
 
 async function defaultLoadSdk() {
-  const [app, auth] = await Promise.all([import('firebase/app'), import('firebase/auth')])
-  return { ...app, ...auth }
+  // One combined module on purpose — see firebase-sdk.js for why splitting
+  // this into import('firebase/app') + import('firebase/auth') breaks auth.
+  return import('./firebase-sdk.js')
 }
 
 function validConfig(config) {
