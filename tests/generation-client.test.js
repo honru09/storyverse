@@ -82,3 +82,11 @@ test('merge context is bounded and does not transmit entire chapters or metadata
   assert.equal(JSON.stringify(context).includes('private full text'), false)
   assert.equal(context.unknownSecret, undefined)
 })
+
+test('accepted chapter remembers the genre template id returned by the server', () => {
+  const story = fresh()
+  const next = acceptGeneratedChapter(story, { ...resultFor(story, 0), genreTemplateId: 'xianxia' })
+  assert.equal(next.genreTemplateId, 'xianxia')
+  const untouched = acceptGeneratedChapter(story, resultFor(story, 0))
+  assert.equal(untouched.genreTemplateId, undefined)
+})

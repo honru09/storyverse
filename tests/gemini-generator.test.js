@@ -277,3 +277,113 @@ test('timeout aborts transport and reports retryable error without a second paid
   assert.equal(signal.aborted, true)
   assert.equal(calls, 1)
 })
+
+const responseWithUsage = (value, usageMetadata) => new Response(JSON.stringify({
+  candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(value) }] } }],
+  usageMetadata,
+}), { status: 200 })
+const contextFrom = (options) => JSON.parse(JSON.parse(options.body).contents[0].parts[0].text)
+
+test('opening injects the genre brief for an explicit template id and passes usage through', async () => {
+  const current = { ...story(), genreTemplateId: 'xianxia' }
+  const usageMetadata = { promptTokenCount: 900, candidatesTokenCount: 1200, thoughtsTokenCount: 300, cachedContentTokenCount: 0, totalTokenCount: 2400 }
+  let context
+  const generator = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
+    context = contextFrom(options)
+    return responseWithUsage(output(true), usageMetadata)
+  } })
+  const result = await generator.generate({ story: current, index: 0 })
+  assert.equal(typeof context.genreBrief, 'string')
+  assert.ok(context.genreBrief.includes('出身再低、灵根再差'))
+  assert.equal(context.genreBeat, undefined)
+  assert.equal(context.worldBible.outline.length, 6)
+  assert.equal(result.genreTemplateId, 'xianxia')
+  assert.deepEqual(result.usage, usageMetadata)
+})
+
+test('continuation injects only the chapter beat slice and compacts the outline', async () => {
+  let current = acceptLocal(story(), 0)
+  current = acceptLocal(current, 1)
+  current = chooseBranch(current, 1, 'wait')
+  current = {
+    ...current,
+    genreTemplateId: 'xianxia',
+    worldBible: { ...current.worldBible, outline: ['OUTLINE_ONE', 'OUTLINE_TWO', 'OUTLINE_THREE', 'OUTLINE_FOUR', 'OUTLINE_FIVE', 'OUTLINE_SIX'] },
+  }
+  let context
+  const generator = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
+    context = contextFrom(options)
+    return response(output())
+  } })
+  const result = await generator.generate({ story: current, index: 2 })
+  assert.equal(context.genreBrief, undefined)
+  assert.equal(typeof context.genreBeat, 'string')
+  assert.ok(context.genreBeat.includes('小胜换来资源与立足之地'))
+  assert.deepEqual(context.worldBible.outline, ['OUTLINE_THREE', 'OUTLINE_FOUR'])
+  assert.equal(context.worldBible.premise, current.worldBible.premise)
+  assert.deepEqual(context.worldBible.rules, current.worldBible.rules)
+  assert.equal(result.genreTemplateId, 'xianxia')
+  assert.equal(result.usage, 'unknown')
+})
+
+test('templates disabled by option leave context and result exactly as before', async () => {
+  const current = { ...story(), genreTemplateId: 'xianxia' }
+  let context
+  const generator = createGeminiGenerator({ env, genreTemplates: null, fetchImpl: async (_url, options) => {
+    context = contextFrom(options)
+    return response(output(true))
+  } })
+  const result = await generator.generate({ story: current, index: 0 })
+  assert.equal(context.genreBrief, undefined)
+  assert.equal(context.genreBeat, undefined)
+  assert.equal(context.worldBible.outline.length, 6)
+  assert.equal(result.genreTemplateId, undefined)
+  assert.equal(result.usage, 'unknown')
+})
+
+test('templates disabled by env switch leave context untouched', async () => {
+  const current = { ...story(), genreTemplateId: 'xianxia' }
+  let context
+  const generator = createGeminiGenerator({
+    env: { ...env, STORYWEAVE_GENRE_TEMPLATES: 'off' },
+    fetchImpl: async (_url, options) => { context = contextFrom(options); return response(output(true)) },
+  })
+  const result = await generator.generate({ story: current, index: 0 })
+  assert.equal(context.genreBrief, undefined)
+  assert.equal(result.genreTemplateId, undefined)
+})
+
+test('engine genre mapping resolves a template when the story carries no template id', async () => {
+  let context
+  const generator = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
+    context = contextFrom(options)
+    return response(output(true))
+  } })
+  const result = await generator.generate({ story: story(), index: 0 })
+  assert.equal(result.genreTemplateId, 'xuanhuan')
+  assert.ok(context.genreBrief.includes('世界比想象中大得多'))
+})
+
+test('merged opening briefs from the lead template and borrows the other side archetypes', async () => {
+  const current = createMergedStory(story(), FRIEND_BOOK, { rules: 'separate', lead: 'b', bond: 'rivals' })
+  let context
+  const generator = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
+    context = contextFrom(options)
+    return response(output(true))
+  } })
+  const result = await generator.generate({ story: current, index: 0 })
+  assert.equal(result.genreTemplateId, 'xianxia')
+  assert.ok(context.genreBrief.includes('主角·谨慎型草根修士'))
+  assert.ok(context.genreBrief.includes('主角·沉稳型少年'))
+})
+
+test('Vertex usage metadata is normalised and passed through', async () => {
+  const usageMetadata = { promptTokenCount: 800, candidatesTokenCount: 1500, thoughtsTokenCount: 200, totalTokenCount: 2500 }
+  const generator = createGeminiGenerator({
+    env: { GENAI_BACKEND: 'vertex', GOOGLE_CLOUD_PROJECT: 'storyweave-fixture', GOOGLE_CLOUD_LOCATION: 'global' },
+    genreTemplates: null,
+    vertexGenerate: async () => ({ text: JSON.stringify(output(true)), finishReason: 'STOP', usageMetadata }),
+  })
+  const result = await generator.generate({ story: story(), index: 0 })
+  assert.deepEqual(result.usage, { ...usageMetadata, cachedContentTokenCount: null })
+})

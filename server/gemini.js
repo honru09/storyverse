@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { acceptChapter, buildChapter, chapterKey, storyBeatPlan } from '../src/story-engine.js'
 import { emptyLibrary, validateLibrary } from '../src/persistence.js'
 
@@ -124,9 +125,93 @@ function compactConfig(config) {
   return result
 }
 
-function contextFor({ story, index, skeleton }) {
+// Genre templates (knowledge/genres.json) are read once at startup. Any
+// failure — missing file, bad JSON, unexpected shape — leaves templates
+// disabled and generation behaves exactly as it did before they existed.
+function loadGenreTemplates() {
+  try {
+    const parsed = JSON.parse(readFileSync(new URL('../knowledge/genres.json', import.meta.url), 'utf8'))
+    if (!Array.isArray(parsed?.genres)) return null
+    const valid = parsed.genres.filter((genre) => record(genre) && typeof genre.id === 'string'
+      && typeof genre.readerPromise === 'string' && Array.isArray(genre.worldSkeleton)
+      && record(genre.conflictEngine) && Array.isArray(genre.archetypes) && Array.isArray(genre.beats)
+      && Array.isArray(genre.pitfalls) && Array.isArray(genre.pleasures))
+    return valid.length ? valid : null
+  } catch { return null }
+}
+
+const genreTemplatesEnabled = (env) => !['off', 'false', '0', 'no']
+  .includes(String(env.STORYWEAVE_GENRE_TEMPLATES ?? '').trim().toLowerCase())
+
+// Opening slice, assembled exactly as knowledge/README.md specifies.
+export function buildGenreBrief(template, secondary = null) {
+  const parts = [
+    template.readerPromise,
+    ...template.worldSkeleton,
+    template.conflictEngine.want,
+    template.conflictEngine.obstacle,
+    template.conflictEngine.cost,
+    ...template.archetypes.map((archetype) => `${archetype.role}：${archetype.desire}`),
+    ...template.beats.map((beat) => beat.beat),
+  ]
+  if (secondary) parts.push(...secondary.archetypes.map((archetype) => `${archetype.role}：${archetype.desire}`))
+  return parts.join('；')
+}
+
+// Per-chapter slice for chapters 2–6: this chapter's beat and hook, one
+// rotating archetype's flaw and voice, one pitfall and one pleasure.
+export function buildGenreBeat(template, index) {
+  const beat = template.beats[index]
+  const archetype = template.archetypes[index % 3]
+  return [
+    beat.beat,
+    beat.hook,
+    archetype.flaw,
+    archetype.voice,
+    template.pitfalls[index % 3],
+    template.pleasures[index % 5],
+  ].join('；')
+}
+
+function resolveGenreTemplates(templates, story) {
+  if (!templates?.length) return null
+  const byId = (id) => templates.find((genre) => genre.id === id) || null
+  const byEngineGenre = (genreId) => genreId
+    ? templates.find((genre) => Array.isArray(genre.engineGenres) && genre.engineGenres.includes(genreId)) || null
+    : null
+  let primary = typeof story.genreTemplateId === 'string' ? byId(story.genreTemplateId) : null
+  let secondary = null
+  if (story.kind === 'merged') {
+    const people = Array.isArray(story.config?.protagonists) ? story.config.protagonists : []
+    const leadIndex = story.config?.merge?.lead === 'b' ? 1 : 0
+    if (!primary) primary = byEngineGenre(people[leadIndex]?.genreId || story.config?.genreId || story.genreId)
+    const other = byEngineGenre(people[leadIndex === 0 ? 1 : 0]?.genreId)
+    if (other && primary && other.id !== primary.id) secondary = other
+  } else if (!primary) {
+    primary = byEngineGenre(story.config?.genreId || story.genreId)
+  }
+  return primary ? { primary, secondary } : null
+}
+
+// Normalise provider usage metadata. Absent metadata is reported as the
+// string 'unknown' rather than zeros, so accounting never invents a free call.
+function extractUsage(metadata) {
+  if (!record(metadata)) return 'unknown'
+  const pick = (key) => Number.isFinite(metadata[key]) ? metadata[key] : null
+  const usage = {
+    promptTokenCount: pick('promptTokenCount'),
+    candidatesTokenCount: pick('candidatesTokenCount'),
+    thoughtsTokenCount: pick('thoughtsTokenCount'),
+    cachedContentTokenCount: pick('cachedContentTokenCount'),
+    totalTokenCount: pick('totalTokenCount'),
+  }
+  return Object.values(usage).some((value) => value !== null) ? usage : 'unknown'
+}
+
+function contextFor({ story, index, skeleton }, resolvedTemplates = null) {
   const last = story.chapters.at(-1)
   const bible = story.worldBible
+  const fullOutline = clippedList(bible.outline, 6, 400)
   return {
     chapterNumber: index + 1,
     chapterCount: 6,
@@ -136,8 +221,13 @@ function contextFor({ story, index, skeleton }) {
       premise: clip(bible.premise, 1000),
       rules: clippedList(bible.rules, 8, 400),
       endingAnchor: clip(bible.endingAnchor, 1000),
-      outline: clippedList(bible.outline, 6, 400),
+      // With a template in place, later chapters only need their own outline
+      // entry plus the next one; the template beat carries the rest.
+      outline: resolvedTemplates && index > 0 ? fullOutline.slice(index, index + 2) : fullOutline,
     },
+    ...(resolvedTemplates ? (index === 0
+      ? { genreBrief: buildGenreBrief(resolvedTemplates.primary, resolvedTemplates.secondary) }
+      : { genreBeat: buildGenreBeat(resolvedTemplates.primary, index) }) : {}),
     choices: Object.fromEntries(Object.entries(story.choices).filter(([chapter]) => Number(chapter) < index)),
     summaries: story.chapters.map((chapter) => ({ chapter: chapter.index + 1, summary: clip(chapter.summary, 600) })),
     // Only one recent chapter of prose; older chapters use their bounded summaries.
@@ -201,6 +291,7 @@ export function createGeminiGenerator({
   env = process.env,
   fetchImpl = globalThis.fetch,
   vertexGenerate = defaultVertexGenerate,
+  genreTemplates,
   timeoutMs = 60_000,
   maxConcurrent = 2,
   maxRequestsPerMinute = 12,
@@ -218,6 +309,9 @@ export function createGeminiGenerator({
   const validModel = typeof model === 'string' && /^[a-zA-Z0-9._-]{1,100}$/.test(model)
   const validProject = /^[a-z][a-z0-9:-]{4,128}$/i.test(project)
   const validLocation = /^[a-z0-9-]{1,63}$/i.test(location)
+  const templates = genreTemplatesEnabled(env)
+    ? (genreTemplates !== undefined ? genreTemplates : loadGenreTemplates())
+    : null
   const cache = new Map()
   const inFlight = new Map()
   let starts = []
@@ -265,7 +359,12 @@ export function createGeminiGenerator({
         try { output = JSON.parse(payload.text) } catch { throw new ApiError(502, '这一章的格式不完整，请重试。') }
         const validated = validateOutput(output, prepared.index === 0)
         const { worldBible, ...prose } = validated
-        return { chapter: { ...prepared.skeleton, ...prose }, key: prepared.key, ...(worldBible ? { worldBible } : {}) }
+        return {
+          chapter: { ...prepared.skeleton, ...prose }, key: prepared.key,
+          ...(worldBible ? { worldBible } : {}),
+          usage: extractUsage(payload?.usageMetadata),
+          ...(prepared.genreTemplateId ? { genreTemplateId: prepared.genreTemplateId } : {}),
+        }
       }
       const response = await fetchImpl(`${ENDPOINT}${encodeURIComponent(model)}:generateContent`, {
         method: 'POST', signal: controller.signal,
@@ -302,7 +401,12 @@ export function createGeminiGenerator({
       try { output = JSON.parse(raw) } catch { throw new ApiError(502, '这一章的格式不完整，请重试。') }
       const validated = validateOutput(output, prepared.index === 0)
       const { worldBible, ...prose } = validated
-      return { chapter: { ...prepared.skeleton, ...prose }, key: prepared.key, ...(worldBible ? { worldBible } : {}) }
+      return {
+        chapter: { ...prepared.skeleton, ...prose }, key: prepared.key,
+        ...(worldBible ? { worldBible } : {}),
+        usage: extractUsage(payload?.usageMetadata),
+        ...(prepared.genreTemplateId ? { genreTemplateId: prepared.genreTemplateId } : {}),
+      }
     }
     try { return await Promise.race([execute(), deadline]) } catch (error) {
       if (error instanceof ApiError) throw error
@@ -315,7 +419,9 @@ export function createGeminiGenerator({
     async generate(request) {
       const prepared = validatedRequest(request)
       if (!status().configured) throw new ApiError(503, '尚未连接 Gemini，请先在服务端配置密钥。')
-      const input = JSON.stringify(contextFor(prepared))
+      const resolvedTemplates = resolveGenreTemplates(templates, prepared.story)
+      if (resolvedTemplates) prepared.genreTemplateId = resolvedTemplates.primary.id
+      const input = JSON.stringify(contextFor(prepared, resolvedTemplates))
       const hash = createHash('sha256').update(`${backend}|${project}|${location}|${model}|${prepared.key}|${input}`).digest('hex')
       const timestamp = now()
       for (const [id, item] of cache) if (item.expires <= timestamp) cache.delete(id)
@@ -348,5 +454,6 @@ async function defaultVertexGenerate({ project, location, model, contents, confi
     text: response.text,
     finishReason: candidate?.finishReason,
     blocked: Boolean(response.promptFeedback?.blockReason),
+    usageMetadata: response.usageMetadata,
   }
 }

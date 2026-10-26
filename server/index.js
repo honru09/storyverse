@@ -96,6 +96,13 @@ async function serveStatic(request, response, pathname, distDir) {
 export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth = createAuthService({ env }), distDir = DEFAULT_DIST } = {}) {
   // Explicit opt-out preserves existing deployments until the release owner sets it.
   const generationEnabled = env.GENERATION_ENABLED !== 'false'
+  // The model id is static configuration; remember it the first time status
+  // is read so the usage ledger does not consult the provider again.
+  let ledgerModel = null
+  const modelForLedger = () => {
+    if (ledgerModel === null) ledgerModel = generator.status().model
+    return ledgerModel
+  }
   const authConfig = auth.config()
   const authOrigin = authConfig.enabled ? `https://${authConfig.firebase.authDomain}` : null
   const authScripts = authOrigin ? ' https://apis.google.com' : ''
@@ -110,13 +117,30 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
       allowedRequest(request, server, env, request.method === 'POST')
       const pathname = new URL(request.url, 'http://localhost').pathname
       if ((pathname === '/api/health' || pathname === '/healthz') && request.method === 'GET') return sendJson(response, 200, { ok: true })
-      if (pathname === '/api/status' && request.method === 'GET') return sendJson(response, 200, generationEnabled ? generator.status() : GENERATION_PAUSED)
+      if (pathname === '/api/status' && request.method === 'GET') {
+        if (!generationEnabled) return sendJson(response, 200, GENERATION_PAUSED)
+        const status = generator.status()
+        ledgerModel = status.model
+        return sendJson(response, 200, status)
+      }
       if (pathname === '/api/auth/config' && request.method === 'GET') return sendJson(response, 200, auth.config())
       if (pathname === '/api/account' && request.method === 'GET') return sendJson(response, 200, await auth.account(request.headers.authorization))
       if (pathname === '/api/generate' && request.method === 'POST') {
         if (!generationEnabled) throw new ApiError(503, GENERATION_PAUSED.message)
         const body = await readJson(request)
         const result = await generator.generate(body)
+        // Usage ledger: model, story/chapter ids and token counts only — never
+        // prose. Best effort: a logging failure must not fail the chapter.
+        try {
+          process.stdout.write(`${JSON.stringify({
+            type: 'generation-usage',
+            model: modelForLedger(),
+            storyId: typeof body.story?.id === 'string' ? body.story.id : null,
+            chapter: body.index + 1,
+            genreTemplateId: result?.genreTemplateId ?? null,
+            usage: result?.usage ?? 'unknown',
+          })}\n`)
+        } catch { /* ledger is best-effort */ }
         return sendJson(response, 200, result)
       }
       if (pathname.startsWith('/api/')) throw new ApiError(404, '接口不存在。')

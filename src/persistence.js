@@ -179,7 +179,7 @@ function validateStory(story, prefix) {
   if (story.readerIndex !== undefined && (!Number.isInteger(story.readerIndex) || story.readerIndex < 0)) {
     errors.push(`${prefix}.readerIndex must be a non-negative integer`)
   }
-  validateOptionalFields(story, prefix, ['author', 'createdAt', 'updatedAt', 'status'], 'string', errors)
+  validateOptionalFields(story, prefix, ['author', 'createdAt', 'updatedAt', 'status', 'genreTemplateId'], 'string', errors)
   validateOptionalFields(story, prefix, ['bookmarked', 'readOnly', 'isDemo'], 'boolean', errors)
   if (story.kind !== undefined && !['solo', 'merged'].includes(story.kind)) errors.push(`${prefix}.kind is invalid`)
   if (story.sourceIds !== undefined) validateStringArray(story.sourceIds, `${prefix}.sourceIds`, errors)

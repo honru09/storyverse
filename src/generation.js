@@ -35,6 +35,9 @@ export function acceptGeneratedChapter(story, result) {
   let next = acceptChapter(story, result.chapter, result.key)
   if (next === story) return story
   if (index === 0 && result.worldBible) next = { ...next, worldBible: result.worldBible }
+  // Remember which genre template the server resolved for this story so later
+  // chapter requests can pin the same template instead of re-mapping.
+  if (typeof result.genreTemplateId === 'string' && result.genreTemplateId) next = { ...next, genreTemplateId: result.genreTemplateId }
   const checked = validateLibrary({ ...emptyLibrary(), stories: [next], activeStoryId: next.id })
   if (checked.length) throw new Error('章节格式不完整，请重试。')
   return next
