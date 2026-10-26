@@ -17,7 +17,26 @@ test('start flow step one is a template brick wall with a world picker', () => {
   assert.doesNotMatch(main, /world-grid|WorldCard/)
 })
 
-test('start flow step two picks a spawn point for the chosen world', () => {
+test('start flow step two picks an origin identity that frames the spawn step', () => {
+  assert.match(main, /你以什么身份醒来？/)
+  assert.match(main, /ORIGIN_IDENTITIES/)
+  assert.match(main, /originIdentityId/)
+  assert.match(main, /spawnPointsForIdentity/)
+  assert.match(main, /localIdentityTitle/)
+  // Creation forwards the picked identity alongside the spawn point.
+  assert.match(main, /originIdentityId: payload\.originIdentityId/)
+  // The confirmation step links back to the identity step.
+  assert.match(main, /aria-label="修改身份"/)
+  // The random card and the step exit share one roll.
+  assert.match(main, /const rollIdentity = \(\) =>/)
+  assert.match(main, /onClick=\{rollIdentity\}/)
+  // Leaving the identity step with nothing picked rolls and lands an
+  // identity instead of falling through to the whole-world spawn list; an
+  // identity already on the draft is never re-rolled.
+  assert.match(main, /if \(step === 2 && !identity\) rollIdentity\(\)/)
+})
+
+test('start flow step three picks a spawn point for the chosen world', () => {
   assert.match(main, /故事从哪里醒来？/)
   assert.match(main, /className="spawn-grid"/)
   assert.match(main, /resolveStartPoint/)

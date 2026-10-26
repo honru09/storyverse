@@ -155,6 +155,10 @@ function compactConfig(config) {
   // so no extra delimited block is needed here.
   result.startPointName = clip(config.startPointName, 30)
   result.startPointHook = clip(config.startPointHook, 120)
+  // Origin identity: only the concept id travels; the local title and the
+  // identity-scoped spawn points are resolved by the shared engine (the beat
+  // plan carries them), so the server never re-derives them.
+  result.originIdentityId = clip(config.originIdentityId, 40)
   result.immersive = Boolean(config.immersive)
   if (result.immersive) {
     for (const field of ['hometown', 'school', 'company', 'role', 'friend']) result[field] = clip(config[field], 240)

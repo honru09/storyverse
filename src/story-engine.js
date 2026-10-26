@@ -27,10 +27,21 @@ export const GENRES = [
     symbol: '◒',
     location: '第七码头',
     spawnPoints: [
-      { name: '第七码头', hook: '在码头仓库的麻袋堆里醒来，潮水正漫过门槛，怀里揣着一封不是你的信。', situation: '市井' },
-      { name: '疍家渔排', hook: '在渔排的吊床上醒来，排主敲着你的船板，说你已经欠了他三网鱼的债。', situation: '落魄' },
-      { name: '沉船甲板', hook: '在一艘搁浅沉船的甲板上醒来，脚下的船舱里传来一下、又一下的敲击声。', situation: '危险' },
-      { name: '灯塔守夜屋', hook: '在灯塔的守夜屋里醒来，昨夜的守夜日志不是你写的，字迹却和你一模一样。', situation: '隐秘' },
+      { id: 'pier', name: '第七码头', hook: '在码头仓库的麻袋堆里醒来，潮水正漫过门槛，怀里揣着一封不是你的信。', situation: '市井' },
+      { id: 'raft', name: '疍家渔排', hook: '在渔排的吊床上醒来，排主敲着你的船板，说你已经欠了他三网鱼的债。', situation: '落魄' },
+      { id: 'wreck', name: '沉船甲板', hook: '在一艘搁浅沉船的甲板上醒来，脚下的船舱里传来一下、又一下的敲击声。', situation: '危险' },
+      { id: 'lighthouse', name: '灯塔守夜屋', hook: '在灯塔的守夜屋里醒来，昨夜的守夜日志不是你写的，字迹却和你一模一样。', situation: '隐秘' },
+      { id: 'shipowner-house', name: '船王大宅', hook: '在船王大宅的顶层醒来，窗外是整个港口，桌上摊着一份等你签字的航线变更——签了，三个码头的人就没饭吃。', situation: '近权力' },
+      { id: 'flagship-cabin', name: '旗舰船长舱', hook: '在家族旗舰的船长舱里醒来，老舵手在门外候着，只等你一句话，可你连这条船要去哪儿都不知道。', situation: '近权力' },
+      { id: 'clocktower', name: '钟楼值房', hook: '在潮汐钟楼的值房里醒来，今晨的钟点是你排的，可表上有一格时刻，你怎么也想不起来是谁填的。', situation: '任职' },
+      { id: 'inn-attic', name: '无名客栈顶楼', hook: '在港边客栈的顶楼醒来，店家说你半月前就住下了，房钱却是一个你从没见过的人预付的。', situation: '隐秘' },
+      { id: 'fishmarket', name: '鱼市后巷', hook: '在鱼市后巷的摊子底下醒来，晨市还没开张，鱼贩们已经把最肥的一筐留在了你脚边。', situation: '市井' },
+      { id: 'bridge-cave', name: '桥洞避潮处', hook: '在桥洞的避潮处醒来，昨夜的潮水就停在你脚边一寸，和你挤一张草席的人，天亮就不见了。', situation: '落魄' },
+      { id: 'old-shipfirm', name: '老船行', hook: '在贴了三年封条的老船行里醒来，你从后窗翻进来睡的——这屋子，曾经是你家的。', situation: '落魄' },
+      { id: 'reef-cave', name: '雾岛礁洞', hook: '在雾岛的礁洞里醒来，洞口的淡水罐是满的，你不记得自己接过雨，也不想知道是谁接的。', situation: '隐秘' },
+      { id: 'foreign-ship', name: '外来客船甲板', hook: '在一艘刚进港的外来客船上醒来，你是全船唯一听不懂本地话的人，而所有人都在等你先开口。', situation: '外来' },
+      { id: 'exile-ship', name: '流放船底舱', hook: '在流放船的底舱醒来，船靠岸只停一炷香，你必须在这炷香里决定：留下，还是跳进雾里。', situation: '危险' },
+      { id: 'warehouse-room', name: '货栈二楼客房', hook: '在货栈二楼的客房醒来，你的货还压在楼下，买家改了三次价，今早退潮之前必须出手。', situation: '市井' },
     ],
   },
   {
@@ -44,10 +55,20 @@ export const GENRES = [
     symbol: '✦',
     location: '后山灵田',
     spawnPoints: [
-      { name: '后山灵田', hook: '在灵田看棚的草席上醒来，昨夜借来的火种自己挪了位置，就搁在你枕边。', situation: '落魄' },
-      { name: '山神破庙', hook: '在山神庙的供桌底下醒来，庙里只剩你和一尊裂了的菩萨，香炉里半炷香还没烧完。', situation: '隐秘' },
-      { name: '山脚村落', hook: '在村口老槐树下的草垛里醒来，全村人都假装没看见你，只有村长家的狗一直盯着你。', situation: '市井' },
-      { name: '外门柴房', hook: '在外门柴房的柴堆上醒来，管事在门外说：醒了就先挑三百担水，挑不完不许吃饭。', situation: '落魄' },
+      { id: 'hillside-field', name: '后山灵田', hook: '在灵田看棚的草席上醒来，昨夜借来的火种自己挪了位置，就搁在你枕边。', situation: '落魄' },
+      { id: 'temple', name: '山神破庙', hook: '在山神庙的供桌底下醒来，庙里只剩你和一尊裂了的菩萨，香炉里半炷香还没烧完。', situation: '隐秘' },
+      { id: 'village', name: '山脚村落', hook: '在村口老槐树下的草垛里醒来，全村人都假装没看见你，只有村长家的狗一直盯着你。', situation: '市井' },
+      { id: 'woodshed', name: '外门柴房', hook: '在外门柴房的柴堆上醒来，管事在门外说：醒了就先挑三百担水，挑不完不许吃饭。', situation: '落魄' },
+      { id: 'scripture-attic', name: '主峰藏经阁', hook: '在主峰藏经阁的顶层醒来，师父留给你的那页功法被人抽走了，只留下一句新批注：别练。', situation: '近权力' },
+      { id: 'heir-dwelling', name: '真传洞府', hook: '在自己的洞府里醒来，洞门外跪着三个求你收徒的人，可你入门也才三年。', situation: '近权力' },
+      { id: 'law-hall', name: '执法堂值房', hook: '在执法堂的值房里醒来，案头多了一份没签完的判令——被告，是和你同屋住了三年的师弟。', situation: '任职' },
+      { id: 'gate-post', name: '山门值守亭', hook: '在山门值守亭里醒来，昨夜的访客簿上多了一行：来人没有影子，你却照规矩放了行。', situation: '任职' },
+      { id: 'blank-stele', name: '无字碑林', hook: '在后山的无字碑林里醒来，最新的一块碑上刻着你的生辰，落款却比你出生早了五十年。', situation: '隐秘' },
+      { id: 'branch-shrine', name: '支脉祠堂', hook: '在废弃的支脉祠堂里醒来，牌位倒了大半，你家的那块却被人单独扶正过，灰还是新的。', situation: '落魄' },
+      { id: 'observatory', name: '云海观星台', hook: '在云海边的观星台上醒来，你十年没和人说过话，今早却有个孩子坐在台边，说等你开口等了三天。', situation: '隐秘' },
+      { id: 'tea-shed', name: '山门茶棚', hook: '在山门外的茶棚里醒来，你是来投宗的，可简章上写着：今年只收一个外乡人，茶棚里却坐了四个。', situation: '外来' },
+      { id: 'cliff-cell', name: '戒律崖石牢', hook: '在戒律崖下的石牢里醒来，送饭的窗口只开一条缝，送饭的人说：你最好别让他们想起你还活着。', situation: '危险' },
+      { id: 'market-shed', name: '坊市货棚', hook: '在山下坊市的货棚里醒来，你的货是三车不值钱的凡铁，可宗门采购的人天没亮就来问了三遍价。', situation: '市井' },
     ],
   },
   {
@@ -61,10 +82,20 @@ export const GENRES = [
     symbol: '⌁',
     location: '下城回收站',
     spawnPoints: [
-      { name: '下城回收站', hook: '在回收站的窝棚里醒来，手边多了一块发烫的无主芯片，烫得你一下子清醒过来。', situation: '市井' },
-      { name: '下城贫民窟', hook: '在集装箱顶层醒来，楼下整条巷子的人正为一桶净水排队，队尾已经排到了你脚下。', situation: '落魄' },
-      { name: '9号胶囊舱', hook: '在胶囊舱里醒来，舱门上贴着一张欠费单，署名是你从没用过的名字。', situation: '隐秘' },
-      { name: '地下诊所后间', hook: '在地下诊所的后间醒来，医生说你的义体里多了一段记忆，不属于你，也不属于任何登记在册的人。', situation: '危险' },
+      { id: 'recycle', name: '下城回收站', hook: '在回收站的窝棚里醒来，手边多了一块发烫的无主芯片，烫得你一下子清醒过来。', situation: '市井' },
+      { id: 'slum', name: '下城贫民窟', hook: '在集装箱顶层醒来，楼下整条巷子的人正为一桶净水排队，队尾已经排到了你脚下。', situation: '落魄' },
+      { id: 'capsule', name: '9号胶囊舱', hook: '在胶囊舱里醒来，舱门上贴着一张欠费单，署名是你从没用过的名字。', situation: '隐秘' },
+      { id: 'clinic', name: '地下诊所后间', hook: '在地下诊所的后间醒来，医生说你的义体里多了一段记忆，不属于你，也不属于任何登记在册的人。', situation: '危险' },
+      { id: 'corp-penthouse', name: '财团顶层公寓', hook: '在财团顶层的公寓里醒来，落地窗外是整座下城，桌上的继承文件只差你的虹膜确认——确认完，有人就会死。', situation: '近权力' },
+      { id: 'memory-vault', name: '记忆保险库', hook: '在财团私人的记忆保险库里醒来，库里存着你从三岁起的全部备份，唯独昨晚那一段，是空的。', situation: '近权力' },
+      { id: 'bureau-night', name: '管理局夜班室', hook: '在管理局的夜班室里醒来，你昨晚签发的驱逐令今早生效，名单上的第一个名字，是你的房东。', situation: '任职' },
+      { id: 'audit-desk', name: '稽查局工位', hook: '在稽查局的工位上醒来，屏幕上还开着一份没查完的档案——被稽查的那个人，是你自己。', situation: '任职' },
+      { id: 'night-market', name: '夜市维修摊', hook: '在夜市维修摊的帘子后醒来，摊主说你昨晚修好了一台不该修好的机器，买家今早会来取，也会来封口。', situation: '市井' },
+      { id: 'old-flat', name: '旧公寓', hook: '在一间被回收的旧公寓里醒来，这是你家破产前住的地方，墙上你小时候的身高线还在，回收的人中午就来。', situation: '落魄' },
+      { id: 'water-tower', name: '天台水塔', hook: '在断网区天台的水塔里醒来，你躲开所有信号活了七年，今早塔外多了一部还在响的电话——不是你的。', situation: '隐秘' },
+      { id: 'repatriation-cabin', name: '遣返中转舱', hook: '在中转舱里醒来，你是从上城被遣返下来的人，遣返令上没写原因，只写着：此人不得再次上行。', situation: '外来' },
+      { id: 'exile-gate', name: '放逐闸口', hook: '在放逐闸口的铁笼边醒来，闸门每开一次放一个人出去，出去的人没有一个回来过——下一班，轮到你。', situation: '危险' },
+      { id: 'black-market', name: '黑市仓库夹层', hook: '在黑市仓库的夹层里醒来，你的货就堆在脚下，货主昨晚跑了，债主和买家今早都会到。', situation: '市井' },
     ],
   },
   {
@@ -78,10 +109,21 @@ export const GENRES = [
     symbol: '✧',
     location: '长宁街口',
     spawnPoints: [
-      { name: '长宁街口', hook: '在街口的长椅上醒来，手机只剩百分之一的电，备忘录里多了一行你没写过的字。', situation: '市井' },
-      { name: '面馆后厨', hook: '在面馆后厨的折叠床上醒来，老板娘头也不抬：揉了这盆面，抵昨晚的床钱。', situation: '落魄' },
-      { name: '网吧包间', hook: '在二十四小时网吧的包间里醒来，屏幕上是通宵的游戏，和一条陌生人留给你的话。', situation: '隐秘' },
-      { name: '夜班便利店', hook: '在便利店夜班的柜台后醒来，监控回放里，凌晨三点的你正对着一排空货架说话。', situation: '市井' },
+      { id: 'street-corner', name: '长宁街口', hook: '在街口的长椅上醒来，手机只剩百分之一的电，备忘录里多了一行你没写过的字。', situation: '市井' },
+      { id: 'noodle-kitchen', name: '面馆后厨', hook: '在面馆后厨的折叠床上醒来，老板娘头也不抬：揉了这盆面，抵昨晚的床钱。', situation: '落魄' },
+      { id: 'netcafe', name: '网吧包间', hook: '在二十四小时网吧的包间里醒来，屏幕上是通宵的游戏，和一条陌生人留给你的话。', situation: '隐秘' },
+      { id: 'convenience', name: '夜班便利店', hook: '在便利店夜班的柜台后醒来，监控回放里，凌晨三点的你正对着一排空货架说话。', situation: '市井' },
+      { id: 'old-house', name: '老宅顶层套房', hook: '在家族老宅的顶层套房醒来，楼下正在开家庭会议，议题是你——而你昨晚签过的那份文件，今早不见了。', situation: '近权力' },
+      { id: 'chairman-office', name: '董事长办公室', hook: '在董事长办公室的沙发上醒来，你在这里睡了一夜，秘书在门外说：九点的董事会，要表决的正是你。', situation: '近权力' },
+      { id: 'street-office', name: '街道办值班室', hook: '在街道办的值班室醒来，昨晚的调解记录你签了字，可当事人今早说，那句话不是他说的。', situation: '任职' },
+      { id: 'govt-hall', name: '政务大厅后台', hook: '在政务大厅的后台醒来，你经手的最后一个文件袋是空的，而监控刚好在那一个小时坏了。', situation: '任职' },
+      { id: 'storage-room', name: '顶楼储藏间', hook: '在老公寓顶楼的储藏间醒来，里面堆满写着你名字的旧物，可你从没住过这条街。', situation: '隐秘' },
+      { id: 'park-bench', name: '桥下公园长椅', hook: '在桥下公园的长椅上醒来，晨练的大爷给你留了个包子，包子底下压着纸条：今晚别睡这儿。', situation: '落魄' },
+      { id: 'old-shop', name: '老店面', hook: '在自家被拍卖的老店面里醒来，招牌还没摘，你在柜台后面睡了最后一夜——你家三代人，都在这个柜台后面站过。', situation: '落魄' },
+      { id: 'roof-tank', name: '天台水箱间', hook: '在老楼天台的水箱间醒来，你在这里住了两年没人知道，今早却有一束花放在门口，没有卡片。', situation: '隐秘' },
+      { id: 'coach-station', name: '长途车站', hook: '在长途客车的最后一排醒来，车到了终点长宁街，司机说你上车时给的那个地址，这条街上没有。', situation: '外来' },
+      { id: 'evicted-room', name: '退租屋', hook: '在被退租的出租屋里醒来，行李已经被打包放在门外，房东说不是赶你，是这栋楼今晚要拆。', situation: '危险' },
+      { id: 'wholesale-stall', name: '批发市场档口', hook: '在批发市场的档口里醒来，你的货昨晚刚到，隔壁档口的人说，昨夜有三拨人来问过价——没有一拨是买家。', situation: '市井' },
     ],
   },
   {
@@ -95,10 +137,21 @@ export const GENRES = [
     symbol: '❖',
     location: '长乐宫偏殿',
     spawnPoints: [
-      { name: '长乐宫偏殿', hook: '在偏殿耳房的窄榻上醒来，掌事姑姑留了话：昨夜的册封礼，你缺席了。', situation: '近权力' },
-      { name: '皇帝的卧室', hook: '在龙床边的脚踏上醒来，你不记得自己是怎么进来的，皇帝也不记得——这才是最麻烦的地方。', situation: '危险' },
-      { name: '冷宫偏殿', hook: '在冷宫的井台边醒来，手边一碗粥还温着，是谁送来的，宫里没人承认。', situation: '落魄' },
-      { name: '御膳房后院', hook: '在御膳房后院的柴棚里醒来，怀里抱着一坛御酒——它不该在你手上。', situation: '市井' },
+      { id: 'side-palace', name: '长乐宫偏殿', hook: '在偏殿耳房的窄榻上醒来，掌事姑姑留了话：昨夜的册封礼，你缺席了。', situation: '近权力' },
+      { id: 'emperor-room', name: '皇帝的卧室', hook: '在龙床边的脚踏上醒来，你不记得自己是怎么进来的，皇帝也不记得——这才是最麻烦的地方。', situation: '危险' },
+      { id: 'cold-palace', name: '冷宫偏殿', hook: '在冷宫的井台边醒来，手边一碗粥还温着，是谁送来的，宫里没人承认。', situation: '落魄' },
+      { id: 'kitchen-yard', name: '御膳房后院', hook: '在御膳房后院的柴棚里醒来，怀里抱着一坛御酒——它不该在你手上。', situation: '市井' },
+      { id: 'inner-court', name: '内侍值房', hook: '在内侍的值房里醒来，今晨要宣的旨意就压在你枕头底下，你还没看，满宫的人却都已经在按旨意行事了。', situation: '任职' },
+      { id: 'astro-tower', name: '废弃占星台', hook: '在废弃的占星台上醒来，台上的星盘停在你出生的那一年，守台的老宫人说：它等了你二十年。', situation: '隐秘' },
+      { id: 'old-study', name: '先帝旧书房', hook: '在先帝的旧书房里醒来，书房封了二十年，你手里的钥匙是母亲临终塞给你的，她说：别用。', situation: '隐秘' },
+      { id: 'laundry', name: '浣衣局通铺', hook: '在浣衣局的通铺上醒来，你是新进宫的小宫人，管事嬷嬷说，昨夜有人点了你的名字——点名的人，你惹不起。', situation: '市井' },
+      { id: 'menial-room', name: '掖庭杂役房', hook: '在掖庭的杂役房里醒来，你是宫里最低等的人，可今早派给你的差事，是替一位贵人送一封不能见光的信。', situation: '落魄' },
+      { id: 'seized-house', name: '被抄没的旧宅', hook: '在自家被抄没的旧宅里醒来，封条贴在门上，你从后门进来，只为取走母亲藏在灶台下的一样东西。', situation: '落魄' },
+      { id: 'herb-hut', name: '宫后山草庐', hook: '在宫后山的草庐里醒来，你是退隐十年的老太医，今早山下来了人，跪在庐外不肯走。', situation: '隐秘' },
+      { id: 'envoy-lodge', name: '鸿胪寺客馆', hook: '在鸿胪寺的客馆里醒来，你是外邦来的使节，可你的国书是假的——真的那一份，在来的路上沉了江。', situation: '外来' },
+      { id: 'opera-backstage', name: '戏班后台', hook: '在戏班的后台醒来，你是跟着戏班混进宫的，班主说唱完今晚就走，可你的名字出现在了留宫名单上。', situation: '外来' },
+      { id: 'exile-cart', name: '宫门放逐车', hook: '在宫门外的放逐车上醒来，你是被贬出京的人，车还没走，宫里又追出一道口谕，让你把一句话带给三千里外的人。', situation: '危险' },
+      { id: 'supply-office', name: '宫市采买行', hook: '在宫市采买行的账房里醒来，你是给宫里供货的商人，昨夜的账对不上——多出来的那一笔，写着你的名字。', situation: '市井' },
     ],
   },
   {
@@ -112,10 +165,21 @@ export const GENRES = [
     symbol: '◎',
     location: '七号站配给舱',
     spawnPoints: [
-      { name: '七号站配给舱', hook: '在配给舱的隔间里醒来，你的配给卡余额是全站最低，今天的氧气份额还差一半。', situation: '落魄' },
-      { name: '冷冻休眠舱', hook: '被强制唤醒时，你看见休眠舱盖内侧刻着一行字：别相信唤醒你的人。', situation: '危险' },
-      { name: '观测塔值班室', hook: '在观测塔的值班室里醒来，值班日志停在三十年前，望远镜还对着那片空白星域。', situation: '隐秘' },
-      { name: '货舱夹层', hook: '在货舱的夹层里醒来，这批“货物”里，你是唯一一个会呼吸的。', situation: '危险' },
+      { id: 'ration-cabin', name: '七号站配给舱', hook: '在配给舱的隔间里醒来，你的配给卡余额是全站最低，今天的氧气份额还差一半。', situation: '落魄' },
+      { id: 'cryo', name: '冷冻休眠舱', hook: '被强制唤醒时，你看见休眠舱盖内侧刻着一行字：别相信唤醒你的人。', situation: '危险' },
+      { id: 'obs-tower', name: '观测塔值班室', hook: '在观测塔的值班室里醒来，值班日志停在三十年前，望远镜还对着那片空白星域。', situation: '隐秘' },
+      { id: 'cargo', name: '货舱夹层', hook: '在货舱的夹层里醒来，这批“货物”里，你是唯一一个会呼吸的。', situation: '危险' },
+      { id: 'hq-cabin', name: '总部私人舱', hook: '在舰队总部的私人舱里醒来，你是这次远征的出资人兼继承人，舱门外站着两位舰长，都在等你先选谁。', situation: '近权力' },
+      { id: 'stationmaster-cabin', name: '站长休息舱', hook: '在站长办公室的休息舱里醒来，站长是你的父亲，他昨夜失踪了，而他的权限今早自动转到了你名下。', situation: '近权力' },
+      { id: 'bridge-watch', name: '舰桥值班室', hook: '在舰桥的值班室里醒来，你值的是最后一班夜，航线图上多出一条没人批准的航线，签名是你的。', situation: '任职' },
+      { id: 'repair-shop', name: '底舱维修铺', hook: '在底舱维修铺的吊床上醒来，你是站上最便宜的维修工，可今早送来的这台机器，整个站只有你敢碰。', situation: '市井' },
+      { id: 'airlock-shed', name: '废弃气闸窝棚', hook: '在废弃气闸旁的窝棚里醒来，你是站上没有配给名额的人，靠捡漏活着，可今早漏下来的，是一整箱军用口粮。', situation: '落魄' },
+      { id: 'captain-house', name: '舰长旧宅', hook: '在一间舰长旧宅里醒来，你家三代都是领航员，到你父亲那一代被除了名，这间屋子是唯一没被收走的家产。', situation: '落魄' },
+      { id: 'waste-cabin', name: '废土独居舱', hook: '在废土边缘的独居舱里醒来，你一个人住了九年，今早舱外多了一串脚印，停在门口，又原路回去了。', situation: '隐秘' },
+      { id: 'visitor-ship', name: '外来飞船客舱', hook: '在一艘外来飞船的客舱里醒来，你是这条航线上唯一的乘客，船员们对你客气得过了头——像在等你身上的什么东西过期。', situation: '外来' },
+      { id: 'exile-pod', name: '放逐舱发射位', hook: '在放逐舱的发射位上醒来，你是被全站投票放逐的人，发射窗在两小时后，可你的放逐令上，罪名一栏是空的。', situation: '危险' },
+      { id: 'free-market', name: '自由市货柜', hook: '在自由市的货柜里醒来，你是跑这条航线的行商，货柜里压着全站都在找的净水滤芯，而你的进货单写的是别人的名字。', situation: '市井' },
+      { id: 'merchant-ship', name: '商船船员舱', hook: '在过境商船的船员舱里醒来，船只停六小时，你的货必须在六小时里脱手——可站上的买家，刚刚全被隔离了。', situation: '市井' },
     ],
   },
 ]
@@ -144,6 +208,171 @@ export const CUSTOM_GENRE = {
   color: 'steel',
   symbol: '✎',
   location: '故事开始的地方',
+}
+
+/*
+ * 身份 (origin identity): the concept layer above the spawn point. The reader
+ * first picks WHO they are in this world — one of ten cross-world concepts —
+ * and only then picks a concrete place to wake up in, from the short list
+ * that belongs to that identity in that world. A bare place name is strange
+ * before you know the world; an identity frames it ("皇帝的卧室" reads very
+ * differently once you know you are 皇室嫡系).
+ *
+ * ORIGIN_SPAWN_TABLE is the landing table: per world, per identity, a local
+ * title (what this world calls such a person) plus the ids of the spawn
+ * points that belong to that identity there. Points live exactly once in
+ * each genre's spawnPoints registry; cells reference them by id, so one
+ * point can serve two identities （山神破庙 serves both hermit and mystery)
+ * without its text ever being copied.
+ */
+export const ORIGIN_IDENTITIES = [
+  { id: 'heir', name: '顶级势力核心', description: '生来就站在这世界的顶端，名字本身就是通行证——也是靶子。', situation: '近权力' },
+  { id: 'official', name: '权力机构中人', description: '在维系世界的机构里当差，有身份、有权限，也有一本必须服从的规章。', situation: '任职' },
+  { id: 'mystery', name: '身世成谜', description: '连你自己都说不清从哪儿来，过去是一团雾，偏偏总有人比你先知道答案。', situation: '隐秘' },
+  { id: 'commoner', name: '草根平民', description: '没有靠山也没有光环，靠手艺和人情在这个世界里过日子。', situation: '市井' },
+  { id: 'underclass', name: '底层边缘人', description: '住在世界的最底层，配给和体面都轮不到你先——但底层的规矩，你比谁都懂。', situation: '落魄' },
+  { id: 'fallen', name: '没落门第', description: '家里曾经显赫过，如今只剩下旧宅、旧名声，和一堆没人肯认的旧账。', situation: '落魄' },
+  { id: 'hermit', name: '隐世之人', description: '主动退出人群的人，在角落里过自己的日子，直到世界找上门来。', situation: '隐秘' },
+  { id: 'outsider', name: '外来者', description: '昨天才踏进这个世界，它的规矩你一概不懂，它对你也一概好奇。', situation: '外来' },
+  { id: 'exile', name: '流放者', description: '被原来的世界赶出来的人，带着一道没说清的罪名，在边缘重新开始。', situation: '危险' },
+  { id: 'merchant', name: '行商旅人', description: '逐利而行，哪里有价差就去哪里；不属于任何地方，也因此哪里都去得了。', situation: '市井' },
+]
+
+const ORIGIN_IDENTITY_BY_ID = Object.fromEntries(ORIGIN_IDENTITIES.map((identity) => [identity.id, identity]))
+
+export const originIdentityById = (id) => ORIGIN_IDENTITY_BY_ID[id] || null
+
+const ORIGIN_SPAWN_TABLE = {
+  mist: {
+    heir: { title: '船王世家', points: ['shipowner-house', 'flagship-cabin'] },
+    official: { title: '港务署当差', points: ['clocktower', 'pier'] },
+    mystery: { title: '雾里来的人', points: ['lighthouse', 'inn-attic'] },
+    commoner: { title: '港镇本地人', points: ['pier', 'fishmarket'] },
+    underclass: { title: '渔排上的欠债人', points: ['raft', 'bridge-cave'] },
+    fallen: { title: '没落船商之后', points: ['old-shipfirm', 'wreck'] },
+    hermit: { title: '雾岛隐居者', points: ['lighthouse', 'reef-cave'] },
+    outsider: { title: '搭客船来的外乡人', points: ['foreign-ship', 'wreck'] },
+    exile: { title: '被放逐上岸的人', points: ['exile-ship', 'wreck'] },
+    merchant: { title: '随船行商', points: ['warehouse-room', 'pier'] },
+  },
+  cultivation: {
+    heir: { title: '宗门真传', points: ['scripture-attic', 'heir-dwelling'] },
+    official: { title: '执法堂执事', points: ['law-hall', 'gate-post'] },
+    mystery: { title: '碑上留名的人', points: ['temple', 'blank-stele'] },
+    commoner: { title: '山脚村民', points: ['village', 'hillside-field'] },
+    underclass: { title: '外门杂役', points: ['woodshed', 'hillside-field'] },
+    fallen: { title: '没落支脉之后', points: ['branch-shrine', 'temple'] },
+    hermit: { title: '后山隐修', points: ['temple', 'observatory'] },
+    outsider: { title: '投宗的外乡人', points: ['tea-shed', 'village'] },
+    exile: { title: '被逐下山的弟子', points: ['cliff-cell', 'woodshed'] },
+    merchant: { title: '山下坊市的行商', points: ['market-shed', 'village'] },
+  },
+  neon: {
+    heir: { title: '财团继承人', points: ['corp-penthouse', 'memory-vault'] },
+    official: { title: '政府部门职员', points: ['bureau-night', 'audit-desk'] },
+    mystery: { title: '没有档案的人', points: ['capsule', 'clinic'] },
+    commoner: { title: '下城居民', points: ['recycle', 'night-market'] },
+    underclass: { title: '贫民窟的拾荒者', points: ['slum', 'capsule'] },
+    fallen: { title: '没落财团之后', points: ['old-flat', 'recycle'] },
+    hermit: { title: '断网区的隐者', points: ['water-tower', 'capsule'] },
+    outsider: { title: '从上城下来的人', points: ['repatriation-cabin', 'clinic'] },
+    exile: { title: '被放逐到下城的人', points: ['exile-gate', 'clinic'] },
+    merchant: { title: '黑市行商', points: ['black-market', 'recycle'] },
+  },
+  city: {
+    heir: { title: '豪门继承人', points: ['old-house', 'chairman-office'] },
+    official: { title: '街道办职员', points: ['street-office', 'govt-hall'] },
+    mystery: { title: '查无此人的住户', points: ['netcafe', 'storage-room'] },
+    commoner: { title: '长宁街的普通人', points: ['street-corner', 'convenience'] },
+    underclass: { title: '街头讨生活的人', points: ['noodle-kitchen', 'park-bench'] },
+    fallen: { title: '老字号的后人', points: ['old-shop', 'noodle-kitchen'] },
+    hermit: { title: '天台上的隐居者', points: ['roof-tank', 'netcafe'] },
+    outsider: { title: '初到长宁街的外乡人', points: ['coach-station', 'street-corner'] },
+    exile: { title: '无处落户的人', points: ['evicted-room', 'park-bench'] },
+    merchant: { title: '批发市场的行商', points: ['wholesale-stall', 'convenience'] },
+  },
+  court: {
+    heir: { title: '皇室嫡系', points: ['emperor-room', 'side-palace'] },
+    official: { title: '皇居当差', points: ['side-palace', 'inner-court'] },
+    mystery: { title: '先帝旧档里的人', points: ['astro-tower', 'old-study'] },
+    commoner: { title: '新入宫的小宫人', points: ['kitchen-yard', 'laundry'] },
+    underclass: { title: '掖庭杂役', points: ['menial-room', 'cold-palace'] },
+    fallen: { title: '获罪之家的后人', points: ['cold-palace', 'seized-house'] },
+    hermit: { title: '退隐的老太医', points: ['herb-hut', 'astro-tower'] },
+    outsider: { title: '外邦使节', points: ['envoy-lodge', 'opera-backstage'] },
+    exile: { title: '被贬出京的人', points: ['exile-cart', 'cold-palace'] },
+    merchant: { title: '宫市供货商', points: ['supply-office', 'kitchen-yard'] },
+  },
+  frontier: {
+    heir: { title: '星际要员', points: ['hq-cabin', 'stationmaster-cabin'] },
+    official: { title: '舰队军官', points: ['bridge-watch', 'obs-tower'] },
+    mystery: { title: '从休眠舱醒来的人', points: ['cryo', 'obs-tower'] },
+    commoner: { title: '配给名册上的站民', points: ['ration-cabin', 'repair-shop'] },
+    underclass: { title: '没有配给名额的人', points: ['airlock-shed', 'ration-cabin'] },
+    fallen: { title: '被除名舰长的后人', points: ['captain-house', 'ration-cabin'] },
+    hermit: { title: '废土独居者', points: ['waste-cabin', 'obs-tower'] },
+    outsider: { title: '过境飞船的乘客', points: ['visitor-ship', 'cargo'] },
+    exile: { title: '被全站放逐的人', points: ['exile-pod', 'cargo'] },
+    merchant: { title: '跑航线的行商', points: ['free-market', 'merchant-ship'] },
+  },
+}
+
+const SPAWN_POINT_BY_ID = new Map(
+  GENRES.map((genre) => [genre.id, new Map((genre.spawnPoints || []).map((point) => [point.id, point]))]),
+)
+
+// The landing cell for one identity in one world: the identity concept, the
+// local title this world gives it, and its spawn points (the very objects
+// from the world's registry — shared points stay shared, never copied).
+export const originSpawnCell = (genre, identityId) => {
+  const identity = originIdentityById(identityId)
+  if (!identity || !genre) return null
+  const cell = ORIGIN_SPAWN_TABLE[genre.id]?.[identity.id]
+  if (!cell) return null
+  const byId = SPAWN_POINT_BY_ID.get(genre.id)
+  const points = (cell.points || []).map((pointId) => byId?.get(pointId)).filter(Boolean)
+  return { identity, title: cell.title || identity.name, points }
+}
+
+export const spawnPointsForIdentity = (genre, identityId) => originSpawnCell(genre, identityId)?.points || []
+
+// What this world calls a person of that identity. God-mode worlds have no
+// table — the concept name itself is the title there.
+export const localIdentityTitle = (genre, identityId) => {
+  const identity = originIdentityById(identityId)
+  if (!identity) return ''
+  if (!genre || genre.id === CUSTOM_GENRE_ID) return identity.name
+  return ORIGIN_SPAWN_TABLE[genre.id]?.[identity.id]?.title || identity.name
+}
+
+// The resolved origin for a config: concept + this world's local title.
+// Returns null when no (valid) identity was picked — legacy stories and
+// drafts keep behaving exactly as they did before identities existed.
+export const originSummaryFor = (genre, config) => {
+  const identity = originIdentityById(config?.originIdentityId)
+  if (!identity) return null
+  return {
+    id: identity.id,
+    name: identity.name,
+    situation: identity.situation,
+    localTitle: localIdentityTitle(genre, identity.id),
+  }
+}
+
+const originPremisePhrase = (genre, config) => {
+  const origin = originSummaryFor(genre, config)
+  if (!origin) return ''
+  return origin.localTitle !== origin.name
+    ? `身为${origin.localTitle}（${origin.name}）的`
+    : `身为${origin.name}的`
+}
+
+const originBeatLine = (genre, config) => {
+  const origin = originSummaryFor(genre, config)
+  if (!origin) return ''
+  return origin.localTitle !== origin.name
+    ? `出身：${origin.localTitle}（${origin.name}）`
+    : `出身：${origin.name}`
 }
 
 /*
@@ -180,6 +409,7 @@ export const recommendedTemplateFor = (genreId) =>
 export const DEFAULT_DRAFT = {
   genreId: 'mist',
   genreTemplateId: '',
+  originIdentityId: '',
   customWorldName: '',
   customWorldSetting: '',
   startPointName: '',
@@ -222,9 +452,13 @@ const customSettingOf = (config) => cleanBounded(config?.customWorldSetting, CUS
 
 /*
  * 出生点 (spawn point): the small, concrete place where chapter one opens.
- * Each preset world carries a list; the entry whose name equals the world's
- * `location` is the default, so saves written before spawn points existed
- * (no startPointName) resolve to exactly the place they always opened at.
+ * Each preset world carries a registry; the entry whose name equals the
+ * world's `location` is the default, so saves written before spawn points
+ * existed (no startPointName) resolve to exactly the place they always
+ * opened at. When the draft picked an 身份 (origin identity), resolution
+ * narrows to that identity's landing cell in the world (see
+ * ORIGIN_SPAWN_TABLE) — the identity is the concept, the spawn point is the
+ * concrete place it lands you in.
  * God-mode worlds have no list: the creator may type a free-form spawn point
  * (name, optionally with a hook borrowed from a bound template's world), and
  * an empty name means "the setting text decides" — resolveStartPoint then
@@ -248,6 +482,16 @@ export const resolveStartPoint = (genre, config = {}) => {
   if (genre.id === CUSTOM_GENRE_ID) {
     return named ? { name: named, hook: typedHook, situation: '' } : null
   }
+  // With an identity picked, the resolution domain narrows to that identity's
+  // landing cell in this world: a name inside the cell uses its table entry,
+  // anything else falls back to the cell's default (its first point). A
+  // config without an identity resolves against the whole world table, as
+  // every pre-identity save always has.
+  const cell = originSpawnCell(genre, config?.originIdentityId)
+  if (cell && cell.points.length) {
+    const listed = cell.points.find((point) => point.name === named)
+    return { ...(listed || cell.points[0]) }
+  }
   const listed = startPointByName(genre, named)
   if (listed) return { ...listed }
   if (named) return { name: named, hook: typedHook, situation: '' }
@@ -257,7 +501,7 @@ export const resolveStartPoint = (genre, config = {}) => {
 
 const asStep = (value) => {
   const number = Number(value)
-  return Number.isFinite(number) ? Math.max(1, Math.min(5, Math.floor(number))) : 1
+  return Number.isFinite(number) ? Math.max(1, Math.min(6, Math.floor(number))) : 1
 }
 
 const clone = (value) => {
@@ -284,6 +528,9 @@ const normalizeDraft = (draft = {}) => {
   return {
     genreId,
     genreTemplateId: genreTemplateById(input.genreTemplateId)?.id || '',
+    // Only the identity concept id is stored; the local title and the spawn
+    // points are always resolved from the landing table, never persisted.
+    originIdentityId: originIdentityById(input.originIdentityId)?.id || '',
     customWorldName: cleanBounded(input.customWorldName, CUSTOM_WORLD_NAME_MAX),
     customWorldSetting: cleanBounded(input.customWorldSetting, CUSTOM_WORLD_SETTING_MAX),
     startPointName: cleanBounded(input.startPointName, START_POINT_NAME_MAX),
@@ -370,8 +617,8 @@ const worldBibleFor = (genre, config) => {
     const opening = spawn ? `故事从${spawn.name}开始` : '这个世界还没有成文的设定，规则将随故事逐一显形'
     return {
       premise: setting
-        ? `${world}：${setting} ${name}${detail ? `（${detail}）` : ''}的故事，就从这个由创世者亲手写下的世界里开始${spawn ? `，第一幕落在${spawn.name}` : ''}。`
-        : `${world}里，${name}${detail ? `（${detail}）` : ''}的故事从这里开始；${opening}。`,
+        ? `${world}：${setting} ${originPremisePhrase(genre, config)}${name}${detail ? `（${detail}）` : ''}的故事，就从这个由创世者亲手写下的世界里开始${spawn ? `，第一幕落在${spawn.name}` : ''}。`
+        : `${world}里，${originPremisePhrase(genre, config)}${name}${detail ? `（${detail}）` : ''}的故事从这里开始；${opening}。`,
       rules: [
         ...(setting
           ? [`创世设定（这个世界以此为准）：${setting}`]
@@ -385,7 +632,7 @@ const worldBibleFor = (genre, config) => {
   }
   const spawn = resolveStartPoint(genre, config)
   return {
-    premise: `${genre.world}里，${name}${detail ? `（${detail}）` : ''}在${spawn?.name || genre.location}发现一条会回应选择的世界线。`,
+    premise: `${genre.world}里，${originPremisePhrase(genre, config)}${name}${detail ? `（${detail}）` : ''}在${spawn?.name || genre.location}发现一条会回应选择的世界线。`,
     rules: [
       `${genre.world}的秘密只能通过具体行动被唤醒。`,
       '已经做出的选择会留下可追踪的回声，不能被无痕抹去。',
@@ -710,6 +957,10 @@ export function storyBeatPlan(story, index) {
     merged
       ? `双主角合流：${name}（规则：${config.merge?.rules === 'separate' ? '各自独立' : '互相融合'}，关系：${config.merge?.bond === 'rivals' ? '竞争' : '合作'}）`
       : `主角：${name}，身份“${identity}”，性格“${cleanText(config.trait, '') || '冷静观察者'}”`,
+    // The origin identity is a long-lived background fact: later chapters may
+    // refer back to who the protagonist IS in this world, even though the
+    // spawn point itself only ever grounds chapter one.
+    ...(originBeatLine(genre, config) ? [originBeatLine(genre, config)] : []),
     `能力：${ability}`,
   ]
   if (lived && !merged) prerequisites.push(`现实背景：${lived}`)
@@ -843,9 +1094,13 @@ export function storyNarrativeDossier(story, maxChapterIndex = 0) {
       choiceLabel: option ? option.label : null,
     })
   }
+  const origin = originSummaryFor(genre, story.config)
   return {
     worldName: worldNameOf(genre, story.config),
     location: resolveStartPoint(genre, story.config)?.name || genre.location,
+    protagonistOrigin: origin
+      ? (origin.localTitle !== origin.name ? `${origin.name}·${origin.localTitle}` : origin.name)
+      : '',
     premise: story.worldBible?.premise || '',
     rules: Array.isArray(story.worldBible?.rules) ? [...story.worldBible.rules] : [],
     endingAnchor: story.worldBible?.endingAnchor || '',

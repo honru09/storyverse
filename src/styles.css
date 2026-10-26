@@ -188,6 +188,7 @@ select{appearance:auto}
 .spawn-card-head em{margin-left:auto;flex-shrink:0;padding:3px 8px;border-radius:999px;background:var(--glass-2);color:var(--dim);font-size:11px;font-style:normal;font-weight:650}
 .spawn-card-head svg{flex-shrink:0;color:var(--cyan)}
 .spawn-card small{color:var(--dim);font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.spawn-card-local{color:var(--cyan);font-size:12px;font-weight:650;line-height:1.5;overflow-wrap:anywhere}
 .spawn-card.active{border-color:var(--cyan);background:var(--selected-surface);box-shadow:0 0 0 1px var(--cyan),0 0 24px -8px rgba(110,231,255,.8);transform:translateY(-2px)}
 .spawn-random{border-style:dashed}
 .spawn-form{display:grid;gap:14px}

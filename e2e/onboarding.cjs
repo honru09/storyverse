@@ -166,7 +166,32 @@ async function runOnboarding(browser, width) {
     await step('creation draft survives leaving, returning and reloading', async () => {
       await page.locator('.stage-chips').getByRole('button', { name: '沉潮港', exact: true }).click();
       await page.getByRole('button', { name: '继续', exact: true }).click();
-      // Step two: the spawn point belongs to the world picked in step one.
+      // Step two: the identity concept frames which spawn points exist.
+      await page.getByRole('heading', { name: '你以什么身份醒来？', exact: true }).waitFor();
+      // Skipping the pick must not reopen the whole-world spawn list:
+      // leaving the step rolls an identity, lands it on the draft, and the
+      // spawn step then only lists that identity's points in this world.
+      await page.getByRole('button', { name: '继续', exact: true }).click();
+      await page.getByRole('heading', { name: '故事从哪里醒来？', exact: true }).waitFor();
+      await page.waitForFunction(key => {
+        const library = JSON.parse(localStorage.getItem(key));
+        return Boolean(library?.draft?.originIdentityId);
+      }, storageKey);
+      const rolledDraft = await readLibrary(page);
+      assert.ok(['heir', 'official', 'mystery', 'commoner', 'underclass', 'fallen', 'hermit', 'outsider', 'exile', 'merchant']
+        .includes(rolledDraft.draft.originIdentityId), 'an unpicked identity is rolled and stored on the draft');
+      assert.ok((await page.locator('.field-hint').filter({ hasText: '这里只列' }).count()) >= 1,
+        'the spawn step declares itself scoped to the rolled identity');
+      const rolledPointCount = await page.locator('.spawn-grid .spawn-card:not(.spawn-random)').count();
+      assert.ok(rolledPointCount >= 1 && rolledPointCount <= 3,
+        `the spawn step lists only the rolled identity cell (saw ${rolledPointCount} points)`);
+      await page.getByRole('button', { name: '上一步', exact: true }).click();
+      await page.getByRole('heading', { name: '你以什么身份醒来？', exact: true }).waitFor();
+      assert.equal(await page.locator('.spawn-grid .spawn-card[aria-pressed="true"]').count(), 1,
+        'going back shows the rolled identity as the landed pick');
+      await page.locator('.spawn-grid').getByRole('button', { name: /身世成谜/ }).click();
+      await page.getByRole('button', { name: '继续', exact: true }).click();
+      // Step three: the spawn point belongs to the identity in this world.
       await page.getByRole('heading', { name: '故事从哪里醒来？', exact: true }).waitFor();
       await page.locator('.spawn-grid').getByRole('button', { name: /灯塔守夜屋/ }).click();
       await page.getByRole('button', { name: '继续', exact: true }).click();
@@ -181,12 +206,13 @@ async function runOnboarding(browser, width) {
       const saved = await readLibrary(page);
       assert.equal(saved.draft.name, testName);
       assert.equal(saved.draft.hometown, '回归海岸镇');
-      assert.equal(saved.draft.step, 4);
+      assert.equal(saved.draft.step, 5);
+      assert.equal(saved.draft.originIdentityId, 'mystery');
       assert.equal(saved.draft.startPointName, '灯塔守夜屋');
       assert.equal(saved.stories.length, 0);
       await resume.click();
       await page.getByRole('heading', { name: '想拥有什么能力？', exact: true }).waitFor();
-      await page.getByRole('navigation', { name: '创作步骤' }).getByRole('button', { name: '第 3 步：主角', exact: true }).click();
+      await page.getByRole('navigation', { name: '创作步骤' }).getByRole('button', { name: '第 4 步：主角', exact: true }).click();
       assert.equal(await page.getByLabel('主角昵称（选填）').inputValue(), testName);
       assert.equal(await page.getByLabel('成长的地方（选填）').inputValue(), '回归海岸镇');
       assert.equal(await page.getByRole('switch', { name: '带入人生经历（选填）' }).getAttribute('aria-checked'), 'true');
@@ -208,6 +234,7 @@ async function runOnboarding(browser, width) {
       const saved = await readLibrary(page);
       assert.equal(saved.stories.length, 1);
       assert.equal(saved.stories[0].config.name, testName);
+      assert.equal(saved.stories[0].config.originIdentityId, 'mystery');
       assert.equal(saved.stories[0].config.startPointName, '灯塔守夜屋');
       assert.ok(saved.stories[0].worldBible.premise.includes('灯塔守夜屋'));
       assert.ok((await page.locator('.reader-article').innerText()).includes('守夜日志'), 'chapter one opens at the chosen spawn point');

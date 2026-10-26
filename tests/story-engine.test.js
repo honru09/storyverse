@@ -7,6 +7,7 @@ import {
   FRIEND_BOOK,
   GENRES,
   GENRE_TEMPLATES,
+  ORIGIN_IDENTITIES,
   START_POINT_HOOK_MAX,
   START_POINT_NAME_MAX,
   acceptChapter,
@@ -18,9 +19,14 @@ import {
   createStory,
   defaultStartPoint,
   genreTemplateById,
+  localIdentityTitle,
+  originIdentityById,
+  originSpawnCell,
+  originSummaryFor,
   publicSnapshot,
   recommendedTemplateFor,
   resolveStartPoint,
+  spawnPointsForIdentity,
   startPointByName,
   storyBeatPlan,
   storyNarrativeDossier,
@@ -521,27 +527,139 @@ test('stage display names are small concrete places while ids stay stable', () =
   }
 })
 
-test('every world offers 3-4 small concrete spawn points and its location is the default', () => {
-  // The user's own examples must each exist in some world's list.
+test('every world keeps a spawn point registry whose first entry is its location default', () => {
+  // The user's own examples must each exist in some world's registry.
   const allNames = GENRES.flatMap((genre) => genre.spawnPoints.map((point) => point.name))
   for (const example of ['山脚村落', '山神破庙', '下城贫民窟', '皇帝的卧室']) {
     assert.ok(allNames.includes(example), example)
   }
   for (const genre of GENRES) {
-    assert.ok(genre.spawnPoints.length >= 3 && genre.spawnPoints.length <= 4, genre.id)
+    // The registry now backs ten identity landing cells, so it is larger
+    // than the old four-card list; each entry stays small and concrete.
+    assert.ok(genre.spawnPoints.length >= 10, genre.id)
     // The default spawn point is the world's location, listed first, so a
     // pre-spawn-point save (no startPointName) opens exactly where it always did.
     assert.equal(genre.spawnPoints[0].name, genre.location, genre.id)
     assert.equal(defaultStartPoint(genre).name, genre.location, genre.id)
     const seen = new Set()
+    const seenIds = new Set()
     for (const point of genre.spawnPoints) {
       assert.ok(point.name.length <= 6, `${genre.id}:${point.name}`)
       assert.ok(point.hook.length > 10, `${genre.id}:${point.name} hook`)
       assert.ok(point.situation.length >= 2, `${genre.id}:${point.name} situation`)
       assert.ok(!seen.has(point.name), `${genre.id}:${point.name} duplicate`)
+      assert.ok(point.id && !seenIds.has(point.id), `${genre.id}:${point.id} duplicate id`)
       seen.add(point.name)
+      seenIds.add(point.id)
     }
   }
+})
+
+test('origin identities: ten concepts, and every world lands every one of them', () => {
+  assert.deepEqual(
+    ORIGIN_IDENTITIES.map((identity) => identity.id),
+    ['heir', 'official', 'mystery', 'commoner', 'underclass', 'fallen', 'hermit', 'outsider', 'exile', 'merchant'],
+  )
+  for (const identity of ORIGIN_IDENTITIES) {
+    assert.ok(identity.name.length >= 2 && identity.description.length > 10 && identity.situation.length >= 2, identity.id)
+    assert.equal(originIdentityById(identity.id), identity)
+  }
+  assert.equal(originIdentityById('不存在的身份'), null)
+  for (const genre of GENRES) {
+    for (const identity of ORIGIN_IDENTITIES) {
+      const cell = originSpawnCell(genre, identity.id)
+      assert.ok(cell, `${genre.id}:${identity.id} cell`)
+      assert.ok(cell.title.length >= 2, `${genre.id}:${identity.id} local title`)
+      assert.equal(localIdentityTitle(genre, identity.id), cell.title)
+      assert.ok(cell.points.length >= 1 && cell.points.length <= 3, `${genre.id}:${identity.id} points`)
+      for (const point of cell.points) {
+        // Cells reference the registry's own objects — never copies.
+        assert.ok(genre.spawnPoints.includes(point), `${genre.id}:${identity.id}:${point.name} is a registry object`)
+      }
+    }
+  }
+})
+
+test('origin identities: the 24 legacy spawn points were regrouped, shared points never duplicated', () => {
+  const legacyNames = {
+    mist: ['第七码头', '疍家渔排', '沉船甲板', '灯塔守夜屋'],
+    cultivation: ['后山灵田', '山神破庙', '山脚村落', '外门柴房'],
+    neon: ['下城回收站', '下城贫民窟', '9号胶囊舱', '地下诊所后间'],
+    city: ['长宁街口', '面馆后厨', '网吧包间', '夜班便利店'],
+    court: ['长乐宫偏殿', '皇帝的卧室', '冷宫偏殿', '御膳房后院'],
+    frontier: ['七号站配给舱', '冷冻休眠舱', '观测塔值班室', '货舱夹层'],
+  }
+  for (const genre of GENRES) {
+    const names = genre.spawnPoints.map((point) => point.name)
+    for (const legacy of legacyNames[genre.id]) assert.ok(names.includes(legacy), `${genre.id}:${legacy}`)
+    // Every hook text exists exactly once in the registry, however many
+    // identity cells reference the point.
+    const hooks = genre.spawnPoints.map((point) => point.hook)
+    assert.equal(new Set(hooks).size, hooks.length, `${genre.id} hook text duplicated`)
+    // The cells reference more slots than there are points: sharing is real.
+    const slots = ORIGIN_IDENTITIES.reduce((sum, identity) => sum + spawnPointsForIdentity(genre, identity.id).length, 0)
+    assert.ok(slots > genre.spawnPoints.length, `${genre.id} cells share registry points`)
+  }
+  // One point, two identities, the identical object.
+  const mist = GENRES.find((genre) => genre.id === 'mist')
+  const viaHermit = spawnPointsForIdentity(mist, 'hermit').find((point) => point.name === '灯塔守夜屋')
+  const viaMystery = spawnPointsForIdentity(mist, 'mystery').find((point) => point.name === '灯塔守夜屋')
+  assert.ok(viaHermit && viaHermit === viaMystery)
+  const cultivation = GENRES.find((genre) => genre.id === 'cultivation')
+  const templeHermit = spawnPointsForIdentity(cultivation, 'hermit').find((point) => point.name === '山神破庙')
+  const templeMystery = spawnPointsForIdentity(cultivation, 'mystery').find((point) => point.name === '山神破庙')
+  assert.ok(templeHermit && templeHermit === templeMystery)
+})
+
+test('origin identity narrows spawn resolution to its landing cell', () => {
+  const court = GENRES.find((genre) => genre.id === 'court')
+  const cultivation = GENRES.find((genre) => genre.id === 'cultivation')
+  // Inside the cell, a listed name resolves with its table hook.
+  const bedroom = resolveStartPoint(court, { originIdentityId: 'heir', startPointName: '皇帝的卧室', startPointHook: '乱写的处境' })
+  assert.equal(bedroom.name, '皇帝的卧室')
+  assert.ok(bedroom.hook.includes('龙床边的脚踏'))
+  // Unset name resolves to the cell default (its first point).
+  assert.equal(resolveStartPoint(cultivation, { originIdentityId: 'hermit' }).name, '山神破庙')
+  assert.equal(resolveStartPoint(court, { originIdentityId: 'heir' }).name, '皇帝的卧室')
+  // A name from another identity's cell is outside the narrowed domain and
+  // falls back to this identity's default instead of leaking across cells.
+  assert.equal(resolveStartPoint(cultivation, { originIdentityId: 'heir', startPointName: '皇帝的卧室' }).name, '主峰藏经阁')
+  assert.equal(resolveStartPoint(court, { originIdentityId: 'commoner', startPointName: '皇帝的卧室' }).name, '御膳房后院')
+  // An invalid identity id is ignored: whole-table resolution, as before.
+  const mist = GENRES.find((genre) => genre.id === 'mist')
+  assert.equal(resolveStartPoint(mist, { originIdentityId: '不存在', startPointName: '灯塔守夜屋' }).name, '灯塔守夜屋')
+  assert.equal(resolveStartPoint(mist, { originIdentityId: '' }).name, '第七码头')
+  // God mode ignores identities for spawn resolution: typed text still rules.
+  const custom = { id: 'custom', location: '故事开始的地方' }
+  assert.equal(resolveStartPoint(custom, { originIdentityId: 'heir' }), null)
+})
+
+test('origin identity reaches the bible premise, the beat plan and the dossier', () => {
+  const story = createStory(draft({ genreId: 'court', originIdentityId: 'heir', startPointName: '皇帝的卧室' }))
+  assert.equal(story.config.originIdentityId, 'heir')
+  assert.ok(story.worldBible.premise.includes('皇室嫡系（顶级势力核心）'), story.worldBible.premise)
+  assert.ok(story.worldBible.premise.includes('皇帝的卧室'))
+  const plan = storyBeatPlan(story, 0)
+  assert.ok(plan.prerequisites.some((line) => line === '出身：皇室嫡系（顶级势力核心）'), plan.prerequisites.join('|'))
+  assert.equal(storyNarrativeDossier(story, 0).protagonistOrigin, '顶级势力核心·皇室嫡系')
+  // Later chapters may carry the origin as background but never the spawn hook.
+  assert.ok(storyBeatPlan(story, 2).prerequisites.some((line) => line.startsWith('出身：')))
+  // No identity: no origin lines anywhere, exactly the pre-identity shape.
+  const plain = createStory(draft({ genreId: 'court' }))
+  assert.equal(plain.config.originIdentityId, '')
+  assert.ok(!storyBeatPlan(plain, 0).prerequisites.some((line) => line.startsWith('出身：')))
+  assert.equal(storyNarrativeDossier(plain, 0).protagonistOrigin, '')
+  // An invalid identity id is cleaned out of the stored config.
+  assert.equal(createStory(draft({ originIdentityId: '伪造身份' })).config.originIdentityId, '')
+  // God mode: the concept name itself is the title (no landing table there).
+  const god = createStory(godDraft({ originIdentityId: 'mystery' }))
+  assert.ok(god.worldBible.premise.includes('身世成谜'), god.worldBible.premise)
+  assert.equal(originSummaryFor({ id: 'custom' }, god.config).localTitle, '身世成谜')
+  // Snapshots keep the identity id (a concept, not private text) while the
+  // free-form spawn text is still stripped.
+  const snapshot = publicSnapshot(createStory(draft({ genreId: 'custom', originIdentityId: 'exile', startPointName: '破庙草席' })))
+  assert.equal(snapshot.config.originIdentityId, 'exile')
+  assert.equal(snapshot.config.startPointName, '')
 })
 
 test('resolveStartPoint: unset falls back to the world default, listed names use the table hook', () => {
