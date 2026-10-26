@@ -42,9 +42,10 @@ test('start flow step three picks a spawn point for the chosen world', () => {
   assert.match(main, /resolveStartPoint/)
   assert.match(main, /startPointName: payload\.startPointName/)
   assert.match(main, /startPointHook: payload\.startPointHook/)
-  // God mode gets a free-form spawn field plus borrowable template-world points.
+  // God mode gets a free-form spawn field only: spawn points are never
+  // borrowed from a template's world (templates are decoupled from worlds).
   assert.match(main, /出生点（选填）/)
-  assert.match(main, /boundSpawnPoints/)
+  assert.doesNotMatch(main, /boundSpawnPoints/)
   // The confirmation step links back to the spawn step.
   assert.match(main, /aria-label="修改出生点"/)
 })
@@ -56,10 +57,22 @@ test('the brick wall covers every genre template exactly once', () => {
   assert.deepEqual([...ids].sort(), GENRE_TEMPLATES.map((template) => template.id).sort())
 })
 
-test('picking a template re-points the stage; picking a stage keeps an explicit template', () => {
-  assert.match(main, /set\(\{ genreTemplateId: item\.id, genreId: item\.worldId \}\)/)
-  assert.match(main, /templateTouched/)
-  assert.match(main, /recommendedTemplateFor\(genreId\)/)
+test('template and world picks are decoupled: each selection moves only its own axis', () => {
+  // Clicking a brick sets the category and nothing else; the stage picker
+  // sets the world and nothing else. No recommendation machinery remains.
+  assert.match(main, /set\(\{ genreTemplateId: item\.id \}\)/)
+  assert.match(main, /const selectStage = \(genreId\) => \{\s*set\(\{ genreId \}\);/)
+  assert.doesNotMatch(main, /recommendedTemplateFor/)
+  assert.doesNotMatch(main, /templateTouched/)
+  assert.doesNotMatch(main, /item\.worldId/)
+  assert.doesNotMatch(main, /世界 · /)
+})
+
+test('the opening step offers the two length modes and defaults to a season', () => {
+  assert.match(main, /一季 · 24 章/)
+  assert.match(main, /长线 · 100 章/)
+  assert.match(main, /storyLengthMode: payload\.storyLengthMode/)
+  assert.match(main, /storyLengthMode: "season"/)
 })
 
 test('every world has shipping artwork wired into WorldArtwork', () => {

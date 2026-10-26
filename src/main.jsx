@@ -41,7 +41,6 @@ import {
   useSmoothScroll,
 } from "./motion/useSceneMotion.js";
 import {
-  CHAPTER_COUNT,
   lastAccessibleIndex,
   materialize,
   moveReadingPosition,
@@ -69,9 +68,12 @@ import {
   localIdentityTitle,
   originIdentityById,
   originSummaryFor,
+  isStoryComplete,
   publicSnapshot,
-  recommendedTemplateFor,
   resolveStartPoint,
+  startNextSeason,
+  storyLengthModeOf,
+  totalChaptersFor,
   spawnPointsForIdentity,
   startPointByName,
 } from "./story-engine";
@@ -273,11 +275,17 @@ const worlds = GENRES.map(toWorld);
 // large brick, then the remaining crafts in reading-habit order.
 const TEMPLATE_WALL_ORDER = [
   "xuanhuan",
-  "romance-ancient",
   "xianxia",
+  "gaowu",
+  "romance-ancient",
   "scifi",
+  "wuxianliu",
+  "guize-guatan",
+  "horror",
+  "lishi",
   "romance-modern",
   "suspense-supernatural",
+  "campus",
   "urban",
   "zhihu-short",
 ];
@@ -445,8 +453,9 @@ function MobileBottomNav({ view, onNavigate }) {
 
 function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, onOpenAccount }) {
   const genre = genreOf(activeStory);
+  const activeTotal = activeStory ? totalChaptersFor(activeStory) : 6;
   const currentChapter = activeStory
-    ? Math.min(CHAPTER_COUNT, readerIndexFor(activeStory) + 1)
+    ? Math.min(activeTotal, readerIndexFor(activeStory) + 1)
     : 1;
   const otherStories = stories.filter((story) => story.id !== activeStory?.id);
 
@@ -476,7 +485,7 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
             {activeStory ? (
               <>
                 <span>{genre.label} · {activeStory.kind === "merged" ? "双主角" : displayName(activeStory)}</span>
-                <span className="resume-position">第 {currentChapter} / {CHAPTER_COUNT} 章</span>
+                <span className="resume-position">第 {currentChapter} / {activeTotal} 章</span>
               </>
             ) : (
               "选一个世界。让故事，因你不同。"
@@ -485,10 +494,10 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
           {activeStory && (
             <div className="hero-starmap">
               <StoryMapMini
-                total={CHAPTER_COUNT}
+                total={activeTotal}
                 generated={activeStory.chapters?.length || 0}
                 current={readerIndexFor(activeStory)}
-                state={generationState({ total: CHAPTER_COUNT, generated: activeStory.chapters?.length || 0, current: readerIndexFor(activeStory), engine: activeStory.engine, complete: activeStory.status === "complete" })}
+                state={generationState({ total: activeTotal, generated: activeStory.chapters?.length || 0, current: readerIndexFor(activeStory), engine: activeStory.engine, complete: activeStory.status === "complete" || isStoryComplete(activeStory) })}
               />
             </div>
           )}
@@ -500,7 +509,7 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
               }
             >
               {activeStory
-                ? currentChapter === CHAPTER_COUNT
+                ? currentChapter === activeTotal
                   ? "回看终章"
                   : "继续阅读"
                 : "开启第一本书"}
@@ -558,7 +567,8 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory }) {
       <div className="sw-library-dock-grid">
         {otherStories.map((story) => {
           const genre = genreOf(story);
-          const chapter = Math.min(CHAPTER_COUNT, readerIndexFor(story) + 1);
+          const storyTotal = totalChaptersFor(story);
+          const chapter = Math.min(storyTotal, readerIndexFor(story) + 1);
           return (
             <button
               type="button"
@@ -572,11 +582,11 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory }) {
               <span className="sw-library-copy">
                 <b>{story.title}</b>
                 <small>
-                  {genre.label} · 第 {chapter} / {CHAPTER_COUNT} 章
+                  {genre.label} · 第 {chapter} / {storyTotal} 章
                 </small>
                 <span className="sw-library-meta">
                   {(() => {
-                    const state = generationState({ total: CHAPTER_COUNT, generated: story.chapters?.length || 0, current: readerIndexFor(story), engine: story.engine, complete: story.status === "complete" });
+                    const state = generationState({ total: storyTotal, generated: story.chapters?.length || 0, current: readerIndexFor(story), engine: story.engine, complete: story.status === "complete" || isStoryComplete(story) });
                     return <span className={`gen-state ${state.className}`}><i aria-hidden="true" />{state.label}</span>;
                   })()}
                   {lastChoiceLabel(story) && <span className="sw-library-choice">最近的选择：{lastChoiceLabel(story)}</span>}
@@ -618,7 +628,7 @@ function Stepper({ step, setStep }) {
   );
 }
 
-function TemplateBrick({ template, stage, selected, featured, index = 0, onSelect }) {
+function TemplateBrick({ template, selected, featured, index = 0, onSelect }) {
   return (
     <AnimatedContent className={`template-brick-wrap ${featured ? "featured" : ""}`} distance={8} delay={Math.min(index, 7) * 0.06}>
       <button
@@ -627,12 +637,16 @@ function TemplateBrick({ template, stage, selected, featured, index = 0, onSelec
         aria-pressed={selected}
         onClick={() => onSelect(template)}
       >
-        <span className="template-brick-visual" aria-hidden="true">
-          <WorldArtwork genreId={template.worldId} eager />
+        <span
+          className="template-brick-visual template-brick-visual--craft"
+          style={{ background: `linear-gradient(150deg, ${template.color}40, rgba(10, 20, 48, 0.25) 62%)` }}
+          aria-hidden="true"
+        >
+          <span className="template-brick-symbol" style={{ color: template.color }}>{template.symbol}</span>
         </span>
         <span className="template-brick-copy">
           <strong>{template.fullName}</strong>
-          <small>世界 · {stage.name}</small>
+          <small>{template.blurb}</small>
         </span>
         {selected && (
           <span className="selected-mark">
@@ -674,6 +688,7 @@ function PreviewPanel({ world, template, draft, ability, tone, spawn }) {
       <dl className="preview-facts">
         <div><dt>题材</dt><dd>{template ? template.fullName : "完全自由"}</dd></div>
         <div><dt>世界</dt><dd>{world.name}</dd></div>
+        <div><dt>篇幅</dt><dd>{draft.storyLengthMode === "long" ? "长线 · 100 章" : draft.storyLengthMode === "season" ? "一季 · 24 章" : "短季 · 6 章"}</dd></div>
         <div><dt>身份</dt><dd>{origin ? (origin.localTitle !== origin.name ? `${origin.name} · ${origin.localTitle}` : origin.name) : "未定"}</dd></div>
         <div><dt>出生点</dt><dd>{spawn ? spawn.name : "由设定决定"}</dd></div>
         {draft.genreId === CUSTOM_GENRE.id && (
@@ -697,7 +712,7 @@ function GenerationMode({ provider, value, onChange, disabled }) {
     </div>
     <p className="experience-note">{value === "gemini"
       ? "设定与剧情会发送给 Gemini。请使用昵称或虚构资料；每次续写会使用服务端额度。"
-      : provider.configured ? "无需等待，体验六章预设故事。" : provider.reason === "generation-disabled" ? "在线创作暂未开放，可先体验预设故事。" : "预设剧情体验 · Gemini 尚未连接"}</p>
+      : provider.configured ? "无需等待，按所选篇幅体验预设故事。" : provider.reason === "generation-disabled" ? "在线创作暂未开放，可先体验预设故事。" : "预设剧情体验 · Gemini 尚未连接"}</p>
   </div>;
 }
 
@@ -714,19 +729,20 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
   );
   const [draft, setDraft] = useState(() => {
     const base = { ...DEFAULT_DRAFT, ...(initialDraft || {}) };
-    // Step one always has a craft selected: a restored pick wins, otherwise
-    // the stage's recommended template. God mode is the exception: an empty
-    // template there means "completely free" and must survive the restore.
+    // Creation only offers season / long: anything else (including the
+    // engine's legacy 'short' default baked into restored drafts) lands on
+    // the season default. An explicit long pick survives a restore.
+    if (base.storyLengthMode !== "long") base.storyLengthMode = "season";
+    // Step one always has a category selected: a restored pick wins,
+    // otherwise the wall's first brick. The category is NEVER derived from
+    // the world (and the world never from the category): the two picks are
+    // independent. God mode is the exception: an empty template there means
+    // "completely free" and must survive the restore.
     if (base.genreId !== CUSTOM_GENRE.id && !genreTemplateById(base.genreTemplateId)) {
-      base.genreTemplateId = recommendedTemplateFor(base.genreId).id;
+      base.genreTemplateId = templateWall[0]?.id || "";
     }
     return base;
   });
-  // Until the reader picks a craft brick themselves, changing the stage
-  // re-points the recommendation; an explicit pick is never overridden.
-  const templateTouched = useRef(
-    Boolean(genreTemplateById(initialDraft?.genreTemplateId)),
-  );
   const [abilityId, setAbilityId] = useState(
     abilities.find((item) => item.id === initialDraft?.abilityId)?.id ||
       abilities.find((item) => item.name === initialDraft?.ability)?.id ||
@@ -744,7 +760,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
     : toWorld(genreById[draft.genreId] || GENRES[0]);
   const template =
     genreTemplateById(draft.genreTemplateId) ||
-    (isCustom ? null : recommendedTemplateFor(draft.genreId));
+    (isCustom ? null : templateWall[0]);
   // The identity is a cross-world concept and survives world switches; the
   // spawn point belongs to (identity × world). When the world changes, a
   // picked spawn point survives only if the new world's cell for the same
@@ -777,10 +793,6 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
     // Only the world switch matters here; the draft fields are read fresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft.genreId]);
-  const boundTemplateWorld = isCustom && template ? genreById[template.worldId] : null;
-  const boundSpawnPoints = boundTemplateWorld
-    ? (identity ? spawnPointsForIdentity(boundTemplateWorld, identity.id) : (boundTemplateWorld.spawnPoints || []))
-    : [];
   // Changing the identity re-frames the spawn point: the old pick belonged
   // to the old identity's cell, so the spawn choice resets to the new
   // identity's default.
@@ -796,27 +808,20 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
     const rolledIdentity = pool[Math.floor(Math.random() * pool.length)] || ORIGIN_IDENTITIES[0];
     if (rolledIdentity) selectIdentity(rolledIdentity.id);
   };
+  // 题材与世界彻底解耦：点题材砖只改分类，点世界只改世界，两边互不跟随。
   const selectTemplate = (item) => {
-    templateTouched.current = true;
-    set({ genreTemplateId: item.id, genreId: item.worldId });
+    set({ genreTemplateId: item.id });
   };
   const selectStage = (genreId) => {
-    if (templateTouched.current) set({ genreId });
-    else set({ genreId, genreTemplateId: recommendedTemplateFor(genreId).id });
+    set({ genreId });
   };
   const enterGodMode = () => {
-    templateTouched.current = true;
     set({ genreId: CUSTOM_GENRE.id, genreTemplateId: "" });
   };
   const exitGodMode = () => {
-    const picked = genreTemplateById(draft.genreTemplateId);
-    if (picked) {
-      templateTouched.current = true;
-      set({ genreId: picked.worldId });
-    } else {
-      templateTouched.current = false;
-      set({ genreId: DEFAULT_DRAFT.genreId, genreTemplateId: recommendedTemplateFor(DEFAULT_DRAFT.genreId).id });
-    }
+    // Back to the default preset world; a craft picked as 写法 in god mode
+    // stays picked — it never implied a world in the first place.
+    set({ genreId: DEFAULT_DRAFT.genreId });
   };
   const appendFragment = (fragment) => {    const current = (draft.customWorldSetting || "").trim();
     const needsStop = current && !"。！？".includes(current.slice(-1));
@@ -825,16 +830,17 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
   };
   const [rolled, setRolled] = useState(null);
   const rollCombo = () => {
+    // Each axis is rolled independently: category, world, identity and the
+    // spawn point inside the rolled identity's cell in the rolled world.
     const pick = (list) => list[Math.floor(Math.random() * list.length)];
     const nextTemplate = pick(templateWall);
-    const stageGenre = genreById[nextTemplate.worldId] || GENRES[0];
+    const stageGenre = pick(GENRES);
     const nextIdentity = pick(ORIGIN_IDENTITIES);
     const points = spawnPointsForIdentity(stageGenre, nextIdentity.id);
     const point = points.length ? pick(points) : null;
-    templateTouched.current = true;
     set({
       genreTemplateId: nextTemplate.id,
-      genreId: nextTemplate.worldId,
+      genreId: stageGenre.id,
       originIdentityId: nextIdentity.id,
       startPointName: point ? point.name : "",
       startPointHook: point ? point.hook : "",
@@ -1004,7 +1010,6 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                         key={item.id}
                         template={item}
                         index={index}
-                        stage={toWorld(genreById[item.worldId] || GENRES[0])}
                         featured={index === 0}
                         selected={template.id === item.id}
                         onSelect={selectTemplate}
@@ -1116,24 +1121,6 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                     />
                   </label>
                   <p className="field-hint">留空也行：出生点由你的背景设定决定。写一个小而具体的地方——主角睁开眼时，就在那里。</p>
-                  {boundSpawnPoints.length > 0 && (
-                    <div className="form-block">
-                      <span className="field-label">也可以借用「{boundTemplateWorld.world}」的出生点</span>
-                      <div className="stage-chips" role="group" aria-label="可借用的出生点">
-                        {boundSpawnPoints.map((point) => (
-                          <button
-                            type="button"
-                            key={point.name}
-                            className={`stage-chip ${draft.startPointName === point.name ? "selected" : ""}`}
-                            aria-pressed={draft.startPointName === point.name}
-                            onClick={() => set({ startPointName: point.name, startPointHook: point.hook })}
-                          >
-                            {point.name}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               ) : (
                 <>
@@ -1372,7 +1359,31 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                 <h3>{world.name}</h3>
                 <p>{previewText}</p>
                 <div className="opening-starmap">
-                  <StoryMapMini total={CHAPTER_COUNT} generated={0} current={0} state={null} />
+                  <StoryMapMini total={totalChaptersFor({ config: draft })} generated={0} current={0} state={null} />
+                </div>
+                <div className="length-picker" role="group" aria-label="篇幅">
+                  <span className="field-label">篇幅</span>
+                  <div className="stage-chips">
+                    <button
+                      type="button"
+                      className={`stage-chip ${draft.storyLengthMode !== "long" ? "selected" : ""}`}
+                      aria-pressed={draft.storyLengthMode !== "long"}
+                      onClick={() => set({ storyLengthMode: "season" })}
+                    >
+                      一季 · 24 章
+                    </button>
+                    <button
+                      type="button"
+                      className={`stage-chip ${draft.storyLengthMode === "long" ? "selected" : ""}`}
+                      aria-pressed={draft.storyLengthMode === "long"}
+                      onClick={() => set({ storyLengthMode: "long" })}
+                    >
+                      长线 · 100 章
+                    </button>
+                  </div>
+                  <p className="field-hint">{draft.storyLengthMode === "long"
+                    ? "一百章长线：分 4 弧推进，每弧末尾有大节点，适合慢慢养一个世界。"
+                    : "二十四章一季：分 4 幕，幕末小升格、季终大升格；读完一季可以开启下一季。"}</p>
                 </div>
                 <div className="opening-details" aria-label="确认故事设定">
                   <button disabled={busy} onClick={() => setStep(1)} aria-label={isCustom ? "修改创世设定" : "修改题材与世界"}><span>{isCustom ? "创世" : "题材"}</span><b>{template ? template.fullName : "完全自由"} · {world.name}</b><Icon name="chevron" size={15} /></button>
@@ -1380,6 +1391,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
                   <button disabled={busy} onClick={() => setStep(3)} aria-label="修改出生点"><span>出生点</span><b>{spawn ? spawn.name : "由设定决定"}</b><Icon name="chevron" size={15} /></button>
                   <button disabled={busy} onClick={() => setStep(4)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "未命名旅人"}</b><Icon name="chevron" size={15} /></button>
                   <button disabled={busy} onClick={() => setStep(5)} aria-label="修改能力与风格"><span>能力</span><b>{ability.name} · {tone.name}</b><Icon name="chevron" size={15} /></button>
+                  <div className="opening-detail-static"><span>篇幅</span><b>{draft.storyLengthMode === "long" ? "长线 · 100 章" : "一季 · 24 章"}</b></div>
                 </div>
               </div>
               <GenerationMode provider={provider} value={engine} onChange={setMode} disabled={busy} />
@@ -1520,6 +1532,7 @@ function ReadingDialog({ title, children, onClose }) {
 }
 
 function ChapterDirectory({ story, index, readOnly, onSelect, onClose }) {
+  const total = totalChaptersFor(story);
   const last = lastAccessibleIndex(story, readOnly);
   return (
     <ReadingDialog title="章节目录" onClose={onClose}>
@@ -1527,14 +1540,14 @@ function ChapterDirectory({ story, index, readOnly, onSelect, onClose }) {
       <div className="directory-starmap">
         <b>剧情星图</b>
         <StoryMap
-          total={CHAPTER_COUNT}
+          total={total}
           generated={story.chapters?.length || 0}
           current={index}
           onSelect={onSelect}
         />
       </div>
       <div className="chapter-directory-list">
-        {Array.from({ length: CHAPTER_COUNT }, (_, chapterIndex) => {
+        {Array.from({ length: total }, (_, chapterIndex) => {
           const available = chapterIndex <= last;
           const chapter = story.chapters[chapterIndex];
           const status =
@@ -1579,6 +1592,7 @@ function Reader({
   onShareOpened,
   unsaved = false,
   onPrepareChapter,
+  onStartNextSeason,
 }) {
   const [snapshotIndex, setSnapshotIndex] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
@@ -1698,9 +1712,11 @@ function Reader({
     (option) => option.id === selected,
   );
   const ready = selected || !chapter.choice;
+  const total = totalChaptersFor(story);
+  const lengthMode = storyLengthModeOf(story);
   const nextAvailable = index < lastAccessibleIndex(story, readOnly);
-  const isFinal = index >= CHAPTER_COUNT - 1;
-  const progress = `${Math.round(((index + 1) / CHAPTER_COUNT) * 100)}%`;
+  const isFinal = index >= total - 1;
+  const progress = `${Math.round(((index + 1) / total) * 100)}%`;
   const update = (nextStory, nextIndex = index) =>
     onUpdateStory?.(moveReadingPosition(nextStory, nextIndex));
   const applyChoice = (choiceId) => {
@@ -1786,9 +1802,9 @@ function Reader({
             role="progressbar"
             aria-label="阅读进度"
             aria-valuemin={0}
-            aria-valuemax={CHAPTER_COUNT}
+            aria-valuemax={total}
             aria-valuenow={index + 1}
-            aria-valuetext={`第 ${index + 1} 章，共 ${CHAPTER_COUNT} 章`}
+            aria-valuetext={`第 ${index + 1} 章，共 ${total} 章`}
           >
             <i style={{ width: progress }} />
           </div>
@@ -1927,13 +1943,13 @@ function Reader({
           <div className="reader-starmap">
             <div className="reader-starmap-head">
               <b>剧情星图</b>
-              <span>第 {index + 1} / {CHAPTER_COUNT} 章</span>
+              <span>第 {index + 1} / {total} 章</span>
             </div>
             <StoryMapMini
-              total={CHAPTER_COUNT}
+              total={total}
               generated={story.chapters?.length || 0}
               current={index}
-              state={readOnly ? null : generationState({ total: CHAPTER_COUNT, generated: story.chapters?.length || 0, current: index, engine: story.engine, preparing, complete: story.status === "complete" })}
+              state={readOnly ? null : generationState({ total, generated: story.chapters?.length || 0, current: index, engine: story.engine, preparing, complete: story.status === "complete" || isStoryComplete(story) })}
             />
           </div>
           {!isFinal && (!readOnly || nextAvailable) && (
@@ -1951,25 +1967,48 @@ function Reader({
           {(isFinal || (readOnly && !nextAvailable)) && (
             <section className="reading-end">
               <h2>
-                {isFinal ? "这一卷，读完了。" : "已读完分享章节"}
+                {isFinal
+                  ? lengthMode === "season"
+                    ? "这一季，读完了。"
+                    : lengthMode === "long"
+                      ? "这部长线，读完了。"
+                      : "这一卷，读完了。"
+                  : "已读完分享章节"}
               </h2>
-              {(!readOnly || !isFinal) && (
-                <p>
-                  {readOnly
-                    ? "此副本只包含已分享的章节。"
-                    : "让另一个主角加入，开启独立的新故事。"}
-                </p>
-              )}
-              <Button
-                icon={readOnly ? "book" : "git"}
-                onClick={() => onNavigate(readOnly ? "store" : "merge")}
-              >
-                {readOnly ? "回到书城" : "开启合流本"}
-              </Button>
-              {!readOnly && (
-                <button onClick={() => onNavigate("forge")}>
-                  再开一本
-                </button>
+              {isFinal && !readOnly && lengthMode === "season" ? (
+                <>
+                  <p>标尺已经抬高一格：下一季的对手、价码和要守的东西，都会比这一季更重。</p>
+                  <Button icon="spark" onClick={() => onStartNextSeason?.(story)}>
+                    开启下一季
+                  </Button>
+                  <button onClick={() => onNavigate("merge")}>
+                    开启合流本
+                  </button>
+                  <button onClick={() => onNavigate("forge")}>
+                    再开一本
+                  </button>
+                </>
+              ) : (
+                <>
+                  {(!readOnly || !isFinal) && (
+                    <p>
+                      {readOnly
+                        ? "此副本只包含已分享的章节。"
+                        : "让另一个主角加入，开启独立的新故事。"}
+                    </p>
+                  )}
+                  <Button
+                    icon={readOnly ? "book" : "git"}
+                    onClick={() => onNavigate(readOnly ? "store" : "merge")}
+                  >
+                    {readOnly ? "回到书城" : "开启合流本"}
+                  </Button>
+                  {!readOnly && (
+                    <button onClick={() => onNavigate("forge")}>
+                      再开一本
+                    </button>
+                  )}
+                </>
               )}
             </section>
           )}
@@ -2098,7 +2137,7 @@ function Store({ onNavigate, onOpenBook, onOpenOwn, publications }) {
     const snapshot = item.snapshot || {};
     const status =
       snapshot.status ||
-      (snapshot.chapters?.length >= 6 ? "complete" : "ongoing");
+      (snapshot.chapters?.length >= totalChaptersFor(snapshot) ? "complete" : "ongoing");
     return {
       ...storeBookMeta({
         ...snapshot,
@@ -2670,6 +2709,7 @@ function App() {
         createStory({
           genreId: payload.genreId,
           genreTemplateId: payload.genreTemplateId,
+          storyLengthMode: payload.storyLengthMode,
           originIdentityId: payload.originIdentityId,
           customWorldName: payload.customWorldName,
           customWorldSetting: payload.customWorldSetting,
@@ -2706,6 +2746,18 @@ function App() {
       setToast("");
       navigate("reader", { storyId: story.id });
       opening.current = null;
+  };
+  const startNextSeasonFor = (story) => {
+    try {
+      const rolled = startNextSeason(story);
+      const next = story.engine === "gemini" ? { ...rolled, engine: "gemini" } : rolled;
+      const seeded = story.engine === "gemini" ? next : seedStory(next);
+      setLibrary((current) => ({ ...libraryWithStory(current, seeded), draft: null }));
+      setShareRequest(false);
+      navigate("reader", { storyId: seeded.id });
+    } catch {
+      setToast("这一季还没有读完，暂时不能开启下一季。");
+    }
   };
   const openOwnReader = (storyId = activeStory?.id, options = {}) => {
     setShareRequest(Boolean(options.share));
@@ -2767,6 +2819,7 @@ function App() {
         onNavigate={navigate}
         onUpdateStory={commitStory}
         onPrepareChapter={prepareChapter}
+        onStartNextSeason={startNextSeasonFor}
         onToggleBookmark={commitStory}
         onPublish={publish}
         openShare={shareRequest}

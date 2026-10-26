@@ -1,26 +1,32 @@
-import { acceptChapter, chapterKey } from './story-engine.js'
-import { CHAPTER_COUNT, readerIndexFor, selectedChoice } from './reading-flow.js'
+import { acceptChapter, chapterKey, outlineLengthFor, totalChaptersFor } from './story-engine.js'
+import { readerIndexFor, selectedChoice } from './reading-flow.js'
 import { emptyLibrary, validateLibrary } from './persistence.js'
 
 export function mergeSourceContext(story) {
   const text = (value, limit) => typeof value === 'string' ? value.slice(0, limit) : ''
   return {
     genreId: text(story.genreId, 80),
+    storyLengthMode: text(story.config?.storyLengthMode, 20),
+    // The template this source pinned for itself (if any). A merged story
+    // borrows each side's own pinned craft — never a world-derived default.
+    genreTemplateId: text(story.genreTemplateId || story.config?.genreTemplateId, 80),
     worldBible: {
       premise: text(story.worldBible.premise, 1000),
       rules: story.worldBible.rules.slice(0, 8).map((value) => text(value, 400)),
       endingAnchor: text(story.worldBible.endingAnchor, 1000),
-      outline: story.worldBible.outline.slice(0, 6).map((value) => text(value, 400)),
+      outline: story.worldBible.outline.slice(0, outlineLengthFor(story)).map((value) => text(value, 400)),
     },
     choices: { ...story.choices },
-    summaries: story.chapters.slice(0, 6).map((chapter) => ({ chapter: chapter.index + 1, summary: text(chapter.summary, 600) })),
+    // A merged source can be a finished season or long line; the hand-off
+    // carries its most recent summaries rather than the whole book.
+    summaries: story.chapters.slice(-12).map((chapter) => ({ chapter: chapter.index + 1, summary: text(chapter.summary, 600) })),
   }
 }
 
 export function nextGenerationIndex(story, position = readerIndexFor(story)) {
   if (!story || story.readOnly || story.engine !== 'gemini') return null
   const index = story.chapters.length
-  if (index >= CHAPTER_COUNT || index >= position + 2) return null
+  if (index >= totalChaptersFor(story) || index >= position + 2) return null
   const previous = story.chapters[index - 1]
   if (previous?.choice && !selectedChoice(story, index - 1)) return null
   return index
@@ -30,7 +36,7 @@ export function nextGenerationIndex(story, position = readerIndexFor(story)) {
 // not restore an abandoned branch, change a bookmark or move the reader back.
 export function acceptGeneratedChapter(story, result) {
   const index = result?.chapter?.index
-  if (!Number.isInteger(index) || index < 0 || index >= CHAPTER_COUNT) throw new Error('章节格式不完整，请重试。')
+  if (!Number.isInteger(index) || index < 0 || index >= totalChaptersFor(story)) throw new Error('章节格式不完整，请重试。')
   if (result.key !== chapterKey(story, index)) return story
   let next = acceptChapter(story, result.chapter, result.key)
   if (next === story) return story

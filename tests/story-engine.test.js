@@ -23,9 +23,16 @@ import {
   originIdentityById,
   originSpawnCell,
   originSummaryFor,
+  isStoryComplete,
+  outlineIndexFor,
+  outlineLengthFor,
   publicSnapshot,
-  recommendedTemplateFor,
   resolveStartPoint,
+  startNextSeason,
+  storyLengthModeOf,
+  storyLedgerFor,
+  structureFor,
+  totalChaptersFor,
   spawnPointsForIdentity,
   startPointByName,
   storyBeatPlan,
@@ -439,7 +446,9 @@ test('storyBeatPlan models prerequisites, concept grounding, tone shape, and bra
   const beat0 = storyBeatPlan(story, 0)
   assert.equal(beat0.chapterNumber, 1)
   assert.equal(beat0.act, '第 1 章 · 开篇')
-  assert.equal(beat0.prerequisites.length, 4)
+  // Five since the length batch: world, protagonist, origin, ability, and
+  // the structure line (mode / act position / upgrade points).
+  assert.equal(beat0.prerequisites.length, 5)
   assert.ok(beat0.mustGround.some((item) => item.includes('第七码头')))
   assert.ok(beat0.mustGround.some((item) => item.includes('听见潮汐')))
   assert.match(beat0.toneDirective, /时间压力|因果逻辑/)
@@ -452,7 +461,7 @@ test('storyBeatPlan models prerequisites, concept grounding, tone shape, and bra
   story = chooseBranch(story, 1, 'wait')
   const beat2 = storyBeatPlan(story, 2)
   assert.equal(beat2.chapterNumber, 3)
-  assert.equal(beat2.prerequisites.length, 5)
+  assert.equal(beat2.prerequisites.length, 6)
   assert.equal(beat2.unlockedConsequences.length, 1)
   assert.equal(beat2.unlockedConsequences[0].choiceId, 'wait')
   assert.match(beat2.unlockedConsequences[0].consequence, /稳定度上升/)
@@ -494,21 +503,23 @@ test('createStory without a template choice carries no top-level template id', (
   assert.equal(story.config.genreTemplateId, '')
 })
 
-test('every genre template binds to a real world and recommendations cover all stages', () => {
-  const worldIds = new Set(GENRES.map((genre) => genre.id))
+test('genre templates are pure categories: fourteen of them, none bound to a world', () => {
   assert.equal(GENRES.length, 6)
-  assert.equal(GENRE_TEMPLATES.length, 8)
+  assert.equal(GENRE_TEMPLATES.length, 14)
   for (const template of GENRE_TEMPLATES) {
-    assert.ok(worldIds.has(template.worldId), template.id)
+    // Decoupled by product rule: a template carries no world reference at
+    // all — only its own brick decoration (symbol/colour).
+    assert.equal('worldId' in template, false, template.id)
     assert.equal(genreTemplateById(template.id), template)
+    assert.ok(template.symbol && template.color, template.id)
   }
-  assert.equal(recommendedTemplateFor('court').id, 'romance-ancient')
-  assert.equal(recommendedTemplateFor('frontier').id, 'scifi')
-  assert.equal(recommendedTemplateFor('mist').id, 'xuanhuan')
-  assert.equal(recommendedTemplateFor('cultivation').id, 'xianxia')
-  assert.equal(recommendedTemplateFor('city').id, 'romance-modern')
-  // The legacy cyber stage has no bound template; it falls back to sci-fi craft.
-  assert.equal(recommendedTemplateFor('neon').id, 'scifi')
+  // Any template can be told in any world: the story keeps the reader's own
+  // world pick and the pinned category completely independently.
+  const cross = createStory({ genreId: 'court', genreTemplateId: 'gaowu', name: '阿遥' })
+  assert.equal(cross.genreId, 'court')
+  assert.equal(cross.genreTemplateId, 'gaowu')
+  assert.equal(cross.config.genreId, 'court')
+  assert.equal(cross.config.genreTemplateId, 'gaowu')
 })
 
 test('stage display names are small concrete places while ids stay stable', () => {
@@ -816,4 +827,152 @@ test('god mode: a custom story can merge without crashing', () => {
   assert.ok(chapter.paragraphs.length >= 2)
   const snapshot = publicSnapshot(createStory(godDraft()))
   assert.equal(snapshot.genreId, 'custom')
+})
+
+// ---------------------------------------------------------------------------
+// 爽文批次：篇幅双模式、季/弧结构、场景变奏、台账、下一季与旧档兼容。
+// ---------------------------------------------------------------------------
+
+const walkLocal = (story, count, picks = {}) => {
+  let current = story
+  for (let index = 0; index < count; index += 1) {
+    const chapter = buildChapter(current, index)
+    const accepted = acceptChapter(current, chapter, chapterKey(current, index))
+    assert.notEqual(accepted, current, `chapter ${index} must accept`)
+    current = accepted
+    if (chapter.choice && index < count - 1) {
+      current = chooseBranch(current, index, picks[index] || chapter.choice.options[0].id)
+    }
+  }
+  return current
+}
+
+test('length modes derive totals; a missing or bogus mode is a short story', () => {
+  assert.equal(storyLengthModeOf(createStory({ genreId: 'mist' })), 'short')
+  assert.equal(totalChaptersFor(createStory({ genreId: 'mist' })), 6)
+  assert.equal(totalChaptersFor(createStory({ genreId: 'mist', storyLengthMode: 'season' })), 24)
+  assert.equal(totalChaptersFor(createStory({ genreId: 'mist', storyLengthMode: 'long' })), 100)
+  assert.equal(totalChaptersFor(createStory({ genreId: 'mist', storyLengthMode: 'bogus' })), 6)
+  // Merged stories stay capped at the shorter structure, whatever the sources were.
+  const merged = createMergedStory(
+    createStory({ genreId: 'mist', storyLengthMode: 'season' }),
+    createStory({ genreId: 'neon', storyLengthMode: 'long' }),
+  )
+  assert.equal(storyLengthModeOf(merged), 'short')
+  assert.equal(totalChaptersFor(merged), 6)
+  assert.equal(outlineLengthFor(createStory({ genreId: 'mist', storyLengthMode: 'long' })), 20)
+  assert.equal(outlineLengthFor(createStory({ genreId: 'mist', storyLengthMode: 'season' })), 24)
+})
+
+test('season structure: acts of six, small upgrades at act ends, big one at the finale', () => {
+  const season = createStory({ genreId: 'mist', storyLengthMode: 'season' })
+  for (const index of [5, 11, 17]) {
+    const structure = structureFor(season, index)
+    assert.equal(structure.isUnitEnd, true, `chapter ${index + 1}`)
+    assert.equal(structure.upgradeKind, '小升格')
+  }
+  const finale = structureFor(season, 23)
+  assert.equal(finale.upgradeKind, '季终大升格')
+  assert.equal(finale.unitIndex, 3)
+  assert.equal(structureFor(season, 6).unitIndex, 1)
+  assert.equal(buildChapter(season, 23).summary.includes('终局'), true)
+  const plan = storyBeatPlan(season, 23)
+  assert.match(plan.prerequisites.join(''), /季终大升格点/)
+  assert.equal(plan.structure.mode, 'season')
+  // The world bible outline covers the whole season and every entry differs.
+  assert.equal(season.worldBible.outline.length, 24)
+  assert.equal(new Set(season.worldBible.outline).size, 24)
+})
+
+test('long structure: four arcs of twenty-five with arc-end nodes and a 20-entry outline', () => {
+  const long = createStory({ genreId: 'neon', storyLengthMode: 'long' })
+  assert.equal(long.worldBible.outline.length, 20)
+  assert.equal(new Set(long.worldBible.outline).size, 20)
+  for (const index of [24, 49, 74]) {
+    assert.equal(structureFor(long, index).upgradeKind, '弧末大节点', `chapter ${index + 1}`)
+  }
+  assert.equal(structureFor(long, 99).upgradeKind, '长线终局结算')
+  assert.equal(outlineIndexFor(0, long), 0)
+  assert.equal(outlineIndexFor(99, long), 19)
+  // Decision rhythm repeats every six chapters on the long line too.
+  assert.ok(buildChapter(long, 7).choice)
+  assert.ok(buildChapter(long, 9).choice)
+  assert.equal(buildChapter(long, 8).choice, null)
+})
+
+test('scenes past chapter six vary by act and never replay the base table', () => {
+  const season = walkLocal(createStory({ genreId: 'cultivation', storyLengthMode: 'season' }), 14, { 1: 'open', 7: 'wait' })
+  const base = new Set()
+  const fresh = createStory({ genreId: 'cultivation', storyLengthMode: 'season' })
+  for (let index = 0; index < 6; index += 1) {
+    for (const line of buildChapter(fresh, index).paragraphs) base.add(line)
+  }
+  const scene7 = buildChapter(season, 6).paragraphs.join('')
+  const scene13 = buildChapter(season, 12).paragraphs.join('')
+  const scene8 = buildChapter(season, 7).paragraphs.join('')
+  assert.notEqual(scene7, scene13)
+  for (const chapter of [buildChapter(season, 6), buildChapter(season, 12)]) {
+    for (const line of chapter.paragraphs.slice(0, 3)) assert.equal(base.has(line), false, line)
+  }
+  assert.notEqual(scene8, buildChapter(season, 1).paragraphs.join(''))
+  // A long-line chapter 25 opens its second arc with a fresh scene as well.
+  const long = createStory({ genreId: 'cultivation', storyLengthMode: 'long' })
+  assert.notEqual(buildChapter(long, 24).paragraphs[0], buildChapter(long, 0).paragraphs[0])
+})
+
+test('a full season walks locally to completion and rolls into the next season', () => {
+  const season = walkLocal(createStory({ genreId: 'mist', storyLengthMode: 'season', name: '遥' }), 24)
+  assert.equal(season.chapters.length, 24)
+  assert.equal(isStoryComplete(season), true)
+  assert.equal(season.chapterIndex, 23)
+  assert.throws(() => startNextSeason(createStory({ genreId: 'mist', storyLengthMode: 'season' })), /还没有读完/)
+  assert.throws(() => startNextSeason(walkLocal(createStory({ genreId: 'mist' }), 6)), /季模式/)
+  const next = startNextSeason(season)
+  assert.equal(next.config.seasonNumber, 2)
+  assert.equal(next.previousSeasonId, season.id)
+  assert.equal(next.chapters.length, 0)
+  assert.equal(totalChaptersFor(next), 24)
+  assert.match(next.worldBible.premise, /^第2季——/)
+  assert.ok(next.worldBible.rules.some((rule) => rule.includes('第2季升格')))
+  assert.equal(next.worldBible.outline.length, 24)
+})
+
+test('every accepted chapter carries a ledger; the dossier aggregates it without spoiling ahead', () => {
+  const season = walkLocal(createStory({ genreId: 'mist', storyLengthMode: 'season' }), 8, { 1: 'wait' })
+  for (const chapter of season.chapters) {
+    assert.ok(Array.isArray(chapter.events) && chapter.events.length >= 1, `chapter ${chapter.index}`)
+    assert.ok(Array.isArray(chapter.foreshadowing))
+  }
+  // The chapter right after a decision records the consequence as an event.
+  const after = season.chapters[2]
+  assert.ok(after.events.some((event) => event.includes('承接第 2 章选择')))
+  // Upgrade-point chapters record their structure node.
+  assert.ok(season.chapters[5].events.some((event) => event.includes('小升格')))
+  const ledger = storyLedgerFor(season, 3)
+  assert.ok(ledger.events.every((entry) => entry.chapter <= 4))
+  assert.ok(ledger.foreshadowing.length >= 1)
+  const dossier = storyNarrativeDossier(season, 7)
+  assert.ok(dossier.ledger.events.length >= 1)
+  assert.ok(dossier.ledger.openForeshadowing.length >= 1)
+  assert.equal(dossier.timeline.length, 8)
+  assert.equal(dossier.activeConsequences.length, 2)
+})
+
+test('pre-mode saves stay short stories and keep reading, merging and sharing', () => {
+  const legacy = createStory({ genreId: 'mist', name: '旧档' })
+  delete legacy.config.storyLengthMode
+  assert.equal(storyLengthModeOf(legacy), 'short')
+  const walked = walkLocal(legacy, 6, { 1: 'open', 3: 'cross' })
+  assert.equal(isStoryComplete(walked), true)
+  const snapshot = publicSnapshot(walked)
+  assert.equal(snapshot.status, 'complete')
+  assert.equal(snapshot.chapters.length, 6)
+  // A season snapshot reports completion only at 24 chapters.
+  const season = walkLocal(createStory({ genreId: 'mist', storyLengthMode: 'season' }), 12)
+  assert.equal(publicSnapshot(season).status, 'ongoing')
+  const fullSeason = walkLocal(createStory({ genreId: 'mist', storyLengthMode: 'season' }), 24)
+  const seasonSnapshot = publicSnapshot(fullSeason)
+  assert.equal(seasonSnapshot.status, 'complete')
+  assert.equal(seasonSnapshot.chapters.length, 24)
+  assert.equal(seasonSnapshot.config.storyLengthMode, 'season')
 })

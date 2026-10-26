@@ -63,19 +63,21 @@ async function navigation(page, name) {
   await page.getByRole('navigation', { name: '移动端主导航' }).getByRole('button', { name, exact: true }).click();
 }
 
-async function completeBook(page, start = 1) {
-  for (let chapter = start; chapter <= 6; chapter += 1) {
+async function completeBook(page, start = 1, { total = 24, ending = '这一季，读完了。' } = {}) {
+  for (let chapter = start; chapter <= total; chapter += 1) {
     await currentChapter(page, chapter);
     const choices = page.getByRole('group', { name: '剧情选择' });
+    // The choice group can render a tick after the progress bar moves.
+    await choices.first().waitFor({ timeout: 400 }).catch(() => {});
     if (await choices.count()) {
       assert.equal(await page.getByRole('button', { name: '下一章', exact: true }).isEnabled(), false,
         `chapter ${chapter} must wait for a choice`);
       await choices.getByRole('button').first().click();
       await page.getByRole('button', { name: '改选', exact: true }).waitFor();
     }
-    if (chapter < 6) await page.getByRole('button', { name: '下一章', exact: true }).click();
+    if (chapter < total) await page.getByRole('button', { name: '下一章', exact: true }).click();
   }
-  await page.getByRole('heading', { name: '这一卷，读完了。' }).waitFor();
+  await page.getByRole('heading', { name: ending }).waitFor();
 }
 
 async function runJourney(browser, width) {
@@ -172,11 +174,14 @@ async function runJourney(browser, width) {
       await currentChapter(page, 3);
     });
     await completeBook(page, 3);
-    await check(`${label} six chapters reach a real ending`, async () => {
+    await check(`${label} a full season of 24 chapters reaches a real ending`, async () => {
       const saved = (await library(page)).stories.find(story => story.id === originalId);
-      assert.equal(saved.chapters.length, 6);
-      assert.equal(saved.readerIndex, 5);
-      await page.getByRole('heading', { name: '这一卷，读完了。' }).waitFor();
+      assert.equal(saved.chapters.length, 24);
+      assert.equal(saved.readerIndex, 23);
+      assert.equal(saved.config.storyLengthMode, 'season');
+      await page.getByRole('heading', { name: '这一季，读完了。' }).waitFor();
+      // The season finale offers the next season.
+      await page.getByRole('button', { name: '开启下一季', exact: true }).waitFor();
     });
 
     await selectChapter(page, 1);
@@ -187,7 +192,7 @@ async function runJourney(browser, width) {
     await rewriteDialog.getByRole('button', { name: '保留原选择' }).click();
     await check(`${label} cancel rewrite keeps the original completed book`, async () => {
       const saved = (await library(page)).stories.find(story => story.id === originalId);
-      assert.equal(saved.chapters.length, 6);
+      assert.equal(saved.chapters.length, 24);
       assert.equal(saved.choices[1], 'open');
     });
     await page.getByRole('group', { name: '剧情选择' }).getByRole('button').nth(1).click();
@@ -231,7 +236,7 @@ async function runJourney(browser, width) {
       assert.equal(await page.getByRole('button', { name: '改选', exact: true }).count(), 0);
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.getByText('只读版本 · 不会改变原作', { exact: true }).waitFor();
-      await selectChapter(page, 5);
+      await selectChapter(page, 23);
       await page.getByRole('button', { name: '回到书城', exact: true }).waitFor();
       assert.deepEqual((await library(page)).stories, publishedLibrary.stories);
     });
@@ -274,7 +279,7 @@ async function runJourney(browser, width) {
       assert.equal(merged.config.merge.rules, 'separate');
       assert.equal(merged.config.merge.bond, 'rivals');
     });
-    await completeBook(page);
+    await completeBook(page, 1, { total: 6, ending: '这一卷，读完了。' });
     await check(`${label} merged book also reaches its ending`, async () => {
       await noOverflow(page, 'merged ending');
       const saved = await library(page);

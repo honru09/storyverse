@@ -29,8 +29,8 @@ test('oversized chunked bodies return a readable 413 without reaching the provid
       response.on('error', reject)
     })
     request.on('error', reject)
-    request.write('x'.repeat(200 * 1024))
-    request.end('x'.repeat(100 * 1024))
+    request.write('x'.repeat(1024 * 1024))
+    request.end('x'.repeat(600 * 1024))
   })
   assert.equal(received.status, 413)
   assert.equal(typeof JSON.parse(received.raw).error, 'string')
@@ -174,12 +174,14 @@ test('non-JSON and malformed JSON requests do not reach the generator', async (t
   assert.equal(calls.length, 0)
 })
 
-test('requests exceeding 256 KiB are rejected before generation', async (t) => {
+test('requests exceeding the size cap are rejected before generation', async (t) => {
+  // The cap fits a full long-line (100-chapter) story state; beyond it the
+  // request is a 413 before the generator ever runs.
   const { base, calls } = await startServer(t)
   const response = await generate(base, {
     story: sampleStory(),
     index: 0,
-    padding: 'x'.repeat(256 * 1024),
+    padding: 'x'.repeat(1_600_000),
   })
   assert.equal(response.status, 413)
   await response.text()

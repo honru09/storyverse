@@ -10,8 +10,9 @@ import {
   migrateLegacy,
   saveLibrary,
   upsertStory,
+  validateLibrary,
 } from '../src/persistence.js'
-import { createMergedStory, createStory, publicSnapshot, FRIEND_BOOK } from '../src/story-engine.js'
+import { acceptChapter, buildChapter, chapterKey, chooseBranch, createMergedStory, createStory, publicSnapshot, FRIEND_BOOK } from '../src/story-engine.js'
 import { prepareReadingWindow } from '../src/reading-flow.js'
 
 class MemoryStorage {
@@ -353,4 +354,34 @@ test('non-string custom world fields fail library validation', () => {
   })
   const storage = new MemoryStorage()
   assert.equal(saveLibrary(storage, broken).ok, false)
+})
+
+test('season and long stories validate at their mode-sized chapter counts', () => {
+  const walk = (story, count) => {
+    let current = story
+    for (let index = 0; index < count; index += 1) {
+      const chapter = buildChapter(current, index)
+      current = acceptChapter(current, chapter, chapterKey(current, index))
+      if (chapter.choice && index < count - 1) {
+        current = chooseBranch(current, index, chapter.choice.options[0].id)
+      }
+    }
+    return current
+  }
+  const season = walk(createStory({ genreId: 'mist', storyLengthMode: 'season', name: '季' }), 24)
+  assert.equal(season.chapters.length, 24)
+  const library = { ...emptyLibrary(), stories: [season], activeStoryId: season.id }
+  assert.deepEqual(validateLibrary(library), [])
+  const roundTrip = importLibrary(exportLibrary(library))
+  assert.equal(roundTrip.stories[0].chapters.length, 24)
+  assert.equal(roundTrip.stories[0].config.storyLengthMode, 'season')
+  // Choices recorded deep into a season (chapter 14) survive validation.
+  assert.ok(Object.keys(roundTrip.stories[0].choices).some((key) => Number(key) === 13))
+  // A short story with a seventh chapter is still corrupt data.
+  const bloated = { ...createStory({ genreId: 'mist' }), chapters: season.chapters.slice(0, 7), chapterIndex: 6 }
+  assert.ok(validateLibrary({ ...emptyLibrary(), stories: [bloated] }).length > 0)
+  // A bogus length mode is rejected at the config level.
+  const bogus = createStory({ genreId: 'mist' })
+  bogus.config = { ...bogus.config, storyLengthMode: 'huge' }
+  assert.ok(validateLibrary({ ...emptyLibrary(), stories: [bogus] }).some((error) => error.includes('storyLengthMode')))
 })

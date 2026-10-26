@@ -130,3 +130,32 @@ test('the daily quota response maps to a clear quota message, not the generic 42
   const fetchImpl = async () => Response.json({ error: 'server copy is not shown', code: 'quota-exceeded' }, { status: 429 })
   await assert.rejects(requestChapter(fresh(), 0, { fetchImpl }), /今天的生成额度已用完/)
 })
+
+test('season pre-generation: gated by the previous decision, one chapter only, keyed by the choice', () => {
+  let current = { ...createStory({ name: '旅人', genreId: 'mist', storyLengthMode: 'season' }), engine: 'gemini' }
+  current = acceptGeneratedChapter(current, resultFor(current, 0))
+  current = acceptGeneratedChapter(current, resultFor(current, 1))
+  // Chapter two ends on a decision: while it is undecided nothing is prepared.
+  assert.equal(nextGenerationIndex(current, 1), null)
+  current = chooseBranch(current, 1, 'open')
+  // Decided: exactly the next chapter becomes eligible, and only when the
+  // reader is within one chapter of the frontier.
+  assert.equal(nextGenerationIndex(current, 1), 2)
+  assert.equal(nextGenerationIndex(current, 0), null)
+  // The cache key is the choice signature: rewriting the decision changes it.
+  const keyBefore = chapterKey(current, 2)
+  current = chooseBranch(current, 1, 'wait')
+  assert.notEqual(chapterKey(current, 2), keyBefore)
+  assert.equal(nextGenerationIndex(current, 1), 2)
+})
+
+test('pre-generation stops at the end of a season', () => {
+  let current = { ...createStory({ name: '旅人', genreId: 'mist', storyLengthMode: 'season' }), engine: 'gemini' }
+  for (let index = 0; index < 24; index += 1) {
+    current = acceptGeneratedChapter(current, resultFor(current, index))
+    const choice = buildChapter(current, index).choice
+    if (choice && index < 23) current = chooseBranch(current, index, choice.options[0].id)
+  }
+  assert.equal(current.chapters.length, 24)
+  assert.equal(nextGenerationIndex(current, 23), null)
+})

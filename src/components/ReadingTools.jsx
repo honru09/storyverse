@@ -77,6 +77,25 @@ export default function ReadingTools({
             </ul>
           </section>
         )}
+        {dossier.ledger && (dossier.ledger.events.length > 0 || dossier.ledger.openForeshadowing.length > 0) && (
+          <section className="reading-dossier-section">
+            <h3>事件与伏笔台账</h3>
+            <ul className="reading-dossier-list">
+              {dossier.ledger.events.map(item => (
+                <li key={`event-${item.chapter}-${item.text}`}>
+                  <strong>第 {item.chapter} 章 · 事件</strong>
+                  <span>{item.text}</span>
+                </li>
+              ))}
+              {dossier.ledger.openForeshadowing.map(item => (
+                <li key={`fore-${item.chapter}-${item.text}`}>
+                  <strong>第 {item.chapter} 章 · 伏笔未收</strong>
+                  <span>{item.text}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         {dossier.rules.length > 0 && (
           <section className="reading-dossier-section">
             <h3>世界设定</h3>

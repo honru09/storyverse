@@ -7,9 +7,9 @@
  * implement.
  *
  * Domain terms:
- * - A chapter index is zero based (0..5).
+ * - A chapter index is zero based (0..total-1, total from the length mode).
  * - `chapterIndex` is the next chapter that can be accepted.  It starts at 0
- *   and stays at 5 after the finale.
+ *   and stays at total-1 after the finale.
  * - A choice is recorded by chapter index.  Choosing a different branch
  *   increments `revision`, truncates future chapters, and invalidates old
  *   chapter keys.
@@ -376,39 +376,41 @@ const originBeatLine = (genre, config) => {
 }
 
 /*
- * Story types are the eight knowledge-base templates (knowledge/genres.json).
- * The ids here must stay identical to that file — a test locks them together.
- * Each type is bound to one stage world: the world supplies the local preset
- * scenes, the world bible flavour and the cover art, while the template
- * drives the generated narrative craft on the server via genreTemplateId.
+ * Story types are the fourteen knowledge-base templates (knowledge/
+ * genres.json). The ids here must stay identical to that file — a test locks
+ * them together. A template is a pure category: it governs ONLY the writing
+ * craft (reader promise, pleasures, beats) via genreTemplateId. It is NOT
+ * bound to any world — the world comes solely from the reader's own stage
+ * pick (config.genreId, or a god-mode custom world), and any template can be
+ * told in any world. `symbol`/`color` are the brick's own decoration, never
+ * a world's artwork.
  */
 export const GENRE_TEMPLATES = [
-  { id: 'romance-ancient', name: '古言', fullName: '言情 · 古言', blurb: '宫斗、宅斗与礼法之下的步步为营', worldId: 'court' },
-  { id: 'romance-modern', name: '现言', fullName: '言情 · 现言', blurb: '成年人的重逢、心动与迟到的真话', worldId: 'city' },
-  { id: 'xianxia', name: '修仙', fullName: '修仙', blurb: '改命登天，代价先行', worldId: 'cultivation' },
-  { id: 'xuanhuan', name: '玄幻', fullName: '玄幻', blurb: '一路打上去，揭开世界的真相', worldId: 'mist' },
-  { id: 'urban', name: '都市', fullName: '都市', blurb: '小人物在城市规则里翻盘', worldId: 'city' },
-  { id: 'scifi', name: '科幻', fullName: '科幻 · 星际/末世', blurb: '从最底层活起，逐层升维', worldId: 'frontier' },
-  { id: 'suspense-supernatural', name: '灵异悬疑', fullName: '灵异悬疑', blurb: '每查一步，寒意就具体一分', worldId: 'mist' },
-  { id: 'zhihu-short', name: '知乎短篇', fullName: '知乎风短篇', blurb: '第一人称，三分钟一个反转', worldId: 'city' },
+  { id: 'xuanhuan', name: '玄幻', fullName: '玄幻', blurb: '一路打上去，揭开世界的真相', symbol: '◒', color: '#38bdf8' },
+  { id: 'xianxia', name: '修仙', fullName: '修仙', blurb: '改命登天，代价先行', symbol: '✦', color: '#fbbf24' },
+  { id: 'gaowu', name: '高武', fullName: '高武', blurb: '气血与排名全城可见，从榜尾打进榜单', symbol: '武', color: '#fb923c' },
+  { id: 'romance-ancient', name: '古言', fullName: '言情 · 古言', blurb: '宫斗、宅斗与礼法之下的步步为营', symbol: '❖', color: '#fb7185' },
+  { id: 'scifi', name: '科幻', fullName: '科幻 · 星际/末世', blurb: '从最底层活起，逐层升维', symbol: '◎', color: '#34d399' },
+  { id: 'wuxianliu', name: '无限流', fullName: '无限流', blurb: '副本里生死真价，结算时点数到账', symbol: '∞', color: '#22d3ee' },
+  { id: 'guize-guatan', name: '规则怪谈', fullName: '规则怪谈', blurb: '规则条条要命，靠读字走出活路', symbol: '规', color: '#f472b6' },
+  { id: 'horror', name: '恐怖', fullName: '恐怖', blurb: '把厉鬼算成资产，在复苏前结账', symbol: '烛', color: '#94a3b8' },
+  { id: 'lishi', name: '历史', fullName: '历史', blurb: '低位入局，用事功改掉已知的败局', symbol: '史', color: '#eab308' },
+  { id: 'romance-modern', name: '现言', fullName: '言情 · 现言', blurb: '成年人的重逢、心动与迟到的真话', symbol: '✧', color: '#f0a6ff' },
+  { id: 'suspense-supernatural', name: '灵异悬疑', fullName: '灵异悬疑', blurb: '每查一步，寒意就具体一分', symbol: '☾', color: '#818cf8' },
+  { id: 'campus', name: '校园', fullName: '校园', blurb: '一张成绩榜，管着整个青春', symbol: '铃', color: '#4ade80' },
+  { id: 'urban', name: '都市', fullName: '都市', blurb: '小人物在城市规则里翻盘', symbol: '▣', color: '#a78bfa' },
+  { id: 'zhihu-short', name: '知乎短篇', fullName: '知乎风短篇', blurb: '第一人称，三分钟一个反转', symbol: '✎', color: '#facc15' },
 ]
 
 const GENRE_TEMPLATE_BY_ID = Object.fromEntries(GENRE_TEMPLATES.map((template) => [template.id, template]))
 
 export const genreTemplateById = (id) => GENRE_TEMPLATE_BY_ID[id] || null
 
-// Worlds without a bound template keep a hand-picked closest craft
-// (the cyber stage reads best with the sci-fi template).
-const WORLD_TEMPLATE_FALLBACKS = { neon: 'scifi' }
-
-export const recommendedTemplateFor = (genreId) =>
-  GENRE_TEMPLATES.find((template) => template.worldId === genreId)
-  || genreTemplateById(WORLD_TEMPLATE_FALLBACKS[genreId])
-  || GENRE_TEMPLATES[0]
-
 export const DEFAULT_DRAFT = {
   genreId: 'mist',
   genreTemplateId: '',
+  storyLengthMode: 'short',
+  seasonNumber: 1,
   originIdentityId: '',
   customWorldName: '',
   customWorldSetting: '',
@@ -429,8 +431,89 @@ export const DEFAULT_DRAFT = {
   step: 1,
 }
 
-const MAX_CHAPTERS = 6
-const LAST_INDEX = MAX_CHAPTERS - 1
+/*
+ * 篇幅 (story length): a story's total chapter count is derived from its
+ * length mode, never written as a bare 6 anywhere in the engine.
+ * - 'short'  6 chapters — the original single-volume shape; also the shape of
+ *   every pre-mode save (a missing storyLengthMode means 'short') and of
+ *   merged stories, which stay capped at the shorter structure.
+ * - 'season' 24 chapters = 4 acts × 6; acts end in a small upgrade point and
+ *   chapter 24 closes the season with the big one, after which the reader
+ *   may open the next season (seasonNumber + 1, stakes raised).
+ * - 'long'   100 chapters = 4 arcs × 25; arc ends are the big nodes and the
+ *   outline compresses to 20 macro entries instead of one per chapter.
+ * Decision chapters repeat on the same six-chapter rhythm in every mode:
+ * position 1 of each six-block is a first-type decision, position 3 a
+ * second-type one, so the pre-generation gate ("previous choice decided")
+ * works identically at any length.
+ */
+export const STORY_LENGTH_MODES = {
+  short: { id: 'short', total: 6, label: '短季', unitLabel: '卷', unitSize: 6 },
+  season: { id: 'season', total: 24, label: '一季', unitLabel: '幕', unitSize: 6 },
+  long: { id: 'long', total: 100, label: '长线', unitLabel: '弧', unitSize: 25 },
+}
+
+export const storyLengthModeOf = (source) => {
+  if (!source || typeof source !== 'object') return 'short'
+  if (source.kind === 'merged') return 'short'
+  const config = source.config && typeof source.config === 'object' ? source.config : source
+  const mode = config?.storyLengthMode
+  return STORY_LENGTH_MODES[mode] ? mode : 'short'
+}
+
+export const totalChaptersFor = (source) => STORY_LENGTH_MODES[storyLengthModeOf(source)].total
+
+export const isStoryComplete = (story) =>
+  Boolean(story) && Array.isArray(story.chapters) && story.chapters.length >= totalChaptersFor(story)
+
+// The world bible outline is one entry per chapter, except on the long
+// line where 100 entries would drown the prompt: 20 macro entries there.
+export const outlineLengthFor = (source) => {
+  const total = totalChaptersFor(source)
+  return total === 100 ? 20 : total
+}
+
+export const outlineIndexFor = (index, source) => {
+  const total = totalChaptersFor(source)
+  const length = outlineLengthFor(source)
+  return Math.max(0, Math.min(length - 1, Math.floor(index * length / total)))
+}
+
+export const decisionTypeAt = (index) =>
+  index % 6 === 1 ? 'first' : index % 6 === 3 ? 'second' : null
+
+// Where a chapter sits in its length structure: which act/arc, which of the
+// six beat positions it plays, and whether it is an upgrade point.
+export const structureFor = (source, index) => {
+  const mode = storyLengthModeOf(source)
+  const spec = STORY_LENGTH_MODES[mode]
+  const total = spec.total
+  const unitSize = spec.unitSize
+  const unitIndex = Math.floor(index / unitSize)
+  const positionInUnit = index - unitIndex * unitSize
+  const beatPosition = Math.min(5, Math.floor(positionInUnit * 6 / unitSize))
+  const isUnitEnd = positionInUnit === unitSize - 1
+  const isFinale = index === total - 1
+  return {
+    mode,
+    total,
+    unitSize,
+    unitCount: total / unitSize,
+    unitIndex,
+    unitLabel: spec.unitLabel,
+    positionInUnit,
+    beatPosition,
+    isUnitEnd,
+    isFinale,
+    isUpgradePoint: isUnitEnd,
+    upgradeKind: isFinale
+      ? (mode === 'season' ? '季终大升格' : mode === 'long' ? '长线终局结算' : '本卷收束')
+      : isUnitEnd
+        ? (mode === 'long' ? '弧末大节点' : '小升格')
+        : null,
+  }
+}
+
 let idCounter = 0
 
 const GENRE_BY_ID = { ...Object.fromEntries(GENRES.map((genre) => [genre.id, genre])), [CUSTOM_GENRE_ID]: CUSTOM_GENRE }
@@ -528,6 +611,10 @@ const normalizeDraft = (draft = {}) => {
   return {
     genreId,
     genreTemplateId: genreTemplateById(input.genreTemplateId)?.id || '',
+    storyLengthMode: STORY_LENGTH_MODES[input.storyLengthMode] ? input.storyLengthMode : 'short',
+    seasonNumber: Number.isInteger(input.seasonNumber) && input.seasonNumber >= 1 && input.seasonNumber <= 99
+      ? input.seasonNumber
+      : 1,
     // Only the identity concept id is stored; the local title and the spawn
     // points are always resolved from the landing table, never persisted.
     originIdentityId: originIdentityById(input.originIdentityId)?.id || '',
@@ -579,37 +666,55 @@ const titleFor = (config, genre) => {
   return genre.title
 }
 
+const OUTLINE_STAGE_SUFFIXES = ['', '——局势推进，代价初显', '——对手加压，旧线索翻面', '——筹码重组，立场见分晓']
+
 const outlineFor = (genre, config) => {
   const name = protagonistName(config)
   const identity = displayIdentity(config)
   const destination = cleanText(config.destination, '') || genre.location
   const spawn = resolveStartPoint(genre, config)
-  if (genre.id === CUSTOM_GENRE_ID) {
-    const world = worldNameOf(genre, config)
-    return [
+  const total = totalChaptersFor({ config })
+  const length = total === 100 ? 20 : total
+  const unitCount = total === 100 ? 4 : total / 6
+  const unitLabel = total === 100 ? '弧' : '幕'
+  const beats = genre.id === CUSTOM_GENRE_ID
+    ? [
       spawn
         ? `${name}以${identity}的身份在${spawn.name}醒来，创世设定落地的第一幕开始。`
-        : `${name}以${identity}的身份踏入${world}，创世设定落地的第一幕开始。`,
+        : `${name}以${identity}的身份踏入${worldNameOf(genre, config)}，创世设定落地的第一幕开始。`,
       `设定里的第一条规则开始运转，${name}被卷入其中，无人能置身事外。`,
       `一次选择让同行者与${name}站到同一条路上，也留下新的代价。`,
       `旧秩序要求${name}交出能力，真正的对手从设定深处显形。`,
       `${name}必须在回到原点与改写规则之间作出最后准备。`,
       `终局会回答：这个由创世者亲手写下的世界，最终会变成什么样子。`,
     ]
-  }
-  return [
-    `${name}以${identity}的身份在${spawn?.name || genre.location}醒来，收到一个无法解释的信号。`,
-    `信号把${name}带向${destination}，第一条世界规则开始松动。`,
-    `一次选择让同行者与${name}站到同一条路上，也留下新的代价。`,
-    `旧秩序要求${name}交出能力，真正的敌人从记忆里显形。`,
-    `${name}必须在回到原点与打开边界之间作出最后准备。`,
-    `终局会回答：谁有权替这个世界记住未来。`,
-  ]
+    : [
+      `${name}以${identity}的身份在${spawn?.name || genre.location}醒来，收到一个无法解释的信号。`,
+      `信号把${name}带向${destination}，第一条世界规则开始松动。`,
+      `一次选择让同行者与${name}站到同一条路上，也留下新的代价。`,
+      `旧秩序要求${name}交出能力，真正的敌人从记忆里显形。`,
+      `${name}必须在回到原点与打开边界之间作出最后准备。`,
+      `终局会回答：谁有权替这个世界记住未来。`,
+    ]
+  const seen = new Array(6).fill(0)
+  return Array.from({ length }, (_, entry) => {
+    const beat = Math.min(5, Math.floor(entry * 6 / length))
+    const unit = Math.min(unitCount - 1, Math.floor(entry * unitCount / length))
+    const occurrence = seen[beat]
+    seen[beat] += 1
+    const lead = unitCount > 1 && unit > 0 && entry % (length / unitCount) === 0 ? `第${unit + 1}${unitLabel}——` : ''
+    const suffix = occurrence > 0 ? OUTLINE_STAGE_SUFFIXES[Math.min(occurrence, OUTLINE_STAGE_SUFFIXES.length - 1)] : ''
+    return `${lead}${beats[beat]}${suffix}`
+  })
 }
 
 const worldBibleFor = (genre, config) => {
   const name = protagonistName(config)
   const detail = realityDetail(config)
+  const seasonNumber = Number.isInteger(config?.seasonNumber) && config.seasonNumber > 1 ? config.seasonNumber : 1
+  const seasonRules = seasonNumber > 1
+    ? [`第${seasonNumber}季升格：标尺整体抬高一格——对手的层级、筹码的价码与主角要守的东西都比上一季更重；上一季的结局是这一季的起点，不是重播。`]
+    : []
   if (genre.id === CUSTOM_GENRE_ID) {
     const world = worldNameOf(genre, config)
     const setting = customSettingOf(config)
@@ -617,7 +722,7 @@ const worldBibleFor = (genre, config) => {
     const opening = spawn ? `故事从${spawn.name}开始` : '这个世界还没有成文的设定，规则将随故事逐一显形'
     return {
       premise: setting
-        ? `${world}：${setting} ${originPremisePhrase(genre, config)}${name}${detail ? `（${detail}）` : ''}的故事，就从这个由创世者亲手写下的世界里开始${spawn ? `，第一幕落在${spawn.name}` : ''}。`
+        ? `${seasonNumber > 1 ? `第${seasonNumber}季——` : ''}${world}：${setting} ${originPremisePhrase(genre, config)}${name}${detail ? `（${detail}）` : ''}的故事，就从这个由创世者亲手写下的世界里开始${spawn ? `，第一幕落在${spawn.name}` : ''}。`
         : `${world}里，${originPremisePhrase(genre, config)}${name}${detail ? `（${detail}）` : ''}的故事从这里开始；${opening}。`,
       rules: [
         ...(setting
@@ -625,6 +730,7 @@ const worldBibleFor = (genre, config) => {
           : ['这个世界尚无成文规则，第一章将随主角的行动立下第一条。']),
         '已经做出的选择会留下可追踪的回声，不能被无痕抹去。',
         '能力有边界；每一次越界都会改变关系或世界稳定度。',
+        ...seasonRules,
       ],
       endingAnchor: `${name}必须决定${world}的未来走向，以及谁有资格改写它的规则。`,
       outline: outlineFor(genre, config),
@@ -632,11 +738,12 @@ const worldBibleFor = (genre, config) => {
   }
   const spawn = resolveStartPoint(genre, config)
   return {
-    premise: `${genre.world}里，${originPremisePhrase(genre, config)}${name}${detail ? `（${detail}）` : ''}在${spawn?.name || genre.location}发现一条会回应选择的世界线。`,
+    premise: `${seasonNumber > 1 ? `第${seasonNumber}季——` : ''}${genre.world}里，${originPremisePhrase(genre, config)}${name}${detail ? `（${detail}）` : ''}在${spawn?.name || genre.location}发现一条会回应选择的世界线。`,
     rules: [
       `${genre.world}的秘密只能通过具体行动被唤醒。`,
       '已经做出的选择会留下可追踪的回声，不能被无痕抹去。',
       '能力有边界；每一次越界都会改变关系或世界稳定度。',
+      ...seasonRules,
     ],
     endingAnchor: `${name}必须决定把记忆交给谁，以及是否让世界继续保持原样。`,
     outline: outlineFor(genre, config),
@@ -652,9 +759,10 @@ const validateStory = (story) => {
   }
 }
 
-const validateIndex = (index) => {
-  if (!Number.isInteger(index) || index < 0 || index >= MAX_CHAPTERS) {
-    throw new RangeError(`chapter index must be an integer from 0 to ${LAST_INDEX}`)
+const validateIndex = (index, story) => {
+  const total = story ? totalChaptersFor(story) : 6
+  if (!Number.isInteger(index) || index < 0 || index >= total) {
+    throw new RangeError(`chapter index must be an integer from 0 to ${total - 1}`)
   }
 }
 
@@ -668,11 +776,13 @@ const hash = (value) => {
 }
 
 const choiceAt = (story, index) => {
-  if (index !== 1 && index !== 3) return null
+  const type = decisionTypeAt(index)
+  if (!type) return null
   const config = story.config || {}
   const genre = genreFor(story.genreId || config.genreId)
   const merged = story.kind === 'merged'
-  if (index === 1) {
+  const act = Math.floor(index / 6)
+  if (type === 'first') {
     if (merged) {
       const bond = config.merge?.bond === 'rivals' ? '先试探对方' : '先把后背交给对方'
       return {
@@ -684,6 +794,15 @@ const choiceAt = (story, index) => {
       }
     }
     const noun = genre.id === 'cultivation' ? '火种' : genre.id === 'neon' ? '备份' : genre.id === 'city' ? '留言' : '信'
+    if (act > 0) {
+      return {
+        prompt: `第 ${act + 1} 幕的${noun}再次送到${protagonistName(config)}手边，这一次它带着上一幕的回声，也带着更高的价码。要现在回应吗？`,
+        options: [
+          { id: 'open', label: '立刻回应', detail: '让这一次的来客知道你已经听见', consequence: '线索变清晰，关系更靠近。' },
+          { id: 'wait', label: '先按下不动', detail: '记下信号，去找一个更安全的出口', consequence: '稳定度上升，但真相会绕远。' },
+        ],
+      }
+    }
     return {
       prompt: `${protagonistName(config)}收到一枚${noun}，要现在回应吗？`,
       options: [
@@ -698,6 +817,15 @@ const choiceAt = (story, index) => {
       options: [
         { id: 'bridge', label: '让规则互相翻译', detail: '接受短暂的不稳定，找一条共同语法', consequence: '两个世界获得新的共同规则。' },
         { id: 'separate', label: '保留各自边界', detail: '不牺牲任何一方的原有秩序', consequence: '合流变慢，但两条世界线保持清醒。' },
+      ],
+    }
+  }
+  if (act > 0) {
+    return {
+      prompt: `${worldNameOf(genre, config)}把新的代价推到${protagonistName(config)}面前——这一幕押上的，比上一幕更重。`,
+      options: [
+        { id: 'cross', label: `前往${cleanText(config.destination, '') || genre.location}`, detail: `用“${cleanText(config.ability, '') || '你的能力'}”穿过边界`, consequence: '主动承担风险，打开隐藏章节。' },
+        { id: 'return', label: '回到熟悉的地方', detail: `向${cleanText(config.friend, '') || '一个可信的人'}求证`, consequence: '保留退路，也让旧关系重新发声。' },
       ],
     }
   }
@@ -718,6 +846,73 @@ const validChoiceAt = (story, index) => {
   if (typeof candidate !== 'string') return null
   const choice = choiceAt(story, index)
   return choice?.options?.some((option) => option.id === candidate) ? candidate : null
+}
+
+// The most recent recorded decision of a type ('first' | 'second') strictly
+// before `index`: the echo source for later chapters in every length mode.
+const latestDecision = (story, index, type) => {
+  for (let at = index - 1; at >= 0; at -= 1) {
+    if (decisionTypeAt(at) !== type) continue
+    const choiceId = validChoiceAt(story, at)
+    if (!choiceId) continue
+    const option = choiceAt(story, at)?.options.find((item) => item.id === choiceId)
+    if (option) return { at, choiceId, option }
+  }
+  return null
+}
+
+/*
+ * Chapters past the first six (season acts 2–4, long-line arcs) cannot replay
+ * the base scene table — the reader would meet the same scene three more
+ * times. Instead each world carries four act motifs, and the six beat
+ * positions are re-skinned per act: same dramatic skeleton, new surface,
+ * decisions echoed from the LATEST choice of each type rather than the
+ * first act's. The tests lock this: scenes at chapters 7/13/25 differ from
+ * each other and from every base scene.
+ */
+const ACT_MOTIFS = {
+  mist: ['雾季更替', '外港来船', '钟声改点', '退潮见底'],
+  cultivation: ['灵脉回潮', '宗门大比', '秘境开门', '天榜重排'],
+  neon: ['雨季换挡', '全城断电夜', '备份拍卖周', '上城来人'],
+  city: ['梅雨时节', '老街改造', '夜班换乘', '凌晨市集'],
+  court: ['宫宴时节', '新人入宫', '边关急报', '太后寿宴'],
+  frontier: ['补给船季', '辐射风暴', '星图校准', '议会换届'],
+  custom: ['旧设定松动', '新规则试行', '边界之外', '世界回声'],
+}
+
+const ECHO_LINES = {
+  open: '上一次的选择还在发烫：TA选择了立刻回应，线索因此一直没有断。',
+  wait: '上一次的选择还在发烫：TA选择了先按下不动，真相绕了远路，却也避开了正面的价码。',
+  join: '并肩走过的那一步，这一幕还在发烫。',
+  guard: '保持距离的那一次观察，这一幕还在发烫。',
+  cross: '穿过边界的那一步，这一幕还在发烫：风险是TA自己选的。',
+  return: '回到熟悉地方的那一步，这一幕还在发烫：退路还在，旧关系也还在。',
+  bridge: '让规则互相翻译的那一次，这一幕还在发烫。',
+  separate: '保留各自边界的那一次，这一幕还在发烫。',
+}
+
+const variationSceneFor = (story, genre, index, ctx) => {
+  const structure = structureFor(story, index)
+  const motifs = ACT_MOTIFS[genre.id] || ACT_MOTIFS.custom
+  const motif = motifs[structure.unitIndex % motifs.length]
+  const unitWord = structure.mode === 'long' ? '弧' : '幕'
+  const first = latestDecision(story, index, 'first')
+  const second = latestDecision(story, index, 'second')
+  const echoOf = (decision) => decision
+    ? ECHO_LINES[decision.choiceId] || `“${decision.option.label}”的决定留下的回声，这一${unitWord}还在发烫。`
+    : null
+  const echoFirst = echoOf(first)
+  const echoSecond = echoOf(second)
+  const { name, ability, friend, destination, world } = ctx
+  const positions = [
+    [`${world}进入${motif}的时节，空气先一步变了味道。`, `${name}在${destination}重新站稳脚跟——上一${unitWord}的账还没算完，新的局势已经压到眼前。`, `这一${unitWord}里，“${ability}”的回声比从前更响，也更贵。`],
+    [`新的信号在${motif}里送到${name}手边，比上一${unitWord}更急，也更不容拒绝。`, '信号停在掌心，封口下有一点微光，安静地等着一个回答。', `留给${name}的时间，只剩下一次呼吸。`],
+    [...(echoFirst ? [echoFirst] : []), `${name}循着新线索抵达${destination}的另一侧，那里和上一${unitWord}隔着一整套新规矩。`, `${friend}带来一条上一${unitWord}没人敢说的消息：局势的价码，已经重标过了。`],
+    [`${motif}把旧秩序推到${name}面前，价码比上一${unitWord}抬高一格。`, '两条路都摆在面前，一条回头，一条向前；没有人先替TA开口。', '真正的对手还没有露面，只先送来了一句写在价目表上的话。'],
+    [...(echoSecond ? [echoSecond] : []), `${name}把这一${unitWord}攒下的筹码一次押上，局势当场翻面。`, `${destination}方向传来回应——比预想的更快，也更近。`],
+    [`${motif}落幕，这一${unitWord}的账当场结清：名次、代价与新到手的筹码，一样不少。`, `${name}站稳了新的一格，${world}的标尺为TA重新标了一次价。`, `下一${unitWord}的门已经开了一条缝，缝里透出的光，和这一${unitWord}的结尾完全不同。`],
+  ]
+  return positions[structure.beatPosition]
 }
 
 const sceneFor = (story, index) => {
@@ -756,6 +951,16 @@ const sceneFor = (story, index) => {
       [`新的宇宙终于找到共同的呼吸。`, `${first}与${second}站在同一片晨光里：边界没有消失，只是终于学会了相遇。`],
     ]
     return mergedScenes[index]
+  }
+
+  if (index >= 6) {
+    return variationSceneFor(story, genre, index, {
+      name,
+      ability,
+      friend,
+      destination,
+      world: worldNameOf(genre, config),
+    })
   }
 
   const livedLine = lived ? `那一点来自真实生活的火种——${lived}——让这次触碰显得异常熟悉。` : `没有人替${name}解释眼前的异常，只有${trait}让TA没有立刻转身。`
@@ -873,42 +1078,114 @@ export function createStory(draft = DEFAULT_DRAFT) {
   }
 }
 
+const CHAPTER_POSITION_TITLES = ['启程', '信号', '追迹', '越界', '回望', '新页']
+
 export function buildChapter(story, index) {
   validateStory(story)
-  validateIndex(index)
+  validateIndex(index, story)
   const genre = genreFor(story.genreId || story.config.genreId)
   const scene = sceneFor(story, index)
+  const structure = structureFor(story, index)
   const titleBase = genre.id === CUSTOM_GENRE_ID ? worldNameOf(genre, story.config) : genre.title
   const titles = story.kind === 'merged'
     ? ['相撞的天空', '合流信号', '共同的回声', '两种规则', '无昼之境', '共同呼吸']
     : [`${titleBase} · 初声`, `${titleBase} · 信号`, `${titleBase} · 追迹`, `${titleBase} · 越界`, `${titleBase} · 回望`, `${titleBase} · 新页`]
+  const title = index < titles.length
+    ? titles[index]
+    : `${titleBase} · 第${index + 1}章 · ${CHAPTER_POSITION_TITLES[structure.beatPosition]}`
   const name = story.kind === 'merged'
     ? (story.config.protagonists || []).map((item, itemIndex) => protagonistName(item, `旅者${itemIndex === 0 ? '甲' : '乙'}`)).join('与')
     : protagonistName(story.config)
-  const branchOne = validChoiceAt(story, 1)
-  const branchThree = validChoiceAt(story, 3)
-  const firstDecision = choiceAt(story, 1)?.options.find((option) => option.id === branchOne)
-  const laterDecision = choiceAt(story, 3)?.options.find((option) => option.id === branchThree)
-  const branchLabel = firstDecision ? `“${firstDecision.label}”的决定仍在回响，${firstDecision.consequence}` : ''
-  const lateBranchLabel = laterDecision ? `“${laterDecision.label}”的决定改变了前路，${laterDecision.consequence}` : ''
+  const firstLatest = latestDecision(story, index, 'first')
+  const secondLatest = latestDecision(story, index, 'second')
+  const branchLabel = firstLatest ? `“${firstLatest.option.label}”的决定仍在回响，${firstLatest.option.consequence}` : ''
+  const lateBranchLabel = secondLatest ? `“${secondLatest.option.label}”的决定改变了前路，${secondLatest.option.consequence}` : ''
   const paragraphs = [...scene]
-  if (index >= 2 && branchLabel) paragraphs.push(branchLabel)
-  if (index >= 4 && lateBranchLabel) paragraphs.push(lateBranchLabel)
+  if (branchLabel) paragraphs.push(branchLabel)
+  if (lateBranchLabel) paragraphs.push(lateBranchLabel)
   const choice = choiceAt(story, index)
   const spawn = story.kind === 'merged' ? null : resolveStartPoint(genre, story.config)
-  const summary = index === LAST_INDEX
+  const summary = structure.isFinale
     ? `${name}抵达终局，世界为新的选择留出位置。`
     : index === 0 && spawn
       ? `${name}在${spawn.name}醒来，故事的第一幕从这里开始。`
-      : `${name}在${worldNameOf(genre, story.config)}推进到第${index + 1}幕${choice ? '，命运节点即将出现' : '。'}`
+      : index < 6
+        ? `${name}在${worldNameOf(genre, story.config)}推进到第${index + 1}幕${choice ? '，命运节点即将出现' : '。'}`
+        : `${name}在${worldNameOf(genre, story.config)}推进到第${index + 1}章${choice ? '，命运节点即将出现' : '。'}`
+  // 章节台账 (deterministic local extraction; the model path supplies its
+  // own): the chapter's headline event, the consequence event when this
+  // chapter directly follows a decision, and a structure event at upgrade
+  // points. Foreshadowing points at the next outline entry that is still
+  // unresolved, plus a warning when the next chapter is a decision gate.
+  const events = [summary]
+  const justDecided = [firstLatest, secondLatest].find((decision) => decision && decision.at === index - 1)
+  if (justDecided) {
+    events.push(`承接第 ${justDecided.at + 1} 章选择：“${justDecided.option.label}”——${justDecided.option.consequence}`)
+  }
+  if (structure.isUpgradePoint) {
+    events.push(`结构节点：${structure.upgradeKind}——本${structure.unitLabel}的标尺与代价在此结算`)
+  }
+  const foreshadowing = []
+  if (!structure.isFinale) {
+    const outline = Array.isArray(story.worldBible?.outline) ? story.worldBible.outline : []
+    const nextOutline = outline[outlineIndexFor(index + 1, story)]
+    if (nextOutline) foreshadowing.push(`未解：${nextOutline}`)
+    if (decisionTypeAt(index + 1)) {
+      foreshadowing.push(`命运节点临近：第 ${index + 2} 章的选择将决定这一${structure.unitLabel}的走向`)
+    }
+  }
   return {
     id: `${story.id}:chapter:${index}:r${story.revision}`,
     index,
-    title: titles[index],
+    title,
     paragraphs,
     choice,
     summary,
+    events,
+    foreshadowing,
   }
+}
+
+// The story's event/foreshadowing ledger up to a chapter: every accepted
+// chapter's structured events, and the foreshadowing still on the books.
+// Server generation injects a compact slice of this into later chapters;
+// the reader shows it as a read-only list.
+export function storyLedgerFor(story, maxChapterIndex = Number.POSITIVE_INFINITY) {
+  validateStory(story)
+  const events = []
+  const foreshadowing = []
+  for (const chapter of Array.isArray(story.chapters) ? story.chapters : []) {
+    if (!chapter || !Number.isInteger(chapter.index) || chapter.index > maxChapterIndex) continue
+    for (const text of Array.isArray(chapter.events) ? chapter.events : []) {
+      if (typeof text === 'string' && text) events.push({ chapter: chapter.index + 1, text })
+    }
+    for (const text of Array.isArray(chapter.foreshadowing) ? chapter.foreshadowing : []) {
+      if (typeof text === 'string' && text) foreshadowing.push({ chapter: chapter.index + 1, text })
+    }
+  }
+  return { events, foreshadowing }
+}
+
+// 开启下一季: only a finished season story can roll over. The new story
+// inherits the full config (world, identity, spawn, template, protagonist)
+// with seasonNumber + 1 — the world bible then carries the escalation rule
+// and an outline re-derived for the new season.
+export function startNextSeason(story) {
+  validateStory(story)
+  if (story.kind === 'merged' || storyLengthModeOf(story) !== 'season') {
+    throw new RangeError('只有季模式的故事能开启下一季')
+  }
+  if (!isStoryComplete(story)) {
+    throw new RangeError('本季还没有读完，不能开启下一季')
+  }
+  const next = createStory({
+    ...story.config,
+    storyLengthMode: 'season',
+    seasonNumber: (Number.isInteger(story.config.seasonNumber) ? story.config.seasonNumber : 1) + 1,
+    step: 6,
+  })
+  next.previousSeasonId = story.id
+  return next
 }
 
 const ACT_LABELS = [
@@ -929,10 +1206,11 @@ const TONE_DIRECTIVES = {
 // 为每一章提供确定性的章节结构规划，供模型生成与阅读器剧情概览共享。
 export function storyBeatPlan(story, index) {
   validateStory(story)
-  validateIndex(index)
+  validateIndex(index, story)
   const config = story.config || {}
   const genre = genreFor(story.genreId || config.genreId)
   const merged = story.kind === 'merged'
+  const structure = structureFor(story, index)
   const name = merged
     ? (config.protagonists || []).map((item, idx) => protagonistName(item, `旅者${idx === 0 ? '甲' : '乙'}`)).join('与')
     : protagonistName(config)
@@ -949,6 +1227,12 @@ export function storyBeatPlan(story, index) {
   const spawn = resolveStartPoint(genre, config)
   const spawnName = spawn?.name || genre.location
 
+  const structureLine = structure.mode === 'season'
+    ? `结构：一季 24 章，第 ${structure.unitIndex + 1} 幕（共 4 幕），幕内第 ${structure.positionInUnit + 1} 章；${structure.isFinale ? '本章是季终大升格点：收束全季、结算全部代价并打开下一季的门' : structure.isUnitEnd ? '本章是本幕的小升格点：标尺当场跳一格，本幕代价在此结算' : '每幕第 6 章为小升格点，第 24 章为季终大升格'}`
+    : structure.mode === 'long'
+      ? `结构：长线 100 章，第 ${structure.unitIndex + 1} 弧（共 4 弧），弧内第 ${structure.positionInUnit + 1} 章；${structure.isFinale ? '本章是长线终局：全线收束并结算' : structure.isUnitEnd ? '本章是弧末大节点：完成本弧结算与升格，以弧过渡进入下一弧' : '每弧第 25 章为弧末大节点'}`
+      : `结构：短季 6 章，本章为第 ${index + 1} 章${structure.isFinale ? '，本卷在此收束并结算代价' : ''}`
+
   const prerequisites = [
     isCustom
       ? (spawn ? `世界：${worldDisplay}（由创世者亲手写定的世界；出生点：${spawn.name}）` : `世界：${worldDisplay}（由创世者亲手写定的世界）`)
@@ -962,28 +1246,38 @@ export function storyBeatPlan(story, index) {
     // spawn point itself only ever grounds chapter one.
     ...(originBeatLine(genre, config) ? [originBeatLine(genre, config)] : []),
     `能力：${ability}`,
+    structureLine,
   ]
   if (lived && !merged) prerequisites.push(`现实背景：${lived}`)
 
+  const firstLatest = latestDecision(story, index, 'first')
+  const secondLatest = latestDecision(story, index, 'second')
   const unlockedConsequences = []
-  if (index >= 2) {
-    const c1 = validChoiceAt(story, 1)
-    const opt1 = choiceAt(story, 1)?.options.find((opt) => opt.id === c1)
-    if (opt1) {
-      unlockedConsequences.push({ chapter: 2, choiceId: opt1.id, label: opt1.label, consequence: opt1.consequence })
-      prerequisites.push(`第 2 章已选：“${opt1.label}”——${opt1.consequence}`)
-    }
-  }
-  if (index >= 4) {
-    const c3 = validChoiceAt(story, 3)
-    const opt3 = choiceAt(story, 3)?.options.find((opt) => opt.id === c3)
-    if (opt3) {
-      unlockedConsequences.push({ chapter: 4, choiceId: opt3.id, label: opt3.label, consequence: opt3.consequence })
-      prerequisites.push(`第 4 章已选：“${opt3.label}”——${opt3.consequence}`)
-    }
+  for (const decision of [firstLatest, secondLatest]) {
+    if (!decision) continue
+    unlockedConsequences.push({
+      chapter: decision.at + 1,
+      choiceId: decision.choiceId,
+      label: decision.option.label,
+      consequence: decision.option.consequence,
+    })
+    prerequisites.push(`第 ${decision.at + 1} 章已选：“${decision.option.label}”——${decision.option.consequence}`)
   }
 
-  const mustGroundByChapter = [
+  const consequenceGround = (decision, fallback) => decision
+    ? `承接第 ${decision.at + 1} 章选择“${decision.option.label}”的结果：${decision.option.consequence}`
+    : fallback
+  const mustGroundFinale = [
+    `回应主线目标：${story.worldBible?.endingAnchor || '完成主线故事收尾'}`,
+    `交代此前选择带来的最终结果，完成结局`,
+  ]
+  const mustGroundUnitEnd = [
+    consequenceGround(secondLatest, `承接此前选择后的局势变化`),
+    structure.mode === 'long'
+      ? `完成本弧结算：标尺跳格、代价清账，并以弧过渡打开下一弧`
+      : `完成本幕结算：标尺跳一格、代价清账，并为下一幕留下明确钩子`,
+  ]
+  const mustGroundByPosition = [
     [
       isCustom
         ? (spawn ? `交代${name}在${spawn.name}醒来的处境与能力“${ability}”` : `交代${name}在${worldDisplay}的处境与能力“${ability}”`)
@@ -992,30 +1286,23 @@ export function storyBeatPlan(story, index) {
     ],
     [
       `推进指向“${destination}”的线索`,
-      `交代两个选项的背景，正文停在读者做出第 2 章选择之前`,
+      `交代两个选项的背景，正文停在读者做出第 ${index + 1} 章选择之前`,
     ],
     [
-      unlockedConsequences[0]
-        ? `承接第 2 章选择“${unlockedConsequences[0].label}”的结果：${unlockedConsequences[0].consequence}`
-        : `承接第 2 章选择后的剧情变化`,
+      consequenceGround(firstLatest, `承接此前选择后的剧情变化`),
       merged
         ? `展现双主角在合流点的配合与新冲突`
         : `在${destination}推进与${friend}相关的线索`,
     ],
     [
       `升级主要矛盾，要求${name}做出判断`,
-      `交代第二次选择两个方向的利弊，正文停在第 4 章选择之前`,
+      `交代第二次选择两个方向的利弊，正文停在第 ${index + 1} 章选择之前`,
     ],
     [
-      unlockedConsequences[1]
-        ? `承接第 4 章选择“${unlockedConsequences[1].label}”的结果：${unlockedConsequences[1].consequence}`
-        : `承接第 4 章选择后的局势变化`,
-      `推进主线冲突进入结局前的关键阶段`,
+      consequenceGround(secondLatest, `承接此前选择后的局势变化`),
+      structure.mode === 'short' ? `推进主线冲突进入结局前的关键阶段` : `推进主线冲突进入本${structure.unitLabel}的关键阶段`,
     ],
-    [
-      `回应主线目标：${story.worldBible?.endingAnchor || '完成主线故事收尾'}`,
-      `交代此前选择带来的最终结果，完成结局`,
-    ],
+    mustGroundUnitEnd,
   ]
 
   const dramaticQuestions = [
@@ -1027,7 +1314,7 @@ export function storyBeatPlan(story, index) {
     '解决核心冲突，交代故事结局。',
   ]
 
-  const paragraphShape = index === 1 || index === 3
+  const paragraphShape = decisionTypeAt(index) !== null
     ? [
       '承接上文场景，不重复上一章结尾原句',
       '通过具体行动与对话推进冲突',
@@ -1042,20 +1329,34 @@ export function storyBeatPlan(story, index) {
 
   return {
     chapterNumber: index + 1,
-    act: ACT_LABELS[index],
-    dramaticQuestion: dramaticQuestions[index],
+    act: structure.mode === 'short'
+      ? ACT_LABELS[index]
+      : `第 ${structure.unitIndex + 1} ${structure.unitLabel} · 第 ${structure.positionInUnit + 1} 章（全${structure.mode === 'season' ? '季' : '线'}第 ${index + 1} 章）`,
+    dramaticQuestion: structure.isFinale ? dramaticQuestions[5] : dramaticQuestions[structure.beatPosition],
     prerequisites,
-    mustGround: mustGroundByChapter[index],
+    mustGround: structure.isFinale ? mustGroundFinale : mustGroundByPosition[structure.beatPosition],
     unlockedConsequences,
     toneDirective,
     paragraphShape,
+    structure: {
+      mode: structure.mode,
+      totalChapters: structure.total,
+      unitIndex: structure.unitIndex,
+      unitCount: structure.unitCount,
+      unitLabel: structure.unitLabel,
+      positionInUnit: structure.positionInUnit,
+      isUnitEnd: structure.isUnitEnd,
+      isFinale: structure.isFinale,
+      upgradeKind: structure.upgradeKind,
+    },
   }
 }
 
 // 为阅读器提供不剧透未来的「故事脉络」档案（仅聚合至 lastAccessibleIndex）。
 export function storyNarrativeDossier(story, maxChapterIndex = 0) {
   validateStory(story)
-  const limit = Math.max(0, Math.min(LAST_INDEX, Number.isInteger(maxChapterIndex) ? maxChapterIndex : 0))
+  const total = totalChaptersFor(story)
+  const limit = Math.max(0, Math.min(total - 1, Number.isInteger(maxChapterIndex) ? maxChapterIndex : 0))
   const genre = genreFor(story.genreId || story.config.genreId)
   const currentBeat = storyBeatPlan(story, limit)
   const groundedSet = new Set(currentBeat.prerequisites)
@@ -1064,19 +1365,18 @@ export function storyNarrativeDossier(story, maxChapterIndex = 0) {
     for (const item of plan.mustGround) groundedSet.add(item)
   }
   const activeConsequences = []
-  for (const gate of [1, 3]) {
-    if (gate <= limit) {
-      const chosenId = validChoiceAt(story, gate)
-      const option = choiceAt(story, gate)?.options.find((opt) => opt.id === chosenId)
-      if (option) {
-        activeConsequences.push({
-          chapterNumber: gate + 1,
-          choiceId: option.id,
-          label: option.label,
-          detail: option.detail,
-          consequence: option.consequence,
-        })
-      }
+  for (let gate = 0; gate <= limit; gate += 1) {
+    if (decisionTypeAt(gate) === null) continue
+    const chosenId = validChoiceAt(story, gate)
+    const option = choiceAt(story, gate)?.options.find((opt) => opt.id === chosenId)
+    if (option) {
+      activeConsequences.push({
+        chapterNumber: gate + 1,
+        choiceId: option.id,
+        label: option.label,
+        detail: option.detail,
+        consequence: option.consequence,
+      })
     }
   }
   const timeline = []
@@ -1089,12 +1389,13 @@ export function storyNarrativeDossier(story, maxChapterIndex = 0) {
       chapterIndex: i,
       chapterNumber: i + 1,
       title: chapter.title,
-      act: ACT_LABELS[i],
+      act: total <= 6 ? ACT_LABELS[i] : storyBeatPlan(story, i).act,
       summary: chapter.summary || '',
       choiceLabel: option ? option.label : null,
     })
   }
   const origin = originSummaryFor(genre, story.config)
+  const ledger = storyLedgerFor(story, limit)
   return {
     worldName: worldNameOf(genre, story.config),
     location: resolveStartPoint(genre, story.config)?.name || genre.location,
@@ -1106,8 +1407,12 @@ export function storyNarrativeDossier(story, maxChapterIndex = 0) {
     endingAnchor: story.worldBible?.endingAnchor || '',
     currentBeat,
     groundedConcepts: [...groundedSet],
-    activeConsequences,
+    activeConsequences: activeConsequences.slice(-6),
     timeline,
+    ledger: {
+      events: ledger.events.slice(-12),
+      openForeshadowing: ledger.foreshadowing.slice(-8),
+    },
   }
 }
 
@@ -1155,7 +1460,7 @@ const legacyDecisionSignature = (story, index, currentScene) => {
 // generation. Missing chapters return null; callers retain their own fallback.
 export function chapterForReading(story, index) {
   validateStory(story)
-  validateIndex(index)
+  validateIndex(index, story)
   const stored = story.chapters.find((chapter) => chapter?.index === index)
   if (!stored) return null
   if (story.engine === 'gemini') return stored
@@ -1177,7 +1482,7 @@ export function chapterForReading(story, index) {
 
 export function chapterKey(story, index) {
   validateStory(story)
-  validateIndex(index)
+  validateIndex(index, story)
   const precedingChoices = Object.entries(story.choices || {})
     .filter(([chapter]) => Number(chapter) < index)
     .sort(([a], [b]) => Number(a) - Number(b))
@@ -1190,7 +1495,7 @@ const hasChoice = (story, index) => Boolean(validChoiceAt(story, index))
 export function chooseBranch(story, index, choiceId) {
   validateStory(story)
   if (story.readOnly === true) return story
-  validateIndex(index)
+  validateIndex(index, story)
   if (typeof choiceId !== 'string' || !choiceId.trim()) throw new RangeError('choiceId must be a non-empty string')
   const chapter = story.chapters.find((item) => item?.index === index)
   if (!chapter) throw new RangeError('cannot choose a branch before accepting that chapter')
@@ -1212,7 +1517,7 @@ export function chooseBranch(story, index, choiceId) {
   // Preserve accepted prose; only the precisely recognized old prototype
   // decision scenes need compatibility repair when rewriting a branch.
   next.chapters[index] = chapterForReading(next, index)
-  next.chapterIndex = Math.min(index + 1, LAST_INDEX)
+  next.chapterIndex = Math.min(index + 1, totalChaptersFor(next) - 1)
   next.updatedAt = now()
   return next
 }
@@ -1220,7 +1525,7 @@ export function chooseBranch(story, index, choiceId) {
 export function acceptChapter(story, chapter, key) {
   validateStory(story)
   if (story.readOnly === true) return story
-  if (!chapter || !Number.isInteger(chapter.index) || chapter.index < 0 || chapter.index >= MAX_CHAPTERS) return story
+  if (!chapter || !Number.isInteger(chapter.index) || chapter.index < 0 || chapter.index >= totalChaptersFor(story)) return story
   const index = chapter.index
   if (typeof key !== 'string' || key !== chapterKey(story, index)) return story
   if (index !== story.chapterIndex) return story
@@ -1233,7 +1538,7 @@ export function acceptChapter(story, chapter, key) {
   }
   const next = clone(story)
   next.chapters = [...story.chapters.map((item) => clone(item)), clone(chapter)]
-  next.chapterIndex = Math.min(index + 1, LAST_INDEX)
+  next.chapterIndex = Math.min(index + 1, totalChaptersFor(next) - 1)
   next.updatedAt = now()
   return next
 }
@@ -1401,6 +1706,7 @@ const snapshotChoice = (story, safe, index, redact) => {
 export function publicSnapshot(story) {
   validateStory(story)
   const sourceGenre = genreFor(story.genreId || story.config.genreId)
+  const total = totalChaptersFor(story)
   // Backups can carry arbitrary extra fields. Build the public object from an
   // explicit schema instead of copying hidden prompts, model responses or PII.
   const safe = {
@@ -1409,14 +1715,14 @@ export function publicSnapshot(story) {
     kind: story.kind === 'merged' ? 'merged' : 'solo',
     sourceIds: [],
     revision: Number.isInteger(story.revision) && story.revision >= 0 ? story.revision : 0,
-    chapterIndex: Math.min(story.chapters.length, LAST_INDEX),
+    chapterIndex: Math.min(story.chapters.length, total - 1),
     chapters: [],
     choices: {},
     author: '我 · 本地分享',
     bookmarked: false,
     readOnly: true,
     readerIndex: 0,
-    status: story.chapters.length >= MAX_CHAPTERS ? 'complete' : 'ongoing',
+    status: story.chapters.length >= total ? 'complete' : 'ongoing',
   }
   if (story.engine === 'gemini') safe.engine = 'gemini'
   if (story.kind === 'merged') {
@@ -1450,7 +1756,7 @@ export function publicSnapshot(story) {
     safe.worldBible = worldBibleFor(sourceGenre, safe.config)
   }
   for (const [index, chapter] of story.chapters.entries()) {
-    if (chapter?.index !== index || index >= MAX_CHAPTERS) throw new TypeError('cannot share non-sequential chapters')
+    if (chapter?.index !== index || index >= total) throw new TypeError('cannot share non-sequential chapters')
     const selected = validChoiceAt(story, index)
     if (selected) safe.choices[index] = selected
   }
@@ -1464,6 +1770,8 @@ export function publicSnapshot(story) {
       paragraphs: chapter.paragraphs.map(redact),
       summary: redact(chapter.summary),
       choice: snapshotChoice(story, safe, index, redact),
+      events: (Array.isArray(chapter.events) ? chapter.events : []).map(redact),
+      foreshadowing: (Array.isArray(chapter.foreshadowing) ? chapter.foreshadowing : []).map(redact),
     }))
   } else {
     safe.chapters = story.chapters.map(chapter => buildChapter(safe, chapter.index))

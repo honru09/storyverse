@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createGeminiGenerator, DEFAULT_MODEL, sanitizeSettingText } from '../server/gemini.js'
 import { createStory, createMergedStory, buildChapter, chapterKey, acceptChapter, chooseBranch, FRIEND_BOOK } from '../src/story-engine.js'
+import { mergeSourceContext } from '../src/generation.js'
 
 const env = { GEMINI_API_KEY: 'test-key-never-used-on-network' }
 const story = () => ({ ...createStory({ name: '阿遥' }), engine: 'gemini' })
@@ -353,19 +354,27 @@ test('templates disabled by env switch leave context untouched', async () => {
   assert.equal(result.genreTemplateId, undefined)
 })
 
-test('engine genre mapping resolves a template when the story carries no template id', async () => {
+test('no world-derived template: an unpinned story generates without a template slice', async () => {
   let context
   const generator = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
     context = contextFrom(options)
     return response(output(true))
   } })
   const result = await generator.generate({ story: story(), index: 0 })
-  assert.equal(result.genreTemplateId, 'xuanhuan')
-  assert.ok(context.genreBrief.includes('世界比想象中大得多'))
+  // Templates are pure categories: the mist world never implies 玄幻 (or any
+  // other craft). Only a reader-pinned template id resolves.
+  assert.equal(result.genreTemplateId, undefined)
+  assert.equal(context.genreBrief, undefined)
+  assert.equal(context.genreBeat, undefined)
 })
 
-test('merged opening briefs from the lead template and borrows the other side archetypes', async () => {
-  const current = createMergedStory(story(), FRIEND_BOOK, { rules: 'separate', lead: 'b', bond: 'rivals' })
+test('merged opening briefs from the lead side pinned template and borrows the other side archetypes', async () => {
+  // Each side contributes the template IT pinned (carried in its merge-source
+  // context) — never a craft derived from its world.
+  const sideA = { ...createStory({ genreId: 'mist', name: '阿遥', genreTemplateId: 'xuanhuan' }), engine: 'gemini' }
+  const sideB = { ...createStory({ genreId: 'cultivation', name: '烬野', genreTemplateId: 'xianxia' }), engine: 'gemini' }
+  const current = createMergedStory(sideA, sideB, { rules: 'separate', lead: 'b', bond: 'rivals' })
+  current.mergeContext = [mergeSourceContext(sideA), mergeSourceContext(sideB)]
   let context
   const generator = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
     context = contextFrom(options)
@@ -509,4 +518,146 @@ test('god-mode world with a pinned template still receives its brief', async () 
   assert.equal(result.genreTemplateId, 'xianxia')
   assert.equal(typeof context.genreBrief, 'string')
   assert.ok(context.customWorldSettingData.setting.includes('海水每晚倒流一小时'))
+})
+
+// ---------------------------------------------------------------------------
+// 爽文批次：季/长线生成上下文、爽口径与赛博分支、台账注入、文笔总则锁定。
+// ---------------------------------------------------------------------------
+
+const seasonStory = () => ({ ...createStory({ name: '阿遥', genreId: 'mist', storyLengthMode: 'season', genreTemplateId: 'xuanhuan' }), engine: 'gemini' })
+const seasonOutput = () => ({
+  ...prose(),
+  worldBible: {
+    premise: '潮汐记得每个人遗失的名字，白潮港的人必须在日落之前找回自己真正的来处。',
+    rules: ['每次聆听潮汐都会失去一段微小记忆。', '世界的边界只向承认代价的人开启。', '已经发生的选择会在钟塔中留下回声。'],
+    endingAnchor: '阿遥需要决定如何保留城市的记忆，并在季终为后来者留下可以继续选择的道路。',
+    outline: Array.from({ length: 24 }, (_, index) => `第${index + 1}章推进世界的秘密，同时保留人物关系和已做出的选择。`),
+  },
+})
+const walkChapters = (current, count) => {
+  let walked = current
+  for (let index = 0; index < count; index += 1) {
+    walked = acceptLocal(walked, index)
+    const choice = buildChapter(walked, index).choice
+    if (choice) walked = chooseBranch(walked, index, choice.options[0].id)
+  }
+  return walked
+}
+
+test('season opening: the outline follows the mode and the context reports 24 chapters', async () => {
+  let context
+  const generator = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
+    context = contextFrom(options)
+    return response(seasonOutput())
+  } })
+  const result = await generator.generate({ story: seasonStory(), index: 0 })
+  assert.equal(context.chapterCount, 24)
+  assert.equal(context.worldBible.outline.length, 24)
+  assert.equal(result.worldBible.outline.length, 24)
+  assert.equal(result.genreTemplateId, 'xuanhuan')
+})
+
+test('season continuation: outline window and template beat scale with position', async () => {
+  let current = seasonStory()
+  current.worldBible = { ...current.worldBible, outline: Array.from({ length: 24 }, (_, index) => `OUTLINE_${index}`) }
+  current = walkChapters(current, 7)
+  let context
+  const generator = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
+    context = contextFrom(options)
+    return response(output())
+  } })
+  await generator.generate({ story: current, index: 7 })
+  assert.equal(context.chapterCount, 24)
+  assert.deepEqual(context.worldBible.outline, ['OUTLINE_7', 'OUTLINE_8'])
+  // Beat index scales: chapter 8 of 24 plays the second of six season beats.
+  assert.ok(context.genreBeat.includes('在小圈子里初露锋芒'))
+  // The decision schedule carries the previous, current and next gates.
+  assert.deepEqual(context.decisionSchedule.map((entry) => entry.chapter), [4, 8, 10])
+  assert.equal(context.beatPlan.structure.mode, 'season')
+})
+
+test('the xianxia brief carries the default 爽口径 pace preset', async () => {
+  const current = { ...createStory({ name: '阿遥', genreId: 'cultivation', genreTemplateId: 'xianxia' }), engine: 'gemini' }
+  let context
+  const generator = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
+    context = contextFrom(options)
+    return response(output(true))
+  } })
+  await generator.generate({ story: current, index: 0 })
+  assert.ok(context.genreBrief.includes('爽口径'))
+  assert.ok(context.genreBrief.includes('第 1 章明牌'))
+  assert.ok(context.genreBrief.includes('回执'))
+  assert.ok(context.genreBrief.includes('代价操作化'))
+})
+
+test('the cyber branch follows the reader-chosen neon world, never the template alone', async () => {
+  const neon = { ...createStory({ name: '阿遥', genreId: 'neon', genreTemplateId: 'scifi' }), engine: 'gemini' }
+  let neonContext
+  const generator = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
+    neonContext = contextFrom(options)
+    return response(output(true))
+  } })
+  await generator.generate({ story: neon, index: 0 })
+  assert.ok(neonContext.genreBrief.includes('赛博分支'))
+  assert.ok(neonContext.genreBrief.includes('义体档位'))
+
+  const frontier = { ...createStory({ name: '阿遥', genreId: 'frontier', genreTemplateId: 'scifi' }), engine: 'gemini' }
+  let frontierContext
+  const generator2 = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
+    frontierContext = contextFrom(options)
+    return response(output(true))
+  } })
+  await generator2.generate({ story: frontier, index: 0 })
+  assert.equal(frontierContext.genreBrief.includes('赛博分支'), false)
+})
+
+test('the ledger of earlier chapters is injected compactly into later generation', async () => {
+  let current = seasonStory()
+  current = walkChapters(current, 3)
+  current.chapters[0] = {
+    ...current.chapters[0],
+    events: ['LEDGER_EVENT_ALPHA'],
+    foreshadowing: ['LEDGER_FORE_ALPHA'],
+  }
+  let context
+  const generator = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
+    context = contextFrom(options)
+    return response(output())
+  } })
+  await generator.generate({ story: current, index: 3 })
+  assert.ok(context.ledger.recentEvents.some((entry) => entry.text === 'LEDGER_EVENT_ALPHA'))
+  assert.ok(context.ledger.openForeshadowing.some((entry) => entry.text === 'LEDGER_FORE_ALPHA'))
+  assert.ok(context.ledger.recentEvents.every((entry) => entry.chapter <= 3))
+})
+
+test('model events and foreshadowing land on the chapter; absent ones fall back to the summary', async () => {
+  const withLedger = {
+    ...prose(),
+    events: ['阿遥在钟塔下与守灯人对质，银色潮痕扩散到手腕。'],
+    foreshadowing: ['雾里那扇门后的敲击声还没有解释。'],
+  }
+  const generator = createGeminiGenerator({ env, fetchImpl: async () => response(withLedger) })
+  const current = walkChapters(seasonStory(), 1)
+  const result = await generator.generate({ story: current, index: 1 })
+  assert.deepEqual(result.chapter.events, withLedger.events)
+  assert.deepEqual(result.chapter.foreshadowing, withLedger.foreshadowing)
+
+  const generator2 = createGeminiGenerator({ env, fetchImpl: async () => response(output()) })
+  const result2 = await generator2.generate({ story: current, index: 1 })
+  assert.deepEqual(result2.chapter.events, [result2.chapter.summary])
+  assert.deepEqual(result2.chapter.foreshadowing, [])
+})
+
+test('the system prompt carries the craft constitution （剧情感 / 事件钩子 / 回执 / 只管写法）', async () => {
+  let systemText = ''
+  const generator = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
+    systemText = JSON.parse(options.body).systemInstruction.parts[0].text
+    return response(output(true))
+  } })
+  await generator.generate({ story: story(), index: 0 })
+  for (const phrase of ['剧情感', '事件钩子', '回执密度', '禁止用意境', '代价要可计算', 'events', 'foreshadowing', '模板只管写法', '季终大升格', '弧末大节点']) {
+    assert.ok(systemText.includes(phrase), phrase)
+  }
+  assert.equal(systemText.includes('全卷六章'), false)
+  assert.equal(systemText.includes('第六章收束本卷'), false)
 })

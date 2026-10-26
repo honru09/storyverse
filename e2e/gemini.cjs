@@ -59,25 +59,26 @@ async function openBook(page, name, genre) {
   await savedChapters(page, 2);
 }
 
-async function finishBook(page, requests) {
+async function finishBook(page, requests, { total = 24, ending = '这一季，读完了。' } = {}) {
   const id = (await library(page)).activeStoryId;
-  for (let index = 0; index < 6; index += 1) {
+  for (let index = 0; index < total; index += 1) {
     await position(page, index + 1);
     assert.match(await page.locator('.reader-article').innerText(), new RegExp(`MOCK_GEMINI_CHAPTER_${index}`));
     const choice = page.getByRole('group', { name: '剧情选择' });
+    await choice.first().waitFor({ timeout: 400 }).catch(() => {});
     if (await choice.count()) {
       assert.equal(requests.some(request => request.story.id === id && request.index === index + 1), false, 'a decision must block the next paid request');
       assert.equal(await page.getByRole('button', { name: '下一章', exact: true }).isEnabled(), false);
       await choice.getByRole('button').first().click();
     }
-    if (index < 5) {
+    if (index < total - 1) {
       await page.getByRole('button', { name: '下一章', exact: true }).click();
     }
   }
-  await page.getByRole('heading', { name: '这一卷，读完了。' }).waitFor();
+  await page.getByRole('heading', { name: ending }).waitFor();
   const bookRequests = requests.filter(request => request.story.id === id);
-  assert.equal(bookRequests.length, 6);
-  assert.deepEqual(bookRequests.map(request => request.index), [0, 1, 2, 3, 4, 5]);
+  assert.equal(bookRequests.length, total);
+  assert.deepEqual(bookRequests.map(request => request.index), Array.from({ length: total }, (_, index) => index));
 }
 
 (async () => {
@@ -143,7 +144,7 @@ async function finishBook(page, requests) {
       assert.equal(original.engine, 'gemini');
       await page.getByRole('button', { name: '分享', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: '分享预览' });
-      assert.equal(await dialog.locator('details').count(), 6);
+      assert.equal(await dialog.locator('details').count(), 24);
       const publish = dialog.getByRole('button', { name: '保存到本机书城' });
       assert.equal(await publish.isEnabled(), false);
       await dialog.locator('summary').first().click();
@@ -152,7 +153,7 @@ async function finishBook(page, requests) {
       await dialog.getByRole('checkbox', { name: '我已检查正文，可保存此副本' }).check();
       await publish.click();
       const shared = (await library(page)).publications[0].snapshot;
-      assert.equal(shared.chapters.length, 6);
+      assert.equal(shared.chapters.length, 24);
       assert.match(shared.chapters[0].paragraphs[0], /MOCK_GEMINI_CHAPTER_0：匿名旅者/);
       assert.doesNotMatch(JSON.stringify(shared), /AIQA舟明/);
       await page.getByRole('button', { name: '我的世界', exact: true }).click();
@@ -177,7 +178,7 @@ async function finishBook(page, requests) {
       await page.getByRole('button', { name: '阅读新书', exact: true }).click();
       await position(page, 1);
       await savedChapters(page, 2);
-      await finishBook(page, requests);
+      await finishBook(page, requests, { total: 6, ending: '这一卷，读完了。' });
       const saved = await library(page);
       assert.equal(saved.stories.length, 3);
       const merged = saved.stories.find(story => story.id === saved.activeStoryId);
@@ -186,7 +187,9 @@ async function finishBook(page, requests) {
       assert.deepEqual(saved.stories.filter(story => story.id !== merged.id), twoBooks);
       const mergeRequest = requests.find(request => request.story.id === merged.id);
       assert.equal(mergeRequest.story.mergeContext.length, 2);
-      assert.equal(mergeRequest.story.mergeContext[0].summaries.length, 6);
+      // Merge context stays compact: the source's summaries are capped at
+      // the most recent twelve even for a full 24-chapter season.
+      assert.equal(mergeRequest.story.mergeContext[0].summaries.length, 12);
       assert.equal(mergeRequest.story.mergeContext[1].summaries.length, 2);
       await page.screenshot({ path: path.join(artifactDir, 'gemini-ending.png'), fullPage: true });
     });

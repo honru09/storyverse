@@ -229,10 +229,19 @@ async function runOnboarding(browser, width) {
       const localMode = page.getByRole('group', { name: '故事方式' }).getByRole('button', { name: '预设体验', exact: true });
       await localMode.click();
       assert.equal(await localMode.getAttribute('aria-pressed'), 'true');
+      // Length picker: season is the default; switching to the long mode
+      // must produce a 100-chapter story.
+      const seasonPick = page.locator('.length-picker').getByRole('button', { name: /一季/ });
+      const longPick = page.locator('.length-picker').getByRole('button', { name: /长线/ });
+      assert.equal(await seasonPick.getAttribute('aria-pressed'), 'true');
+      await longPick.click();
+      assert.equal(await longPick.getAttribute('aria-pressed'), 'true');
       await page.getByRole('button', { name: '进入第一章', exact: true }).click();
       await readerReady(page);
       const saved = await readLibrary(page);
       assert.equal(saved.stories.length, 1);
+      assert.equal(saved.stories[0].config.storyLengthMode, 'long');
+      assert.equal(await page.getByRole('progressbar', { name: '阅读进度' }).getAttribute('aria-valuemax'), '100');
       assert.equal(saved.stories[0].config.name, testName);
       assert.equal(saved.stories[0].config.originIdentityId, 'mystery');
       assert.equal(saved.stories[0].config.startPointName, '灯塔守夜屋');

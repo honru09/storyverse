@@ -4,11 +4,19 @@ const LEGACY_STORAGE_KEY = 'storyweave:story-state'
 const CURRENT_VERSION = 2
 export const MAX_BACKUP_BYTES = 5 * 1024 * 1024
 
-// The local engine currently has six chapters. Its cursor points to the next
-// accepted chapter and stays at five once the final chapter exists.
-const CHAPTER_COUNT = 6
+// A story's chapter total derives from its length mode (mirrors the
+// engine's STORY_LENGTH_MODES so this storage layer stays dependency-free):
+// short 6 / season 24 / long 100; merged stories and pre-mode saves are 6.
+// The cursor points to the next accepted chapter and stays at total-1 once
+// the final chapter exists.
+const LENGTH_TOTALS = { short: 6, season: 24, long: 100 }
+const MAX_SUPPORTED_CHAPTERS = 100
+const totalForStory = (story) => {
+  if (story?.kind === 'merged') return 6
+  return LENGTH_TOTALS[story?.config?.storyLengthMode] || 6
+}
 const CONFIG_TEXT_FIELDS = [
-  'genreId', 'genreTemplateId', 'originIdentityId', 'customWorldName', 'customWorldSetting', 'startPointName', 'startPointHook', 'name', 'trait', 'origin', 'ability', 'tone', 'hometown',
+  'genreId', 'genreTemplateId', 'storyLengthMode', 'originIdentityId', 'customWorldName', 'customWorldSetting', 'startPointName', 'startPointHook', 'name', 'trait', 'origin', 'ability', 'tone', 'hometown',
   'school', 'company', 'role', 'friend', 'destination', 'protagonist',
 ]
 
@@ -65,6 +73,10 @@ function validateConfig(config, prefix, errors, merged = false) {
   }
   validateOptionalFields(config, prefix, CONFIG_TEXT_FIELDS, 'string', errors)
   validateOptionalFields(config, prefix, ['immersive'], 'boolean', errors)
+  validateOptionalFields(config, prefix, ['seasonNumber'], 'number', errors)
+  if (config.storyLengthMode !== undefined && !['short', 'season', 'long'].includes(config.storyLengthMode)) {
+    errors.push(`${prefix}.storyLengthMode is invalid`)
+  }
   if (config.step !== undefined && (!Number.isInteger(config.step) || config.step < 1 || config.step > 6)) {
     errors.push(`${prefix}.step must be an integer from 1 to 6`)
   }
@@ -104,10 +116,14 @@ function validateChapter(chapter, prefix, index, merged, errors) {
   if (chapter.index !== index) errors.push(`${prefix}.index must match its position`)
   validateStringArray(chapter.paragraphs, `${prefix}.paragraphs`, errors, { nonEmpty: true })
   validateOptionalFields(chapter, prefix, ['summary'], 'string', errors)
+  for (const field of ['events', 'foreshadowing']) {
+    if (chapter[field] !== undefined) validateStringArray(chapter[field], `${prefix}.${field}`, errors)
+  }
 
-  const expectedIds = index === 1
+  // Decision chapters repeat on the six-chapter rhythm in every length mode.
+  const expectedIds = index % 6 === 1
     ? (merged ? ['join', 'guard'] : ['open', 'wait'])
-    : index === 3 ? (merged ? ['bridge', 'separate'] : ['cross', 'return']) : null
+    : index % 6 === 3 ? (merged ? ['bridge', 'separate'] : ['cross', 'return']) : null
   if (!expectedIds) {
     if (chapter.choice != null) errors.push(`${prefix}.choice is not available for this chapter`)
     return
@@ -153,11 +169,12 @@ function validateStory(story, prefix) {
   }
   if (!Array.isArray(story.chapters)) errors.push(`${prefix}.chapters must be an array`)
   else {
-    if (story.chapters.length > CHAPTER_COUNT) errors.push(`${prefix}.chapters exceeds the supported chapter count`)
+    const total = totalForStory(story)
+    if (story.chapters.length > Math.min(total, MAX_SUPPORTED_CHAPTERS)) errors.push(`${prefix}.chapters exceeds the supported chapter count`)
     for (let index = 0; index < story.chapters.length; index += 1) {
       validateChapter(story.chapters[index], `${prefix}.chapters[${index}]`, index, story.kind === 'merged', errors)
     }
-    if (story.chapterIndex !== Math.min(story.chapters.length, CHAPTER_COUNT - 1)) {
+    if (story.chapterIndex !== Math.min(story.chapters.length, total - 1)) {
       errors.push(`${prefix}.chapterIndex does not match accepted chapters`)
     }
   }
@@ -167,10 +184,14 @@ function validateStory(story, prefix) {
   if (!Array.isArray(story.choices) && !isRecord(story.choices)) {
     errors.push(`${prefix}.choices must be an array or object`)
   } else {
+    const total = totalForStory(story)
     for (const [chapter, choice] of Object.entries(story.choices)) {
       // Sparse legacy arrays become null-filled arrays after JSON serialization.
       if (choice === null && Array.isArray(story.choices)) continue
-      if (!/^[0-5]$/.test(chapter) || !isNonEmptyString(choice)) errors.push(`${prefix}.choices contains an invalid entry`)
+      const chapterIndex = Number(chapter)
+      if (!Number.isInteger(chapterIndex) || String(chapterIndex) !== chapter || chapterIndex < 0 || chapterIndex >= total || !isNonEmptyString(choice)) {
+        errors.push(`${prefix}.choices contains an invalid entry`)
+      }
     }
   }
   if (!Number.isInteger(story.revision) || story.revision < 0) {
@@ -179,7 +200,7 @@ function validateStory(story, prefix) {
   if (story.readerIndex !== undefined && (!Number.isInteger(story.readerIndex) || story.readerIndex < 0)) {
     errors.push(`${prefix}.readerIndex must be a non-negative integer`)
   }
-  validateOptionalFields(story, prefix, ['author', 'createdAt', 'updatedAt', 'status', 'genreTemplateId'], 'string', errors)
+  validateOptionalFields(story, prefix, ['author', 'createdAt', 'updatedAt', 'status', 'genreTemplateId', 'previousSeasonId'], 'string', errors)
   validateOptionalFields(story, prefix, ['bookmarked', 'readOnly', 'isDemo'], 'boolean', errors)
   if (story.kind !== undefined && !['solo', 'merged'].includes(story.kind)) errors.push(`${prefix}.kind is invalid`)
   if (story.sourceIds !== undefined) validateStringArray(story.sourceIds, `${prefix}.sourceIds`, errors)

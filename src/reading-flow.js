@@ -1,5 +1,7 @@
-import { acceptChapter, buildChapter, chapterKey } from './story-engine.js'
+import { acceptChapter, buildChapter, chapterKey, totalChaptersFor } from './story-engine.js'
 
+// Legacy default for short stories; every function below derives the real
+// total from the story's length mode via totalChaptersFor.
 export const CHAPTER_COUNT = 6
 
 export function selectedChoice(story, index) {
@@ -18,8 +20,9 @@ export function selectedChoice(story, index) {
 // permit the directory or a restored position to skip an unresolved decision.
 export function lastAccessibleIndex(story, readOnly = false) {
   const chapters = story?.chapters || []
+  const total = story ? totalChaptersFor(story) : CHAPTER_COUNT
   let last = -1
-  for (let index = 0; index < Math.min(chapters.length, CHAPTER_COUNT); index += 1) {
+  for (let index = 0; index < Math.min(chapters.length, total); index += 1) {
     if (chapters[index]?.index !== index) break
     last = index
     if (!readOnly && chapters[index].choice && !selectedChoice(story, index)) break
@@ -37,7 +40,8 @@ export function materialize(story, targetLength) {
   // Preparing a reading window must never substitute the local demo prose.
   if (story?.engine === 'gemini' || story?.readOnly) return story
   let current = story
-  const target = Math.min(CHAPTER_COUNT, Math.max(0, Math.floor(targetLength)))
+  const total = totalChaptersFor(story)
+  const target = Math.min(total, Math.max(0, Math.floor(targetLength)))
   while (current.chapters.length < target) {
     const index = current.chapters.length
     const chapter = buildChapter(current, index)
@@ -62,5 +66,5 @@ export function moveReadingPosition(story, index, readOnly = false) {
 }
 
 export function readingProgress(story) {
-  return story ? Math.round(((readerIndexFor(story) + 1) / CHAPTER_COUNT) * 100) : 0
+  return story ? Math.round(((readerIndexFor(story) + 1) / totalChaptersFor(story)) * 100) : 0
 }

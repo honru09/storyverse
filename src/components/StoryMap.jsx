@@ -60,7 +60,9 @@ export default function StoryMap({
   className = "",
 }) {
   const states = chapterStates({ total, generated, current });
-  const width = Math.max(300, total * 64);
+  // Long structures stay legible: nodes pack tighter and only unit ends
+  // (plus the first and current chapters) carry labels.
+  const width = Math.max(300, total * (total <= 12 ? 64 : 30));
   const height = variant === "mini" ? 44 : 92;
   const cy = height / 2;
   const points = states.map((_, index) => nodePoint(index, total, width, height));
@@ -97,7 +99,7 @@ export default function StoryMap({
             {clickable && <circle className="storymap-hit" cx={point.x} cy={point.y} r="17" />}
             {state === "current" && <circle className="storymap-pulse" cx={point.x} cy={point.y} r={radius + 3} />}
             <circle className={`storymap-node ${state}`} cx={point.x} cy={point.y} r={radius} />
-            {variant !== "mini" && (
+            {variant !== "mini" && (total <= 24 || index === 0 || index === current || (index + 1) % (total > 24 ? 25 : 6) === 0) && (
               <text className={`storymap-label ${state === "current" ? "current" : ""}`} x={point.x} y={cy + (point.y >= cy ? 30 : -22)}>
                 第{index + 1}章
               </text>
