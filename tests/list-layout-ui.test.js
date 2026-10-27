@@ -10,12 +10,20 @@ const navBlock = main.slice(main.indexOf('function MobileBottomNav'), main.index
 const shelfBlock = main.slice(main.indexOf('function LibrarySwitcher'), main.indexOf('function Stepper'))
 const storeBlock = main.slice(main.indexOf('function StoreRanking'), main.indexOf('function Merge'))
 
-test('bottom nav is a full-width text bar: no icons, four text items', () => {
-  assert.doesNotMatch(navBlock, /<Icon/)
+test('bottom nav: three text items plus the profile face slot (user order 2026-10-28)', () => {
+  // The 2026-10-27 bar was four text items; the 2026-10-28 order moved
+  // 合流 out (contextual entries + the home page row) and gave the last
+  // slot to 我的主页 as a face entry. The three destinations stay
+  // text-only; the only icon allowed is the guest fallback in the
+  // profile slot.
   assert.match(navBlock, /className="mobile-bottom-nav"/)
-  for (const label of ['广场', '造世', '书城', '合流']) {
+  for (const label of ['广场', '造世', '书城']) {
     assert.match(navBlock, new RegExp(`label: "${label}"`))
   }
+  assert.doesNotMatch(navBlock, /label: "合流"/)
+  assert.match(navBlock, /bottom-nav-profile/)
+  assert.match(navBlock, /nav-face-frame/)
+  assert.match(navBlock, /aria-label="我的主页"/)
   // The reader still hides the bar entirely.
   assert.match(navBlock, /if \(view === "reader"\) return null/)
 })
@@ -30,8 +38,11 @@ test('bottom nav CSS: edge-to-edge, hairline top border, type token size', () =>
 })
 
 test('shelf is a wooden bookcase: planks, standing books, ribbons, printed titles', () => {
-  // Structure: shelves chunked from the story list, books stand on a plank.
-  assert.match(shelfBlock, /chunkShelves\(otherStories, capacity\)/)
+  // Structure: shelves chunked from the (F-24 filtered/sorted) story
+  // list, books stand on a plank.
+  assert.match(shelfBlock, /chunkShelves\(visibleStories, capacity\)/)
+  assert.match(shelfBlock, /className="shelf-search"/)
+  assert.match(shelfBlock, /className="shelf-sort"/)
   assert.match(shelfBlock, /className="wood-shelf"/)
   assert.match(shelfBlock, /className="wood-shelf-books"/)
   assert.match(shelfBlock, /className="wood-shelf-plank"/)

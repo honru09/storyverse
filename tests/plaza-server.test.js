@@ -337,6 +337,34 @@ test('publish rejects gated stories, another avatar’s line and red-line conten
   assert.deepEqual(feed, [])
 })
 
+test('publish stops a story whose real prose lost its engine mark — never scaffold in its place (DESIGN §27)', async (t) => {
+  const { base, plazaStore } = await startPlazaServer(t)
+  const token = await register(base, 'plaza_author_guard')
+  const avatar = await makeAvatar(base, token)
+
+  // The cold-start incident shape: model-written bible and prose, the
+  // engine field gone. The snapshot would re-derive scaffold chapters;
+  // the guard must refuse loudly and store nothing.
+  const incident = completedLine(avatar.id)
+  delete incident.engine
+  incident.worldBible = { ...incident.worldBible, premise: '由模型写下的世界核心设定，和本地模板完全不同。' }
+  incident.chapters = incident.chapters.map((chapter, index) => index === 0
+    ? { ...chapter, paragraphs: ['这是模型真正写出的正文，和本地脚手架完全不同。'] }
+    : chapter)
+  const incidentResponse = await publish(base, token, incident)
+  assert.equal(incidentResponse.status, 400)
+  assert.match((await incidentResponse.json()).error, /已拦下发布/)
+  assert.equal((await plazaStore.listPublications()).length, 0, 'the guarded publish stored nothing')
+
+  // Control: the same line with only the mark missing (local bible and
+  // local prose intact) is a genuine local line and still publishes.
+  const local = completedLine(avatar.id)
+  delete local.engine
+  const localResponse = await publish(base, token, local)
+  assert.equal(localResponse.status, 200)
+  assert.equal((await plazaStore.listPublications()).length, 1)
+})
+
 test('three distinct reporters hide a publication; the author can withdraw and re-publish', async (t) => {
   const { base } = await startPlazaServer(t)
   const authorToken = await register(base, 'plaza_author_c')

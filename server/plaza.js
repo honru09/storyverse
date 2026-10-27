@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { ApiError, sanitizeSettingText } from './gemini.js'
 import { findSettingViolation } from '../src/setting-guard.js'
 import { plazaSnapshot } from '../src/story-engine.js'
-import { PLAZA_REPORT_THRESHOLD, plazaGateFor } from '../src/plaza.js'
+import { PLAZA_REPORT_THRESHOLD, plazaGateFor, snapshotSourceViolation } from '../src/plaza.js'
 import { emptyLibrary, validateLibrary } from '../src/persistence.js'
 import { avatarAppearanceText } from '../src/avatar.js'
 import { usernameUid } from './username-auth.js'
@@ -304,6 +304,11 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         }
         const violation = redLineViolation(story)
         if (violation) throw new ApiError(400, violation)
+        // Snapshot-source guard (DESIGN §27): a story carrying real
+        // prose without the engine mark must never publish as locally
+        // re-derived scaffold — stop loudly instead.
+        const sourceViolation = snapshotSourceViolation(story)
+        if (sourceViolation) throw new ApiError(400, sourceViolation)
         const snapshot = scrubSnapshotSetting(plazaSnapshot(story, { avatarName: profile.name }))
         const timestamp = now().toISOString()
         const existing = await findOwnPublication(identity.uid, story.id)

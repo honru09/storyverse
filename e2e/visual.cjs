@@ -8,6 +8,33 @@ const targetUrl = process.env.TARGET_URL || 'http://127.0.0.1:18877';
 const artifactDir = process.env.PW_ARTIFACT_DIR || path.join(os.tmpdir(), 'storyverse-design');
 fs.mkdirSync(artifactDir, { recursive: true });
 
+// 番茄 chrome (READER-CHROME): reader tools live behind a centre-tap;
+// summon the chrome before touching any of its buttons.
+async function summonReaderChrome(page) {
+  // State-aware: a centre tap TOGGLES the chrome, and closing a reader
+  // sheet restores it — clicking blindly would fold it away again.
+  if (await page.locator('.reader-chrome').first().isVisible().catch(() => false)) return;
+  const box = await page.locator('.page-reader').last().boundingBox();
+  assert.ok(box, 'reader page is mounted');
+  await page.mouse.click(box.x + box.width / 2, box.y + Math.min(box.height / 2, 300));
+  await page.locator('.reader-chrome').first().waitFor();
+}
+
+// The chrome auto-hides on a timer; if it folds between the summon and
+// the tool click, summon once more and retry — the walk should not race
+// a product behaviour the reader-chrome suite already verifies.
+async function summonAndClick(page, makeLocator) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await summonReaderChrome(page);
+    try {
+      await makeLocator().click({ force: true, timeout: 8000 });
+      return;
+    } catch (error) { lastError = error; }
+  }
+  throw lastError;
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: process.env.PW_HEADLESS === 'true' });
   const report = { targetUrl, capturedAt: new Date().toISOString(), pages: [], failures: [] };
@@ -22,7 +49,13 @@ fs.mkdirSync(artifactDir, { recursive: true });
         await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
         await page.evaluate(async () => {
           await document.fonts.ready;
-          await Promise.all([...document.images].map(image => image.decode().catch(() => {})));
+          // Bounded: decode() can hang forever on lazy/offscreen images in
+          // headless Chromium; the cap keeps the wait honest without
+          // stalling the walk (broken-image measurement still runs after).
+          await Promise.race([
+            Promise.all([...document.images].map(image => image.decode().catch(() => {}))),
+            new Promise(resolve => setTimeout(resolve, 2500)),
+          ]);
         });
         const measurement = await page.evaluate(() => {
           const hitTargets = [...document.querySelectorAll('.reader-chrome-actions button, .account-entry, .reader-chrome-grid button')].filter(button => button.getClientRects().length).map(button => {
@@ -39,7 +72,7 @@ fs.mkdirSync(artifactDir, { recursive: true });
           return {
             width: document.documentElement.clientWidth,
             scrollWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
-            brokenImages: [...document.images].filter(image => !image.complete || !image.naturalWidth).map(image => image.currentSrc),
+            brokenImages: [...document.images].filter(image => image.complete && !image.naturalWidth).map(image => image.currentSrc),
             bodyFont: getComputedStyle(document.body).fontFamily,
             hitTargets,
             toolbarSingleRow: !toolbarRows.length || Math.max(...toolbarRows.map(row => row.top)) < Math.min(...toolbarRows.map(row => row.bottom)),
@@ -52,7 +85,7 @@ fs.mkdirSync(artifactDir, { recursive: true });
           };
         });
         const screenshot = path.join(artifactDir, `${viewport.width}-${name}.png`);
-        await page.screenshot({ path: screenshot, fullPage: true });
+        await page.screenshot({ path: screenshot, fullPage: true, animations: 'disabled', timeout: 30000 });
         report.pages.push({ viewport, name, screenshot, ...measurement });
         assert.ok(measurement.scrollWidth <= measurement.width + 1, `${name} overflows at ${viewport.width}`);
         assert.equal(measurement.brokenImages.length, 0, `${name} has a missing image`);
@@ -95,26 +128,34 @@ fs.mkdirSync(artifactDir, { recursive: true });
         await page.getByRole('button', { name: '进入第一章', exact: true }).click();
         await page.getByRole('progressbar', { name: '阅读进度' }).waitFor();
         await capture('reader');
-        await page.getByRole('button', { name: '阅读设置', exact: true }).click();
+        await summonAndClick(page, () => page.getByRole('button', { name: '阅读设置', exact: true }));
         await capture('preferences');
         await page.getByRole('radio', { name: '夜间', exact: true }).check();
         await page.getByRole('button', { name: '关闭面板' }).click();
         await capture('night-reader');
-        await page.getByRole('button', { name: '阅读设置', exact: true }).click();
+        await summonAndClick(page, () => page.getByRole('button', { name: '阅读设置', exact: true }));
         await page.getByRole('button', { name: '恢复默认', exact: true }).click();
         await page.getByRole('button', { name: '关闭面板' }).click();
-        await page.getByRole('button', { name: '下一章', exact: true }).click();
-        await page.getByRole('button', { name: '介入', exact: true }).click();
+        await summonAndClick(page, () => page.locator('.page-reader').last().locator('.reader-chrome').getByRole('button', { name: '下一章', exact: true }));
+        await summonAndClick(page, () => page.getByRole('button', { name: '介入', exact: true }));
         await page.getByRole('dialog', { name: '介入 · 扰动世界线' }).waitFor();
         await capture('intervention');
         await page.getByRole('button', { name: '关闭面板' }).click();
-        await page.getByRole('button', { name: '目录', exact: true }).first().click();
+        await summonAndClick(page, () => page.getByRole('button', { name: '目录', exact: true }).first());
         await capture('directory');
         await page.getByRole('button', { name: '关闭面板' }).click();
         await page.getByRole('button', { name: '我的世界', exact: true }).last().click();
         await nav('书城');
         await capture('store');
-        await nav(viewport.width < 1050 ? '合流' : '世界合流');
+        if (viewport.width < 1050) {
+          // 合流 left the bottom bar (2026-10-28): on mobile the path is
+          // plaza → 我的世界 row → the home page's 世界合流 entry.
+          await nav('广场');
+          await page.locator('.plaza-mine-row', { hasText: '我的世界' }).click();
+          await page.getByRole('button', { name: '世界合流', exact: true }).click();
+        } else {
+          await nav('世界合流');
+        }
         await capture('merge');
         await page.getByRole('button', { name: '开启合流故事', exact: true }).click();
         await page.getByRole('button', { name: '阅读新书', exact: true }).waitFor();

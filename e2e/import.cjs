@@ -38,6 +38,15 @@ async function check(name, action) {
   }
 }
 
+// 番茄 chrome (READER-CHROME): reader tools live behind a centre-tap;
+// summon the chrome before touching any of its buttons.
+async function summonReaderChrome(page) {
+  const box = await page.locator('.page-reader').boundingBox();
+  assert.ok(box, 'reader page is mounted');
+  await page.mouse.click(box.x + box.width / 2, box.y + Math.min(box.height / 2, 300));
+  await page.locator('.reader-chrome').first().waitFor();
+}
+
 async function startFixtureServer() {
   if (process.env.TARGET_URL) return { base: process.env.TARGET_URL, child: null };
   const child = spawn(process.execPath, [path.join(shotsDir, 'dev-server.mjs')], {
@@ -149,6 +158,7 @@ async function startFixtureServer() {
     });
 
     await check('设定集 lists the imported entries for the owner', async () => {
+      await summonReaderChrome(page);
       await page.getByRole('button', { name: /设定集/ }).click();
       const dialog = page.getByRole('dialog', { name: '设定集', exact: true });
       await dialog.waitFor();

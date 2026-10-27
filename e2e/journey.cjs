@@ -267,7 +267,9 @@ async function runJourney(browser, width) {
     const twoBookLibrary = await library(page);
     const partnerId = twoBookLibrary.activeStoryId;
     await page.getByRole('button', { name: '我的世界', exact: true }).click();
-    await navigation(page, '合流');
+    // 合流 left the bottom bar in the migration batch: from home, its own
+    // 世界合流 entry opens the merge flow.
+    await page.getByRole('button', { name: '世界合流', exact: true }).click();
     await page.getByRole('heading', { name: '世界合流', exact: true }).waitFor();
     const originalTitle = publishedLibrary.stories.find(story => story.id === originalId).title;
     const partnerTitle = twoBookLibrary.stories.find(story => story.id === partnerId).title;

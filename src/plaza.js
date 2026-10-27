@@ -23,19 +23,70 @@
 // - Moderation threshold: three distinct reporters auto-hide a line.
 
 import {
+  buildChapter,
   CUSTOM_GENRE_ID,
   GENRES,
+  genreFor,
   genreTemplateById,
   isManuallyFinished,
   isStoryComplete,
   storyLengthModeOf,
   totalChaptersFor,
+  worldBibleFor,
 } from './story-engine.js'
 import { avatarAppearanceText } from './avatar.js'
 
 export const PLAZA_REPORT_THRESHOLD = 3
 
 const genreByWorldId = (id) => GENRES.find((genre) => genre.id === id) || null
+
+/**
+ * The snapshot-source guard (MIGRATION batch, DESIGN §27). plazaSnapshot
+ * re-derives chapters with the local engine for any story not marked
+ * engine:'gemini' — correct for genuine local stories (the snapshot is
+ * the local engine's current rendering of them either way), but a
+ * silent fabrication for a story that carries real externally-written
+ * prose without the engine mark (the cold-start incident: a
+ * server-driven season published as scaffold text). Two signals must
+ * BOTH hold before the publish is stopped: the stored prose differs
+ * from the local engine's own chapter (legacy local stories drift with
+ * engine versions, so prose alone proves nothing), AND the story's
+ * world bible is not the local template bible for its config (a model
+ * wrote that bible). Returns the violation text, or '' when the source
+ * is provable.
+ */
+export function snapshotSourceViolation(story) {
+  if (!story || typeof story !== 'object' || story.engine === 'gemini') return ''
+  const chapters = Array.isArray(story.chapters) ? story.chapters : []
+  let proseDiffers = false
+  for (let position = 0; position < chapters.length; position += 1) {
+    const chapter = chapters[position]
+    const prose = (Array.isArray(chapter?.paragraphs) ? chapter.paragraphs : [])
+      .filter((paragraph) => typeof paragraph === 'string')
+      .join('\n')
+      .trim()
+    if (!prose) continue
+    let local = ''
+    try {
+      const index = Number.isInteger(chapter?.index) ? chapter.index : position
+      local = (buildChapter(story, index).paragraphs || []).join('\n').trim()
+    } catch { local = '' }
+    if (prose !== local) { proseDiffers = true; break }
+  }
+  if (!proseDiffers) return ''
+  let bibleIsLocalTemplate = false
+  try {
+    const genre = genreFor(story.genreId || story.config?.genreId)
+    const template = worldBibleFor(genre, story.config)
+    const bible = story.worldBible || {}
+    bibleIsLocalTemplate = bible.premise === template.premise
+      && bible.endingAnchor === template.endingAnchor
+      && JSON.stringify(bible.rules || []) === JSON.stringify(template.rules || [])
+      && JSON.stringify(bible.outline || []) === JSON.stringify(template.outline || [])
+  } catch { bibleIsLocalTemplate = false }
+  if (bibleIsLocalTemplate) return ''
+  return '这条故事线缺少生成来源标记，正文来源无法确认，已拦下发布（避免把错误正文发到广场）。请在生成它的设备上重新打开这条线后再发布。'
+}
 
 /** The publish gate, identical on the publish screen and the server. */
 export function plazaGateFor(story) {

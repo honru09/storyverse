@@ -960,7 +960,7 @@ const makeId = (prefix = 'story') => {
   return `${prefix}-${Date.now().toString(36)}-${idCounter.toString(36)}`
 }
 
-const genreFor = (genreId) => GENRE_BY_ID[genreId] || GENRE_BY_ID.mist
+export const genreFor = (genreId) => GENRE_BY_ID[genreId] || GENRE_BY_ID.mist
 
 const normalizeDraft = (draft = {}) => {
   const input = draft && typeof draft === 'object' ? draft : {}
@@ -1104,7 +1104,7 @@ const outlineFor = (genre, config) => {
   })
 }
 
-const worldBibleFor = (genre, config) => {
+export const worldBibleFor = (genre, config) => {
   const name = protagonistName(config)
   const detail = realityDetail(config)
   const seasonNumber = Number.isInteger(config?.seasonNumber) && config.seasonNumber > 1 ? config.seasonNumber : 1

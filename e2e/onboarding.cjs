@@ -43,6 +43,25 @@ async function noOverflow(page, label) {
     `${label}: horizontal overflow ${JSON.stringify(sizes)}`);
 }
 
+// 番茄 chrome (READER-CHROME): the reader's tools live behind a
+// centre-tap. Suites must summon the chrome before touching any of its
+// buttons, exactly like a reader's finger does.
+async function summonReaderChrome(page) {
+  const box = await page.locator('.page-reader').boundingBox();
+  assert.ok(box, 'reader page is mounted');
+  await page.mouse.click(box.x + box.width / 2, box.y + Math.min(box.height / 2, 300));
+  await page.locator('.reader-chrome').first().waitFor();
+}
+
+async function closeReaderSheetWithEscape(page, dialog) {
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'detached' });
+  // The chrome hides itself while a sheet is open, so the settings
+  // trigger unmounts with it and focus falls back to the document —
+  // there is no trigger left to return focus to. The chrome's own
+  // focus behaviour is owned by the reader-chrome suite.
+}
+
 async function closeWithEscape(page, dialog, trigger) {
   await page.keyboard.press('Escape');
   await dialog.waitFor({ state: 'detached' });
@@ -340,6 +359,7 @@ async function runOnboarding(browser, width) {
     const preferencesTrigger = page.getByRole('button', { name: '阅读设置', exact: true });
 
     await step('reading size, spacing and full-page theme update immediately', async () => {
+      await summonReaderChrome(page);
       await preferencesTrigger.click();
       const dialog = page.getByRole('dialog', { name: '阅读设置', exact: true });
       await dialog.waitFor();
@@ -391,7 +411,7 @@ async function runOnboarding(browser, width) {
       assert.equal(savedPreferences.keepAwake, false);
       assert.equal(await readRawLibrary(page), originalStoryRaw, 'Preferences must not rewrite any story or reading progress.');
       await noOverflow(page, 'night settings');
-      await closeWithEscape(page, dialog, preferencesTrigger);
+      await closeReaderSheetWithEscape(page, dialog);
     });
 
     await step('preferences survive reload while story bytes and chapter stay unchanged', async () => {
@@ -400,6 +420,7 @@ async function runOnboarding(browser, width) {
       await assertAppearance(page, { fontSize: 22, lineHeight: 1.8, theme: 'night' });
       assert.equal(await readRawLibrary(page), originalStoryRaw);
       assert.equal(await page.locator('.reader-article').innerText(), originalChapter);
+      await summonReaderChrome(page);
       await preferencesTrigger.click();
       const dialog = page.getByRole('dialog', { name: '阅读设置', exact: true });
       const sizes = dialog.getByRole('group', { name: '文字大小', exact: true });
@@ -416,7 +437,7 @@ async function runOnboarding(browser, width) {
       assert.equal(await page.locator('.page-reader').getAttribute('data-reader-motion'), 'off');
       await dialog.getByRole('button', { name: '恢复默认', exact: true }).click();
       await assertAppearance(page, { fontSize: 18, lineHeight: 2.05, theme: 'light' });
-      await closeWithEscape(page, dialog, preferencesTrigger);
+      await closeReaderSheetWithEscape(page, dialog);
       assert.equal(await readRawLibrary(page), originalStoryRaw);
       await noOverflow(page, 'restored reader');
     });

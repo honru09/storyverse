@@ -69,12 +69,14 @@ test('Vertex AI uses workload identity without requiring or exposing an API key'
 })
 
 test('chapter length target rides in the system instruction and the response schema (F-16)', async () => {
-  // PERSONA-QA F-16: chapters read short against web-novel norms. The
-  // per-chapter target is 1500–2000 Chinese characters, stated in the
-  // generation instructions exactly where the sibling parameters live —
-  // the system prompt sentence and the paragraphs schema description —
-  // and both backends send both. Asserted on the stubbed request, so no
-  // real generation is spent measuring it.
+  // PERSONA-QA F-16 set the 1500–2000 target; the MIGRATION batch
+  // retuned it on measured data (DESIGN §27): the official season's 24
+  // chapters landed at mean 1539 / median 1494 against the 1500–2000
+  // instruction — the model writes to ~0.88× the instructed midpoint
+  // and ~46% of chapters fell below the instructed floor. The band
+  // moved to 1750–2150 with an explicit floor rule, aiming the actual
+  // distribution back into 1500–2000. Asserted on the stubbed request,
+  // so no real generation is spent measuring it.
   const current = story()
   let options
   const generator = createGeminiGenerator({
@@ -89,9 +91,10 @@ test('chapter length target rides in the system instruction and the response sch
     },
   })
   await generator.generate({ story: current, index: 0 })
-  assert.match(options.config.systemInstruction, /每章 1500–2000 字/)
-  assert.doesNotMatch(options.config.systemInstruction, /800–1800/)
-  assert.match(JSON.stringify(options.config.responseJsonSchema), /全章 1500–2000 字/)
+  assert.match(options.config.systemInstruction, /每章 1750–2150 字/)
+  assert.match(options.config.systemInstruction, /不足 1700 字视为本章未完成/)
+  assert.doesNotMatch(options.config.systemInstruction, /每章 1500–2000 字/)
+  assert.match(JSON.stringify(options.config.responseJsonSchema), /全章 1750–2150 字/)
 })
 
 test('opening uses documented REST JSON schema and returns preserved chapter protocol plus world bible', async () => {
