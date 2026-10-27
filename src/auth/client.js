@@ -167,6 +167,15 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
     } catch { /* revocation is best effort; the local copy is cleared regardless */ }
   }
 
+  // Post-sign-in notices describe storage truthfully: when the deployment
+  // offers the cloud library, the shelf syncs to the account; when it does
+  // not, stories honestly stay in this browser.
+  function storageNotice() {
+    return snapshot.config?.storage === 'synced'
+      ? '书架会自动同步到你的账号。'
+      : '故事和阅读进度仍保存在本机。'
+  }
+
   function confirmUser(user) {
     if (!active) return Promise.reject(authError('auth/cancelled'))
     if (!user) {
@@ -443,7 +452,7 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
       const user = await confirmSiteSession(session)
       guard()
       if (!user) throw authError('auth/session-invalid')
-      publish({ notice: '已通过邮箱验证码登录。故事和阅读进度仍保存在本机。' })
+      publish({ notice: `已通过邮箱验证码登录。${storageNotice()}` })
       return user
     }),
     registerWithUsername: (username, password) => runUsername(async (guard) => {
@@ -470,7 +479,7 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
       const user = await confirmSiteSession(session)
       guard()
       if (!user) throw authError('auth/session-invalid')
-      publish({ notice: '账号已创建，你已登录。故事和阅读进度仍保存在本机。' })
+      publish({ notice: `账号已创建，你已登录。${storageNotice()}` })
       return user
     }),
     signInWithUsername: (username, password) => runUsername(async (guard) => {
@@ -497,7 +506,7 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
       const user = await confirmSiteSession(session)
       guard()
       if (!user) throw authError('auth/session-invalid')
-      publish({ notice: '已用用户名登录。故事和阅读进度仍保存在本机。' })
+      publish({ notice: `已用用户名登录。${storageNotice()}` })
       return user
     }),
     sendVerification: () => run(async (guard) => {

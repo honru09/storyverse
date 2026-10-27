@@ -126,7 +126,9 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
         </div>
         <p className="account-storage-note">按你的账号累计本站生成消耗；生成额度按天计算（UTC），在账号页只展示总计。</p>
       </div>}
-      <p className="account-storage-note">书架与阅读进度保存在当前浏览器，暂不跨设备同步。退出账号不会删除本机故事。</p>
+      <p className="account-storage-note">{account.config?.storage === 'synced'
+        ? "书架与阅读进度会同步到你的账号，换设备登录就能接着读。本机始终留一份，断网也能读。退出账号不会删除本机故事。"
+        : "书架与阅读进度保存在当前浏览器，暂不跨设备同步。退出账号不会删除本机故事。"}</p>
       {onOpenAvatar && <button className="account-avatar-entry" type="button" onClick={onOpenAvatar}>我的化身 <span aria-hidden="true">→</span></button>}
       {onOpenProfile && <button className="account-avatar-entry" type="button" onClick={onOpenProfile}>我的主页 <span aria-hidden="true">→</span></button>}
       {error && <p className="account-message is-error" role="alert">{error}</p>}
@@ -161,7 +163,9 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
         {configured && account.status === "error" && <button type="button" disabled={busy} onClick={() => void run(() => client.refreshUser())}>重试验证</button>}
       </div>
       {configured && <button className="account-guest" type="button" onClick={onContinue}>先不登录，继续体验 <span aria-hidden="true">→</span></button>}
-      <p className="account-storage-note">登录后书架仍保存在本机；不会自动上传故事或个人设定。没有 Google 账号，也可以用用户名或邮箱验证码登录。</p>
+      <p className="account-storage-note">{account.config?.storage === 'synced'
+        ? "不登录也能读，故事先保存在当前浏览器；登录后会自动同步到你的账号，换设备也能接着读。没有 Google 账号，也可以用用户名或邮箱验证码登录。"
+        : "登录后书架仍保存在本机；不会自动上传故事或个人设定。没有 Google 账号，也可以用用户名或邮箱验证码登录。"}</p>
     </>}
   </div>;
 }

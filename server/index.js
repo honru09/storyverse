@@ -8,6 +8,7 @@ import { createCoverService } from './cover.js'
 import { createAvatarService } from './avatar.js'
 import { createPlazaService } from './plaza.js'
 import { createSocialService } from './social.js'
+import { createLibraryService } from './library.js'
 
 const DEFAULT_DIST = fileURLToPath(new URL('../dist/', import.meta.url))
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2' }
@@ -181,7 +182,7 @@ async function serveStatic(request, response, pathname, distDir) {
   response.end(request.method === 'HEAD' ? undefined : bytes)
 }
 
-export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth = createAuthService({ env }), cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza = createPlazaService({ env }), social = createSocialService({ env }), distDir = DEFAULT_DIST } = {}) {
+export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth = createAuthService({ env }), cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza = createPlazaService({ env }), social = createSocialService({ env }), library = createLibraryService({ env }), distDir = DEFAULT_DIST } = {}) {
   // Explicit opt-out preserves existing deployments until the release owner sets it.
   const generationEnabled = env.GENERATION_ENABLED !== 'false'
   // The model id is static configuration; remember it the first time status
@@ -372,6 +373,49 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           response.end(image.buffer)
         }
         return
+      }
+      // The cloud library is account property: every route resolves the
+      // caller's identity and the service addresses records by that uid
+      // alone, so a book can only ever be reached by its owner. Local
+      // storage remains the offline working copy; this is the account
+      // copy the shelf restores from on a fresh browser.
+      const libraryIdentity = async () => {
+        try {
+          return await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再使用云端书架。', 'auth-required')
+          throw error
+        }
+      }
+      if (pathname === '/api/library' && request.method === 'GET') {
+        const identity = await libraryIdentity()
+        return sendJson(response, 200, await library.list(identity))
+      }
+      if (pathname === '/api/library/reading-state' && request.method === 'PUT') {
+        const identity = await libraryIdentity()
+        return sendJson(response, 200, await library.putReadingState(identity, await readPlazaJson(request)))
+      }
+      const libraryMatch = pathname.match(/^\/api\/library\/stories\/([^/]+)(?:\/(head|chunks\/(\d+)))?$/)
+      if (libraryMatch) {
+        const storyId = decodeURIComponent(libraryMatch[1])
+        const part = libraryMatch[2]
+        const identity = await libraryIdentity()
+        if (!part && request.method === 'GET') {
+          return sendJson(response, 200, { story: await library.getStory(identity, storyId) })
+        }
+        if (!part && request.method === 'PUT') {
+          return sendJson(response, 200, await library.putStory(identity, storyId, await readPlazaJson(request)))
+        }
+        if (!part && request.method === 'DELETE') {
+          return sendJson(response, 200, await library.remove(identity, storyId))
+        }
+        if (part === 'head' && request.method === 'PUT') {
+          return sendJson(response, 200, await library.putHead(identity, storyId, await readPlazaJson(request)))
+        }
+        const chunkMatch = part?.match(/^chunks\/(\d+)$/)
+        if (chunkMatch && request.method === 'PUT') {
+          return sendJson(response, 200, await library.putChunk(identity, storyId, Number(chunkMatch[1]), await readPlazaJson(request)))
+        }
       }
       if (pathname === '/api/plaza' && request.method === 'GET') {
         const publications = await plaza.feed()

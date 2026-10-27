@@ -1,4 +1,5 @@
 import { ApiError } from './gemini.js'
+import { dataStoreKind } from './data-store.js'
 import { loadFirebaseApp } from './firebase-app.js'
 import { createEmailCodeService, validEmailAddress } from './email-code.js'
 import { createUsernameAuthService } from './username-auth.js'
@@ -18,18 +19,25 @@ function publicConfig(env, emailCode, usernameEnabled = false) {
     && !env.FIREBASE_AUTH_EMULATOR_HOST
   const enabled = env.AUTH_ENABLED === 'true' && valid
     && (env.AUTH_GOOGLE_ENABLED !== 'false' || env.AUTH_EMAIL_ENABLED !== 'false')
+  // The cloud library rides the same durable store as the login channels:
+  // when one is configured, a signed-in reader's stories and reading
+  // progress sync to the account; when none is, they honestly stay local.
+  const storage = dataStoreKind(env) ? 'synced' : 'local'
+  const storageNote = storage === 'synced'
+    ? '登录后，故事和阅读进度会自动同步到你的账号。'
+    : '故事和阅读进度仍保存在本机，不会自动云同步。'
   return {
     enabled,
     providers: { google: enabled && env.AUTH_GOOGLE_ENABLED !== 'false', email: enabled && env.AUTH_EMAIL_ENABLED !== 'false', username: usernameEnabled },
     emailCode,
     firebase: enabled ? firebase : null,
-    storage: 'local',
+    storage,
     message: enabled
-      ? '账号仅用于身份识别。故事和阅读进度仍保存在本机，不会自动云同步。'
+      ? `账号仅用于身份识别。${storageNote}`
       : emailCode
-        ? '邮箱验证码登录可用。故事和阅读进度仍保存在本机，不会自动云同步。'
+        ? `邮箱验证码登录可用。${storageNote}`
         : usernameEnabled
-          ? '用户名登录可用。故事和阅读进度仍保存在本机，不会自动云同步。'
+          ? `用户名登录可用。${storageNote}`
           : '账号服务尚未配置。故事和阅读进度仍保存在本机。',
   }
 }
@@ -123,7 +131,7 @@ export function createAuthService({ env = process.env, verifyIdToken, usageServi
       },
       provider: resolved.provider,
       usage: await usage.totals(resolved.uid),
-      storage: 'local', entitlements: null, subscription: null,
+      storage: dataStoreKind(env) ? 'synced' : 'local', entitlements: null, subscription: null,
     }
   }
 

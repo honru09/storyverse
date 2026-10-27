@@ -18,6 +18,7 @@ import { installRipple } from "./motion/ripple.js";
 import AnimatedContent from "./components/react-bits/AnimatedContent.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import { createLibraryStore } from "./library-store.js";
+import { createCloudSync } from "./cloud-library.js";
 import { parseRoute, routeHash } from "./navigation.js";
 import {
   chunkShelves,
@@ -91,7 +92,7 @@ import AccountPanel from "./components/AccountPanel.jsx";
 import { createAuthClient } from "./auth/client.js";
 import ReadingPreferences from "./components/ReadingPreferences.jsx";
 import { createReadingPreferencesStore, getReaderAppearance } from "./reading-preferences.js";
-import { chapterLocationKey, estimateReadingMetrics } from "./reading-location.js";
+import { chapterLocationKey, estimateReadingMetrics, READING_LOCATION_KEY } from "./reading-location.js";
 import { useReaderExperience } from "./useReaderExperience.js";
 import ReadingTools from "./components/ReadingTools.jsx";
 import "./reader-experience.css";
@@ -523,7 +524,7 @@ function MobileBottomNav({ view, onNavigate }) {
   );
 }
 
-function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, onOpenAccount, authClient, avatar, onOpenAvatar }) {
+function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, onOpenAccount, authClient, avatar, onOpenAvatar, syncNote }) {
   const genre = genreOf(activeStory);
   const activeTotal = activeStory ? totalChaptersFor(activeStory) : 6;
   const currentChapter = activeStory
@@ -602,6 +603,8 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
       <button className="home-draft-row" onClick={onOpenAvatar}>
         <Icon name="users" size={20}/><span><strong>我的化身</strong><small>{avatar ? `${avatar.name} · ${avatarAppearanceText(avatar.appearance)}` : "让同一个角色，走进每一个世界"}</small></span><Icon name="chevron" size={16}/>
       </button>
+
+      {syncNote && <p className="library-sync-note">{syncNote}</p>}
 
       {activeStory ? <section className="home-section home-lower">
         {otherStories.length > 0 ? <>
@@ -5010,7 +5013,7 @@ function libraryWithStory(library, story) {
   };
 }
 
-function LibraryTools({ store, library, onClose, onRestored }) {
+function LibraryTools({ store, library, onClose, onRestored, syncNote }) {
   const [candidate, setCandidate] = useState(null);
   const [message, setMessage] = useState("");
   const [confirmReload, setConfirmReload] = useState(false);
@@ -5038,6 +5041,7 @@ function LibraryTools({ store, library, onClose, onRestored }) {
   return <ReadingDialog title="书架与备份" onClose={onClose}>
     <div className="library-tools">
       <p>{library.stories.length} 本故事 · {library.publications.length} 份分享</p>
+      {syncNote && <p className="field-hint">{syncNote}</p>}
       <p className="field-hint">备份含个人设定，请自行保管。恢复前会保留一份原存档。</p>
       <Button variant="secondary" onClick={() => {
         try {
@@ -5124,6 +5128,53 @@ function App() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [authClient, viewerUid]);
+  // Cloud library: while signed in, the shelf reconciles with the
+  // account copy on sign-in and writes changes through in the
+  // background. Local storage stays the working copy — nothing here
+  // blocks reading or generation, and failures retry silently.
+  const [cloudSync] = useState(() => createCloudSync({ getAccessToken: () => authClient.getAccessToken() }));
+  const cloudUid = account.status === "authenticated" ? account.user?.uid || null : null;
+  const readReadingStateRaw = () => {
+    try { return window.localStorage.getItem(READING_LOCATION_KEY); } catch { return null; }
+  };
+  useEffect(() => {
+    if (!cloudUid) return undefined;
+    let cancelled = false;
+    void cloudSync.merge({
+      uid: cloudUid,
+      library: store.getSnapshot().library,
+      applyRemote: ({ add, removeIds }) => {
+        if (cancelled) return;
+        store.update((current) => {
+          let stories = current.stories.filter((story) => !removeIds.includes(story.id));
+          for (const story of add) {
+            const index = stories.findIndex((item) => item.id === story.id);
+            if (index === -1) stories = [...stories, story];
+            else stories = stories.map((item, itemIndex) => (itemIndex === index ? story : item));
+          }
+          return { ...current, stories };
+        });
+      },
+      readReadingStateRaw,
+      writeReadingStateRaw: (raw) => {
+        try { window.localStorage.setItem(READING_LOCATION_KEY, raw); } catch { /* storage blocked */ }
+      },
+    });
+    return () => { cancelled = true; };
+  }, [cloudUid, cloudSync, store]);
+  useEffect(() => {
+    if (!cloudUid) return;
+    cloudSync.observe({ uid: cloudUid, stories: library.stories, readReadingStateRaw });
+  }, [cloudUid, cloudSync, library]);
+  const syncNote = account.user
+    ? account.config?.storage === "synced"
+      ? "书架已同步到你的账号，换设备登录就能接着读。"
+      : null
+    : library.stories.length > 0
+      ? account.config?.storage === "synced"
+        ? "故事只保存在当前浏览器 · 登录后自动同步到账号，换设备不丢。"
+        : "故事只保存在当前浏览器，换设备或清理缓存会丢失。"
+      : null;
   const activeStory = useMemo(
     () =>
       library.stories.find((story) => story.id === library.activeStoryId) ||
@@ -5624,6 +5675,7 @@ function App() {
         onOpenAccount={() => { setAccountIntent(activeStory ? null : "forge"); setAccountOpen(true); }}
         avatar={avatarState.avatar}
         onOpenAvatar={() => navigate("avatar")}
+        syncNote={syncNote}
       />
     );
   return (
@@ -5654,7 +5706,7 @@ function App() {
           setAccountIntent(null);
         }}/>
       </ReadingDialog>}
-      {libraryOpen && <LibraryTools store={store} library={library} onClose={() => setLibraryOpen(false)} onRestored={() => {
+      {libraryOpen && <LibraryTools store={store} library={library} syncNote={syncNote} onClose={() => setLibraryOpen(false)} onRestored={() => {
         setLibraryOpen(false);
         navigate("home");
         setToast("书架已恢复。");

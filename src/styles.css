@@ -101,6 +101,7 @@ button:disabled{cursor:not-allowed}
 .hero-actions .button{width:100%}
 .resume-position{color:var(--ink);font-weight:650}
 .home-section{margin-top:34px}
+.library-sync-note{margin:14px 2px 0;font-size:12.5px;line-height:1.55;color:var(--ink-soft)}
 .home-draft-row{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:58px;margin-top:16px;padding:12px 17px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);color:var(--ink);text-align:left;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 .home-draft-row>span{flex:1;min-width:0}
 .home-draft-row b,.home-draft-row strong{display:block;font-size:14px;font-weight:650}
