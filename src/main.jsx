@@ -141,6 +141,9 @@ import {
   queueIntervention,
   queuedInterventionsFor,
   retractChapter,
+  PERSONA_MAX,
+  updateLorebook,
+  updateWorldBible,
   createMergedStory,
   createStory,
   finishEndlessLine,
@@ -168,6 +171,15 @@ import {
   upsertStory,
 } from "./persistence";
 import { findSettingViolation } from "./setting-guard";
+import {
+  leadingExcerpt,
+  parseCharacterCardJson,
+  parseCharacterCardPng,
+  parseWorldInfoJson,
+  parseWorldText,
+  personaTextFromCard,
+  splitWorldTextIntoEntries,
+} from "./lorebook";
 
 const Icon = ({ name, size = 18, stroke = 1.8, className = "" }) => {
   const common = {
@@ -1503,6 +1515,91 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
   const abilityName = abilityPick?.name || "";
   const tone = tones.find((item) => item.id === toneId) || tones[0];
   const set = (patch) => setDraft((current) => ({ ...current, ...patch }));
+  // 外部导入 (external import): a world book / world text lands as a
+  // custom world (the god-mode shape) plus lorebook entries on the
+  // draft; a character card lands as a preview the reader confirms
+  // before anything is applied. Imported material is the reader's own
+  // private stock — it never leaves the book (see 设定集 / IMPORT.md).
+  const [worldImportNote, setWorldImportNote] = useState("");
+  const [cardPreview, setCardPreview] = useState(null);
+  const applyImportedWorld = ({ name, setting, entries, note }) => {
+    // Same stash discipline as enterGodMode: the preset world the
+    // reader came from stays borrowable by the 出身 step.
+    const borrow = draft.genreId !== CUSTOM_GENRE.id
+      ? (worldChosen ? draft.genreId : "")
+      : (draft.godBorrowWorldId || "");
+    set({
+      genreId: CUSTOM_GENRE.id,
+      godBorrowWorldId: borrow,
+      worldChosen: true,
+      customWorldName: name || "",
+      customWorldSetting: setting || "",
+      lorebook: entries || [],
+    });
+    setWorldImportNote(note);
+    setError("");
+  };
+  const handleWorldFile = async (file) => {
+    if (!file) return;
+    try {
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith(".json")) {
+        const parsed = parseWorldInfoJson(await file.text());
+        const setting = (parsed.description || "").slice(0, CUSTOM_WORLD_SETTING_MAX);
+        const violation = findSettingViolation([setting, ...parsed.entries.map((entry) => entry.content)].join("\n"));
+        if (violation) { setError(violation); return; }
+        const constants = parsed.entries.filter((entry) => entry.constant).length;
+        applyImportedWorld({
+          name: parsed.name,
+          setting,
+          entries: parsed.entries,
+          note: `已导入世界书${parsed.name ? `《${parsed.name}》` : ""}：${parsed.entries.length} 条条目（其中 ${constants} 条常驻），挂在这本书上，生成时按关键词命中注入。世界名与设定可以在下面改；条目开书后在阅读器的「设定集」里查看和修改。`,
+        });
+      } else if (/\.(txt|md|markdown)$/.test(lower)) {
+        const parsed = parseWorldText(await file.text(), file.name);
+        const violation = findSettingViolation(parsed.text);
+        if (violation) { setError(violation); return; }
+        const long = parsed.text.trim().length > CUSTOM_WORLD_SETTING_MAX;
+        const entries = long ? splitWorldTextIntoEntries(parsed.text) : [];
+        applyImportedWorld({
+          name: parsed.name,
+          setting: leadingExcerpt(parsed.text, CUSTOM_WORLD_SETTING_MAX),
+          entries,
+          note: `已导入世界设定${parsed.name ? `《${parsed.name}》` : ""}（${parsed.text.trim().length} 字）${parsed.truncated ? "，文件过长，只取了前一部分" : ""}${long ? `：全文拆成 ${entries.length} 条世界书条目挂在这本书上，第一条常驻，其余按标题关键词命中注入；设定框里是开头摘要，可以改` : ""}。开书后在阅读器的「设定集」里能看全和修改。`,
+        });
+      } else {
+        setError("这个文件类型读不了——世界可以导入 .json 世界书，或 .txt / .md 的设定文本。");
+      }
+    } catch (failure) {
+      setError(failure.message || "这个文件没能读进来，换个文件试试。");
+    }
+  };
+  const handleCardFile = async (file) => {
+    if (!file) return;
+    try {
+      const lower = file.name.toLowerCase();
+      let card;
+      if (lower.endsWith(".png")) card = parseCharacterCardPng(new Uint8Array(await file.arrayBuffer()));
+      else if (lower.endsWith(".json")) card = parseCharacterCardJson(await file.text());
+      else { setError("角色卡可以导入 .json，或内嵌了角色卡的 .png 图片。"); return; }
+      const persona = personaTextFromCard(card);
+      const violation = findSettingViolation(persona);
+      if (violation) { setError(violation); return; }
+      // Nothing is applied yet: the parsed card is shown first, and the
+      // reader confirms (or edits) it into the protagonist profile.
+      setCardPreview({ name: card.name, persona });
+      setError("");
+    } catch (failure) {
+      setError(failure.message || "这张卡没能读进来，换个文件试试。");
+    }
+  };
+  const applyCardPreview = () => {
+    if (!cardPreview) return;
+    // The card's character becomes this book's protagonist; a brought-in
+    // avatar yields to it (the avatar itself is untouched).
+    set({ name: cardPreview.name, persona: cardPreview.persona, avatarId: "", avatarAppearance: "" });
+    setCardPreview(null);
+  };
   const next = () => {
     // God-mode settings are checked when leaving the world step (the god
     // form lives there now), not while typing: a refused setting stays on
@@ -1719,6 +1816,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                 : worldChosen
                   ? `世界是${world.name}——${world.subtitle}。题材和世界互相独立：换世界不会动你选好的题材。`
                   : `选一个现成的世界，或亲手写一个。不选也行：点「继续」会替你掷一个——掷世界不会动题材。`}</p>
+              {worldImportNote && <p className="world-import-note" role="status">{worldImportNote}</p>}
               {isCustom ? (
                 <div className="god-form">
                   <button type="button" className="god-back" onClick={exitGodMode}>
@@ -1751,6 +1849,14 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                     <span className="field-hint">时代、地点、规则、氛围都写在这里；写下的设定会原样成为生成的世界依据。请勿直接使用他人作品或 IP 的设定。</span>
                     <span className="god-count">{(draft.customWorldSetting || "").length} / {CUSTOM_WORLD_SETTING_MAX}</span>
                   </div>
+                  {(draft.lorebook || []).length > 0 && (
+                    <div className="lorebook-status">
+                      <span>世界书：{(draft.lorebook || []).length} 条条目挂在这本书上（{(draft.lorebook || []).filter((entry) => entry.constant).length} 条常驻）。开书后在阅读器的「设定集」里查看、修改。</span>
+                      <button type="button" className="small-link" onClick={() => { set({ lorebook: [] }); setWorldImportNote(""); }}>
+                        移除全部条目
+                      </button>
+                    </div>
+                  )}
                   <div className="form-block">
                     <span className="field-label">灵感碎片（点一下，补进设定）</span>
                     <div className="stage-chips">
@@ -1812,6 +1918,24 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                         <small>从六个世界里抽一个，抽中哪个就去哪个世界。</small>
                       </span>
                     </button>
+                    <label className="world-card world-card-import">
+                      <span className="world-card-cover world-card-cover--symbol" aria-hidden="true">
+                        <span className="world-card-symbol">入</span>
+                      </span>
+                      <span className="world-card-copy">
+                        <strong>导入世界</strong>
+                        <em>带上你自己的世界书</em>
+                        <small>酒馆世界书 .json，或 .txt / .md 世界设定——条目挂到这本书上，生成时按关键词生效，只属于你。</small>
+                      </span>
+                      <Icon name="chevron" size={15} />
+                      <input
+                        type="file"
+                        accept=".json,.txt,.md,.markdown"
+                        hidden
+                        aria-label="导入世界文件"
+                        onChange={(event) => { void handleWorldFile(event.target.files?.[0]); event.target.value = ""; }}
+                      />
+                    </label>
                     {worlds.map((item) => (
                       <WorldCard
                         key={item.id}
@@ -1993,6 +2117,51 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                   </button>
                 </div>
               )}
+              <div className="card-import">
+                <div className="card-import-copy">
+                  <b>导入角色卡</b>
+                  <small>酒馆 / Flai 的角色卡（.json，或内嵌了卡的 .png）——先预览，确认了才填进主角档案。</small>
+                </div>
+                <label className="small-link card-import-button">
+                  选择文件
+                  <input
+                    type="file"
+                    accept=".json,.png"
+                    hidden
+                    aria-label="导入角色卡文件"
+                    onChange={(event) => { void handleCardFile(event.target.files?.[0]); event.target.value = ""; }}
+                  />
+                </label>
+              </div>
+              {cardPreview && (
+                <div className="card-preview">
+                  <b>读到一张角色卡，先看看对不对</b>
+                  <label className="field-label">
+                    名字
+                    <input
+                      maxLength={40}
+                      autoComplete="off"
+                      value={cardPreview.name}
+                      onChange={(event) => setCardPreview((current) => ({ ...current, name: event.target.value }))}
+                    />
+                  </label>
+                  <label className="field-label">
+                    主角设定（卡上的描述与性格，可以改）
+                    <textarea
+                      rows={5}
+                      maxLength={PERSONA_MAX}
+                      value={cardPreview.persona}
+                      onChange={(event) => setCardPreview((current) => ({ ...current, persona: event.target.value }))}
+                    />
+                  </label>
+                  <div className="card-preview-actions">
+                    <Button onClick={applyCardPreview}>用这张卡</Button>
+                    <Button variant="ghost" onClick={() => setCardPreview(null)}>
+                      先不用
+                    </Button>
+                  </div>
+                </div>
+              )}
               <div className="protagonist-form">
                 <label className="field-label">
                   主角昵称（选填）
@@ -2004,6 +2173,18 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                     placeholder="取一个名字"
                   />
                 </label>
+                {(draft.persona || "") && (
+                  <label className="field-label">
+                    主角设定（会进入每一章的生成依据）
+                    <textarea
+                      rows={4}
+                      maxLength={PERSONA_MAX}
+                      value={draft.persona}
+                      onChange={(event) => set({ persona: event.target.value })}
+                      placeholder="这个人是谁、什么性格、带着什么处境走进故事"
+                    />
+                  </label>
+                )}
                 <div className="form-block">
                   <span className="field-label">性格{pickedTrait ? "" : "（默认）"}</span>
                   <div className="chip-grid">
@@ -2624,6 +2805,183 @@ function InterventionSheet({ story, readerIndex, onClose, onSubmit }) {
   );
 }
 
+// 设定集 (F-32): the owner's own settings book for this story — the
+// world bible and the lorebook, viewable and editable at last. Edits
+// follow the intervention immutability rule: they shape chapters
+// generated after the edit; chapters that already exist never change.
+// The lorebook shown here is the owner's private material (imported or
+// hand-written): it appears in no public snapshot, ever.
+function StorySettingsBook({ story, onClose, onSave }) {
+  const [premise, setPremise] = useState(story.worldBible?.premise || "");
+  const [rules, setRules] = useState(() => [...(story.worldBible?.rules || [])]);
+  const [endingAnchor, setEndingAnchor] = useState(story.worldBible?.endingAnchor || "");
+  const [entries, setEntries] = useState(() =>
+    (Array.isArray(story.config?.lorebook) ? story.config.lorebook : []).map((entry) => ({
+      ...entry,
+      keys: [...(entry.keys || [])],
+    })),
+  );
+  const outline = Array.isArray(story.worldBible?.outline) ? story.worldBible.outline : [];
+  const interventions = Array.isArray(story.interventions) ? story.interventions : [];
+  const patchEntry = (position, patch) =>
+    setEntries((list) => list.map((entry, index) => (index === position ? { ...entry, ...patch } : entry)));
+  const addEntry = () =>
+    setEntries((list) => [
+      ...list,
+      { id: `lore-${Date.now().toString(36)}-${list.length}`, name: "", keys: [], content: "", constant: false, enabled: true, source: "manual" },
+    ]);
+  const save = () =>
+    onSave({
+      worldBible: {
+        premise: premise.trim(),
+        rules: rules.map((rule) => rule.trim()).filter(Boolean),
+        endingAnchor: endingAnchor.trim(),
+      },
+      lorebook: entries
+        .filter((entry) => (entry.content || "").trim())
+        .map((entry) => ({ ...entry, name: (entry.name || "").trim() })),
+    });
+  return (
+    <ReadingDialog title="设定集" onClose={onClose}>
+      <p className="field-hint">
+        这本书的世界设定都在这里。在这里改，只影响之后生成的章节——已经写好的章节，一个字都不会动。
+      </p>
+      <div className="settings-section">
+        <h3>世界圣经</h3>
+        <label className="field-label">
+          世界核心
+          <textarea rows={4} maxLength={1000} value={premise} onChange={(event) => setPremise(event.target.value)} />
+        </label>
+        <span className="field-label">世界规则</span>
+        {rules.map((rule, position) => (
+          <div className="settings-rule-row" key={position}>
+            <textarea
+              rows={2}
+              maxLength={600}
+              value={rule}
+              aria-label={`世界规则 ${position + 1}`}
+              onChange={(event) =>
+                setRules((list) => list.map((item, index) => (index === position ? event.target.value : item)))
+              }
+            />
+            <button
+              type="button"
+              className="small-link"
+              onClick={() => setRules((list) => list.filter((_, index) => index !== position))}
+            >
+              删除
+            </button>
+          </div>
+        ))}
+        {rules.length < 12 && (
+          <button type="button" className="small-link" onClick={() => setRules((list) => [...list, ""])}>
+            + 添加一条规则
+          </button>
+        )}
+        <label className="field-label">
+          终局锚点
+          <textarea rows={3} maxLength={1000} value={endingAnchor} onChange={(event) => setEndingAnchor(event.target.value)} />
+        </label>
+        {outline.length > 0 && (
+          <>
+            <span className="field-label">大纲（由故事结构生成，只读）</span>
+            <ol className="settings-outline">
+              {outline.map((line, position) => (
+                <li key={position}>{line}</li>
+              ))}
+            </ol>
+          </>
+        )}
+      </div>
+      <div className="settings-section">
+        <h3>世界书条目</h3>
+        <p className="field-hint">
+          条目是这本书的私有资料（导入的，或你自己写的），只在你自己的书里生效，永远不会出现在广场和分享里。常驻条目每章都带上；带关键词的条目，在章节上下文出现关键词时才注入。注入有总量上限，常驻优先。
+        </p>
+        {entries.length === 0 && <p className="field-hint">还没有条目。在造世的世界一步导入世界书，或在下面自己写一条。</p>}
+        {entries.map((entry, position) => (
+          <div className="lore-entry" key={entry.id || position}>
+            <div className="lore-entry-head">
+              <input
+                value={entry.name}
+                maxLength={60}
+                placeholder="条目名（例如：潮汐税法）"
+                aria-label={`条目 ${position + 1} 名字`}
+                onChange={(event) => patchEntry(position, { name: event.target.value })}
+              />
+              <button
+                type="button"
+                className="small-link"
+                onClick={() => setEntries((list) => list.filter((_, index) => index !== position))}
+              >
+                删除
+              </button>
+            </div>
+            <input
+              value={(entry.keys || []).join("、")}
+              placeholder="触发关键词（逗号分隔，例如：潮汐税、税吏）"
+              aria-label={`条目 ${position + 1} 关键词`}
+              onChange={(event) =>
+                patchEntry(position, {
+                  keys: event.target.value.split(/[,，、]/).map((key) => key.trim()).filter(Boolean),
+                })
+              }
+            />
+            <textarea
+              rows={3}
+              maxLength={2000}
+              value={entry.content}
+              placeholder="这一条要告诉生成的世界事实，原文照录"
+              aria-label={`条目 ${position + 1} 内容`}
+              onChange={(event) => patchEntry(position, { content: event.target.value })}
+            />
+            <div className="lore-entry-toggles">
+              <button
+                type="button"
+                className={`choice-chip ${entry.constant ? "active" : ""}`}
+                aria-pressed={Boolean(entry.constant)}
+                onClick={() => patchEntry(position, { constant: !entry.constant })}
+              >
+                常驻
+              </button>
+              <button
+                type="button"
+                className={`choice-chip ${entry.enabled ? "active" : ""}`}
+                aria-pressed={Boolean(entry.enabled)}
+                onClick={() => patchEntry(position, { enabled: entry.enabled === false ? true : false })}
+              >
+                {entry.enabled === false ? "已停用" : "启用中"}
+              </button>
+              {entry.source === "worldbook" && <span className="lore-entry-source">来自导入的世界书</span>}
+              {entry.source === "text" && <span className="lore-entry-source">来自导入的设定文本</span>}
+            </div>
+          </div>
+        ))}
+        <button type="button" className="small-link" onClick={addEntry}>
+          + 写一条新条目
+        </button>
+      </div>
+      {interventions.length > 0 && (
+        <div className="settings-section">
+          <h3>介入记录</h3>
+          {interventions.map((entry) => (
+            <p className="settings-intervention" key={entry.id}>
+              第 {(entry.targetIndex ?? 0) + 1} 章 · {entry.text}
+              <span>{entry.status === "applied" ? "已落地" : "等待那一章"}</span>
+            </p>
+          ))}
+        </div>
+      )}
+      <div className="reading-dialog-actions">
+        <Button onClick={save}>保存设定集</Button>
+        <Button variant="ghost" onClick={onClose}>
+          关闭
+        </Button>
+      </div>
+    </ReadingDialog>
+  );
+}
+
 function Reader({
   story,
   readOnly = false,
@@ -2684,6 +3042,7 @@ function Reader({
   const [preferencesStore] = useState(() => createReadingPreferencesStore());
   const preferences = useSyncExternalStore(preferencesStore.subscribe, preferencesStore.getSnapshot);
   const [interveneOpen, setInterveneOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [intervening, setIntervening] = useState(false);
   const [interveneSettled, setInterveneSettled] = useState(false);
   const [interveneNote, setInterveneNote] = useState("");
@@ -2703,7 +3062,7 @@ function Reader({
   const chapterMetrics = useMemo(() => estimateReadingMetrics(chapter?.paragraphs || []), [chapter]);
   const locationKey = story && chapterLocationKey(story.id, index, chapter.paragraphs, readOnly);
   const reading = useReaderExperience({ readerRef, locationKey, settings: preferences.settings,
-    blocked: preferencesOpen || toolsOpen || directoryOpen || shareOpen || interveneOpen });
+    blocked: preferencesOpen || toolsOpen || directoryOpen || shareOpen || interveneOpen || settingsOpen });
   const bookContextId = `${readOnly ? 'public' : 'private'}:${story?.id}`;
   const bookmarkKeys = readingChapters.map((item, i) => chapterLocationKey(story.id, i, item?.paragraphs || [], readOnly));
   const bookmarks = useMemo(() => reading.store.bookmarks(bookContextId, bookmarkKeys), [bookContextId, story, bookmarkVersion, toolsOpen, reading.store]);
@@ -2723,6 +3082,7 @@ function Reader({
     setToolsOpen(false);
     if (readerRef.current) readerRef.current.dataset.toplineHidden = "false";
     setInterveneOpen(false);
+    setSettingsOpen(false);
     setInterveneNote("");
     setError("");
   }, [story?.id, story?.revision, readOnly]);
@@ -2814,6 +3174,14 @@ function Reader({
     : `${Math.round(((index + 1) / Math.max(story.chapters?.length || 0, index + 1)) * 100)}%`;
   const update = (nextStory, nextIndex = index) =>
     onUpdateStory?.(moveReadingPosition(nextStory, nextIndex));
+  // 设定集 saves: bible + lorebook edits land on the story record and
+  // shape only chapters generated from now on (the engine helpers never
+  // touch chapters). The reading position is preserved by `update`.
+  const saveSettings = ({ worldBible, lorebook }) => {
+    const next = updateLorebook(updateWorldBible(story, worldBible), lorebook);
+    update(next);
+    setSettingsOpen(false);
+  };
   // 介入： the nudge is queued against the next unread chapter — never the
   // one on screen, never an earlier one. Three landings, one queue:
   // the target is not written yet (the nudge folds into its brief), the
@@ -2958,6 +3326,16 @@ function Reader({
             >
               <Icon name="image" size={16} />
               封面
+            </button>
+          )}
+          {!readOnly && (
+            <button
+              className="reader-directory-button"
+              onClick={() => setSettingsOpen(true)}
+              aria-haspopup="dialog"
+            >
+              <Icon name="sliders" size={16} />
+              设定集
             </button>
           )}
           {!readOnly && (
@@ -3180,6 +3558,13 @@ function Reader({
           readerIndex={index}
           onClose={() => setInterveneOpen(false)}
           onSubmit={submitIntervention}
+        />
+      )}
+      {settingsOpen && !readOnly && (
+        <StorySettingsBook
+          story={story}
+          onClose={() => setSettingsOpen(false)}
+          onSave={saveSettings}
         />
       )}
       {intervening && (
@@ -5501,9 +5886,11 @@ function App() {
           originIdentityId: payload.originIdentityId,
           customWorldName: payload.customWorldName,
           customWorldSetting: payload.customWorldSetting,
+          lorebook: payload.lorebook,
           startPointName: payload.startPointName,
           startPointHook: payload.startPointHook,
           name: payload.name,
+          persona: payload.persona,
           avatarId: payload.avatarId,
           avatarAppearance: payload.avatarAppearance,
           trait: payload.trait,

@@ -24,9 +24,41 @@ const totalForStory = (story) => {
   return LENGTH_TOTALS[mode] || 6
 }
 const CONFIG_TEXT_FIELDS = [
-  'genreId', 'genreTemplateId', 'storyLengthMode', 'originIdentityId', 'customWorldName', 'customWorldSetting', 'startPointName', 'startPointHook', 'avatarId', 'avatarAppearance', 'sourcePublicationId', 'name', 'trait', 'origin', 'ability', 'tone', 'hometown',
+  'genreId', 'genreTemplateId', 'storyLengthMode', 'originIdentityId', 'customWorldName', 'customWorldSetting', 'startPointName', 'startPointHook', 'avatarId', 'avatarAppearance', 'sourcePublicationId', 'name', 'persona', 'trait', 'origin', 'ability', 'tone', 'hometown',
   'school', 'company', 'role', 'friend', 'destination', 'protagonist', 'appearance', 'finishedAt',
 ]
+
+// 世界书 bounds, mirrored from src/lorebook.js (this storage layer stays
+// dependency-free, like the length totals above).
+const LOREBOOK_LIMITS = { entries: 200, content: 2000, name: 60, key: 40, keys: 12 }
+
+function validateLorebook(lorebook, prefix, errors) {
+  if (!Array.isArray(lorebook)) {
+    errors.push(`${prefix} must be an array`)
+    return
+  }
+  if (lorebook.length > LOREBOOK_LIMITS.entries) errors.push(`${prefix} exceeds the supported entry count`)
+  for (let index = 0; index < lorebook.length; index += 1) {
+    const entry = lorebook[index]
+    const entryPrefix = `${prefix}[${index}]`
+    if (!isRecord(entry)) { errors.push(`${entryPrefix} must be an object`); continue }
+    if (!isNonEmptyString(entry.id)) errors.push(`${entryPrefix}.id must be a non-empty string`)
+    if (!isNonEmptyString(entry.content) || entry.content.length > LOREBOOK_LIMITS.content) {
+      errors.push(`${entryPrefix}.content must be a non-empty string of at most ${LOREBOOK_LIMITS.content} characters`)
+    }
+    validateOptionalFields(entry, entryPrefix, ['name', 'source'], 'string', errors)
+    if (typeof entry.name === 'string' && entry.name.length > LOREBOOK_LIMITS.name) {
+      errors.push(`${entryPrefix}.name is too long`)
+    }
+    if (entry.keys !== undefined) {
+      if (!Array.isArray(entry.keys) || entry.keys.length > LOREBOOK_LIMITS.keys
+        || entry.keys.some((key) => typeof key !== 'string' || key.length > LOREBOOK_LIMITS.key)) {
+        errors.push(`${entryPrefix}.keys must be an array of at most ${LOREBOOK_LIMITS.keys} short strings`)
+      }
+    }
+    validateOptionalFields(entry, entryPrefix, ['constant', 'enabled'], 'boolean', errors)
+  }
+}
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 
@@ -103,6 +135,10 @@ function validateConfig(config, prefix, errors, merged = false, forStory = false
     errors.push(`${prefix}.step must be an integer from 1 to 7`)
   }
   if (config.sourceGenres !== undefined) validateStringArray(config.sourceGenres, `${prefix}.sourceGenres`, errors)
+  // 世界书 （外部导入）: the owner's imported/maintained lorebook entries.
+  // Absent on every pre-import save and on every public snapshot (the
+  // engine strips it there); when present it is a bounded entry list.
+  if (config.lorebook !== undefined) validateLorebook(config.lorebook, `${prefix}.lorebook`, errors)
   if (merged || config.protagonists !== undefined) {
     if (!Array.isArray(config.protagonists) || config.protagonists.length !== 2) {
       errors.push(`${prefix}.protagonists must contain two characters`)

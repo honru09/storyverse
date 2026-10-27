@@ -950,3 +950,30 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .reader-endless-confirm{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .template-brick .selected-mark{top:auto;bottom:9px;right:9px}
 .template-brick .default-badge{position:absolute;top:10px;left:12px;background:rgba(6,13,31,.55)}
+/* 外部导入 + 设定集 (import batch): world/card import entries in the forge,
+   the imported-card preview, the lorebook status line, and the owner's
+   settings book inside the reader. */
+.world-card-import{cursor:pointer}
+.world-import-note{margin:0 0 14px;padding:11px 13px;border:1px solid var(--line);border-radius:var(--radius-selection);background:rgba(46,224,192,.07);color:var(--ink);font-size:13px;line-height:1.7}
+.lorebook-status{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:11px 13px;border:1px solid var(--line);border-radius:var(--radius-selection);background:var(--glass);color:var(--dim);font-size:13px;line-height:1.65}
+.card-import{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;padding:12px 14px;border:1px dashed var(--line);border-radius:var(--radius-selection);background:var(--glass)}
+.card-import-copy{display:grid;gap:2px}
+.card-import-copy b{font-size:14px;font-weight:700;color:var(--ink)}
+.card-import-copy small{color:var(--dim);font-size:12px;line-height:1.55}
+.card-import-button{cursor:pointer;flex-shrink:0}
+.card-preview{display:grid;gap:12px;margin-bottom:18px;padding:14px;border:1px solid var(--cyan);border-radius:var(--radius-selection);background:rgba(46,224,192,.06)}
+.card-preview>b{font-size:14.5px;font-weight:750;color:var(--ink)}
+.card-preview-actions{display:flex;gap:10px;flex-wrap:wrap}
+.settings-section{display:grid;gap:12px;margin-top:20px}
+.settings-section h3{margin:0;font-size:15px;font-weight:780;color:var(--ink)}
+.settings-rule-row{display:flex;gap:8px;align-items:flex-start}
+.settings-rule-row textarea{flex:1}
+.settings-outline{margin:0;padding-left:20px;display:grid;gap:5px;color:var(--dim);font-size:12.5px;line-height:1.65}
+.lore-entry{display:grid;gap:8px;padding:12px;border:1px solid var(--line);border-radius:var(--radius-selection);background:var(--glass)}
+.lore-entry-head{display:flex;gap:8px;align-items:center}
+.lore-entry-head input{flex:1}
+.lore-entry input,.lore-entry textarea{width:100%}
+.lore-entry-toggles{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.lore-entry-source{color:var(--dim);font-size:12px}
+.settings-intervention{margin:0;color:var(--dim);font-size:13px;line-height:1.65}
+.settings-intervention span{margin-left:8px;color:var(--cyan);font-size:12px;font-weight:650}

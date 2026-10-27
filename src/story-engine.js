@@ -20,6 +20,8 @@
  *   next unread chapter and nowhere else (see the intervention section).
  */
 
+import { normalizeLorebookEntries } from './lorebook.js'
+
 export const GENRES = [
   {
     id: 'mist',
@@ -208,6 +210,10 @@ export const START_POINT_HOOK_MAX = 120
 // under the reader's account; editing it never rewrites a book's copy.
 export const AVATAR_ID_MAX = 64
 export const AVATAR_APPEARANCE_MAX = 300
+// The protagonist persona text (typed, or composed from an imported
+// character card): who this person is, in free words, riding the config
+// into every generation brief.
+export const PERSONA_MAX = 600
 // The plaza publication a story was entered from, when it was opened by
 // bringing the reader's own avatar into someone else's finished line.
 // Bookkeeping only — like the avatar id, it never reaches the model.
@@ -633,12 +639,19 @@ export const DEFAULT_DRAFT = {
   originIdentityId: '',
   customWorldName: '',
   customWorldSetting: '',
+  // Imported world material （外部导入）: lorebook entries attached to the
+  // story (SillyTavern world-info / split text worlds). Owner-private —
+  // stripped from every public snapshot. Empty for every pre-import save.
+  lorebook: [],
   startPointName: '',
   startPointHook: '',
   avatarId: '',
   avatarAppearance: '',
   sourcePublicationId: '',
   name: '',
+  // Free-text persona (typed in the forge, or composed from an imported
+  // character card's description/personality/scenario).
+  persona: '',
   trait: '冷静观察者',
   // No preset origin or ability: the origin comes only from the identity
   // step (resolved per world at read time), and the ability only from the
@@ -964,6 +977,7 @@ const normalizeDraft = (draft = {}) => {
     originIdentityId: originIdentityById(input.originIdentityId)?.id || '',
     customWorldName: cleanBounded(input.customWorldName, CUSTOM_WORLD_NAME_MAX),
     customWorldSetting: cleanBounded(input.customWorldSetting, CUSTOM_WORLD_SETTING_MAX),
+    lorebook: normalizeLorebookEntries(input.lorebook),
     startPointName: cleanBounded(input.startPointName, START_POINT_NAME_MAX),
     startPointHook: cleanBounded(input.startPointHook, START_POINT_HOOK_MAX),
     // The avatar this book was opened with (empty for every pre-avatar
@@ -973,6 +987,7 @@ const normalizeDraft = (draft = {}) => {
     avatarAppearance: cleanBounded(input.avatarAppearance, AVATAR_APPEARANCE_MAX),
     sourcePublicationId: cleanBounded(input.sourcePublicationId, SOURCE_PUBLICATION_ID_MAX),
     name: cleanText(input.name, DEFAULT_DRAFT.name),
+    persona: cleanBounded(input.persona, PERSONA_MAX),
     trait: cleanText(input.trait, DEFAULT_DRAFT.trait),
     origin: cleanText(input.origin, DEFAULT_DRAFT.origin),
     ability: cleanText(input.ability, DEFAULT_DRAFT.ability),
@@ -1725,6 +1740,48 @@ export function startNextSeason(story) {
   return next
 }
 
+/*
+ * 设定集 (the owner's settings book): the owner may view and edit their
+ * story's world bible and lorebook at any time. Edits follow the same
+ * immutability rule as interventions — they shape chapters generated
+ * AFTER the edit and never rewrite a chapter that already exists (these
+ * helpers touch config / worldBible only, never chapters). The outline
+ * is generated structure, not an editable entry: it is carried through
+ * untouched.
+ */
+export const WORLD_BIBLE_PREMISE_MAX = 1000
+export const WORLD_BIBLE_RULE_MAX = 600
+export const WORLD_BIBLE_RULES_MAX = 12
+
+export function updateWorldBible(story, patch = {}) {
+  validateStory(story)
+  const bible = story.worldBible && typeof story.worldBible === 'object' ? story.worldBible : {}
+  const rules = patch.rules !== undefined
+    ? (Array.isArray(patch.rules)
+      ? patch.rules.map((rule) => cleanBounded(rule, WORLD_BIBLE_RULE_MAX)).filter(Boolean).slice(0, WORLD_BIBLE_RULES_MAX)
+      : [])
+    : (Array.isArray(bible.rules) ? [...bible.rules] : [])
+  return {
+    ...story,
+    worldBible: {
+      premise: patch.premise !== undefined ? cleanBounded(patch.premise, WORLD_BIBLE_PREMISE_MAX) : (bible.premise || ''),
+      rules,
+      endingAnchor: patch.endingAnchor !== undefined ? cleanBounded(patch.endingAnchor, WORLD_BIBLE_PREMISE_MAX) : (bible.endingAnchor || ''),
+      outline: Array.isArray(bible.outline) ? [...bible.outline] : [],
+    },
+    updatedAt: now(),
+  }
+}
+
+export function updateLorebook(story, entries) {
+  validateStory(story)
+  return {
+    ...story,
+    config: { ...story.config, lorebook: normalizeLorebookEntries(entries) },
+    updatedAt: now(),
+  }
+}
+
 const ACT_LABELS = [
   '第 1 章 · 开篇',
   '第 2 章 · 信号',
@@ -2114,6 +2171,11 @@ const publicConfigFor = (config, name = '匿名旅者') => ({
   role: '',
   friend: '',
   destination: '',
+  // Imported material is the owner's private stock: a merge hand-off
+  // carries neither side's lorebook nor persona text. Each source book
+  // keeps its own; the merged line starts with an empty book.
+  lorebook: [],
+  persona: '',
 })
 
 // A share snapshot is stricter than a merge hand-off.  It keeps the genre and
@@ -2145,6 +2207,12 @@ const redactedSnapshotConfig = (config, name) => ({
   // The manual-finish mark is the owner's own state: an entrant into this
   // world starts a fresh, still-running line, never a pre-finished one.
   finishedAt: '',
+  // Imported world material and the persona text are the owner's private
+  // stock （外部导入）: a snapshot carries the world itself (name + the
+  // sanitised setting, exactly like a god-mode world) but NEVER the
+  // lorebook entries or the persona — those stay in the owner's book.
+  lorebook: [],
+  persona: '',
 })
 
 export function createMergedStory(a, b, options = {}) {
@@ -2242,6 +2310,11 @@ const snapshotRedactor = (sourceConfig, safeConfig) => {
     for (const [key, value] of Object.entries(source)) {
       // World genres and the three merge enums are public controlled values.
       if (key === 'genreId' || key === 'sourceGenres' || key === 'merge') continue
+      // The lorebook never reaches a snapshot at all (the snapshot config
+      // strips it), and its trigger keys are short everyday words — folding
+      // them into the literal redactor would mangle published prose.
+      // Absence is structural, not scrubbed.
+      if (key === 'lorebook') continue
       visit(value, target?.[key], key)
     }
   }
