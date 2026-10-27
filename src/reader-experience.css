@@ -5,7 +5,7 @@
    viewport edge; prose needs that plus ~15px of air — no more. (It used
    to reserve 150px + the safe area a second time.) Page mode adds the
    ~51px page-controls row on top of the same ledger. */
-.page-reader[data-reader-theme]{padding-top:0;padding-bottom:calc(100px + max(10px,env(safe-area-inset-bottom)));min-height:100dvh}
+.page-reader[data-reader-theme]{padding-top:0;padding-bottom:calc(100px + max(10px,env(safe-area-inset-bottom)));min-height:100vh;min-height:100dvh}
 .page-reader[data-reader-mode="page"]{padding-bottom:calc(151px + max(10px,env(safe-area-inset-bottom)))}
 .page-reader[data-reader-theme] .reader-topline{position:sticky;top:0;z-index:11;margin-top:0;padding-top:calc(8px + env(safe-area-inset-top));border-radius:0 0 22px 22px;transition:opacity 160ms var(--ease-out),transform 160ms var(--ease-out)}
 .page-reader .reader-chapter{margin-top:0;gap:4px 12px}
@@ -54,7 +54,7 @@
 .reading-dossier-list li strong{color:var(--reader-accent);font-weight:600}
 .reading-dossier-list li span{color:var(--reader-text)}
 .reading-search-label{display:grid;gap:8px;font-size:.8125rem;font-weight:600;margin-top:20px}
-.reading-tools input{color:var(--reader-text);background:var(--reader-surface);border-color:var(--reader-border)}
+.reading-tools input{font-size:1rem;color:var(--reader-text);background:var(--reader-surface);border-color:var(--reader-border)}
 .reading-tools input::placeholder{color:var(--reader-secondary)}
 .reading-tools p.reading-tools-status,.reading-dialog p.reading-tools-status{font-size:.8125rem;line-height:1.7;color:var(--reader-secondary);margin:12px 0}
 .reading-search-results{display:grid;gap:0}

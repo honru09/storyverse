@@ -28,6 +28,9 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
       const close = async () => { await page.getByRole('button', { name: '关闭面板', exact: true }).click(); };
       try {
         await page.goto(target);
+        // The plaza is the landing view now; the first-book entry lives on
+        // the shelf, one tap away through the plaza's slim row.
+        await page.locator('button').filter({ hasText: '你的书架、化身与草稿都在这里' }).click();
         await page.getByRole('button', { name: '开启第一本书', exact: true }).click();
         for (let i = 0; i < 6; i++) await page.getByRole('button', { name: '继续', exact: true }).click();
         await page.getByRole('button', { name: '预设体验', exact: true }).click();
@@ -63,6 +66,13 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
               window.scrollTo(0, y);
               await new Promise((resolve) => setTimeout(resolve, 40));
             }
+            // WebKit dispatches coalesced scroll events only while a page
+            // task is alive; settle inside this evaluate before returning.
+            // Chromium must not settle here: with desktop Lenis active, the
+            // pause lets it re-assert its own scroll state and the topline
+            // flag never lands.
+            const isWebKit = /AppleWebKit/.test(navigator.userAgent) && !/Chrome|Chromium|Edg/.test(navigator.userAgent);
+            if (isWebKit) await new Promise((resolve) => setTimeout(resolve, 500));
           });
           await page.waitForFunction(() => document.querySelector('.page-reader').dataset.toplineHidden === 'true');
           assert.equal(await page.locator('.reader-topline').isVisible(), false, 'topline slides away on scroll down');
@@ -89,18 +99,20 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
             const colors = await page.evaluate(() => {
               const root = getComputedStyle(document.querySelector('.page-reader'));
               const preview = getComputedStyle(document.querySelector('.reading-preferences-preview'));
-              return { bg: root.backgroundColor, fg: root.getPropertyValue('--reader-text'), secondary: root.getPropertyValue('--reader-secondary'), preview: preview.backgroundColor };
+              return { bg: root.backgroundColor, fg: root.getPropertyValue('--reader-text'), secondary: root.getPropertyValue('--reader-secondary'), preview: preview.backgroundColor, body: getComputedStyle(document.body).backgroundColor };
             });
             const rgb = str => str.startsWith('#') ? str.slice(1).match(/../g).map(v => parseInt(v,16)) : str.match(/[\d.]+/g).slice(0,3).map(Number);
             const luminance = str => rgb(str.trim()).map(v => { v/=255; return v <= .04045 ? v/12.92 : ((v+.055)/1.055)**2.4; }).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
             const contrast = (a,b) => (Math.max(luminance(a),luminance(b))+.05)/(Math.min(luminance(a),luminance(b))+.05);
             assert.equal(colors.bg, colors.preview);
+            assert.equal(colors.body, colors.bg, 'body background follows the reader theme (iOS overscroll paints the body, not the page)');
             assert.ok(contrast(colors.bg, colors.fg) >= 4.5);
             assert.ok(contrast(colors.bg, colors.secondary) >= 4.5);
             await noOverflow();
           }
           await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
           assert.equal(await page.locator('.page-reader').evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(10, 17, 40)');
+          assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(10, 17, 40)', 'body follows the system theme into dark');
           await capture('settings-auto-dark');
           await close();
           await capture('reading-auto-dark');
@@ -155,6 +167,8 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
         await check('literal search and position bookmarks lead to exact paragraphs', async () => {
           await page.getByRole('button', { name:'查找', exact:true }).click();
           const dialog = page.getByRole('dialog', { name:'查找与书签', exact:true });
+          const inputSize = await dialog.getByRole('searchbox').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+          assert.ok(inputSize >= 16, `search input computes at ${inputSize}px; below 16px iOS Safari auto-zooms on focus`);
           await dialog.getByRole('searchbox').fill('银色罗盘');
           const result = dialog.locator('.reading-search-results > button');
           assert.equal(await result.count(), 1);
@@ -218,6 +232,36 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           await group.getByRole('button').first().click();
           assert.equal(await page.getByRole('button',{name:'下一章',exact:true}).isEnabled(),true);
           assert.deepEqual(errors, []);
+        });
+        await check('directory opens on the current chapter, not the top of the list', async () => {
+          const position = async () => Number((await page.locator('.reader-position').textContent()).match(/\d+/)[0]);
+          for (let guard = 0; guard < 40 && (await position()) < 10; guard++) {
+            const next = page.getByRole('button', { name: '下一章', exact: true });
+            if (await next.isEnabled()) await next.click();
+            else await page.getByRole('group', { name: '剧情选择', exact: true }).getByRole('button').first().click();
+            await page.waitForTimeout(150);
+          }
+          assert.ok((await position()) >= 10, 'advanced deep into the book');
+          await page.evaluate(() => window.scrollTo(0, 0));
+          await page.waitForTimeout(300);
+          await page.getByRole('button', { name: '目录', exact: true }).first().click();
+          const dialog = page.getByRole('dialog', { name: '章节目录', exact: true });
+          await dialog.waitFor();
+          // Poll with evaluate: waitForFunction's rAF polling does not
+          // observe late state reliably in headless WebKit.
+          for (let i = 0; i < 10; i++) {
+            if (await page.evaluate(() => document.querySelector('dialog[open]')?.scrollTop) > 0) break;
+            await page.waitForTimeout(300);
+          }
+          const probe = await dialog.evaluate(node => {
+            const box = node.getBoundingClientRect();
+            const row = node.querySelector('[aria-current="page"]').getBoundingClientRect();
+            return { scrollTop: node.scrollTop, rowTop: row.top, rowBottom: row.bottom, boxTop: box.top, boxBottom: box.bottom };
+          });
+          assert.ok(probe.scrollTop > 0, 'directory scrolled away from the top of the list');
+          assert.ok(probe.rowTop >= probe.boxTop && probe.rowBottom <= probe.boxBottom, `current chapter row is inside the dialog (row ${probe.rowTop}-${probe.rowBottom}, dialog ${probe.boxTop}-${probe.boxBottom})`);
+          await capture('directory-current');
+          await close();
         });
       } catch(error) { report.failures.push({ width, error:error.stack }); console.error(error); await capture('failure').catch(()=>{}); }
       finally { await context.close(); }

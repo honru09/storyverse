@@ -2188,6 +2188,42 @@ function ReadingDialog({ title, children, onClose }) {
 function ChapterDirectory({ story, index, readOnly, onSelect, onClose }) {
   const total = totalChaptersFor(story);
   const last = lastAccessibleIndex(story, readOnly);
+  const listRef = useRef(null);
+  // A season runs 24 chapters and a long book 100, at 56px a row: opening
+  // the directory at scroll position zero strands the reader far from the
+  // chapter they are on. Center the current row inside the dialog's own
+  // scrollport on open — rect math against the dialog only, so the page
+  // behind the modal never moves.
+  useEffect(() => {
+    // WebKit settles the top-layer dialog's layout a beat after open: an
+    // early attempt can read a not-yet-scrollable box and clamp to zero.
+    // The math is position-relative, so re-applying it converges — retry
+    // briefly until the row actually sits inside the dialog. The loop is
+    // timer-driven, not rAF: headless WebKit produces no frames for an
+    // occluded page, which would starve an rAF-scheduled first attempt.
+    let cancelled = false;
+    let timer = 0;
+    let attempts = 0;
+    const attempt = () => {
+      if (cancelled) return;
+      const list = listRef.current;
+      const row = list?.querySelector('[aria-current="page"]');
+      const dialog = list?.closest("dialog");
+      if (row && dialog) {
+        const dialogBox = dialog.getBoundingClientRect();
+        const rowBox = row.getBoundingClientRect();
+        if (dialogBox.height > 0 && rowBox.height > 0) {
+          dialog.scrollTop += (rowBox.top - dialogBox.top) - (dialog.clientHeight - rowBox.height) / 2;
+          const after = row.getBoundingClientRect();
+          if (after.top >= dialogBox.top && after.bottom <= dialogBox.bottom) return;
+        }
+      }
+      attempts += 1;
+      if (attempts < 12) timer = window.setTimeout(attempt, 60);
+    };
+    timer = window.setTimeout(attempt, 0);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, []);
   return (
     <ReadingDialog title="章节目录" onClose={onClose}>
       <p>{story.title}</p>
@@ -2200,7 +2236,7 @@ function ChapterDirectory({ story, index, readOnly, onSelect, onClose }) {
           onSelect={onSelect}
         />
       </div>
-      <div className="chapter-directory-list">
+      <div className="chapter-directory-list" ref={listRef}>
         {Array.from({ length: total }, (_, chapterIndex) => {
           const available = chapterIndex <= last;
           const chapter = story.chapters[chapterIndex];

@@ -43,7 +43,7 @@
   color-scheme:dark;
 }
 *{box-sizing:border-box}
-html{scroll-behavior:smooth}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 button{font:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
 button:disabled{cursor:not-allowed}
@@ -51,7 +51,7 @@ button:disabled{cursor:not-allowed}
 .page h1:focus,.forge-section-heading h2:focus{outline:none}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
 .rotate-180{transform:rotate(180deg)}
-.app-shell{min-height:100dvh;position:relative}
+.app-shell{min-height:100vh;min-height:100dvh;position:relative}
 .main-shell{min-width:0;position:relative;z-index:1}
 .topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(10px + env(safe-area-inset-top)) 20px 10px;background:rgba(6,13,31,.72);border-bottom:1px solid var(--line);backdrop-filter:blur(16px) saturate(1.35);-webkit-backdrop-filter:blur(16px) saturate(1.35)}
 .brand-mark{display:flex;align-items:center;gap:9px;padding:4px;border:0;background:transparent;color:var(--ink);text-align:left}

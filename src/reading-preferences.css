@@ -60,6 +60,20 @@
     color-scheme: dark;
   }
 }
+/* iOS rubber-band overscroll is painted from the body's background (the
+   html element carries none here), never from the page element itself:
+   without this the app's navy #060d1f flashes above and below a light
+   reader theme on every edge bounce. Values mirror the theme table
+   above; :has() has the same support floor the shell rules already
+   rely on (iOS 15.4+). */
+body:has(.page-reader[data-reader-theme]) { background: #f7f2e7; }
+body:has(.page-reader[data-reader-theme="warm"]) { background: #f6f0e5; }
+body:has(.page-reader[data-reader-theme="green"]) { background: #e9f1e9; }
+body:has(.page-reader[data-reader-theme="night"]) { background: #0a1128; }
+body:has(.page-reader[data-reader-theme="oled"]) { background: #000000; }
+@media (prefers-color-scheme: dark) {
+  body:has(.page-reader[data-reader-theme="system"]) { background: #0a1128; }
+}
 .page-reader[data-reader-theme],
 .app-shell:has(.page-reader[data-reader-theme]) {
   --paper: var(--reader-bg); --canvas: var(--reader-bg);
@@ -82,7 +96,7 @@
 }
 .app-shell:has(.page-reader[data-reader-theme]) .brand-glyph { color: var(--reader-action-text); }
 .page-reader[data-reader-theme] {
-  width: 100%; max-width: none; min-height: calc(100dvh - 4.5rem);
+  width: 100%; max-width: none;
   padding-left: max(var(--reader-margin, 1.375rem), env(safe-area-inset-left), calc((100% - 58rem) / 2));
   padding-right: max(var(--reader-margin, 1.375rem), env(safe-area-inset-right), calc((100% - 58rem) / 2));
 }
