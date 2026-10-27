@@ -1,35 +1,15 @@
 import React from "react";
 import { CHAPTER_COUNT } from "../reading-flow.js";
+import { aggregateStates, chapterStates } from "../story-map.js";
 
 /**
  * Story map (DESIGN.md §8): chapters are star nodes, progress is the lit
  * path. Read-only over the existing story shape — chapters[], choices{},
- * readerIndex — nothing here writes story data.
- *
- * Node states:
- * - done    已读：index < current, solid pink
- * - current 正在读：pulsing cyan
- * - ready   已备好：generated ahead of the reader, solid mint
- * - pending 生成中/待生成：the next ungenerated chapter, dashed violet breath
- * - locked  未解锁：dim
+ * readerIndex — nothing here writes story data. The state math lives in
+ * src/story-map.js; this file only draws it.
  */
 
-export function chapterStates({ total = CHAPTER_COUNT, generated = 0, current = 0 }) {
-  // An unbounded total (a running endless line) must never reach the
-  // array constructor: fall back to the chapters that exist plus the one
-  // being written. Call sites pass a display total via mapTotalFor; this
-  // is the belt under those braces.
-  const safeTotal = Number.isFinite(total) && total > 0
-    ? Math.floor(total)
-    : Math.max(generated + 1, current + 1, 1);
-  return Array.from({ length: safeTotal }, (_, index) => {
-    if (index === current) return "current";
-    if (index < current && index < generated) return "done";
-    if (index < generated) return "ready";
-    if (index === generated) return "pending";
-    return "locked";
-  });
-}
+export { aggregateStates, chapterStates };
 
 /** The one-line generation state, same words + same colors everywhere. */
 export function generationState({ total = CHAPTER_COUNT, generated = 0, current = 0, engine, preparing = false, complete = false }) {
@@ -67,16 +47,20 @@ export default function StoryMap({
   className = "",
 }) {
   const states = chapterStates({ total, generated, current });
-  // Long structures stay legible: nodes pack tighter and only unit ends
-  // (plus the first and current chapters) carry labels.
+  // Long structures stay legible: past the readability floor the nodes
+  // aggregate into segments (see aggregateStates) and only the first,
+  // the current and the last segment carry labels.
+  const nodes = aggregateStates(states);
+  const aggregated = nodes.length !== states.length;
   const count = states.length;
-  const width = Math.max(300, count * (count <= 12 ? 64 : 30));
+  const nodeCount = nodes.length;
+  const width = Math.max(300, nodeCount * (nodeCount <= 12 ? 64 : 30));
   const height = variant === "mini" ? 44 : 92;
   const cy = height / 2;
-  const points = states.map((_, index) => nodePoint(index, count, width, height));
+  const points = nodes.map((_, index) => nodePoint(index, nodeCount, width, height));
   const path = points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
-  const litUntil = Math.max(0, Math.min(generated - 1, current));
-  const litPath = points.slice(0, litUntil + 1).map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const litUntilNode = nodes.reduce((acc, node, index) => (node.from <= Math.max(0, Math.min(generated - 1, current)) ? index : acc), 0);
+  const litPath = points.slice(0, litUntilNode + 1).map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
   const label = `共 ${count} 章，已读到第 ${current + 1} 章`;
   return (
     <svg
@@ -93,23 +77,30 @@ export default function StoryMap({
         </linearGradient>
       </defs>
       <path className="storymap-link" d={path} />
-      {litUntil > 0 && <path className="storymap-link lit" d={litPath} />}
-      {states.map((state, index) => {
+      {litUntilNode > 0 && <path className="storymap-link lit" d={litPath} />}
+      {nodes.map((node, index) => {
+        const state = node.state;
         const point = points[index];
         const clickable = onSelect && (state === "done" || state === "current" || state === "ready");
         const radius = state === "current" ? 8 : 6;
+        const showLabel = variant !== "mini" && (aggregated
+          ? index === 0 || state === "current" || index === nodes.length - 1
+          : count <= 24 || node.index === 0 || node.index === current || (node.index + 1) % (count > 24 ? 25 : 6) === 0);
+        const labelText = aggregated
+          ? (state === "current" ? `第${current + 1}章` : index === nodes.length - 1 ? `第${count}章` : `第${node.from + 1}章`)
+          : `第${node.index + 1}章`;
         return (
           <g
             key={index}
             className={`storymap-node-group ${clickable ? "" : "locked"}`}
-            onClick={clickable ? () => onSelect(index) : undefined}
+            onClick={clickable ? () => onSelect(node.index) : undefined}
           >
             {clickable && <circle className="storymap-hit" cx={point.x} cy={point.y} r="17" />}
             {state === "current" && <circle className="storymap-pulse" cx={point.x} cy={point.y} r={radius + 3} />}
             <circle className={`storymap-node ${state}`} cx={point.x} cy={point.y} r={radius} />
-            {variant !== "mini" && (count <= 24 || index === 0 || index === current || (index + 1) % (count > 24 ? 25 : 6) === 0) && (
+            {showLabel && (
               <text className={`storymap-label ${state === "current" ? "current" : ""}`} x={point.x} y={cy + (point.y >= cy ? 30 : -22)}>
-                第{index + 1}章
+                {labelText}
               </text>
             )}
           </g>

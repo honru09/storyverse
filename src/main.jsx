@@ -20,6 +20,7 @@ import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import { createLibraryStore } from "./library-store.js";
 import { createCloudSync } from "./cloud-library.js";
 import { parseRoute, routeHash } from "./navigation.js";
+import { applyShellTheme, readShellTheme, storeShellTheme } from "./theme.js";
 import {
   chunkShelves,
   coverInfoFor,
@@ -62,6 +63,7 @@ import {
   fetchPlazaFeed,
   plazaGateFor,
   plazaLengthLabel,
+  plazaPortraitPath,
   plazaLineStatusFor,
   plazaMine,
   plazaMineForget,
@@ -90,6 +92,7 @@ import {
   unfollowUser,
   updateMyProfile,
   uploadMyPicture,
+  userPicturePath,
 } from "./users.js";
 import { acceptGeneratedChapter, acceptRerolledChapter, acceptRevisedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter, requestChapterReroll, requestChapterRevision } from "./generation.js";
 import InterventionOverlay from "./components/InterventionOverlay.jsx";
@@ -506,7 +509,7 @@ function Brand({ onClick }) {
   );
 }
 
-function Sidebar({ view, onNavigate }) {
+function Sidebar({ view, onNavigate, onOpenProfile, faceSrc, facePortrait }) {
   const items = [
     { id: "plaza", label: "广场", icon: "spark" },
     { id: "home", label: "我的世界", icon: "compass" },
@@ -535,6 +538,21 @@ function Sidebar({ view, onNavigate }) {
           );
         })}
       </nav>
+      {/* The rail's foot is the profile entry (user order 2026-10-28:
+         the bottom-right slot belongs to 我的主页 on every form factor). */}
+      <button
+        type="button"
+        className={`side-nav-item side-profile-entry ${view === "profile" ? "active" : ""}`}
+        aria-current={view === "profile" ? "page" : undefined}
+        onClick={onOpenProfile}
+      >
+        <span className={`nav-face-frame ${facePortrait ? "is-portrait" : ""}`} aria-hidden="true">
+          {faceSrc
+            ? <img className="nav-face-img" src={faceSrc} alt="" />
+            : <Icon name="users" size={20} />}
+        </span>
+        <span>我的主页</span>
+      </button>
     </aside>
   );
 }
@@ -556,14 +574,17 @@ function Topbar({ onNavigate, onOpenLibrary, onOpenAccount, account }) {
   );
 }
 
-function MobileBottomNav({ view, onNavigate }) {
+function MobileBottomNav({ view, onNavigate, onOpenProfile, faceSrc, facePortrait }) {
   if (view === "reader") return null;
-  if (view === "profile") return null;
+  // Bottom bar (user order 2026-10-28): 广场 / 造世 / 书城 / 我的主页.
+  // Merge leaves the bar — its entries live in context (book detail,
+  // shelf chips, plaza detail) plus the home page's merge row. The last
+  // slot is the reader's own profile, wearing their face (face-anchored,
+  // DESIGN §27) instead of a text label alone.
   const items = [
     { id: "plaza", label: "广场" },
     { id: "forge", label: "造世" },
     { id: "store", label: "书城" },
-    { id: "merge", label: "合流" },
   ];
   return (
     <nav className="mobile-bottom-nav" aria-label="移动端主导航">
@@ -578,11 +599,25 @@ function MobileBottomNav({ view, onNavigate }) {
           <span>{item.label}</span>
         </button>
       ))}
+      <button
+        type="button"
+        className={`bottom-nav-profile ${view === "profile" ? "active" : ""}`}
+        aria-current={view === "profile" ? "page" : undefined}
+        aria-label="我的主页"
+        onClick={onOpenProfile}
+      >
+        <span className={`nav-face-frame ${facePortrait ? "is-portrait" : ""}`} aria-hidden="true">
+          {faceSrc
+            ? <img className="nav-face-img" src={faceSrc} alt="" />
+            : <Icon name="users" size={17} />}
+        </span>
+        <span>主页</span>
+      </button>
     </nav>
   );
 }
 
-function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, onOpenAccount, authClient, avatar, onOpenAvatar, syncNote }) {
+function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, onOpenAccount, authClient, avatar, onOpenAvatar, syncNote, onOpenHelp }) {
   const genre = genreOf(activeStory);
   const activeTotal = activeStory ? totalChaptersFor(activeStory) : 6;
   const currentChapter = activeStory
@@ -645,9 +680,11 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
               }
             >
               {activeStory
-                ? currentChapter === activeTotal
-                  ? "回看终章"
-                  : "继续阅读"
+                ? isStoryComplete(activeStory)
+                  ? "重新阅读"
+                  : currentChapter === activeTotal
+                    ? "回看终章"
+                    : "继续阅读"
                 : "开启第一本书"}
             </Button>
             {activeStory && activeStory.kind !== "merged" && !activeStory.readOnly && (
@@ -668,7 +705,14 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
       </button>}
 
       <button className="home-draft-row" onClick={onOpenAvatar}>
-        <Icon name="users" size={20}/><span><strong>我的化身</strong><small>{avatar ? `${avatar.name} · ${avatarAppearanceText(avatar.appearance)}` : "让同一个角色，走进每一个世界"}</small></span><Icon name="chevron" size={16}/>
+        {avatar ? (
+          <span className="home-avatar-face-frame" aria-hidden="true">
+            <AvatarPortrait avatar={avatar} getAccessToken={() => authClient.getAccessToken()} />
+          </span>
+        ) : (
+          <Icon name="users" size={20}/>
+        )}
+        <span><strong>我的化身</strong><small>{avatar ? `${avatar.name} · ${avatarAppearanceText(avatar.appearance)}` : "让同一个角色，走进每一个世界"}</small></span><Icon name="chevron" size={16}/>
       </button>
 
       {syncNote && <p className="library-sync-note">{syncNote}</p>}
@@ -708,6 +752,15 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
           <span>先逛逛书城</span><Icon name="arrow" size={19} />
         </button>
       )}
+
+      <footer className="home-footer">
+        <button type="button" className="small-link" onClick={() => onNavigate("merge")}>
+          <Icon name="git" size={15} /> 世界合流
+        </button>
+        <button type="button" className="small-link" onClick={onOpenHelp}>
+          <Icon name="spark" size={15} /> 帮助与常见问题
+        </button>
+      </footer>
     </div>
   );
 }
@@ -736,11 +789,35 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, aut
   const otherStories = stories.filter((story) => story.id !== activeStoryId);
   const capacity = useShelfCapacity();
   const [pulledId, setPulledId] = useState(null);
+  const [shelfQuery, setShelfQuery] = useState("");
+  const [shelfSort, setShelfSort] = useState("recent");
   const pullTimer = useRef(null);
   useEffect(() => () => { if (pullTimer.current) window.clearTimeout(pullTimer.current); }, []);
   if (otherStories.length === 0) return null;
 
-  const shelves = chunkShelves(otherStories, capacity);
+  // F-24: a crowded shelf gets search + sort. Recent = last touched
+  // first; progress = furthest-read first; title = name order. Search
+  // matches the title and the world name.
+  const query = shelfQuery.trim();
+  const visibleStories = otherStories
+    .filter((story) => {
+      if (!query) return true;
+      const genre = genreOf(story);
+      return story.title.includes(query)
+        || genre.label.includes(query)
+        || (genre.world || "").includes(query)
+        || (story.config?.customWorldName || "").includes(query);
+    })
+    .slice()
+    .sort((a, b) => {
+      if (shelfSort === "title") return a.title.localeCompare(b.title, "zh-CN");
+      if (shelfSort === "progress") {
+        const ratio = (story) => (story.chapters?.length ? readerIndexFor(story) / Math.max(1, totalChaptersFor(story)) : 0);
+        return ratio(b) - ratio(a);
+      }
+      return String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || ""));
+    });
+  const shelves = chunkShelves(visibleStories, capacity);
   const handleOpen = (story) => {
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
       || document.querySelector(".app-shell")?.dataset.motion === "off";
@@ -759,6 +836,44 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, aut
 
   return (
     <section className="sw-shelf sw-shelf-wood" aria-label="书架上的其他故事">
+      {otherStories.length >= 4 && (
+        <div className="shelf-controls">
+          <label className="shelf-search">
+            <Icon name="search" size={17} />
+            <input
+              value={shelfQuery}
+              onChange={(event) => setShelfQuery(event.target.value)}
+              placeholder="在书架上找书"
+              aria-label="搜索书架"
+            />
+            {shelfQuery && (
+              <button type="button" onClick={() => setShelfQuery("")} aria-label="清空书架搜索">
+                <Icon name="x" size={13} />
+              </button>
+            )}
+          </label>
+          <div className="shelf-sort" role="group" aria-label="书架排序">
+            {[
+              { id: "recent", label: "最近" },
+              { id: "progress", label: "进度" },
+              { id: "title", label: "标题" },
+            ].map((option) => (
+              <button
+                type="button"
+                key={option.id}
+                aria-pressed={shelfSort === option.id}
+                className={shelfSort === option.id ? "is-active" : ""}
+                onClick={() => setShelfSort(option.id)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {visibleStories.length === 0 && (
+        <p className="shelf-empty-note" role="status">书架上没有找到「{query}」。</p>
+      )}
       {shelves.map((row, shelfIndex) => {
         const partial = row.length < capacity;
         return (
@@ -4349,25 +4464,54 @@ function PlazaAvatarThumb({ publication, large = false }) {
   // avatar), so there is always a real image to show — never an empty
   // circle or an initial tile. A failed load falls back to the same
   // default asset rather than to nothing.
+  // Face anchor (user order 2026-10-28, DESIGN §27): when the picture IS
+  // the avatar's full-body portrait, the small frame crops to the head —
+  // the frame clips, the image zooms to the face anchor — so a round
+  // slot never shows a torso. Uploaded pictures get the top anchor only.
   const resolved = publication?.avatar?.pictureUrl || "/default-avatar.svg";
   const [src, setSrc] = useState(resolved);
   useEffect(() => { setSrc(resolved); }, [resolved]);
+  const portrait = publication?.avatar?.pictureKind === "avatar";
   return (
-    <img
-      className={`plaza-avatar-img ${large ? "is-large" : ""}`}
-      src={src}
-      alt=""
-      loading="lazy"
-      onError={() => { if (src !== "/default-avatar.svg") setSrc("/default-avatar.svg"); }}
-    />
+    <span className={`plaza-avatar-frame ${large ? "is-large" : ""} ${portrait ? "is-portrait" : ""}`}>
+      <img
+        className="plaza-avatar-img"
+        src={src}
+        alt=""
+        loading="lazy"
+        onError={() => { if (src !== "/default-avatar.svg") setSrc("/default-avatar.svg"); }}
+      />
+    </span>
   );
 }
 
-function PlazaCard({ publication, own, onOpen, onRead, onEnter, onOpenProfile }) {
+function PlazaLeadPortrait({ publication, onOpenProfile }) {
+  const [failed, setFailed] = useState(false);
+  if (!publication.avatar?.hasPortrait || failed) return null;
+  return (
+    <button
+      type="button"
+      className="plaza-lead-portrait"
+      onClick={() => onOpenProfile?.(publication.authorUid)}
+      aria-label={`打开 ${publication.authorName} 的主页`}
+    >
+      <img
+        src={plazaPortraitPath(publication.id)}
+        alt=""
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+      <span className="plaza-lead-portrait-name">{publication.avatar?.name}</span>
+    </button>
+  );
+}
+
+function PlazaCard({ publication, own, lead = false, onOpen, onRead, onEnter, onOpenProfile }) {
   const genre = genreById[publication.genreId] || GENRES[0];
   const templateName = plazaTemplateNameFor(publication) || genre.label;
   return (
-    <article className="plaza-card">
+    <article className={`plaza-card ${lead ? "plaza-card-lead" : ""}`}>
+      {lead && <PlazaLeadPortrait publication={publication} onOpenProfile={onOpenProfile} />}
       <button
         type="button"
         className="plaza-card-cover"
@@ -4400,6 +4544,9 @@ function PlazaCard({ publication, own, onOpen, onRead, onEnter, onOpenProfile })
           )}
           {own && <span className="plaza-own-chip">我发布的</span>}
         </div>
+        {lead && publication.avatar?.appearance && (
+          <p className="plaza-lead-appearance">{publication.avatar.name} · {publication.avatar.appearance}</p>
+        )}
         <div className="plaza-chips">
           <span className="plaza-chip">{publication.worldName}</span>
           <span className="plaza-chip-x" aria-hidden="true">×</span>
@@ -4419,12 +4566,48 @@ function PlazaCard({ publication, own, onOpen, onRead, onEnter, onOpenProfile })
   );
 }
 
-function PlazaFeed({ account, activeStory, onNavigate, onOpenStory, onOpenDetail, onReadLine, onEnter, onOpenProfile }) {
+function plazaFeedTime(iso) {
+  const stamp = typeof iso === "string" ? Date.parse(iso) : Number.NaN;
+  if (Number.isNaN(stamp)) return "";
+  const days = Math.floor((Date.now() - stamp) / 86_400_000);
+  if (days <= 0) return "今天更新";
+  if (days === 1) return "昨天更新";
+  if (days < 30) return `${days} 天前更新`;
+  return `${new Date(stamp).getMonth() + 1}月${new Date(stamp).getDate()}日更新`;
+}
+
+function PlazaFeed({ account, authClient, activeStory, stories, onNavigate, onOpenStory, onOpenDetail, onReadLine, onEnter, onOpenProfile }) {
   const [feed, setFeed] = useState(null);
   const [onlineCount, setOnlineCount] = useState(0);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const [followingUids, setFollowingUids] = useState([]);
   const mineIds = useMemo(() => plazaMineIds(), []);
+  const viewerUid = account.user?.uid || "";
+  // F-22 (minimum viable): the viewer's own profile payload carries the
+  // uids they follow (self-only field); the updates strip below is the
+  // plaza feed filtered to those authors — no new endpoint, no fake data.
+  useEffect(() => {
+    if (!viewerUid || !authClient) { setFollowingUids([]); return undefined; }
+    let live = true;
+    fetchUserProfile({ uid: viewerUid, getAccessToken: () => authClient.getAccessToken() })
+      .then((profile) => { if (live) setFollowingUids(Array.isArray(profile?.followingUids) ? profile.followingUids : []); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [viewerUid, authClient]);
+  const publishable = useMemo(
+    () => (stories || []).some((story) => plazaGateFor(story).publishable),
+    [stories],
+  );
+  const followedUpdates = useMemo(() => {
+    if (!feed || followingUids.length === 0) return [];
+    const followed = new Set(followingUids);
+    return feed
+      .filter((item) => item.authorUid && item.authorUid !== viewerUid && followed.has(item.authorUid))
+      .slice()
+      .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
+      .slice(0, 6);
+  }, [feed, followingUids, viewerUid]);
   useEffect(() => {
     let live = true;
     setError("");
@@ -4459,13 +4642,45 @@ function PlazaFeed({ account, activeStory, onNavigate, onOpenStory, onOpenDetail
       </header>
       <p className="page-caption">别人走完的世界，正等你走进去。</p>
 
-      <section className="plaza-publish-card">
-        <div>
-          <strong>把你的故事线放到广场</strong>
-          <p>走完的故事线可以发布；无限连载的线连载中就能放上来，新章会自己跟上。</p>
-        </div>
-        <Button onClick={() => onNavigate("plaza-publish")}>发布 <Icon name="arrow" size={15} /></Button>
-      </section>
+      {activeStory && (
+        <button type="button" className="plaza-continue-card" onClick={() => onOpenStory(activeStory.id)}>
+          <span className="plaza-continue-cover">
+            <StoryCover story={activeStory} genreId={genreOf(activeStory).id} sources={coverSources(activeStory)} getAccessToken={() => authClient?.getAccessToken()} authSignal={account.status} />
+          </span>
+          <span className="plaza-continue-copy">
+            <small>继续阅读</small>
+            <strong>《{activeStory.title}》</strong>
+            <span>{activeSerializing ? `连载中 · 已读到第 ${activeChapter} 章` : `已读到第 ${activeChapter} / ${activeTotal} 章`}</span>
+          </span>
+          <Icon name="chevron" size={18} />
+        </button>
+      )}
+
+      {followedUpdates.length > 0 && (
+        <section className="plaza-following" aria-label="关注动态">
+          <div className="plaza-feed-heading">
+            <h2>关注动态</h2>
+            <span>你关注的作者最近更新的线</span>
+          </div>
+          <div className="plaza-following-row">
+            {followedUpdates.map((publication) => (
+              <button
+                type="button"
+                key={publication.id}
+                className="plaza-following-card"
+                onClick={() => onOpenDetail(publication)}
+              >
+                <span className="plaza-following-head">
+                  <PlazaAvatarThumb publication={publication} />
+                  <span className="plaza-following-author">{publication.authorName}</span>
+                </span>
+                <strong>《{publication.title}》</strong>
+                <small>{plazaLengthLabel(publication)} · {plazaFeedTime(publication.updatedAt)}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {feed?.some((item) => item.official) && (
         <button type="button" className="plaza-mine-row" onClick={() => onOpenDetail(feed.find((item) => item.official))}>
@@ -4486,6 +4701,25 @@ function PlazaFeed({ account, activeStory, onNavigate, onOpenStory, onOpenDetail
         </span>
         <Icon name="chevron" size={16} />
       </button>
+
+      {publishable ? (
+        <section className="plaza-publish-card">
+          <div>
+            <strong>把你的故事线放到广场</strong>
+            <p>走完的故事线可以发布；无限连载的线连载中就能放上来，新章会自己跟上。</p>
+          </div>
+          <Button onClick={() => onNavigate("plaza-publish")}>发布 <Icon name="arrow" size={15} /></Button>
+        </section>
+      ) : (
+        <button type="button" className="plaza-mine-row" onClick={() => onNavigate("plaza-publish")}>
+          <Icon name="plus" size={20} />
+          <span>
+            <strong>把你的故事线放到广场</strong>
+            <small>用化身走完一季、长线，或让无限长线连载中发布</small>
+          </span>
+          <Icon name="chevron" size={16} />
+        </button>
+      )}
 
       <div className="plaza-feed-heading">
         <h2>最新发布</h2>
@@ -4509,10 +4743,11 @@ function PlazaFeed({ account, activeStory, onNavigate, onOpenStory, onOpenDetail
       )}
       {feed !== null && feed.length > 0 && (
         <div className="plaza-feed-list">
-          {feed.map((publication) => (
+          {feed.map((publication, index) => (
             <PlazaCard
               key={publication.id}
               publication={publication}
+              lead={index === 0}
               own={mineIds.has(publication.id)}
               onOpen={() => onOpenDetail(publication)}
               onRead={() => onReadLine(publication)}
@@ -4877,8 +5112,12 @@ function ProfileCoverArt({ publication }) {
 // are stacked). No borders or seams anywhere: cards separate only
 // through their own soft shadow, and the stack sits centered on the
 // tile's dark ground.
-const STACK_CARD_WIDTH_PCT = 62;
-const STACK_STEP_PX = 14;
+// Fan geometry (final, DESIGN §27): the front cover anchors LEFT and
+// the fan fills the collage edge-to-edge — every card is as wide as the
+// space left after the peeks, and each card behind steps right by one
+// peek width, so only a coloured edge of it shows. Separation is carried
+// by the layer shadow alone (no light borders, per §15).
+const STACK_STEP_PX = 18;
 
 function ProfileBoardCollage({ board }) {
   const lines = board.publications || [];
@@ -4916,7 +5155,7 @@ function ProfileBoardCollage({ board }) {
   }
 
   const cards = lines.slice(0, 4);
-  const stackWidth = `calc(${STACK_CARD_WIDTH_PCT}% + ${(cards.length - 1) * STACK_STEP_PX}px)`;
+  const cardWidth = `calc(100% - ${(cards.length - 1) * STACK_STEP_PX}px)`;
   return (
     <span className="profile-board-collage is-stack" aria-hidden="true">
       {cards.map((publication, index) => (
@@ -4924,8 +5163,8 @@ function ProfileBoardCollage({ board }) {
           className="profile-board-stack-layer"
           key={publication.id}
           style={{
-            width: `${STACK_CARD_WIDTH_PCT}%`,
-            left: `calc((100% - ${stackWidth}) / 2 + ${index * STACK_STEP_PX}px)`,
+            width: cardWidth,
+            left: `${index * STACK_STEP_PX}px`,
             zIndex: cards.length - index,
           }}
         >
@@ -4969,7 +5208,7 @@ function ProfileLineRow({ publication, onOpen }) {
   );
 }
 
-function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onOpenDetail }) {
+function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onOpenDetail, onClose = null }) {
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
@@ -4983,16 +5222,19 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   const [reported, setReported] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [pictureSrc, setPictureSrc] = useState("");
+  const [standFailed, setStandFailed] = useState(false);
   const getToken = useCallback(() => authClient.getAccessToken(), [authClient]);
   const viewerUid = account.user?.uid || "";
   const { animate } = useMotionPolicy("profile");
   const pageRef = useRef(null);
   const tabsRef = useRef(null);
   const enteredUidRef = useRef("");
-  // One orchestrated entrance (frontend-design playbook): the header
-  // elements rise in a single staggered sequence when the profile first
-  // paints — nothing loops, and the app's motion policy (user toggle,
-  // prefers-reduced-motion, save-data) silences it entirely.
+  // One orchestrated entrance (frontend-design playbook): the SHELF
+  // rises in a single staggered sequence when the profile first paints.
+  // The identity block (avatar / name / counts / actions) is NOT part of
+  // the stagger — identity renders the instant its data lands (zero-wait,
+  // DESIGN §27); the skeleton holds its geometry until then. Nothing
+  // loops, and the app's motion policy silences the stagger entirely.
   useEffect(() => {
     if (!profile || !animate || !pageRef.current) return;
     if (enteredUidRef.current === profile.uid) return;
@@ -5027,6 +5269,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
     setMenuOpen(false);
     setReported(false);
     setEditOpen(false);
+    setStandFailed(false);
     fetchUserProfile({ uid, getAccessToken: getToken })
       .then((next) => { if (live) setProfile(next); })
       .catch((failure) => {
@@ -5042,15 +5285,26 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
       <div className="page page-profile page-enter">
         <div className="plaza-empty" role="alert">
           <h3>{error}</h3>
-          <Button variant="secondary" onClick={() => onNavigate("plaza")}>回到广场</Button>
+          <Button variant="secondary" onClick={() => (onClose ? onClose() : onNavigate("plaza"))}>{onClose ? "关闭" : "回到广场"}</Button>
         </div>
       </div>
     );
   }
   if (!profile) {
+    // Identity zero-wait (DESIGN §27): the loading state holds the
+    // header's exact geometry — 136px avatar disc, name bar, counts
+    // bar — so the name and counts land in reserved space instead of
+    // popping in seconds later and shoving the shelf down.
     return (
-      <div className="page page-profile page-enter">
-        <p className="plaza-loading" role="status">正在打开主页…</p>
+      <div className="page page-profile page-enter" aria-busy="true">
+        <div className="profile-skeleton" role="status" aria-label="正在打开主页">
+          <span className="profile-skeleton-avatar" />
+          <span className="profile-skeleton-line is-name" />
+          <span className="profile-skeleton-line is-handle" />
+          <span className="profile-skeleton-line is-counts" />
+          <span className="profile-skeleton-action" />
+          <span className="profile-skeleton-shelf" />
+        </div>
       </div>
     );
   }
@@ -5127,9 +5381,9 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   return (
     <>
     <div className="page page-profile page-enter" ref={pageRef}>
-      <div className="ryan-topbar" data-enter>
-        <button type="button" className="ryan-glyph-btn" onClick={() => onNavigate("plaza")} aria-label="返回广场">
-          <Icon name="chevron" size={22} className="rotate-180" />
+      <div className="ryan-topbar">
+        <button type="button" className="ryan-glyph-btn" onClick={() => (onClose ? onClose() : onNavigate("plaza"))} aria-label={onClose ? "关闭主页" : "返回广场"}>
+          {onClose ? <Icon name="x" size={22} /> : <Icon name="chevron" size={22} className="rotate-180" />}
         </button>
         <span className="ryan-topbar-actions">
           <button type="button" className="ryan-glyph-btn" onClick={() => void shareProfile()} aria-label="分享主页">
@@ -5157,7 +5411,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
         </div>
       )}
 
-      <div className="ryan-avatar-wrap" data-enter>
+      <div className="ryan-avatar-wrap">
         <span className={`ryan-avatar-frame${profile.picture?.kind === "avatar" ? " is-portrait" : ""}`}>
           <img
             className="ryan-avatar"
@@ -5167,20 +5421,20 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           />
         </span>
       </div>
-      <h1 className="ryan-name" data-enter data-name-tier={nameTier}>{shownName}</h1>
-      {shownHandle && <p className="ryan-handle" data-enter>@{shownHandle}</p>}
+      <h1 className="ryan-name" data-name-tier={nameTier}>{shownName}</h1>
+      {shownHandle && <p className="ryan-handle">@{shownHandle}</p>}
       {profile.avatar?.description ? (
-        <p className="ryan-bio" data-enter>
+        <p className="ryan-bio">
           <strong>{profile.avatar.name}</strong>
           {shownHandle ? <> · @{shownHandle} · </> : <> · </>}
           {profile.avatar.description}
         </p>
       ) : null}
-      <p className="ryan-counts" data-enter>
+      <p className="ryan-counts">
         {profile.counts.followers} 粉丝 · {profile.counts.following} 关注
       </p>
 
-      <div className="ryan-actions" data-enter>
+      <div className="ryan-actions">
         {isSelf ? (
           <button type="button" className="btn-pill-white" onClick={() => setEditOpen(true)}>编辑资料</button>
         ) : (
@@ -5196,6 +5450,22 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
         )}
       </div>
       {note && <p className="ryan-note" role="status">{note}</p>}
+
+      {profile.avatar?.hasPortrait && profile.avatar?.portraitUrl && !standFailed && (
+        <section className="profile-avatar-stand" aria-label={`${profile.avatar.name} 的全身像`}>
+          <img
+            className="profile-avatar-stand-img"
+            src={profile.avatar.portraitUrl}
+            alt=""
+            loading="lazy"
+            onError={() => setStandFailed(true)}
+          />
+          <p className="profile-avatar-stand-caption">
+            <strong>{profile.avatar.name}</strong>
+            {profile.avatar.appearance ? <span>{profile.avatar.appearance}</span> : null}
+          </p>
+        </section>
+      )}
 
       <section className="profile-shelf" aria-label="主页书架" data-enter>
         {publications.length > 0 ? (
@@ -5246,14 +5516,16 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
               >
                 <Icon name="sliders" size={24} />
               </button>
-              <button
-                type="button"
-                className="profile-shelf-tool"
-                onClick={() => onNavigate("forge")}
-                aria-label="新建故事"
-              >
-                <Icon name="plus" size={26} />
-              </button>
+              {isSelf && (
+                <button
+                  type="button"
+                  className="profile-shelf-tool"
+                  onClick={() => onNavigate("forge")}
+                  aria-label="新建故事"
+                >
+                  <Icon name="plus" size={26} />
+                </button>
+              )}
               {sortOpen && (
                 <div className="profile-sort-menu" role="menu" aria-label="故事线排序">
                   {sortOptions.map((option) => (
@@ -6276,6 +6548,58 @@ function LibraryTools({ store, library, onClose, onRestored, syncNote }) {
   </ReadingDialog>;
 }
 
+function HelpContent() {
+  // F-33: one honest help surface — how generation is metered, where
+  // stories live, how recovery works, the plaza rules, and where to send
+  // feedback. No invented support channels: feedback goes to the public
+  // repository's issue tracker.
+  const items = [
+    {
+      q: "织界是什么？怎么开始？",
+      a: "织界是和 AI 一起写的互动小说：选世界、定出生点、捏一个化身，就能开一本只属于你的书。先去「造世」开第一本；读到中途想改走向，用阅读器里的「介入」给世界线添一把力——已经发生的不会变，下一章会绕着你的介入走。",
+    },
+    {
+      q: "生成要花什么？额度怎么算？",
+      a: "生成按 token 计量，汇总在你的账号里（账号页「我的消耗」能看到累计）。全站每天有一个总上限（按 UTC 日计算），到达上限后当天的新生成会暂停，第二天自动恢复。读已经生成的章节、介入已排队的内容都不额外计费。",
+    },
+    {
+      q: "我的故事存在哪里？换设备会丢吗？",
+      a: "故事先保存在当前浏览器；登录后，书架与阅读进度会同步到你的账号，换设备登录就能接着读。没登录时清理浏览器缓存会清掉本机故事，建议在「书架与备份」里导出一份。",
+    },
+    {
+      q: "离线能读吗？",
+      a: "能读已经在你设备上的书：本机书架的故事、已同步到这台设备的章节、打开过的广场故事线，断网时照常打开。生成新章、发布、合流这些需要联网的操作，离线时会等你回来再继续。",
+    },
+    {
+      q: "密码忘了怎么办？",
+      a: "邮箱账号可以用「忘记密码」收重设邮件。用户名账号如果在注册时或账号设置里绑了恢复邮箱，也能用邮箱验证码重设；没绑恢复邮箱又忘了密码，目前没法自助找回——所以建议尽早在账号设置里补绑。",
+    },
+    {
+      q: "广场上的故事线是怎么来的？",
+      a: "每条线都是一位读者的化身真实走完（或正在连载）的故事。走完一季、长线、自定义篇幅，或连载中的无限长线，可以发布到广场；别人能读原作，也能带自己的化身进入你的世界重走一遍。违规内容被 3 位不同读者举报后会自动下架。",
+    },
+    {
+      q: "界面太亮/太暗，能换个样子吗？",
+      a: "可以。在「我的账号」里切换外观主题：黑夜（默认）、白昼、极光（最初的深藏青玻璃风）。阅读时的纸色、字号在阅读器自己的「阅读设置」里调，和外观主题互不影响。",
+    },
+  ];
+  return (
+    <div className="help-content">
+      {items.map((item) => (
+        <details key={item.q} className="help-item">
+          <summary>{item.q}</summary>
+          <p>{item.a}</p>
+        </details>
+      ))}
+      <p className="help-feedback">
+        没找到答案，或者想提建议、报问题：
+        <a href="https://github.com/honru09/storyverse/issues" target="_blank" rel="noreferrer">在 GitHub 上反馈</a>
+        ——写清你在哪一步、看到了什么，我们会在那里回复。
+      </p>
+    </div>
+  );
+}
+
 function App() {
   const sceneRef = useRef(null);
   const [authClient] = useState(() => createAuthClient());
@@ -6285,18 +6609,36 @@ function App() {
   useEffect(() => { void authClient.start(); return () => authClient.stop(); }, [authClient]);
   const [store] = useState(() => createLibraryStore());
   useEffect(() => { installRipple(); }, []);
+  // Offline shell (F-18): register the service worker once; failures are
+  // silent — the app simply stays online-only on that browser.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }, []);
   const { library, warning, unsaved } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const setLibrary = store.update;
   const [route, setRoute] = useState(() => parseRoute(window.location.hash));
-  const view = route.view;
+  // The profile is a WINDOW over the current page (user order
+  // 2026-10-28), not a page of its own: baseRoute remembers the last
+  // non-profile route, the base page keeps rendering underneath
+  // (slightly receded), and the profile renders as an overlay sheet.
+  // Deep links (#/profile/<uid>) land on the plaza as their base.
+  const [baseRoute, setBaseRoute] = useState(() => (route.view === "profile" ? { view: "plaza" } : route));
+  useEffect(() => { if (route.view !== "profile") setBaseRoute(route); }, [route]);
+  const profileRoute = route.view === "profile" ? route : null;
+  const pageRoute = profileRoute ? baseRoute : route;
+  const view = pageRoute.view;
   // Plaza sub-views (detail / publish / enter / plaza-read) all keep the
   // 广场 tab active in the sidebar and the bottom bar.
-  const navView = route.plaza || view.startsWith("plaza") || view === "profile" ? "plaza" : view;
+  const navView = pageRoute.plaza || view.startsWith("plaza") ? "plaza" : view;
+  const [shellTheme, setShellThemeState] = useState(() => readShellTheme());
+  const [helpOpen, setHelpOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [shareRequest, setShareRequest] = useState(false);
   const [toast, setToast] = useState("");
   const [provider, setProvider] = useState({ configured: false });
   const opening = useRef(null);
+  const handledRouteRef = useRef("");
   useEffect(() => {
     const controller = new AbortController();
     generationStatus({ signal: controller.signal }).then((status) => { if (!controller.signal.aborted) setProvider(status); });
@@ -6320,6 +6662,36 @@ function App() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [authClient, viewerUid]);
+  // The viewer's own resolved picture (uploaded → avatar portrait →
+  // default), for the nav face slots. Face-anchor cropping applies when
+  // the picture is the avatar's full-body portrait (kind 'avatar').
+  const [ownPicture, setOwnPicture] = useState(null);
+  useEffect(() => {
+    if (!viewerUid) { setOwnPicture(null); return undefined; }
+    let live = true;
+    fetchUserProfile({ uid: viewerUid, getAccessToken: () => authClient.getAccessToken() })
+      .then((profile) => { if (live) setOwnPicture(profile?.picture || null); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [viewerUid, authClient]);
+  const faceSrc = ownPicture?.url || (viewerUid ? userPicturePath(viewerUid) : null);
+  const facePortrait = ownPicture?.kind === "avatar";
+  const openOwnProfile = useCallback(() => {
+    if (viewerUid) navigate("profile", { id: viewerUid });
+    else { setAccountIntent(null); setAccountOpen(true); }
+  }, [viewerUid]);
+  const closeProfile = useCallback(() => {
+    const target = baseRoute.view === "profile" ? { view: "plaza" } : baseRoute;
+    const hash = routeHash(target);
+    if (window.location.hash !== hash) window.history.pushState(null, "", hash);
+    setRoute(parseRoute(hash));
+  }, [baseRoute]);
+  useEffect(() => {
+    if (!profileRoute) return undefined;
+    const onKey = (event) => { if (event.key === "Escape") closeProfile(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [profileRoute, closeProfile]);
   // Cloud library: while signed in, the shelf reconciles with the
   // account copy on sign-in and writes changes through in the
   // background. Local storage stays the working copy — nothing here
@@ -6398,30 +6770,42 @@ function App() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
-  const readerExternal = route.shared
-    ? COMMUNITY_BOOKS.find((book) => book.id === route.id)
-      || (officialSample && officialSample.id === route.id ? officialSample : null)
-      || library.publications.find((item) => item.id === route.id)?.snapshot
+  const readerExternal = pageRoute.shared
+    ? COMMUNITY_BOOKS.find((book) => book.id === pageRoute.id)
+      || (officialSample && officialSample.id === pageRoute.id ? officialSample : null)
+      || library.publications.find((item) => item.id === pageRoute.id)?.snapshot
     : null;
   const [plazaLines, setPlazaLines] = useState({});
-  const readerStory = route.shared
+  const readerStory = pageRoute.shared
     ? readerExternal
-    : route.plaza
-      ? plazaLines[route.id]
-      : library.stories.find((story) => story.id === route.id);
+    : pageRoute.plaza
+      ? plazaLines[pageRoute.id]
+      : library.stories.find((story) => story.id === pageRoute.id);
   useEffect(() => {
-    if (!route.plaza || !route.id || plazaLines[route.id]) return;
+    if (!pageRoute.plaza || !pageRoute.id || plazaLines[pageRoute.id]) return;
     let cancelled = false;
-    fetchPlazaDetail({ id: route.id })
+    fetchPlazaDetail({ id: pageRoute.id })
       .then((detail) => {
         if (cancelled || !detail) return;
         const story = plazaReaderStory(detail);
-        if (story) setPlazaLines((current) => ({ ...current, [route.id]: story }));
+        if (story) setPlazaLines((current) => ({ ...current, [pageRoute.id]: story }));
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [route.plaza, route.id, plazaLines]);
+  }, [pageRoute.plaza, pageRoute.id, plazaLines]);
   const { animate } = useMotionPolicy(view);
+  // Shell theme switching (DESIGN §27): persist the device choice,
+  // repaint the token attribute, and run the one-shot cross-fade veil —
+  // unless the motion policy says stay still.
+  const changeShellTheme = useCallback((next) => {
+    const resolved = storeShellTheme(next);
+    applyShellTheme(resolved);
+    setShellThemeState(resolved);
+    if (!animate) return;
+    const root = document.documentElement;
+    root.classList.add("theme-switching");
+    window.setTimeout(() => root.classList.remove("theme-switching"), 360);
+  }, [animate]);
   useSmoothScroll(view);
   useSceneMotion(
     sceneRef,
@@ -6461,14 +6845,23 @@ function App() {
       merge: "世界合流",
       avatar: "我的化身",
     };
-    document.title = `${view === "reader" ? readerStory?.title || "故事未找到" : titles[view]} · 织界`;
+    document.title = profileRoute
+      ? "个人主页 · 织界"
+      : `${view === "reader" ? readerStory?.title || "故事未找到" : titles[view]} · 织界`;
+    // Opening or closing the profile window must not yank the base
+    // page: no focus steal, no scroll reset — the reader returns to
+    // exactly where they were (user order 2026-10-28).
+    if (profileRoute) return;
+    const routeKey = `${view}:${pageRoute.id || ""}`;
+    if (handledRouteRef.current === routeKey) return;
+    handledRouteRef.current = routeKey;
     if (view !== "reader" && view !== "forge") {
       const heading = sceneRef.current?.querySelector(".page h1");
       heading?.setAttribute("tabindex", "-1");
       heading?.focus({ preventScroll: true });
       scrollToTop();
     }
-  }, [view, route.id, readerStory?.title]);
+  }, [view, pageRoute.id, readerStory?.title, profileRoute]);
   useEffect(() => {
     if (!toast) return undefined;
     const timer = window.setTimeout(() => setToast(""), 2600);
@@ -6863,7 +7256,7 @@ function App() {
         }
         onNavigate={(next, id) => (id ? openOwnReader(id) : navigate(next))}
         onMerged={addMergedStory}
-        preselect={{ storyId: route.id || "", publicationId: route.publicationId || "" }}
+        preselect={{ storyId: pageRoute.id || "", publicationId: pageRoute.publicationId || "" }}
         onEnterPublication={(id) => navigate("plaza-enter", { id })}
         authClient={authClient}
         onAuthRequired={() => { setAccountIntent(null); setAccountOpen(true); }}
@@ -6887,7 +7280,9 @@ function App() {
     page = (
       <PlazaFeed
         account={account}
+        authClient={authClient}
         activeStory={activeStory}
+        stories={library.stories}
         onNavigate={navigate}
         onOpenStory={openOwnReader}
         onOpenDetail={openPlazaDetail}
@@ -6899,7 +7294,7 @@ function App() {
   else if (view === "plaza-detail")
     page = (
       <PlazaDetail
-        id={route.id}
+        id={pageRoute.id}
         account={account}
         authClient={authClient}
         onNavigate={navigate}
@@ -6908,18 +7303,6 @@ function App() {
         onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
         onToast={setToast}
         onOpenProfile={openProfile}
-      />
-    );
-  else if (view === "profile")
-    page = (
-      <ProfilePage
-        uid={route.id}
-        account={account}
-        authClient={authClient}
-        onNavigate={navigate}
-        onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
-        onOpenAvatar={() => navigate("avatar")}
-        onOpenDetail={openPlazaDetail}
       />
     );
   else if (view === "plaza-publish")
@@ -6939,7 +7322,7 @@ function App() {
   else if (view === "plaza-enter")
     page = (
       <PlazaEnter
-        id={route.id}
+        id={pageRoute.id}
         account={account}
         authClient={authClient}
         avatar={avatarState.avatar}
@@ -6966,19 +7349,20 @@ function App() {
         avatar={avatarState.avatar}
         onOpenAvatar={() => navigate("avatar")}
         syncNote={syncNote}
+        onOpenHelp={() => setHelpOpen(true)}
       />
     );
   return (
     <div
       ref={sceneRef}
-      className="app-shell"
+      className={`app-shell ${profileRoute ? "has-profile-window" : ""}`}
       data-view={view}
       data-motion={animate ? "on" : "off"}
     >
       <AuroraBackground />
-      <Sidebar view={navView} onNavigate={navigate} />
+      <Sidebar view={profileRoute ? "profile" : navView} onNavigate={navigate} onOpenProfile={openOwnProfile} faceSrc={faceSrc} facePortrait={facePortrait} />
       <main className="main-shell">
-        {view !== "profile" && <Topbar onNavigate={navigate} onOpenLibrary={() => setLibraryOpen(true)} account={account} onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }} />}
+        <Topbar onNavigate={navigate} onOpenLibrary={() => setLibraryOpen(true)} account={account} onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }} />
         {warning && (
           <div className="sw-storage-warning" role="alert">
             <Icon name="lock" size={14} />
@@ -6986,15 +7370,35 @@ function App() {
             <button onClick={() => setLibraryOpen(true)}>备份与恢复</button>
           </div>
         )}
-        <MobileBottomNav view={view === "profile" ? "profile" : navView} onNavigate={navigate} />
+        <MobileBottomNav view={profileRoute ? "profile" : navView} onNavigate={navigate} onOpenProfile={openOwnProfile} faceSrc={faceSrc} facePortrait={facePortrait} />
         {page}
       </main>
+      {profileRoute && (
+        <div className="profile-window" role="dialog" aria-modal="true" aria-label="个人主页">
+          <button type="button" className="profile-window-backdrop" aria-label="关闭主页" onClick={closeProfile} />
+          <div className="profile-window-sheet">
+            <ProfilePage
+              uid={profileRoute.id}
+              account={account}
+              authClient={authClient}
+              onNavigate={navigate}
+              onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
+              onOpenAvatar={() => navigate("avatar")}
+              onOpenDetail={openPlazaDetail}
+              onClose={closeProfile}
+            />
+          </div>
+        </div>
+      )}
       {accountOpen && <ReadingDialog title={account.user ? "我的账号" : "登录与注册"} onClose={() => setAccountOpen(false)}>
-        <AccountPanel client={authClient} account={account} onOpenAvatar={() => { setAccountOpen(false); navigate("avatar"); }} onOpenProfile={() => { setAccountOpen(false); if (account.user?.uid) navigate("profile", { id: account.user.uid }); }} onContinue={() => {
+        <AccountPanel client={authClient} account={account} shellTheme={shellTheme} onShellThemeChange={changeShellTheme} onOpenHelp={() => { setAccountOpen(false); setHelpOpen(true); }} onOpenAvatar={() => { setAccountOpen(false); navigate("avatar"); }} onOpenProfile={() => { setAccountOpen(false); if (account.user?.uid) navigate("profile", { id: account.user.uid }); }} onContinue={() => {
           setAccountOpen(false);
           if (accountIntent === "forge") navigate("forge");
           setAccountIntent(null);
         }}/>
+      </ReadingDialog>}
+      {helpOpen && <ReadingDialog title="帮助与常见问题" onClose={() => setHelpOpen(false)}>
+        <HelpContent />
       </ReadingDialog>}
       {libraryOpen && <LibraryTools store={store} library={library} syncNote={syncNote} onClose={() => setLibraryOpen(false)} onRestored={() => {
         setLibraryOpen(false);

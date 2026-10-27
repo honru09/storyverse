@@ -327,6 +327,10 @@ export function createSocialService({
         },
       }
       if (isSelf) {
+        // The viewer's own follow list, exposed only to themselves: the
+        // plaza's 关注动态 strip filters the public feed by these uids
+        // client-side (F-22 minimum viable — no new endpoint).
+        payload.followingUids = following.map((record) => record.followeeUid).filter(Boolean)
         payload.editable = {
           displayName: record?.displayName || '',
           handle: record?.handle || '',

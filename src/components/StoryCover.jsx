@@ -47,6 +47,19 @@ export default function StoryCover({ story, genreId = "mist", sources, eager = f
       </span>
     );
   }
+  if (status === "pending") {
+    // Honest placeholder (DESIGN §27): while the painting is being made,
+    // the world artwork stands in WITH a visible note — never a silent
+    // swap that leaves the reader wondering which cover is real. A
+    // failed attempt stays silent (the world art is a fine cover; the
+    // re-roll lives in the reader's cover dialog).
+    return (
+      <span className={`world-art story-cover-pending-wrap ${className}`} aria-hidden="true">
+        <WorldArtwork genreId={genreId} sources={sources} eager={eager} {...(sizes ? { sizes } : {})} />
+        <span className="story-cover-pending-chip">封面生成中</span>
+      </span>
+    );
+  }
   return (
     <WorldArtwork
       genreId={genreId}
