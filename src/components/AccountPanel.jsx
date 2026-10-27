@@ -9,7 +9,36 @@ function GoogleMark() {
 
 // The SDK owns Firebase credentials and the session; the email-code session
 // token is owned by the auth client too. This panel only holds form input.
-export default function AccountPanel({ client, account, onContinue, onOpenAvatar, onOpenProfile }) {
+const SHELL_THEME_OPTIONS = [
+  { id: "black", label: "黑夜" },
+  { id: "white", label: "白昼" },
+  { id: "aurora", label: "极光" },
+];
+
+function ShellThemeControl({ shellTheme, onShellThemeChange }) {
+  if (!onShellThemeChange) return null;
+  return (
+    <div className="account-theme">
+      <span className="account-theme-label">外观主题</span>
+      <div className="account-theme-options" role="group" aria-label="外观主题">
+        {SHELL_THEME_OPTIONS.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            aria-pressed={shellTheme === option.id}
+            className={shellTheme === option.id ? "is-active" : ""}
+            onClick={() => onShellThemeChange(option.id)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <p className="account-storage-note">只改界面外观；阅读时的纸色、字号在阅读设置里单独调，互不影响。</p>
+    </div>
+  );
+}
+
+export default function AccountPanel({ client, account, onContinue, onOpenAvatar, onOpenProfile, shellTheme, onShellThemeChange, onOpenHelp }) {
   const [mode, setMode] = useState("login");
   const [accountId, setAccountId] = useState("");
   const [password, setPassword] = useState("");
@@ -214,8 +243,10 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       <p className="account-storage-note">{account.config?.storage === 'synced'
         ? "书架与阅读进度会同步到你的账号，换设备登录就能接着读。本机始终留一份，断网也能读。退出账号不会删除本机故事。"
         : "书架与阅读进度保存在当前浏览器，暂不跨设备同步。退出账号不会删除本机故事。"}</p>
+      <ShellThemeControl shellTheme={shellTheme} onShellThemeChange={onShellThemeChange} />
       {onOpenAvatar && <button className="account-avatar-entry" type="button" onClick={onOpenAvatar}>我的化身 <span aria-hidden="true">→</span></button>}
       {onOpenProfile && <button className="account-avatar-entry" type="button" onClick={onOpenProfile}>我的主页 <span aria-hidden="true">→</span></button>}
+      {onOpenHelp && <button className="account-avatar-entry" type="button" onClick={onOpenHelp}>帮助与常见问题 <span aria-hidden="true">→</span></button>}
       {error && <p className="account-message is-error" role="alert">{error}</p>}
       {account.notice && <p className="account-message" role="status">{account.notice}</p>}
       <button className="button button-primary account-primary" type="button" onClick={onContinue}>继续体验</button>
@@ -265,6 +296,8 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       <p className="account-storage-note">{account.config?.storage === 'synced'
         ? "不登录也能读，故事先保存在当前浏览器；登录后会自动同步到你的账号，换设备也能接着读。没有 Google 账号，也可以用用户名或邮箱验证码登录。"
         : "登录后书架仍保存在本机；不会自动上传故事或个人设定。没有 Google 账号，也可以用用户名或邮箱验证码登录。"}</p>
+      <ShellThemeControl shellTheme={shellTheme} onShellThemeChange={onShellThemeChange} />
+      {onOpenHelp && <button className="account-avatar-entry" type="button" onClick={onOpenHelp}>帮助与常见问题 <span aria-hidden="true">→</span></button>}
     </>}
   </div>;
 }

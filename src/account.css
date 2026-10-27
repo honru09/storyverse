@@ -56,3 +56,10 @@
 .account-panel button:disabled, .account-form input:disabled { opacity: .5; cursor: not-allowed; }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .account-google { background: var(--surface-solid, #0d1834); } }
 @media (max-width: 360px) { .account-entry { width: 44px; padding: 8px; } .account-entry:has(svg) span { display: none; } }
+
+/* Shell theme control (DESIGN §27): three palettes, one segmented row. */
+.account-theme{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.account-theme-label{display:block;font-size:13px;font-weight:650;color:var(--dim);margin-bottom:10px}
+.account-theme-options{display:flex;gap:8px}
+.account-theme-options button{flex:1;min-height:42px;padding:8px 10px;border:1px solid var(--line);border-radius:999px;background:var(--glass);color:var(--ink);font-size:14px;font-weight:600;cursor:pointer}
+.account-theme-options button.is-active{background:var(--selected-surface);border-color:var(--selected-border);color:var(--selected-text)}
