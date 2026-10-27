@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createStory, createMergedStory, publicSnapshot } from '../src/story-engine.js'
+import { avatarJourneys } from '../src/avatar.js'
 import { emptyLibrary, validateLibrary } from '../src/persistence.js'
 import { mergeSourceContext } from '../src/generation.js'
 import { createGeminiGenerator, DEFAULT_MODEL } from '../server/gemini.js'
@@ -75,6 +76,21 @@ test('a merge records both avatars and the brief carries both looks', async () =
   assert.equal(context.sourceWorlds[0].avatarAppearance, LOOK)
   assert.match(context.sourceWorlds[1].avatarAppearance, /泪痣/)
   assert.equal(DEFAULT_MODEL.length > 0, true)
+})
+
+test('journeys derive per avatar: each avatar owns exactly the lines it lived', () => {
+  const mine = createStory({ name: '阿灿', genreId: 'mist', avatarId: 'avatar-abc', avatarAppearance: LOOK })
+  const other = createStory({ name: '林晚舟', genreId: 'cultivation', avatarId: 'avatar-def', avatarAppearance: '乌黑，长直发，仙气长袍，布鞋，眼下泪痣' })
+  const plain = createStory({ name: '无名', genreId: 'mist' })
+  const merged = createMergedStory(mine, other, { rules: 'bridge', lead: 'a', bond: 'allies' })
+  const stories = [mine, other, plain, merged]
+  const abc = avatarJourneys({ id: 'avatar-abc' }, stories)
+  assert.deepEqual(abc.map((row) => row.storyId).sort(), [mine.id, merged.id].sort())
+  assert.equal(abc.find((row) => row.storyId === merged.id).kind, 'merged')
+  const def = avatarJourneys({ id: 'avatar-def' }, stories)
+  assert.deepEqual(def.map((row) => row.storyId).sort(), [other.id, merged.id].sort())
+  assert.equal(def.find((row) => row.storyId === merged.id).viaMerge, true, 'the partner side joins the merged line via its protagonist entry')
+  assert.deepEqual(avatarJourneys({ id: 'avatar-gone' }, stories), [], 'a deleted avatar id simply has no derivable journeys')
 })
 
 test('a public snapshot keeps neither the avatar id nor the look', () => {

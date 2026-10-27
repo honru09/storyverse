@@ -254,10 +254,20 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         const gate = plazaGateFor(story)
         if (!gate.publishable) throw new ApiError(400, gate.reason)
         if (!avatars) throw new ApiError(400, '先创建你的化身，再发布它的故事线。')
-        const profileRecord = await avatars.getProfile(identity.uid)
-        const profile = profileRecord?.avatar || null
-        if (!profile || profile.id !== story.config.avatarId) {
-          throw new ApiError(400, '这条故事线不是用你现在的化身走完的，无法发布。')
+        // The line may have been lived by ANY of the author's avatars,
+        // not only the main one: resolve the avatar that walked it from
+        // the collection (legacy single-avatar records resolve the same
+        // way through collectionFromRecord inside the store).
+        const collection = typeof avatars.getCollection === 'function'
+          ? await avatars.getCollection(identity.uid)
+          : null
+        let profile = collection?.avatars.find((item) => item.id === story.config.avatarId) || null
+        if (!collection) {
+          const legacy = (await avatars.getProfile(identity.uid))?.avatar || null
+          if (legacy?.id === story.config.avatarId) profile = legacy
+        }
+        if (!profile) {
+          throw new ApiError(400, '这条故事线不是用你的化身走完的，无法发布。')
         }
         const violation = redLineViolation(story)
         if (violation) throw new ApiError(400, violation)

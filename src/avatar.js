@@ -14,6 +14,17 @@ export const AVATAR_NAME_MAX = 20
 export const AVATAR_DESCRIPTION_MAX = 300
 export const AVATAR_FACE_NOTE_MAX = 60
 export const AVATAR_APPEARANCE_TEXT_MAX = 300
+// One account may keep a small drawer of avatars (PERSONA-QA F-27): the
+// main avatar is the identity every public surface resolves, the rest are
+// companions the reader can bring into a book instead. The cap is shared
+// client/server vocabulary — the server enforces it.
+export const AVATAR_LIMIT = 10
+
+/** The main avatar out of a collection list, or null when there is none. */
+export function mainAvatarOf(avatars, mainId) {
+  if (!Array.isArray(avatars) || avatars.length === 0) return null
+  return avatars.find((item) => item?.id === mainId) || avatars[0] || null
+}
 
 // Appearance options are fixed site vocabulary: an id, the Chinese label
 // the reader picks, and the English fragment the image prompt paints.
@@ -231,7 +242,7 @@ function avatarError(response, result) {
     return Object.assign(new Error('今天的立绘生成次数已用完，明天再换。'), { code: 'avatar-quota' })
   }
   if (response.status === 503) return new Error('化身服务还没开通，过段时间再试。')
-  if (result?.error && response.status === 400) return new Error(result.error)
+  if (result?.error && (response.status === 400 || response.status === 404)) return new Error(result.error)
   return new Error('化身暂时没能打开，请稍后再试。')
 }
 
@@ -261,6 +272,55 @@ export async function fetchAvatar({ getAccessToken, fetchImpl = globalThis.fetch
   return result?.avatar ?? null
 }
 
+/**
+ * The reader's whole avatar collection: every avatar profile, which one
+ * is the main avatar, and today's portrait-generation quota. Surfaces
+ * that only need the identity avatar keep using fetchAvatar; pickers and
+ * the avatar page read the collection.
+ */
+export async function fetchAvatars({ getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = await avatarHeaders(getAccessToken)
+  const response = await fetchImpl('/api/avatars', { headers })
+  const result = await avatarJson(response)
+  return {
+    avatars: Array.isArray(result?.avatars) ? result.avatars : [],
+    mainId: typeof result?.mainId === 'string' ? result.mainId : null,
+    quota: result?.quota && typeof result.quota === 'object' ? result.quota : null,
+  }
+}
+
+/** Add a new avatar to the collection (profile only — painting is separate). */
+export async function createAvatar({ profile, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await avatarHeaders(getAccessToken)) }
+  const response = await fetchImpl('/api/avatars', {
+    method: 'POST', headers, body: JSON.stringify({ profile }),
+  })
+  const result = await avatarJson(response)
+  return result?.avatar ?? null
+}
+
+/** Remove one avatar from the collection; returns the remaining collection. */
+export async function deleteAvatar({ avatarId, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = await avatarHeaders(getAccessToken)
+  const response = await fetchImpl(`/api/avatars/${encodeURIComponent(avatarId)}`, { method: 'DELETE', headers })
+  const result = await avatarJson(response)
+  return {
+    avatars: Array.isArray(result?.avatars) ? result.avatars : [],
+    mainId: typeof result?.mainId === 'string' ? result.mainId : null,
+  }
+}
+
+/** Make one avatar the main avatar (the identity public surfaces resolve). */
+export async function setMainAvatar({ avatarId, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = await avatarHeaders(getAccessToken)
+  const response = await fetchImpl(`/api/avatars/${encodeURIComponent(avatarId)}/main`, { method: 'POST', headers })
+  const result = await avatarJson(response)
+  return {
+    avatars: Array.isArray(result?.avatars) ? result.avatars : [],
+    mainId: typeof result?.mainId === 'string' ? result.mainId : null,
+  }
+}
+
 /** Save profile fields without painting (creation form, name/description edits). */
 export async function saveAvatar({ profile, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
   const headers = { 'Content-Type': 'application/json', ...(await avatarHeaders(getAccessToken)) }
@@ -275,11 +335,17 @@ export async function saveAvatar({ profile, getAccessToken, fetchImpl = globalTh
  * Save the profile and paint (or repaint) the portrait. Slow — image
  * generation takes tens of seconds — so the caller shows the pending
  * state from the profile it already holds rather than blocking on this.
+ * `avatarId` targets one avatar of the collection (the profile's own id
+ * works too); `lockPart` marks a single-part adjustment — the server
+ * then paints under the repaint lock: only that part may change.
  */
-export async function generateAvatar({ profile, getAccessToken, fetchImpl = globalThis.fetch, timeoutMs = 120_000 } = {}) {
+export async function generateAvatar({ profile, avatarId, lockPart, getAccessToken, fetchImpl = globalThis.fetch, timeoutMs = 120_000 } = {}) {
   const headers = { 'Content-Type': 'application/json', ...(await avatarHeaders(getAccessToken)) }
+  const body = { profile }
+  if (typeof avatarId === 'string' && avatarId) body.avatarId = avatarId
+  if (typeof lockPart === 'string' && lockPart) body.lockPart = lockPart
   const response = await fetchImpl('/api/avatar/generate', {
-    method: 'POST', headers, body: JSON.stringify({ profile }),
+    method: 'POST', headers, body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   })
   const result = await avatarJson(response)
@@ -307,8 +373,9 @@ export async function fetchAvatarObjectUrl({
   const key = `${avatar.id}@${which}@${version}`
   if (portraitUrlCache.has(key)) return portraitUrlCache.get(key)
   const headers = await avatarHeaders(getAccessToken)
-  const query = which === 'previous' ? '?which=previous' : ''
-  const response = await fetchImpl(`/api/avatar/image${query}`, { headers })
+  const params = new URLSearchParams({ avatarId: avatar.id })
+  if (which === 'previous') params.set('which', 'previous')
+  const response = await fetchImpl(`/api/avatar/image?${params}`, { headers })
   if (!response.ok) return null
   const blob = await response.blob()
   const url = createObjectURL(blob)

@@ -276,7 +276,7 @@ test('publish rejects gated stories, another avatar’s line and red-line conten
   const foreign = completedLine('avatar-someone-else')
   const foreignResponse = await publish(base, token, foreign)
   assert.equal(foreignResponse.status, 400)
-  assert.match((await foreignResponse.json()).error, /不是用你现在的化身/)
+  assert.match((await foreignResponse.json()).error, /不是用你的化身走完的/)
 
   const short = { ...walkLocal(createStory({ genreId: 'mist', avatarId: avatar.id }), 6), engine: 'gemini' }
   const shortResponse = await publish(base, token, short)

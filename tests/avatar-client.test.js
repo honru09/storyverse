@@ -1,6 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { fetchAvatar, fetchAvatarObjectUrl, generateAvatar, saveAvatar } from '../src/avatar.js'
+import {
+  createAvatar,
+  deleteAvatar,
+  fetchAvatar,
+  fetchAvatarObjectUrl,
+  fetchAvatars,
+  generateAvatar,
+  mainAvatarOf,
+  saveAvatar,
+  setMainAvatar,
+} from '../src/avatar.js'
 
 const jsonResponse = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 const token = async () => 'token-fixture'
@@ -42,6 +52,62 @@ test('generateAvatar maps quota and auth failures to stable codes', async () => 
   await assert.rejects(generateAvatar({ profile: {}, getAccessToken: token, fetchImpl: quota }), (error) => error.code === 'avatar-quota')
   const anon = async () => jsonResponse(401, { error: '先登录', code: 'auth-required' })
   await assert.rejects(generateAvatar({ profile: {}, getAccessToken: token, fetchImpl: anon }), (error) => error.code === 'auth-required')
+})
+
+test('collection client: list, create, set main and delete hit their routes', async () => {
+  const seen = []
+  const fetchImpl = async (url, options = {}) => {
+    seen.push({ url, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : null })
+    if (url === '/api/avatars' && (options.method || 'GET') === 'GET') {
+      return jsonResponse(200, { avatars: [readyAvatar(), readyAvatar({ id: 'avatar-2', name: '阿灿' })], mainId: 'avatar-1', quota: { used: 1, limit: 5 } })
+    }
+    if (url === '/api/avatars' && options.method === 'POST') return jsonResponse(200, { avatar: readyAvatar({ id: 'avatar-3', name: '白榆' }) })
+    if (url === '/api/avatars/avatar-2/main') return jsonResponse(200, { avatars: [readyAvatar(), readyAvatar({ id: 'avatar-2', name: '阿灿' })], mainId: 'avatar-2' })
+    if (url === '/api/avatars/avatar-2') return jsonResponse(200, { avatars: [readyAvatar()], mainId: 'avatar-1' })
+    throw new Error(`unexpected ${url}`)
+  }
+  const list = await fetchAvatars({ getAccessToken: token, fetchImpl })
+  assert.equal(list.avatars.length, 2)
+  assert.equal(list.mainId, 'avatar-1')
+  assert.deepEqual(list.quota, { used: 1, limit: 5 })
+  assert.equal(mainAvatarOf(list.avatars, list.mainId).name, '林晚舟')
+
+  const created = await createAvatar({ profile: { name: '白榆' }, getAccessToken: token, fetchImpl })
+  assert.equal(created.id, 'avatar-3')
+  const promoted = await setMainAvatar({ avatarId: 'avatar-2', getAccessToken: token, fetchImpl })
+  assert.equal(promoted.mainId, 'avatar-2')
+  const afterDelete = await deleteAvatar({ avatarId: 'avatar-2', getAccessToken: token, fetchImpl })
+  assert.equal(afterDelete.avatars.length, 1)
+  assert.deepEqual(seen.map((entry) => `${entry.method} ${entry.url}`), [
+    'GET /api/avatars',
+    'POST /api/avatars',
+    'POST /api/avatars/avatar-2/main',
+    'DELETE /api/avatars/avatar-2',
+  ])
+})
+
+test('generateAvatar carries the target avatar and the repaint lock part', async () => {
+  let request
+  const fetchImpl = async (url, options) => {
+    request = { url, body: JSON.parse(options.body) }
+    return jsonResponse(200, { avatar: readyAvatar() })
+  }
+  await generateAvatar({ profile: { name: '林晚舟' }, avatarId: 'avatar-9', lockPart: 'hairColor', getAccessToken: token, fetchImpl })
+  assert.equal(request.url, '/api/avatar/generate')
+  assert.equal(request.body.avatarId, 'avatar-9')
+  assert.equal(request.body.lockPart, 'hairColor')
+})
+
+test('fetchAvatarObjectUrl addresses the painting by avatar id', async () => {
+  let seenUrl = ''
+  const fetchImpl = async (url) => {
+    seenUrl = url
+    return new Response(new Blob(['jpeg-bytes'], { type: 'image/jpeg' }), { status: 200 })
+  }
+  const avatar = readyAvatar({ id: 'avatar-url-check', portrait: { status: 'ready', version: 1, hasPrevious: false } })
+  const url = await fetchAvatarObjectUrl({ avatar, getAccessToken: token, fetchImpl, createObjectURL: () => 'blob:fake-url' })
+  assert.equal(url, 'blob:fake-url')
+  assert.match(seenUrl, /avatarId=avatar-url-check/)
 })
 
 test('fetchAvatarObjectUrl honours portrait state, previous versions and its cache', async () => {

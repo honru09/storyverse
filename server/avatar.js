@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { ApiError, sanitizeSettingText } from './gemini.js'
 import { dayKeyFor } from './usage.js'
-import { createAvatarStore } from './avatar-store.js'
+import { createAvatarStore, collectionFromRecord, imageSlotFor } from './avatar-store.js'
 import { transcodeCoverImage } from './cover-image.js'
 import {
+  AVATAR_APPEARANCE_FIELDS,
   AVATAR_DESCRIPTION_MAX,
   AVATAR_FACE_NOTE_MAX,
+  AVATAR_LIMIT,
   AVATAR_NAME_MAX,
   avatarAppearancePrompt,
   normalizeAppearance,
@@ -47,21 +49,65 @@ const clip = (value, length) => typeof value === 'string' ? value.slice(0, lengt
 // as god-mode settings before they can reach any prompt.
 const safeText = (value, length) => sanitizeSettingText(clip(value, length)).trim()
 
+// The parts a single-part repaint may name (PERSONA-QA F-28). The keys
+// are the appearance field ids; faceNote is the free-text facial detail.
+export const AVATAR_LOCK_PARTS = Object.freeze({
+  hairColor: 'hair colour',
+  hairStyle: 'hairstyle',
+  outfit: 'outfit',
+  shoes: 'shoes',
+  face: 'facial feature',
+  faceNote: 'facial detail note',
+})
+
+function appearanceFragment(appearance, key) {
+  const field = AVATAR_APPEARANCE_FIELDS.find((item) => item.key === key)
+  if (!field) return ''
+  const picked = field.options.find((item) => item.id === appearance?.[key])
+  return picked?.prompt || ''
+}
+
+/**
+ * The repaint lock (F-28): a part adjustment used to be a plain re-draw,
+ * so a stated outfit could come back as a different outfit. The lock
+ * names the ONE part that may change, restates every other part's
+ * descriptor as preserved, and flips the usual precedence for the rest:
+ * on everything but the locked part, the reference wins.
+ */
+function lockInstruction(profile, lockPart) {
+  const look = normalizeAppearance(profile?.appearance)
+  if (!look || !AVATAR_LOCK_PARTS[lockPart]) return ''
+  const changed = lockPart === 'faceNote'
+    ? safeText(profile?.appearance?.faceNote, AVATAR_FACE_NOTE_MAX)
+    : appearanceFragment(look, lockPart)
+  const preserved = AVATAR_APPEARANCE_FIELDS
+    .filter((field) => field.key !== lockPart)
+    .map((field) => appearanceFragment(look, field.key))
+    .filter(Boolean)
+    .join(', ')
+  return `REPAINT LOCK — this is a single-part adjustment: change ONLY the ${AVATAR_LOCK_PARTS[lockPart]}${changed ? ` (now: ${changed})` : ''}. Everything else must stay exactly as it is in the reference image and as restated below; preserved unchanged: ${preserved || 'the full stated look'}. Do not substitute, restyle, drop or add any other garment, accessory or feature, and any clothing named in the character impression stays on the character.`
+}
+
 /**
  * Assemble the portrait prompt from the structured profile. The structured
  * appearance is restated in full every time (that is the text anchor);
  * with a reference image the prompt additionally instructs the model to
- * keep the same person and apply the stated look.
+ * keep the same person and apply the stated look. A `lockPart` narrows
+ * that instruction to the one changed part (see lockInstruction).
  */
-export function buildAvatarPrompt(profile, { hasReference = false } = {}) {
+export function buildAvatarPrompt(profile, { hasReference = false, lockPart = null } = {}) {
   const look = avatarAppearancePrompt(profile?.appearance)
   const description = safeText(profile?.description, AVATAR_DESCRIPTION_MAX)
   const faceNote = safeText(profile?.appearance?.faceNote, AVATAR_FACE_NOTE_MAX)
+  const lock = hasReference ? lockInstruction(profile, lockPart) : ''
   const parts = [
     'A vertical 3:4 character portrait illustration for a fiction companion character. The image must contain absolutely no text: no letters, no words, no typography, no watermark, no logo.',
     hasReference
-      ? 'The attached reference image shows the SAME character. Keep the same person — same face, same identity, recognisably them — and repaint them with the look stated below. Where the stated look and the reference disagree, the stated look wins.'
+      ? lock
+        ? 'The attached reference image shows the SAME character. Keep the same person — same face, same identity, recognisably them. This repaint changes one part only, under the lock below: where the stated look and the reference disagree on any OTHER part, the reference wins.'
+        : 'The attached reference image shows the SAME character. Keep the same person — same face, same identity, recognisably them — and repaint them with the look stated below. Where the stated look and the reference disagree, the stated look wins.'
       : 'Paint this character as a character reference portrait.',
+    lock,
     'Framing: one single character only, full body or large three-quarter body, standing in a relaxed natural pose, facing the viewer, against a clean plain softly-lit background with no scenery and no other people.',
     look ? `Appearance: ${look}.` : '',
     faceNote ? `Facial detail: ${faceNote}.` : '',
@@ -142,18 +188,17 @@ function providerConfigured(env) {
   return Boolean(typeof env.GEMINI_API_KEY === 'string' && env.GEMINI_API_KEY.trim())
 }
 
-const publicAvatar = (record) => {
-  if (!record?.avatar) return null
-  const { uid: _uid, ...rest } = record
-  return rest.avatar
-}
-
 /**
- * Avatar service. Generation is serialised per account like covers: the
- * daily cap is checked and spent inside the same critical section, the
- * portrait state (pending → ready/failed) is persisted on the profile so
- * a reload mid-paint still shows the truth, and the previous painting is
- * kept one version back for the reader to compare.
+ * Avatar service: a per-account COLLECTION of avatars (F-27), one of
+ * them the main avatar every identity surface resolves. Generation is
+ * serialised per account like covers: the daily cap is checked and spent
+ * inside the same critical section, the portrait state (pending →
+ * ready/failed) is persisted on the profile so a reload mid-paint still
+ * shows the truth, and the previous painting is kept one version back
+ * for the reader to compare. Each avatar's paintings live in its own
+ * image slots (the main avatar keeps the historic 'current'/'previous'
+ * slots — see imageSlotFor), so painting one avatar never touches
+ * another's portrait.
  */
 export function createAvatarService({ env = process.env, store, imageGenerate, transcode = transcodeCoverImage, now = () => new Date() } = {}) {
   const backend = store === undefined ? createAvatarStore({ env }) : store
@@ -171,28 +216,56 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
     return run
   }
 
-  const persist = async (uid, avatar) => {
-    await backend.putProfile(uid, { uid, avatar })
-    return avatar
+  const loadCollection = async (uid) => {
+    if (!backend) return null
+    if (typeof backend.getCollection === 'function') return backend.getCollection(uid)
+    return collectionFromRecord(await backend.getProfile(uid))
   }
 
-  async function produce(identity, avatar) {
+  const persistCollection = async (uid, collection) => {
+    if (typeof backend.putCollection === 'function') return backend.putCollection(uid, collection)
+    const main = collection.avatars.find((item) => item.id === collection.mainId) || null
+    return backend.putProfile(uid, { uid, avatar: main, mainId: collection.mainId, avatars: collection.avatars })
+  }
+
+  const mainOf = (collection) => collection?.avatars.find((item) => item.id === collection.mainId)
+    || collection?.avatars[0] || null
+
+  const requestedIdOf = (body) => {
+    if (!body || typeof body !== 'object') return null
+    if (typeof body.avatarId === 'string' && body.avatarId) return body.avatarId
+    const candidate = body.profile && typeof body.profile === 'object' ? body.profile : body
+    return typeof candidate?.id === 'string' && candidate.id ? candidate.id : null
+  }
+
+  async function produce(identity, collection, avatar, { lockPart = null } = {}) {
+    const uid = identity.uid
+    const commit = async (nextAvatar) => {
+      const at = collection.avatars.findIndex((item) => item.id === nextAvatar.id)
+      if (at === -1) collection.avatars.push(nextAvatar)
+      else collection.avatars[at] = nextAvatar
+      if (!collection.mainId) collection.mainId = nextAvatar.id
+      await persistCollection(uid, collection)
+      return nextAvatar
+    }
     const day = dayKeyFor(now())
-    const used = await backend.getDailyCount(identity.uid, day)
+    const used = await backend.getDailyCount(uid, day)
     if (used >= limit) throw new ApiError(429, `今天的立绘生成次数已用完（每天 ${limit} 张），请明天再试。`, 'avatar-quota')
-    const previousRecord = await backend.getImage(identity.uid, 'current')
+    const currentSlot = imageSlotFor(collection, avatar.id, 'current')
+    const previousSlot = imageSlotFor(collection, avatar.id, 'previous')
+    const previousRecord = await backend.getImage(uid, currentSlot)
     const reference = previousRecord?.image
       ? { buffer: Buffer.from(previousRecord.image, 'base64'), mimeType: previousRecord.contentType || 'image/jpeg' }
       : null
     const anchor = reference ? 'reference' : 'text'
-    await persist(identity.uid, { ...avatar, portrait: { ...avatar.portrait, status: 'pending' } })
-    const prompt = buildAvatarPrompt(avatar, { hasReference: Boolean(reference) })
+    await commit({ ...avatar, portrait: { ...avatar.portrait, status: 'pending' } })
+    const prompt = buildAvatarPrompt(avatar, { hasReference: Boolean(reference), lockPart })
     const generate = await getGenerate()
     let produced
     try {
       produced = await generate(prompt, reference)
     } catch (error) {
-      await persist(identity.uid, { ...avatar, portrait: { ...avatar.portrait, status: 'failed', updatedAt: now().toISOString() } })
+      await commit({ ...avatar, portrait: { ...avatar.portrait, status: 'failed', updatedAt: now().toISOString() } })
       if (error instanceof ApiError) throw error
       const status = Number(error?.status || error?.code)
       if (status === 429 || status === 8) throw new ApiError(429, '立绘生成请求较多，请稍后再试。')
@@ -203,16 +276,16 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
     try {
       image = transcode(produced.buffer)
     } catch {
-      await persist(identity.uid, { ...avatar, portrait: { ...avatar.portrait, status: 'failed', updatedAt: now().toISOString() } })
+      await commit({ ...avatar, portrait: { ...avatar.portrait, status: 'failed', updatedAt: now().toISOString() } })
       throw new ApiError(502, '立绘图暂时无法处理，请稍后再试。')
     }
     const version = (Number.isInteger(avatar.portrait.version) ? avatar.portrait.version : 0) + 1
     if (previousRecord?.image) {
-      await backend.putImage(identity.uid, 'previous', { ...previousRecord, slot: 'previous' })
+      await backend.putImage(uid, previousSlot, { ...previousRecord, slot: previousSlot })
     }
-    await backend.putImage(identity.uid, 'current', {
-      uid: identity.uid,
-      slot: 'current',
+    await backend.putImage(uid, currentSlot, {
+      uid,
+      slot: currentSlot,
       version,
       contentType: image.contentType,
       image: image.buffer.toString('base64'),
@@ -220,7 +293,7 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
       model,
       updatedAt: now().toISOString(),
     })
-    await backend.incrementDaily(identity.uid, day)
+    await backend.incrementDaily(uid, day)
     const ready = {
       ...avatar,
       portrait: {
@@ -231,7 +304,7 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
       },
       updatedAt: now().toISOString(),
     }
-    await persist(identity.uid, ready)
+    await commit(ready)
     return { avatar: ready, usage: produced.usage ?? null, anchor, model }
   }
 
@@ -239,36 +312,179 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
     available,
     model,
     dailyLimit: limit,
+    /** The main avatar — the identity every other surface resolves. */
     async get(identity) {
       if (!backend) return null
-      const record = await backend.getProfile(identity.uid)
-      return publicAvatar(record)
+      return mainOf(await loadCollection(identity.uid))
+    },
+    /** The whole collection plus today's portrait quota. */
+    async list(identity) {
+      if (!backend) return { avatars: [], mainId: null, quota: { used: 0, limit } }
+      const collection = await loadCollection(identity.uid)
+      const used = await backend.getDailyCount(identity.uid, dayKeyFor(now()))
+      return {
+        avatars: collection?.avatars || [],
+        mainId: collection?.mainId || null,
+        quota: { used, limit },
+      }
     },
     async save(identity, body) {
       if (!backend) throw new ApiError(503, '化身服务尚未配置。')
       return serialise(identity.uid, async () => {
-        const record = await backend.getProfile(identity.uid)
-        const avatar = validatedProfile(body, record?.avatar || null)
-        await persist(identity.uid, avatar)
+        const collection = (await loadCollection(identity.uid)) || { mainId: null, avatars: [] }
+        const requestedId = requestedIdOf(body)
+        const existing = requestedId
+          ? collection.avatars.find((item) => item.id === requestedId) || null
+          : mainOf(collection)
+        if (requestedId && !existing && collection.avatars.length > 0) {
+          throw new ApiError(404, '这位化身不存在了。')
+        }
+        const avatar = validatedProfile(body, existing)
+        const at = collection.avatars.findIndex((item) => item.id === avatar.id)
+        if (at === -1) {
+          if (collection.avatars.length >= AVATAR_LIMIT) {
+            throw new ApiError(400, `化身最多 ${AVATAR_LIMIT} 位，先删掉一位再建新的。`, 'avatar-limit')
+          }
+          collection.avatars.push(avatar)
+          if (!collection.mainId) collection.mainId = avatar.id
+        } else {
+          collection.avatars[at] = avatar
+        }
+        await persistCollection(identity.uid, collection)
         return avatar
+      })
+    },
+    /** Add a new avatar (profile only; painting goes through generate). */
+    async create(identity, body) {
+      if (!backend) throw new ApiError(503, '化身服务尚未配置。')
+      return serialise(identity.uid, async () => {
+        const collection = (await loadCollection(identity.uid)) || { mainId: null, avatars: [] }
+        if (collection.avatars.length >= AVATAR_LIMIT) {
+          throw new ApiError(400, `化身最多 ${AVATAR_LIMIT} 位，先删掉一位再建新的。`, 'avatar-limit')
+        }
+        const avatar = validatedProfile(body, null)
+        collection.avatars.push(avatar)
+        if (!collection.mainId) collection.mainId = avatar.id
+        await persistCollection(identity.uid, collection)
+        return avatar
+      })
+    },
+    /**
+     * Remove one avatar and its paintings. Stories that brought it in
+     * keep their config snapshot (name + appearance text), so they are
+     * unaffected here by construction. Deleting the main avatar promotes
+     * the first remaining one — its paintings move into the main slots.
+     */
+    async remove(identity, avatarId) {
+      if (!backend) throw new ApiError(503, '化身服务尚未配置。')
+      return serialise(identity.uid, async () => {
+        const collection = await loadCollection(identity.uid)
+        const target = collection?.avatars.find((item) => item.id === avatarId) || null
+        if (!target) throw new ApiError(404, '这位化身不存在了。')
+        const remaining = collection.avatars.filter((item) => item.id !== avatarId)
+        let mainId = collection.mainId
+        if (avatarId === collection.mainId) {
+          const promoted = remaining[0] || null
+          if (promoted) {
+            for (const which of ['current', 'previous']) {
+              const fromSlot = imageSlotFor(collection, promoted.id, which)
+              const record = await backend.getImage(identity.uid, fromSlot)
+              if (record?.image) await backend.putImage(identity.uid, which, { ...record, slot: which })
+              else await backend.deleteImage(identity.uid, which)
+              await backend.deleteImage(identity.uid, fromSlot)
+            }
+            mainId = promoted.id
+          } else {
+            await backend.deleteImage(identity.uid, 'current')
+            await backend.deleteImage(identity.uid, 'previous')
+            mainId = null
+          }
+        } else {
+          for (const which of ['current', 'previous']) {
+            await backend.deleteImage(identity.uid, imageSlotFor(collection, avatarId, which))
+          }
+        }
+        const next = { mainId, avatars: remaining }
+        await persistCollection(identity.uid, next)
+        return next
+      })
+    },
+    /**
+     * Make another avatar the main one. The two avatars' paintings swap
+     * slots, so the main avatar's portraits always live at the historic
+     * 'current'/'previous' slots the public picture endpoints read.
+     */
+    async setMain(identity, avatarId) {
+      if (!backend) throw new ApiError(503, '化身服务尚未配置。')
+      return serialise(identity.uid, async () => {
+        const collection = await loadCollection(identity.uid)
+        const target = collection?.avatars.find((item) => item.id === avatarId) || null
+        if (!target) throw new ApiError(404, '这位化身不存在了。')
+        if (avatarId === collection.mainId) {
+          return { avatars: collection.avatars, mainId: collection.mainId }
+        }
+        const ownSlot = (which) => imageSlotFor(collection, avatarId, which)
+        const oldMainId = collection.mainId
+        const oldSlot = (which) => `${oldMainId}:${which}`
+        const oldCurrent = await backend.getImage(identity.uid, 'current')
+        const oldPrevious = await backend.getImage(identity.uid, 'previous')
+        const newCurrent = await backend.getImage(identity.uid, ownSlot('current'))
+        const newPrevious = await backend.getImage(identity.uid, ownSlot('previous'))
+        const swap = async (record, slot) => {
+          if (record?.image) await backend.putImage(identity.uid, slot, { ...record, slot })
+          else await backend.deleteImage(identity.uid, slot)
+        }
+        await swap(newCurrent, 'current')
+        await swap(newPrevious, 'previous')
+        await swap(oldCurrent, oldSlot('current'))
+        await swap(oldPrevious, oldSlot('previous'))
+        collection.mainId = avatarId
+        await persistCollection(identity.uid, collection)
+        return { avatars: collection.avatars, mainId: avatarId }
       })
     },
     async generate(identity, body) {
       if (!available) throw new ApiError(503, '立绘生成尚未配置。')
       return serialise(identity.uid, async () => {
-        const record = await backend.getProfile(identity.uid)
-        let avatar = record?.avatar || null
+        const collection = (await loadCollection(identity.uid)) || { mainId: null, avatars: [] }
+        const requestedId = requestedIdOf(body)
+        const existing = requestedId
+          ? collection.avatars.find((item) => item.id === requestedId) || null
+          : mainOf(collection)
+        if (requestedId && !existing && collection.avatars.length > 0) {
+          throw new ApiError(404, '这位化身不存在了。')
+        }
+        let avatar = existing
         if (body && typeof body === 'object' && (body.profile || body.name || body.appearance)) {
-          avatar = validatedProfile(body, avatar)
-          await persist(identity.uid, avatar)
+          avatar = validatedProfile(body, existing)
+          const at = collection.avatars.findIndex((item) => item.id === avatar.id)
+          if (at === -1) {
+            if (collection.avatars.length >= AVATAR_LIMIT) {
+              throw new ApiError(400, `化身最多 ${AVATAR_LIMIT} 位，先删掉一位再建新的。`, 'avatar-limit')
+            }
+            collection.avatars.push(avatar)
+            if (!collection.mainId) collection.mainId = avatar.id
+          } else {
+            collection.avatars[at] = avatar
+          }
+          await persistCollection(identity.uid, collection)
         }
         if (!avatar) throw new ApiError(400, '先创建你的化身，再生成立绘。')
-        return produce(identity, avatar)
+        const lockPart = typeof body?.lockPart === 'string' && AVATAR_LOCK_PARTS[body.lockPart]
+          ? body.lockPart
+          : null
+        return produce(identity, collection, avatar, { lockPart })
       })
     },
-    async fetchImage(identity, which = 'current') {
+    async fetchImage(identity, which = 'current', avatarId = null) {
       if (!backend) return null
-      const slot = which === 'previous' ? 'previous' : 'current'
+      const collection = await loadCollection(identity.uid)
+      if (!collection || collection.avatars.length === 0) return null
+      const target = avatarId
+        ? collection.avatars.find((item) => item.id === avatarId) || null
+        : mainOf(collection)
+      if (!target) return null
+      const slot = imageSlotFor(collection, target.id, which)
       const record = await backend.getImage(identity.uid, slot)
       if (!record?.image) return null
       return {

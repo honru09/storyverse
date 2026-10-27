@@ -332,6 +332,27 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         const saved = await avatar.save(identity, await readCoverJson(request))
         return sendJson(response, 200, { avatar: saved })
       }
+      if (pathname === '/api/avatars' && request.method === 'GET') {
+        const identity = await auth.identity(request.headers.authorization)
+        return sendJson(response, 200, await avatar.list(identity))
+      }
+      if (pathname === '/api/avatars' && request.method === 'POST') {
+        const identity = await auth.identity(request.headers.authorization)
+        const created = await avatar.create(identity, await readCoverJson(request))
+        return sendJson(response, 200, { avatar: created })
+      }
+      const avatarMainMatch = pathname.match(/^\/api\/avatars\/([^/]+)\/main$/)
+      if (avatarMainMatch && request.method === 'POST') {
+        const identity = await auth.identity(request.headers.authorization)
+        const result = await avatar.setMain(identity, decodeURIComponent(avatarMainMatch[1]))
+        return sendJson(response, 200, result)
+      }
+      const avatarDeleteMatch = pathname.match(/^\/api\/avatars\/([^/]+)$/)
+      if (avatarDeleteMatch && request.method === 'DELETE') {
+        const identity = await auth.identity(request.headers.authorization)
+        const result = await avatar.remove(identity, decodeURIComponent(avatarDeleteMatch[1]))
+        return sendJson(response, 200, result)
+      }
       if (pathname === '/api/avatar/generate' && request.method === 'POST') {
         // Portraits are account property, like covers: a signed-in identity
         // is always required, and the avatar service enforces its own
@@ -361,8 +382,9 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
       }
       if (pathname === '/api/avatar/image' && request.method === 'GET') {
         const identity = await auth.identity(request.headers.authorization)
-        const which = new URL(request.url, 'http://localhost').searchParams.get('which') || 'current'
-        const image = await avatar.fetchImage(identity, which)
+        const params = new URL(request.url, 'http://localhost').searchParams
+        const which = params.get('which') || 'current'
+        const image = await avatar.fetchImage(identity, which, params.get('avatarId') || null)
         if (!image) throw new ApiError(404, '还没有这张立绘。')
         if (!response.destroyed && !response.writableEnded) {
           response.writeHead(200, {

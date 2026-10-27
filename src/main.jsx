@@ -41,14 +41,20 @@ import {
 import { downloadText } from "./downloads.js";
 import {
   AVATAR_APPEARANCE_FIELDS,
+  AVATAR_LIMIT,
   AVATAR_PRESETS,
+  DEFAULT_APPEARANCE,
   avatarAppearanceText,
   avatarJourneys,
   avatarPortraitState,
-  fetchAvatar,
+  createAvatar,
+  deleteAvatar,
   fetchAvatarObjectUrl,
+  fetchAvatars,
   generateAvatar,
+  mainAvatarOf,
   saveAvatar,
+  setMainAvatar,
 } from "./avatar.js";
 import {
   enterDraftFor,
@@ -781,23 +787,31 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, authClient, auth
   );
 }
 
-// The reader's avatar profile, shared by every surface that needs it. The
-// server is the source of truth (the profile follows the account, not the
-// browser); surfaces read through this one hook instead of keeping copies.
+// The reader's avatar collection, shared by every surface that needs it.
+// The server is the source of truth (the avatars follow the account, not
+// the browser); surfaces read through this one hook instead of keeping
+// copies. `avatar` is the main avatar — the identity the home row,
+// profile and plaza resolve; pickers read the whole `avatars` list.
 function useAvatarProfile(authClient, account) {
-  const [avatar, setAvatar] = useState(null);
+  const [avatars, setAvatars] = useState([]);
+  const [mainId, setMainId] = useState(null);
+  const [quota, setQuota] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const status = account?.status;
   const refresh = useCallback(async () => {
     if (status !== "authenticated") {
-      setAvatar(null);
+      setAvatars([]);
+      setMainId(null);
+      setQuota(null);
       setLoaded(true);
       return null;
     }
     try {
-      const profile = await fetchAvatar({ getAccessToken: () => authClient.getAccessToken() });
-      setAvatar(profile);
-      return profile;
+      const result = await fetchAvatars({ getAccessToken: () => authClient.getAccessToken() });
+      setAvatars(result.avatars);
+      setMainId(result.mainId);
+      setQuota(result.quota);
+      return result;
     } catch {
       return null;
     } finally {
@@ -805,7 +819,23 @@ function useAvatarProfile(authClient, account) {
     }
   }, [authClient, status]);
   useEffect(() => { void refresh(); }, [refresh]);
-  return { avatar, setAvatar, loaded, refresh };
+  const avatar = mainAvatarOf(avatars, mainId);
+  const updateAvatar = useCallback((profile) => {
+    if (!profile?.id) return;
+    setAvatars((current) => {
+      const at = current.findIndex((item) => item.id === profile.id);
+      if (at === -1) return [...current, profile];
+      const next = [...current];
+      next[at] = profile;
+      return next;
+    });
+  }, []);
+  const applyCollection = useCallback((result) => {
+    if (!result) return;
+    if (Array.isArray(result.avatars)) setAvatars(result.avatars);
+    if ("mainId" in result) setMainId(result.mainId);
+  }, []);
+  return { avatar, avatars, mainId, quota, loaded, refresh, updateAvatar, applyCollection };
 }
 
 function AvatarPortrait({ avatar, getAccessToken, which = "current", className = "" }) {
@@ -873,22 +903,44 @@ function AppearanceFields({ appearance, onPick, onFaceNote, disabled = false }) 
 }
 
 function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, onOpenAccount, onNavigate }) {
-  const { avatar, setAvatar } = avatarState;
+  const { avatars, mainId, quota } = avatarState;
+  // editingId: undefined = not seeded yet, "" = creating a new avatar,
+  // otherwise the id of the avatar in the editor. The form is seeded
+  // imperatively at selection time (never by an effect watching the
+  // collection), so a background refresh can never stomp an edit.
+  const [editingId, setEditingId] = useState(undefined);
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [showPrevious, setShowPrevious] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const getToken = useCallback(() => authClient.getAccessToken(), [authClient]);
   const signedIn = account?.status === "authenticated" && Boolean(account?.user);
 
-  // The form is the editing buffer; it seeds from the stored profile once
-  // it lands, and from the defaults while the reader has no avatar yet.
+  const selected = editingId ? avatars.find((item) => item.id === editingId) || null : null;
+  const creating = editingId === "";
+
+  const seedForm = (target) => {
+    setForm(target
+      ? { id: target.id, name: target.name, description: target.description || "", appearance: { ...target.appearance } }
+      : { id: "", name: "", description: "", appearance: { ...DEFAULT_APPEARANCE } });
+    setConfirmDelete(false);
+    setShowPrevious(false);
+    setError("");
+  };
+  const selectAvatar = (item) => { setEditingId(item.id); seedForm(item); setNotice(""); };
+  const startCreate = () => { setEditingId(""); seedForm(null); setNotice(""); };
+
+  // First seed once the collection lands: edit the main avatar, or open
+  // the creation form when there is none yet.
   useEffect(() => {
-    if (form !== null || !avatarState.loaded) return;
-    if (avatar) setForm({ name: avatar.name, description: avatar.description || "", appearance: { ...avatar.appearance } });
-    else setForm({ name: "", description: "", appearance: { hairColor: "black", hairStyle: "long-straight", outfit: "coat", shoes: "boots", face: "none", faceNote: "" } });
-  }, [avatar, avatarState.loaded, form]);
+    if (!avatarState.loaded || editingId !== undefined) return;
+    const main = mainAvatarOf(avatars, mainId);
+    if (main) { setEditingId(main.id); seedForm(main); }
+    else { setEditingId(""); seedForm(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarState.loaded, editingId]);
 
   if (!signedIn) {
     return (
@@ -910,32 +962,45 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
     );
   }
 
-  const portrait = avatarPortraitState(avatar);
+  const portrait = avatarPortraitState(selected);
   const painting = busy || portrait.status === "pending";
-  const previewAvatar = avatar
-    ? { ...avatar, name: form.name || avatar.name, appearance: form.appearance }
-    : { id: "", name: form.name, appearance: form.appearance, portrait: { status: painting ? "pending" : "none", version: 0, hasPrevious: false } };
-  const journeys = avatar ? avatarJourneys(avatar, stories) : [];
-  const profileDirty = Boolean(avatar) && (form.name !== avatar.name || form.description !== (avatar.description || ""));
+  const previewAvatar = selected
+    ? { ...selected, name: form.name || selected.name, appearance: form.appearance }
+    : { id: form.id || "", name: form.name, appearance: form.appearance, portrait: { status: painting ? "pending" : "none", version: 0, hasPrevious: false } };
+  const journeys = selected ? avatarJourneys(selected, stories) : [];
+  const profileDirty = Boolean(selected) && (form.name !== selected.name || form.description !== (selected.description || ""));
+  const atLimit = avatars.length >= AVATAR_LIMIT;
+  const quotaLine = quota ? `今天已用 ${quota.used} / ${quota.limit} 次` : "";
 
-  const paint = async (nextForm) => {
+  const paint = async (nextForm, { lockPart = null } = {}) => {
     if (busy) return;
     if (!nextForm.name.trim()) { setError("先给化身取个名字。"); return; }
     setBusy(true);
     setError("");
     setNotice("");
+    let targetId = nextForm.id || "";
     try {
-      const painted = await generateAvatar({ profile: nextForm, getAccessToken: getToken });
-      setAvatar(painted);
-      setForm({ name: painted.name, description: painted.description || "", appearance: { ...painted.appearance } });
-      setShowPrevious(false);
+      if (!targetId) {
+        const created = await createAvatar({ profile: nextForm, getAccessToken: getToken });
+        targetId = created.id;
+      }
+      const painted = await generateAvatar({
+        profile: { ...nextForm, id: targetId },
+        avatarId: targetId,
+        lockPart,
+        getAccessToken: getToken,
+      });
+      avatarState.updateAvatar(painted);
+      setEditingId(painted.id);
+      seedForm(painted);
       setNotice("立绘已更新。");
+      void avatarState.refresh();
     } catch (failure) {
       setError(failure.message || "立绘暂时没能生成，请稍后再试。");
-      // The server persisted the failed state; reconcile so the page
-      // shows the truth instead of a stuck pending.
-      const fresh = await fetchAvatar({ getAccessToken: getToken }).catch(() => null);
-      if (fresh) setAvatar(fresh);
+      // The server persisted what it could (the profile, a failed
+      // portrait state); reconcile so the page shows the truth.
+      const result = await avatarState.refresh();
+      if (targetId && result?.avatars.some((item) => item.id === targetId)) setEditingId(targetId);
     } finally {
       setBusy(false);
     }
@@ -945,19 +1010,18 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
     const appearance = { ...form.appearance, [key]: id };
     const nextForm = { ...form, appearance };
     setForm(nextForm);
-    // One part changed → repaint right away (an existing avatar only; the
-    // creation form paints on its own button). The daily limit is the
-    // guardrail, and the previous painting stays viewable.
-    if (avatar) void paint(nextForm);
+    // One part changed → repaint right away under the repaint lock (an
+    // existing avatar only; the creation form paints on its own button).
+    if (selected) void paint(nextForm, { lockPart: key });
   };
-  const applyFaceNote = () => { if (avatar) void paint(form); };
+  const applyFaceNote = () => { if (selected) void paint(form, { lockPart: "faceNote" }); };
   const saveProfileOnly = async () => {
     if (busy) return;
     setBusy(true);
     setError("");
     try {
       const saved = await saveAvatar({ profile: form, getAccessToken: getToken });
-      setAvatar(saved);
+      avatarState.updateAvatar(saved);
       setNotice("资料已保存。");
     } catch (failure) {
       setError(failure.message || "资料暂时没能保存，请稍后再试。");
@@ -966,8 +1030,41 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
     }
   };
   const adoptPreset = (preset) => {
-    setForm({ name: preset.name, description: preset.description, appearance: { ...preset.appearance } });
+    setForm({ id: "", name: preset.name, description: preset.description, appearance: { ...preset.appearance } });
     setError("");
+  };
+  const makeMain = async () => {
+    if (!selected || busy || selected.id === mainId) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await setMainAvatar({ avatarId: selected.id, getAccessToken: getToken });
+      avatarState.applyCollection(result);
+      setNotice(`${selected.name} 现在是你的主化身。`);
+    } catch (failure) {
+      setError(failure.message || "主化身暂时没能切换，请稍后再试。");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const removeSelected = async () => {
+    if (!selected || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await deleteAvatar({ avatarId: selected.id, getAccessToken: getToken });
+      avatarState.applyCollection(result);
+      void avatarState.refresh();
+      const next = mainAvatarOf(result.avatars, result.mainId);
+      if (next) { setEditingId(next.id); seedForm(next); }
+      else { setEditingId(""); seedForm(null); }
+      setNotice("这位化身已删除。TA 走过的故事都还在书架上。");
+    } catch (failure) {
+      setError(failure.message || "删除没能完成，请稍后再试。");
+      setConfirmDelete(false);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -975,11 +1072,47 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
       <div className="merge-heading">
         <div>
           <h1>我的化身</h1>
-          <p>同一个角色，走进每一个世界。各条故事线互不影响，化身是它们之间的连接。</p>
+          <p>主化身是你的身份，其余化身陪你走进不同的世界。各条故事线互不影响，化身是它们之间的连接。</p>
         </div>
       </div>
       {error && <div className="sw-inline-alert" role="alert">{error}</div>}
       {notice && <p className="field-hint" role="status">{notice}</p>}
+      {avatars.length > 0 && (
+        <section className="avatar-collection" aria-label="化身列表">
+          <div className="avatar-list">
+            {avatars.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className={`avatar-card ${!creating && selected?.id === item.id ? "active" : ""}`}
+                aria-pressed={!creating && selected?.id === item.id}
+                disabled={busy}
+                onClick={() => selectAvatar(item)}
+              >
+                <span className="avatar-card-thumb">
+                  <AvatarPortrait avatar={item} getAccessToken={getToken} />
+                </span>
+                <span className="avatar-card-copy">
+                  <b>{item.name}</b>
+                  <small>{avatarAppearanceText(item.appearance)}</small>
+                </span>
+                {item.id === mainId && <span className="avatar-main-badge">主化身</span>}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={`avatar-card avatar-card-new ${creating ? "active" : ""}`}
+              disabled={busy || atLimit}
+              onClick={startCreate}
+            >
+              <span className="avatar-card-copy">
+                <b>新建化身</b>
+                <small>{atLimit ? `最多 ${AVATAR_LIMIT} 位，先删掉一位再建` : `已 ${avatars.length} / ${AVATAR_LIMIT} 位 · 新立绘用掉今天 1 次额度`}</small>
+              </span>
+            </button>
+          </div>
+        </section>
+      )}
       <div className="avatar-layout">
         <section className="avatar-stage">
           <div className="avatar-frame">
@@ -987,17 +1120,43 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
             {painting && <div className="avatar-frame-state">正在画…</div>}
             {!painting && portrait.status === "failed" && <div className="avatar-frame-state is-error">上次没画成</div>}
           </div>
-          {avatar && portrait.hasPrevious && (
+          {selected && portrait.hasPrevious && (
             <button type="button" className="small-link" onClick={() => setShowPrevious((value) => !value)}>
               {showPrevious ? "看当前版本" : "回看上一版"}
             </button>
           )}
-          {avatar && portrait.version > 0 && <span className="avatar-version">立绘 v{portrait.version}</span>}
-          {!avatar && <p className="field-hint">写下名字和样子，第一张立绘就会画出来。</p>}
-          {avatar && portrait.status !== "ready" && !painting && (
+          {selected && portrait.version > 0 && <span className="avatar-version">立绘 v{portrait.version}</span>}
+          {creating && <p className="field-hint">写下名字和样子，第一张立绘就会画出来。</p>}
+          {selected && portrait.status !== "ready" && !painting && (
             <Button icon="spark" disabled={busy} onClick={() => void paint(form)}>
               {portrait.status === "failed" ? "重新生成立绘" : "生成立绘"}
             </Button>
+          )}
+          {selected && (
+            <div className="avatar-stage-actions">
+              {selected.id !== mainId && (
+                <button type="button" className="small-link" disabled={busy} onClick={() => void makeMain()}>
+                  设为主化身
+                </button>
+              )}
+              {!confirmDelete ? (
+                <button type="button" className="small-link is-danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
+                  删除这位化身
+                </button>
+              ) : (
+                <>
+                  <button type="button" className="small-link is-danger" disabled={busy} onClick={() => void removeSelected()}>
+                    确认删除
+                  </button>
+                  <button type="button" className="small-link" disabled={busy} onClick={() => setConfirmDelete(false)}>
+                    不删了
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          {selected && confirmDelete && (
+            <p className="field-hint">删掉后，这位化身走过的故事仍留在书架上（开书时带入的样子已经记在书里），只是不能再带 TA 开新书。</p>
           )}
         </section>
         <section className="avatar-editor">
@@ -1023,7 +1182,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
               placeholder="写一两句：性格、气质、给人的感觉——立绘会照着画，故事也会记住。"
             />
           </label>
-          {!avatar && (
+          {creating && avatars.length === 0 && (
             <div className="form-block">
               <span className="field-label">或者先选一位</span>
               <div className="avatar-presets">
@@ -1043,6 +1202,11 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
               </div>
             </div>
           )}
+          {selected && (
+            <p className="avatar-lock-note">
+              重画只改你动的那一项，其余样子保持不变。每次重画用掉今天 1 次立绘额度{quotaLine ? `（${quotaLine}）` : ""}。
+            </p>
+          )}
           <AppearanceFields
             appearance={form.appearance}
             disabled={painting}
@@ -1050,12 +1214,13 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
             onFaceNote={(value) => setForm({ ...form, appearance: { ...form.appearance, faceNote: value } })}
           />
           <div className="avatar-actions">
-            {!avatar && (
+            {creating && (
               <Button icon="spark" disabled={busy || !form.name.trim()} onClick={() => void paint(form)}>
                 {busy ? "正在画…" : "创建并生成立绘"}
               </Button>
             )}
-            {avatar && form.appearance.faceNote !== (avatar.appearance.faceNote || "") && (
+            {creating && quotaLine && <span className="field-hint">新立绘用掉今天 1 次额度（{quotaLine}）。</span>}
+            {selected && form.appearance.faceNote !== (selected.appearance.faceNote || "") && (
               <Button disabled={busy} onClick={applyFaceNote}>用新备注重画</Button>
             )}
             {profileDirty && (
@@ -1064,10 +1229,10 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
               </button>
             )}
           </div>
-          {avatar && painting && <p className="field-hint">正在重画立绘，其余调整先等一下。</p>}
+          {selected && painting && <p className="field-hint">正在重画立绘，其余调整先等一下。</p>}
         </section>
       </div>
-      {avatar && (
+      {selected && (
         <section className="avatar-journeys">
           <div className="section-heading"><h2>TA 的阅历</h2></div>
           {journeys.length === 0 ? (
@@ -1242,7 +1407,7 @@ function GenerationMode({ provider, value, onChange, disabled }) {
   </div>;
 }
 
-function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, avatar, avatarLoaded, onOpenAvatar }) {
+function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, avatar, avatars = [], mainId = null, avatarLoaded, onOpenAvatar }) {
   const forgeRef = useRef(null);
   const operation = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -1250,6 +1415,21 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
   const [mode, setMode] = useState(null);
   const engine = mode || (provider.configured ? "gemini" : "local");
   useEffect(() => () => operation.current?.abort(), []);
+  // The main avatar is pre-selected as this book's protagonist (F-27):
+  // applied once per forge visit, only into a draft that carries neither
+  // a pick nor a hand-typed name, and always cancellable in step 4.
+  const avatarPreselectDone = useRef(false);
+  useEffect(() => {
+    if (avatarPreselectDone.current || !avatarLoaded || !mainId) return;
+    avatarPreselectDone.current = true;
+    setDraft((current) => {
+      if (current.avatarId || (current.name || "").trim()) return current;
+      const main = avatars.find((item) => item.id === mainId);
+      if (!main) return current;
+      return { ...current, name: main.name, avatarId: main.id, avatarAppearance: avatarAppearanceText(main.appearance) };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarLoaded, mainId]);
   const [step, setStep] = useState(
     clampForgeStep(initialDraft?.step),
   );
@@ -2094,39 +2274,43 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                   <p className="step-intro">这一屏定主角和他的本事：名字、性格、要不要揉进你的人生经历，再从下面的分组里挑一项能力。</p>
                 </div>
               </div>
-              {avatar && draft.avatarId !== avatar.id && (
-                <div className="avatar-bring">
-                  <span className="avatar-bring-thumb">
-                    <AvatarPortrait avatar={avatar} getAccessToken={() => authClient.getAccessToken()} />
-                  </span>
-                  <span className="avatar-bring-copy">
-                    <b>{avatar.name}</b>
-                    <small>{avatarAppearanceText(avatar.appearance)}</small>
-                  </span>
-                  <button
-                    type="button"
-                    className="small-link"
-                    onClick={() => set({ name: avatar.name, avatarId: avatar.id, avatarAppearance: avatarAppearanceText(avatar.appearance) })}
-                  >
-                    用我的化身
-                  </button>
+              {avatars.length > 0 && (
+                <div className="avatar-picker">
+                  <span className="field-label">用我的化身</span>
+                  {avatars.map((item) => draft.avatarId === item.id ? (
+                    <div className="avatar-bring active" key={item.id}>
+                      <span className="avatar-bring-thumb">
+                        <AvatarPortrait avatar={item} getAccessToken={() => authClient.getAccessToken()} />
+                      </span>
+                      <span className="avatar-bring-copy">
+                        <b>这一本由{item.name}来走</b>
+                        <small>名字和样子已带入，只改这本书，不动化身档案。</small>
+                      </span>
+                      <button type="button" className="small-link" onClick={() => set({ avatarId: "", avatarAppearance: "" })}>
+                        取消带入
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="avatar-bring" key={item.id}>
+                      <span className="avatar-bring-thumb">
+                        <AvatarPortrait avatar={item} getAccessToken={() => authClient.getAccessToken()} />
+                      </span>
+                      <span className="avatar-bring-copy">
+                        <b>{item.name}{item.id === mainId ? " · 主化身" : ""}</b>
+                        <small>{avatarAppearanceText(item.appearance)}</small>
+                      </span>
+                      <button
+                        type="button"
+                        className="small-link"
+                        onClick={() => set({ name: item.name, avatarId: item.id, avatarAppearance: avatarAppearanceText(item.appearance) })}
+                      >
+                        用这个化身
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
-              {avatar && draft.avatarId === avatar.id && (
-                <div className="avatar-bring active">
-                  <span className="avatar-bring-thumb">
-                    <AvatarPortrait avatar={avatar} getAccessToken={() => authClient.getAccessToken()} />
-                  </span>
-                  <span className="avatar-bring-copy">
-                    <b>这一本由{avatar.name}来走</b>
-                    <small>名字和样子已带入，只改这本书，不动化身档案。</small>
-                  </span>
-                  <button type="button" className="small-link" onClick={() => set({ avatarId: "", avatarAppearance: "" })}>
-                    取消带入
-                  </button>
-                </div>
-              )}
-              {!avatar && draft.avatarId && (
+              {draft.avatarId && !avatars.some((item) => item.id === draft.avatarId) && (
                 <div className="avatar-bring active">
                   <span className="avatar-bring-copy">
                     <b>已带入化身</b>
@@ -5174,7 +5358,7 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
   );
 }
 
-function PlazaEnter({ id, account, authClient, avatar, avatarLoaded, onNavigate, onOpenAccount, onOpenAvatar, onEnterLine }) {
+function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = null, avatarLoaded, onNavigate, onOpenAccount, onOpenAvatar, onEnterLine }) {
   const [detail, setDetail] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [identityId, setIdentityId] = useState("");
@@ -5183,6 +5367,7 @@ function PlazaEnter({ id, account, authClient, avatar, avatarLoaded, onNavigate,
   const [abilityName, setAbilityName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [enterAvatarId, setEnterAvatarId] = useState(null);
   const operation = useRef(null);
   useEffect(() => {
     let live = true;
@@ -5229,6 +5414,7 @@ function PlazaEnter({ id, account, authClient, avatar, avatarLoaded, onNavigate,
         startPointName: spawnName,
         startPointHook: spawnHook,
         ability: abilityName,
+        avatarId: chosenAvatar?.id || "",
       }, { signal: controller.signal });
     } catch (failure) {
       if (!controller.signal.aborted) setError(failure?.message || "进入没能完成，请稍后再试。");
@@ -5236,6 +5422,10 @@ function PlazaEnter({ id, account, authClient, avatar, avatarLoaded, onNavigate,
       if (operation.current === controller) { operation.current = null; setBusy(false); }
     }
   };
+
+  const chosenAvatar = avatars.find((item) => item.id === enterAvatarId)
+    || mainAvatarOf(avatars, mainId)
+    || avatar;
 
   if (loadError) {
     return (
@@ -5273,7 +5463,7 @@ function PlazaEnter({ id, account, authClient, avatar, avatarLoaded, onNavigate,
           <p>重演出的新线会记在你的账号名下，生成费用也计入你的额度。</p>
           <Button onClick={onOpenAccount}>登录 / 注册</Button>
         </div>
-      ) : avatarLoaded && !avatar ? (
+      ) : avatarLoaded && avatars.length === 0 ? (
         <div className="plaza-empty" role="status">
           <h3>还没有你自己的化身</h3>
           <p>进入别人的世界，走的必须是属于你的那个人。</p>
@@ -5281,16 +5471,27 @@ function PlazaEnter({ id, account, authClient, avatar, avatarLoaded, onNavigate,
         </div>
       ) : (
         <>
-          <section className="plaza-panel plaza-avatar-panel">
-            <AvatarPortrait avatar={avatar} getAccessToken={() => authClient.getAccessToken()} />
-            <div>
-              <div className="plaza-avatar-name-row">
-                <strong>{avatar.name}</strong>
-                <span className="plaza-chip">你的化身</span>
+          <div className="avatar-picker">
+            <span className="field-label">带哪位化身进入？</span>
+            {avatars.map((item) => (
+              <div className={`avatar-bring ${chosenAvatar?.id === item.id ? "active" : ""}`} key={item.id}>
+                <span className="avatar-bring-thumb">
+                  <AvatarPortrait avatar={item} getAccessToken={() => authClient.getAccessToken()} />
+                </span>
+                <span className="avatar-bring-copy">
+                  <b>{item.name}{item.id === mainId ? " · 主化身" : ""}</b>
+                  <small>{avatarAppearanceText(item.appearance)}</small>
+                </span>
+                {chosenAvatar?.id === item.id
+                  ? <span className="plaza-chip">就 TA 了</span>
+                  : (
+                    <button type="button" className="small-link" disabled={busy} onClick={() => setEnterAvatarId(item.id)}>
+                      选 TA
+                    </button>
+                  )}
               </div>
-              <small>{avatarAppearanceText(avatar.appearance)}</small>
-            </div>
-          </section>
+            ))}
+          </div>
 
           <div className="form-block">
             <span className="field-label">在这个世界里，TA是谁？</span>
@@ -5371,7 +5572,7 @@ function PlazaEnter({ id, account, authClient, avatar, avatarLoaded, onNavigate,
           {error && <div className="sw-inline-alert" role="alert">{error}</div>}
           <div className="plaza-publish-actions">
             <Button disabled={!identityId || busy} onClick={() => void enter()}>
-              {busy ? "正在进入…" : `带${avatar.name}进入 · 写下第一章`}
+              {busy ? "正在进入…" : `带${chosenAvatar?.name || ""}进入 · 写下第一章`}
             </Button>
             <Button variant="ghost" disabled={busy} onClick={() => onNavigate("plaza-detail", { id })}>先不进入</Button>
           </div>
@@ -5382,7 +5583,7 @@ function PlazaEnter({ id, account, authClient, avatar, avatarLoaded, onNavigate,
   );
 }
 
-function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClient, onAuthRequired, avatar }) {
+function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClient, onAuthRequired, avatar, avatars = [] }) {
   const operation = useRef(null);
   const candidate = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -5394,6 +5595,12 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
   const [partnerId, setPartnerId] = useState(originals.find((story) => story.id !== sourceId)?.id || FRIEND_BOOK.id);
   const sourceStory = originals.find((story) => story.id === sourceId) || originals[0];
   const partnerStory = originals.find((story) => story.id === partnerId && story.id !== sourceStory?.id) || FRIEND_BOOK;
+  // Each side's avatar is the one that lived the chosen story, resolved
+  // from the collection — any avatar, not only the main one. A deleted
+  // avatar resolves to nothing and the card falls back to the story's
+  // own protagonist (the config snapshot keeps the book intact).
+  const sourceAvatar = avatars.find((item) => item.id === sourceStory.config?.avatarId) || null;
+  const partnerAvatar = avatars.find((item) => item.id === partnerStory.config?.avatarId) || null;
   const [rules, setRules] = useState("bridge");
   const [lead, setLead] = useState("a");
   const [bond, setBond] = useState("allies");
@@ -5477,9 +5684,9 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
             <span className="merge-art-label">{mineGenre.world}</span>
           </div>
           <div className="merge-card-bottom">
-            {avatar && sourceStory.config?.avatarId === avatar.id ? (
+            {sourceAvatar ? (
               <span className="avatar avatar-photo">
-                <AvatarPortrait avatar={avatar} getAccessToken={() => authClient.getAccessToken()} />
+                <AvatarPortrait avatar={sourceAvatar} getAccessToken={() => authClient.getAccessToken()} />
               </span>
             ) : (
               <div className="avatar avatar-rose">
@@ -5488,7 +5695,7 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
             )}
             <div>
               <b>{displayName(sourceStory)}</b>
-              <small>{avatar && sourceStory.config?.avatarId === avatar.id ? `化身 · ${avatar.name}` : "你的主角"}</small>
+              <small>{sourceAvatar ? `化身 · ${sourceAvatar.name}` : "你的主角"}</small>
               <span>
                 {mineGenre.label} · {sourceStory.config.ability}
               </span>
@@ -5506,9 +5713,9 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
             <span className="merge-art-label">{friendGenre.world}</span>
           </div>
           <div className="merge-card-bottom">
-            {avatar && partnerStory.config?.avatarId === avatar.id ? (
+            {partnerAvatar ? (
               <span className="avatar avatar-photo">
-                <AvatarPortrait avatar={avatar} getAccessToken={() => authClient.getAccessToken()} />
+                <AvatarPortrait avatar={partnerAvatar} getAccessToken={() => authClient.getAccessToken()} />
               </span>
             ) : (
               <div className="avatar avatar-mint">{displayName(partnerStory).slice(0, 1)}</div>
@@ -5516,8 +5723,8 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
             <div>
               <b>{displayName(partnerStory)}</b>
               <small>
-                {avatar && partnerStory.config?.avatarId === avatar.id
-                  ? `化身 · ${avatar.name}`
+                {partnerAvatar
+                  ? `化身 · ${partnerAvatar.name}`
                   : partnerStory.id === FRIEND_BOOK.id
                     ? "示例角色"
                     : "书架中的主角"}
@@ -6269,7 +6476,7 @@ function App() {
     navigate("reader", { storyId: publication.id, plaza: true });
   };
   const enterPlazaLine = async (detail, picks, { signal } = {}) => {
-    const ownAvatar = avatarState.avatar;
+    const ownAvatar = avatarState.avatars.find((item) => item.id === picks.avatarId) || avatarState.avatar;
     if (!ownAvatar) { navigate("avatar"); throw new Error("先创建你的化身，再带它进入这个世界。"); }
     const draft = enterDraftFor(detail, { avatar: ownAvatar, ...picks });
     const settingViolation = findSettingViolation(draft.customWorldSetting);
@@ -6302,6 +6509,8 @@ function App() {
         onDraftChange={saveDraft}
         authClient={authClient}
         avatar={avatarState.avatar}
+        avatars={avatarState.avatars}
+        mainId={avatarState.mainId}
         avatarLoaded={avatarState.loaded}
         onOpenAvatar={() => navigate("avatar")}
       />
@@ -6359,6 +6568,7 @@ function App() {
         authClient={authClient}
         onAuthRequired={() => { setAccountIntent(null); setAccountOpen(true); }}
         avatar={avatarState.avatar}
+        avatars={avatarState.avatars}
       />
     );
   else if (view === "avatar")
@@ -6433,6 +6643,8 @@ function App() {
         account={account}
         authClient={authClient}
         avatar={avatarState.avatar}
+        avatars={avatarState.avatars}
+        mainId={avatarState.mainId}
         avatarLoaded={avatarState.loaded}
         onNavigate={navigate}
         onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
