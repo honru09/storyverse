@@ -131,7 +131,7 @@ async function runOnboarding(browser, width) {
       const dialog = page.getByRole('dialog', { name: '登录与注册', exact: true });
       await dialog.getByRole('alert').filter({ hasText: '账号服务尚未配置' }).waitFor();
       assert.equal(await dialog.getByRole('button', { name: '使用 Google 继续', exact: true }).isDisabled(), true);
-      assert.equal(await dialog.getByLabel('邮箱', { exact: true }).isDisabled(), true);
+      assert.equal(await dialog.getByLabel('邮箱或用户名', { exact: true }).isDisabled(), true);
       assert.equal(await dialog.locator('input[name="password"]').isDisabled(), true);
       assert.equal(await dialog.getByRole('button', { name: '登录账号', exact: true }).isDisabled(), true);
       await dialog.getByRole('group', { name: '账号操作' }).getByRole('button', { name: '注册', exact: true }).click();

@@ -202,6 +202,21 @@ function validateStory(story, prefix) {
   }
   validateOptionalFields(story, prefix, ['author', 'createdAt', 'updatedAt', 'status', 'genreTemplateId', 'previousSeasonId'], 'string', errors)
   validateOptionalFields(story, prefix, ['bookmarked', 'readOnly', 'isDemo'], 'boolean', errors)
+  // Per-story generated cover: only the state and a version live on the
+  // story; the image itself stays on the server under the owner's account.
+  // Absent means "never requested" — every pre-cover save stays valid.
+  if (story.cover !== undefined) {
+    if (!isRecord(story.cover)) errors.push(`${prefix}.cover must be an object`)
+    else {
+      if (!['none', 'pending', 'ready', 'failed'].includes(story.cover.status)) {
+        errors.push(`${prefix}.cover.status is invalid`)
+      }
+      if (story.cover.version !== undefined && (!Number.isInteger(story.cover.version) || story.cover.version < 0)) {
+        errors.push(`${prefix}.cover.version must be a non-negative integer`)
+      }
+      validateOptionalFields(story.cover, `${prefix}.cover`, ['updatedAt'], 'string', errors)
+    }
+  }
   if (story.kind !== undefined && !['solo', 'merged'].includes(story.kind)) errors.push(`${prefix}.kind is invalid`)
   if (story.sourceIds !== undefined) validateStringArray(story.sourceIds, `${prefix}.sourceIds`, errors)
 

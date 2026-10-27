@@ -78,10 +78,10 @@
 .opening-starmap{width:min(100%,340px);margin-top:22px;padding:14px 16px 10px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass)}
 .directory-starmap{margin-top:14px;padding:14px 12px 8px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass)}
 .directory-starmap b{display:block;margin:0 2px 8px;font-size:13px}
-/* Shelf card meta: progress / generation state / last choice */
-.sw-library-meta{display:grid;gap:4px;margin-top:2px}
-.sw-library-meta .gen-state{font-size:11.5px}
-.sw-library-choice{color:var(--dim);font-size:11.5px;line-height:1.55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The home shelf is a wooden bookcase (styles.css .wood-*): books stand
+   on walnut planks with seeded tilts and status ribbons. The store list
+   cards keep the fixed 2026-10-27 list format (cover + badge / title /
+   meta line). */
 .hero-starmap{margin-top:16px;padding:12px 14px 8px;border:1px solid var(--line);border-radius:var(--radius-card);background:rgba(6,13,31,.35)}
 /* Stepper: step-count agnostic (5 or 6 steps), labels never wrap */
 .stepper{flex-wrap:nowrap}
@@ -96,4 +96,5 @@
 }
 @media(prefers-reduced-motion:reduce){
   .aurora-blob,.ripple-ink,.storymap-pulse,.storymap-node.pending,.generation-orb,.generation-flow i,.skeleton-line{animation:none!important}
+  .wood-book{transition:none}
 }

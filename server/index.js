@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import { ApiError, createGeminiGenerator, MAX_REQUEST_BYTES } from './gemini.js'
 import { createAuthService } from './auth.js'
+import { createCoverService } from './cover.js'
 
 const DEFAULT_DIST = fileURLToPath(new URL('../dist/', import.meta.url))
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2' }
@@ -76,6 +77,25 @@ async function readJson(request) {
   } catch { throw new ApiError(400, '章节请求格式有误，请重试。') }
 }
 
+async function readCoverJson(request) {
+  if (request.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
+    throw new ApiError(415, '请使用 JSON 格式提交。')
+  }
+  if (Number(request.headers['content-length']) > 64 * 1024) throw new ApiError(413, '请求数据过大。')
+  const chunks = []
+  let length = 0
+  for await (const chunk of request) {
+    length += chunk.length
+    if (length > 64 * 1024) throw new ApiError(413, '请求数据过大。')
+    chunks.push(chunk)
+  }
+  try {
+    const result = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error()
+    return result
+  } catch { throw new ApiError(400, '请求格式有误，请重试。') }
+}
+
 async function readAuthJson(request) {
   if (request.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
     throw new ApiError(415, '请使用 JSON 格式提交。')
@@ -118,7 +138,7 @@ async function serveStatic(request, response, pathname, distDir) {
   response.end(request.method === 'HEAD' ? undefined : bytes)
 }
 
-export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth = createAuthService({ env }), distDir = DEFAULT_DIST } = {}) {
+export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth = createAuthService({ env }), cover = createCoverService({ env }), distDir = DEFAULT_DIST } = {}) {
   // Explicit opt-out preserves existing deployments until the release owner sets it.
   const generationEnabled = env.GENERATION_ENABLED !== 'false'
   // The model id is static configuration; remember it the first time status
@@ -137,7 +157,10 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
     response.setHeader('X-Content-Type-Options', 'nosniff')
     response.setHeader('Referrer-Policy', 'no-referrer')
     response.setHeader('Cross-Origin-Resource-Policy', 'same-origin')
-    response.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self'${authScripts}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${authConnections}; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'${authFrames}`)
+    // img-src allows blob: because per-story covers are fetched with the
+    // reader's bearer token and rendered through object URLs (an <img>
+    // cannot send an Authorization header).
+    response.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self'${authScripts}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'${authConnections}; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'${authFrames}`)
     try {
       allowedRequest(request, server, env, request.method === 'POST')
       const pathname = new URL(request.url, 'http://localhost').pathname
@@ -208,6 +231,53 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         } catch { /* ledger is best-effort */ }
         if (identity) await auth.recordUsage(identity.uid, result?.usage ?? 'unknown')
         return sendJson(response, 200, result)
+      }
+      if (pathname === '/api/cover' && request.method === 'POST') {
+        // Covers are account property: a signed-in identity is always
+        // required, and the same daily discipline as generation applies
+        // through the cover service's own per-account limit.
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再生成封面。', 'auth-required')
+          throw error
+        }
+        const coverBody = await readCoverJson(request)
+        const result = await cover.request(identity, coverBody)
+        // Cover ledger: identity, story id, model and provider usage only —
+        // never the prompt and never image bytes.
+        try {
+          process.stdout.write(`${JSON.stringify({
+            type: 'cover-usage',
+            kind: 'cover',
+            uid: identity.uid,
+            storyId: typeof coverBody?.storyId === 'string' ? coverBody.storyId : null,
+            model: cover.model,
+            usage: result?.usage ?? 'unknown',
+          })}\n`)
+        } catch { /* ledger is best-effort */ }
+        return sendJson(response, 200, { status: result.status, version: result.version })
+      }
+      if (pathname === '/api/cover/meta' && request.method === 'GET') {
+        const identity = await auth.identity(request.headers.authorization)
+        const storyId = new URL(request.url, 'http://localhost').searchParams.get('storyId') || ''
+        return sendJson(response, 200, await cover.meta(identity, storyId))
+      }
+      if (pathname === '/api/cover' && request.method === 'GET') {
+        const identity = await auth.identity(request.headers.authorization)
+        const storyId = new URL(request.url, 'http://localhost').searchParams.get('storyId') || ''
+        const image = await cover.fetch(identity, storyId)
+        if (!image) throw new ApiError(404, '这本书还没有专属封面。')
+        if (!response.destroyed && !response.writableEnded) {
+          response.writeHead(200, {
+            'Content-Type': image.contentType,
+            'Content-Length': image.buffer.length,
+            'Cache-Control': 'private, max-age=300',
+          })
+          response.end(image.buffer)
+        }
+        return
       }
       if (pathname.startsWith('/api/')) throw new ApiError(404, '接口不存在。')
       if (request.method !== 'GET' && request.method !== 'HEAD') throw new ApiError(405, '此操作不支持。')

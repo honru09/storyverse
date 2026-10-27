@@ -19,9 +19,28 @@ import AnimatedContent from "./components/react-bits/AnimatedContent.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import { createLibraryStore } from "./library-store.js";
 import { parseRoute, routeHash } from "./navigation.js";
+import {
+  chunkShelves,
+  coverInfoFor,
+  coverTitleLayoutFor,
+  rankMetaFor,
+  rankStoreBooks,
+  seasonLabel,
+  shelfMetaFor,
+  shelfTiltFor,
+  statusBadgeFor,
+  storyComplete,
+} from "./list-layout.js";
+import {
+  coverStateOf,
+  requestCoverImage,
+  shouldAutoRequestCover,
+  withCoverState,
+} from "./cover.js";
 import { downloadText } from "./downloads.js";
 import { acceptGeneratedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter } from "./generation.js";
 import WorldArtwork from "./components/WorldArtwork.jsx";
+import StoryCover from "./components/StoryCover.jsx";
 import AccountPanel from "./components/AccountPanel.jsx";
 import { createAuthClient } from "./auth/client.js";
 import ReadingPreferences from "./components/ReadingPreferences.jsx";
@@ -111,6 +130,13 @@ const Icon = ({ name, size = 18, stroke = 1.8, className = "" }) => {
       <>
         <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5v-16Z" />
         <path d="M4 5.5v16M8 7h8M8 11h6" />
+      </>
+    ),
+    image: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <circle cx="9" cy="10" r="1.6" />
+        <path d="m5 19 5.2-5.2a1.8 1.8 0 0 1 2.5 0L19 20" />
       </>
     ),
     spark: (
@@ -403,10 +429,10 @@ function Topbar({ onNavigate, onOpenLibrary, onOpenAccount, account }) {
 function MobileBottomNav({ view, onNavigate }) {
   if (view === "reader") return null;
   const items = [
-    { id: "home", label: "世界", icon: "compass" },
-    { id: "forge", label: "造世", icon: "plus" },
-    { id: "store", label: "书城", icon: "book" },
-    { id: "merge", label: "合流", icon: "git" },
+    { id: "home", label: "世界" },
+    { id: "forge", label: "造世" },
+    { id: "store", label: "书城" },
+    { id: "merge", label: "合流" },
   ];
   return (
     <nav className="mobile-bottom-nav" aria-label="移动端主导航">
@@ -418,7 +444,6 @@ function MobileBottomNav({ view, onNavigate }) {
           aria-current={view === item.id ? "page" : undefined}
           onClick={() => onNavigate(item.id)}
         >
-          <Icon name={item.icon} size={19} />
           <span>{item.label}</span>
         </button>
       ))}
@@ -426,7 +451,7 @@ function MobileBottomNav({ view, onNavigate }) {
   );
 }
 
-function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, onOpenAccount }) {
+function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, onOpenAccount, authClient }) {
   const genre = genreOf(activeStory);
   const activeTotal = activeStory ? totalChaptersFor(activeStory) : 6;
   const currentChapter = activeStory
@@ -442,7 +467,7 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
       </div>
       <section className={`home-hero ${activeStory ? "has-story" : "first-story"}`}>
         <div className="hero-scene">
-          <WorldArtwork genreId={genre.id} sources={coverSources(activeStory)} eager sizes="(min-width: 1200px) 1050px, 100vw" />
+          <StoryCover story={activeStory} genreId={genre.id} sources={coverSources(activeStory)} eager sizes="(min-width: 1200px) 1050px, 100vw" getAccessToken={() => authClient.getAccessToken()} authSignal={account.status} />
         </div>
         <div className="hero-copy">
           <h1>
@@ -513,6 +538,8 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
           stories={stories}
           activeStoryId={activeStory?.id}
           onOpenStory={onOpenStory}
+          authClient={authClient}
+          authSignal={account.status}
         />
         </> : (
           <button className="new-story-row" onClick={() => onNavigate("forge")}>
@@ -533,44 +560,93 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
   );
 }
 
-function LibrarySwitcher({ stories, activeStoryId, onOpenStory }) {
+// Books per plank follow the retired grid's breakpoints: three across at
+// phone width (the size the wooden shelf was designed at), more as the
+// room widens. Rendered server-side/first paint assumes the phone size.
+function useShelfCapacity() {
+  const read = () => {
+    if (typeof window === "undefined" || !window.matchMedia) return 3;
+    if (window.matchMedia("(min-width: 1050px)").matches) return 5;
+    if (window.matchMedia("(min-width: 700px)").matches) return 4;
+    return 3;
+  };
+  const [capacity, setCapacity] = useState(read);
+  useEffect(() => {
+    const queries = [window.matchMedia("(min-width: 700px)"), window.matchMedia("(min-width: 1050px)")];
+    const update = () => setCapacity(read());
+    queries.forEach((query) => query.addEventListener?.("change", update));
+    return () => queries.forEach((query) => query.removeEventListener?.("change", update));
+  }, []);
+  return capacity;
+}
+
+function LibrarySwitcher({ stories, activeStoryId, onOpenStory, authClient, authSignal = '' }) {
   const otherStories = stories.filter((story) => story.id !== activeStoryId);
+  const capacity = useShelfCapacity();
+  const [pulledId, setPulledId] = useState(null);
+  const pullTimer = useRef(null);
+  useEffect(() => () => { if (pullTimer.current) window.clearTimeout(pullTimer.current); }, []);
   if (otherStories.length === 0) return null;
 
+  const shelves = chunkShelves(otherStories, capacity);
+  const handleOpen = (story) => {
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+      || document.querySelector(".app-shell")?.dataset.motion === "off";
+    if (reduced) {
+      onOpenStory(story.id);
+      return;
+    }
+    // Pull the book off the shelf first; the reader opens as it comes
+    // forward. The delay stays inside the page-transition token's reach.
+    setPulledId(story.id);
+    pullTimer.current = window.setTimeout(() => {
+      setPulledId(null);
+      onOpenStory(story.id);
+    }, 260);
+  };
+
   return (
-    <section className="sw-library-dock" aria-label="书架上的其他故事">
-      <div className="sw-library-dock-grid">
-        {otherStories.map((story) => {
-          const genre = genreOf(story);
-          const storyTotal = totalChaptersFor(story);
-          const chapter = Math.min(storyTotal, readerIndexFor(story) + 1);
-          return (
-            <button
-              type="button"
-              key={story.id}
-              className="sw-library-row"
-              onClick={() => onOpenStory(story.id)}
-            >
-              <span className="library-cover">
-                <WorldArtwork genreId={genre.id} sources={coverSources(story)} />
-              </span>
-              <span className="sw-library-copy">
-                <b>{story.title}</b>
-                <small>
-                  {genre.label} · 第 {chapter} / {storyTotal} 章
-                </small>
-                <span className="sw-library-meta">
-                  {(() => {
-                    const state = generationState({ total: storyTotal, generated: story.chapters?.length || 0, current: readerIndexFor(story), engine: story.engine, complete: story.status === "complete" || isStoryComplete(story) });
-                    return <span className={`gen-state ${state.className}`}><i aria-hidden="true" />{state.label}</span>;
-                  })()}
-                  {lastChoiceLabel(story) && <span className="sw-library-choice">最近的选择：{lastChoiceLabel(story)}</span>}
-                </span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
+    <section className="sw-shelf sw-shelf-wood" aria-label="书架上的其他故事">
+      {shelves.map((row, shelfIndex) => {
+        const partial = row.length < capacity;
+        return (
+          <div className="wood-shelf" key={row.map((story) => story.id).join("|")}>
+            <div className="wood-shelf-books">
+              {row.map((story, bookIndex) => {
+                const genre = genreOf(story);
+                const complete = storyComplete(story);
+                const ribbonKind = complete ? "is-complete" : seasonLabel(story) ? "is-season" : "is-serial";
+                const titleLayout = coverTitleLayoutFor(story);
+                const leaning = partial && shelfIndex === shelves.length - 1 && bookIndex === row.length - 1;
+                return (
+                  <button
+                    type="button"
+                    key={story.id}
+                    className={`wood-book ${leaning ? "is-leaning" : ""} ${pulledId === story.id ? "is-pulled" : ""}`}
+                    style={{ "--tilt": `${shelfTiltFor(story)}deg` }}
+                    onClick={() => handleOpen(story)}
+                    aria-label={`${story.title}，${shelfMetaFor(story)}`}
+                  >
+                    <span className="wood-book-cover">
+                      <StoryCover story={story} genreId={genre.id} sources={coverSources(story)} getAccessToken={() => authClient.getAccessToken()} authSignal={authSignal} />
+                      <span className="wood-book-spine" aria-hidden="true" />
+                      <span className={`wood-book-ribbon ${ribbonKind}`} aria-hidden="true">{statusBadgeFor(story)}</span>
+                      {titleLayout === "vertical" && (
+                        <span className="wood-book-title-tag" aria-hidden="true">{story.title}</span>
+                      )}
+                      <span className="wood-book-face" aria-hidden="true">
+                        {titleLayout === "horizontal" && <b>{story.title}</b>}
+                        <small>{shelfMetaFor(story)}</small>
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="wood-shelf-plank" aria-hidden="true" />
+          </div>
+        );
+      })}
     </section>
   );
 }
@@ -1594,7 +1670,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider }) {
   );
 }
 
-function ShareSheet({ story, onClose, onPublish }) {
+function ShareSheet({ story, onClose, onPublish, authClient, authSignal = "" }) {
   const preview = useMemo(() => publicSnapshot(story), [story]);
   const [reviewed, setReviewed] = useState(false);
   const requiresReview = story.engine === "gemini";
@@ -1604,7 +1680,7 @@ function ShareSheet({ story, onClose, onPublish }) {
         {requiresReview ? "仅保存在本机书城。已替换设定中的原始资料，但正文仍可能含有可识别的线索，请逐章检查。" : "匿名只读副本，仅保存在本机书城，不会上传。姓名与现实资料已移除。"}
       </p>
       <div className="sw-share-preview">
-        <span className="share-cover"><WorldArtwork genreId={genreOf(story).id} sources={coverSources(story)} /></span>
+        <span className="share-cover"><StoryCover story={story} genreId={genreOf(story).id} sources={coverSources(story)} getAccessToken={() => authClient.getAccessToken()} authSignal={authSignal} /></span>
         <div>
           <b>{preview.title}</b>
           <small>
@@ -1753,9 +1829,13 @@ function Reader({
   unsaved = false,
   onPrepareChapter,
   onStartNextSeason,
+  authClient,
+  onRerollCover,
+  authSignal = "",
 }) {
   const [snapshotIndex, setSnapshotIndex] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
+  const [coverOpen, setCoverOpen] = useState(false);
   const [directoryOpen, setDirectoryOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -1806,6 +1886,7 @@ function Reader({
     : readerIndexFor(story);
   const readingChapters = useMemo(() => story?.chapters.map((_, i) => chapterForReading(story, i)) || [], [story]);
   const chapter = story ? (readingChapters[index] || buildChapter(story, index)) : null;
+  const coverState = coverStateOf(story);
   const chapterMetrics = useMemo(() => estimateReadingMetrics(chapter?.paragraphs || []), [chapter]);
   const locationKey = story && chapterLocationKey(story.id, index, chapter.paragraphs, readOnly);
   const reading = useReaderExperience({ readerRef, locationKey, settings: preferences.settings,
@@ -1824,6 +1905,7 @@ function Reader({
   useEffect(() => {
     setSnapshotIndex(0);
     setShareOpen(false);
+    setCoverOpen(false);
     setDirectoryOpen(false);
     setToolsOpen(false);
     if (readerRef.current) readerRef.current.dataset.toplineHidden = "false";
@@ -2016,6 +2098,16 @@ function Reader({
               aria-label={story.bookmarked ? "取消收藏" : "收藏"}
             >
               <Icon name="bookmark" size={18} />
+            </button>
+          )}
+          {!readOnly && (
+            <button
+              className="reader-directory-button"
+              onClick={() => setCoverOpen(true)}
+              aria-haspopup="dialog"
+            >
+              <Icon name="image" size={16} />
+              封面
             </button>
           )}
           {!readOnly && (
@@ -2288,9 +2380,46 @@ function Reader({
           </div>
         </ReadingDialog>
       )}
+      {coverOpen && !readOnly && (
+        <ReadingDialog title="本书封面" onClose={() => setCoverOpen(false)}>
+          <div className="cover-dialog-detail">
+            <span className="cover-dialog-frame">
+              <StoryCover story={story} genreId={genreOf(story).id} sources={coverSources(story)} getAccessToken={() => authClient.getAccessToken()} authSignal={authSignal} />
+            </span>
+            <div className="cover-dialog-copy">
+              <b>{story.title}</b>
+              <p>
+                {coverState.status === "ready" && "这是按这本书的世界设定生成的专属封面。"}
+                {coverState.status === "pending" && "专属封面生成中，好了会自动换上；现在先用世界封面。"}
+                {coverState.status === "failed" && "上次生成没成功，暂时用的是世界封面，可以再试一次。"}
+                {coverState.status === "none" && "还没有专属封面，现在用的是世界封面。"}
+              </p>
+            </div>
+          </div>
+          <div className="reading-dialog-actions">
+            <Button
+              icon="image"
+              onClick={() => onRerollCover?.(story)}
+              disabled={coverState.status === "pending"}
+            >
+              {coverState.status === "pending"
+                ? "正在生成…"
+                : coverState.status === "ready"
+                  ? "换一张封面"
+                  : "生成专属封面"}
+            </Button>
+            <Button variant="ghost" onClick={() => setCoverOpen(false)}>
+              关闭
+            </Button>
+          </div>
+          <p className="cover-dialog-note">封面按这本书自己的世界背景生成，不带文字；每天最多生成 5 张，自动生成与手动更换共用。</p>
+        </ReadingDialog>
+      )}
       {shareOpen && (
         <ShareSheet
           story={story}
+          authClient={authClient}
+          authSignal={authSignal}
           onClose={() => setShareOpen(false)}
           onPublish={(current) => {
             onPublish?.(current);
@@ -2316,6 +2445,63 @@ function storeBookMeta(book) {
     symbol: genre.symbol,
     note: book.worldBible?.premise || genre.description,
   };
+}
+
+function StoreRanking({ books, onOpenBook }) {
+  const [tab, setTab] = useState("recommend");
+  const recommended = rankStoreBooks(books).slice(0, 6);
+  const completed = rankStoreBooks(books, { completeOnly: true }).slice(0, 6);
+  if (recommended.length === 0) return null;
+  const hasCompleted = completed.length > 0;
+  const activeTab = tab === "complete" && hasCompleted ? "complete" : "recommend";
+  const entries = activeTab === "complete" ? completed : recommended;
+  return (
+    <section className="rank-card" aria-label="书城排行榜">
+      <div className="rank-tabs" role="group" aria-label="榜单切换">
+        <button
+          type="button"
+          className={activeTab === "recommend" ? "active" : ""}
+          aria-pressed={activeTab === "recommend"}
+          onClick={() => setTab("recommend")}
+        >
+          推荐榜
+        </button>
+        {hasCompleted && (
+          <button
+            type="button"
+            className={activeTab === "complete" ? "active" : ""}
+            aria-pressed={activeTab === "complete"}
+            onClick={() => setTab("complete")}
+          >
+            完本榜
+          </button>
+        )}
+      </div>
+      <ol className="rank-list">
+        {entries.map((book, index) => (
+          <li key={book.id}>
+            <button
+              type="button"
+              className="rank-row"
+              onClick={() => onOpenBook(book.snapshot)}
+            >
+              <span className={`rank-num ${index === 0 ? "gold" : ""}`}>{index + 1}</span>
+              <span className="rank-cover">
+                <WorldArtwork genreId={genreOf(book.snapshot).id} sources={coverSources(book.snapshot)} />
+              </span>
+              <span className="rank-copy">
+                <span className="rank-title">{book.title}</span>
+                <span className="rank-meta">
+                  <span className="rank-cat">{book.category}</span>
+                  <span className="rank-rest"> · {rankMetaFor(book)}</span>
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
 }
 
 function Store({ onNavigate, onOpenBook, onOpenOwn, publications }) {
@@ -2376,6 +2562,10 @@ function Store({ onNavigate, onOpenBook, onOpenOwn, publications }) {
         </div>
       </div>
 
+      {filter === "全部" && (
+        <StoreRanking books={books} onOpenBook={onOpenBook} />
+      )}
+
       {visibleBooks.length > 0 ? (
         <div className="book-grid">
           {visibleBooks.map((book) => (
@@ -2387,19 +2577,15 @@ function Store({ onNavigate, onOpenBook, onOpenOwn, publications }) {
             >
               <div className="book-cover">
                 <WorldArtwork genreId={genreOf(book.snapshot).id} sources={coverSources(book.snapshot)} />
-                <div>
+                <span className="cover-badge">{book.type}</span>
+                <div className="book-cover-copy">
                   <b>{book.title}</b>
+                  <span className="book-cover-info">{coverInfoFor(book.snapshot)}</span>
                 </div>
               </div>
               <div className="book-card-copy">
-                <div className="book-card-meta">
-                  <span>{book.category} · {book.type}</span>
-                  <span className="book-source">{book.sourceLabel}</span>
-                </div>
-                <div className="book-author">
-                  <span>{book.author}</span>
-                  <Icon name="arrow" size={17} />
-                </div>
+                <span className="book-card-cat">{book.category}</span>
+                <span className="book-card-rest">{book.author} · {book.sourceLabel}</span>
               </div>
             </button>
           ))}
@@ -2913,6 +3099,57 @@ function App() {
       return { ...current, stories: current.stories.map((book) => book.id === id ? next : book) };
     });
   }, [store, setLibrary]);
+  // Cover painting runs beside reading, never inside it: the story is
+  // marked pending, the request resolves whenever the server finishes,
+  // and only the cover state is written back — chapters and position are
+  // untouched. Automatic requests happen once per story per session;
+  // manual re-rolls come from the reader's cover dialog.
+  const coverAttempts = useRef(new Set());
+  const updateCoverState = useCallback((id, patch) => {
+    setLibrary((current) => ({
+      ...current,
+      stories: current.stories.map((book) => (book.id === id ? withCoverState(book, patch) : book)),
+    }));
+  }, [setLibrary]);
+  const runCoverRequest = useCallback(async (id, { manual = false } = {}) => {
+    const story = store.getSnapshot().library.stories.find((book) => book.id === id);
+    if (!story || coverStateOf(story).status === "pending") return;
+    const previous = coverStateOf(story);
+    updateCoverState(id, { status: "pending" });
+    try {
+      const { version } = await requestCoverImage({
+        story,
+        getAccessToken: () => authClient.getAccessToken(),
+      });
+      updateCoverState(id, { status: "ready", version, updatedAt: new Date().toISOString() });
+      if (manual) setToast("新封面已换好。");
+    } catch (error) {
+      if (error?.code === "auth-required") {
+        // Signed-out readers keep the world artwork; releasing the
+        // per-session attempt lets the effect retry once sign-in settles
+        // instead of sticking in a failed state.
+        coverAttempts.current.delete(id);
+        updateCoverState(id, { status: previous.status, version: previous.version });
+        if (manual) {
+          setAccountIntent(null);
+          setAccountOpen(true);
+        }
+        return;
+      }
+      updateCoverState(id, { status: "failed" });
+      if (manual) setToast(error?.message || "封面暂时没能生成，请稍后再试。");
+    }
+  }, [store, authClient, updateCoverState]);
+  useEffect(() => {
+    // Covers live behind sign-in; firing before the session restore lands
+    // would only burn the attempt on a 401.
+    if (account.status !== "authenticated") return;
+    for (const story of library.stories) {
+      if (!shouldAutoRequestCover(story) || coverAttempts.current.has(story.id)) continue;
+      coverAttempts.current.add(story.id);
+      void runCoverRequest(story.id);
+    }
+  }, [library.stories, runCoverRequest, account.status]);
   const generate = async (payload, { engine, signal }) => {
       const settingViolation = findSettingViolation(payload.customWorldSetting);
       if (settingViolation) throw new Error(settingViolation);
@@ -3037,6 +3274,9 @@ function App() {
         openShare={shareRequest}
         onShareOpened={() => setShareRequest(false)}
         unsaved={unsaved}
+        authClient={authClient}
+        authSignal={account.status}
+        onRerollCover={(story) => void runCoverRequest(story.id, { manual: true })}
       />
     );
   else if (view === "store")
@@ -3073,6 +3313,7 @@ function App() {
         stories={library.stories}
         draft={library.draft}
         account={account}
+        authClient={authClient}
         onOpenAccount={() => { setAccountIntent(activeStory ? null : "forge"); setAccountOpen(true); }}
       />
     );
