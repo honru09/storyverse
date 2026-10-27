@@ -18,6 +18,19 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
   const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState("");
   const [pending, setPending] = useState(false);
+  // Username-account recovery (RECOVERY batch): the optional address bound
+  // at registration, the reset panel's looked-up state, and the signed-in
+  // binding form. None of this ever holds a full address back from the
+  // server beyond what the user just typed — the server only ever returns
+  // the masked shape.
+  const [recoveryEmail, setRecoveryEmail] = useState("");
+  const [recoveryInfo, setRecoveryInfo] = useState(null);
+  const [recoverySent, setRecoverySent] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [bindPassword, setBindPassword] = useState("");
+  const [bindEmail, setBindEmail] = useState("");
+  const [dismissedReminderKey, setDismissedReminderKey] = useState("");
   const inFlight = useRef(false);
   const modeTouched = useRef(false);
   const hadUser = useRef(false);
@@ -33,6 +46,12 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       setPassword("");
       setCode("");
       setAccountId("");
+      setRecoveryInfo(null);
+      setRecoverySent(false);
+      setRecoveryCode("");
+      setNewPassword("");
+      setBindPassword("");
+      setBindEmail("");
     }
   }, [account.user]);
   const busy = pending || account.busy || account.status === "loading";
@@ -55,6 +74,28 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
   const registerHint = passwordAvailable && (identifierIsEmail || !usernameAvailable)
     ? "用邮箱注册，提交后会发一封验证邮件，确认后就能登录。"
     : "用户名 3–20 个字符，大小写不敏感；注册后直接登录，不用邮箱。";
+  // The registration form is a username form exactly when the hint above
+  // is the username copy; only then do the recovery warning and the
+  // optional recovery-email field belong on it.
+  const usernameForm = activeMode === "register" && !(passwordAvailable && (identifierIsEmail || !usernameAvailable));
+  // Username reset stages: look the account's recovery state up, offer to
+  // send the code, collect code + new password — or stop at an honest
+  // explanation when there is nothing to send to / no channel yet.
+  const resetStage = !recoveryInfo ? "lookup" : recoveryInfo.hasRecoveryEmail && recoveryInfo.channelOpen ? (recoverySent ? "code" : "send") : "info";
+  const resetLabel = identifierIsEmail ? "发送重设邮件" : resetStage === "code" ? "重设密码并登录" : resetStage === "send" ? "发送找回验证码" : "继续";
+  const resetDisabled = identifierIsEmail ? !passwordAvailable : !usernameAvailable || (resetStage === "code" && (recoveryCode.length !== 6 || newPassword.length < 8));
+  const resetActionable = activeMode !== "reset" || identifierIsEmail || resetStage !== "info";
+  // The unbound reminder is per account and per device: once dismissed
+  // (or once an address is bound) it never comes back here.
+  const reminderKey = account.user?.provider === "username" ? `storyweave:recovery-reminder-dismissed:${account.user.uid}` : null;
+  let reminderStored = false;
+  try { reminderStored = reminderKey !== null && globalThis.localStorage?.getItem(reminderKey) === "1"; } catch { reminderStored = false; }
+  const reminderDismissed = reminderStored || (reminderKey !== null && dismissedReminderKey === reminderKey);
+  const dismissReminder = () => {
+    if (!reminderKey) return;
+    try { globalThis.localStorage?.setItem(reminderKey, "1"); } catch { /* storage blocked: the in-state dismissal still applies */ }
+    setDismissedReminderKey(reminderKey);
+  };
   const error = localError || account.error;
   const usage = account.user ? account.usage : null;
   useEffect(() => {
@@ -62,7 +103,10 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
     const timer = window.setTimeout(() => setCooldown((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearTimeout(timer);
   }, [cooldown]);
-  const changeMode = (next) => { modeTouched.current = true; setMode(next); setLocalError(""); setPassword(""); setCode(""); setShowPassword(false); };
+  const changeMode = (next) => { modeTouched.current = true; setMode(next); setLocalError(""); setPassword(""); setCode(""); setShowPassword(false); setRecoveryEmail(""); setRecoveryInfo(null); setRecoverySent(false); setRecoveryCode(""); setNewPassword(""); };
+  // Editing the identifier after a recovery lookup invalidates the lookup:
+  // the panel must never act on a previous name's state.
+  const changeAccountId = (value) => { setAccountId(value); setRecoveryInfo(null); setRecoverySent(false); setRecoveryCode(""); };
   const run = async (operation) => {
     if (inFlight.current || account.busy) return;
     inFlight.current = true;
@@ -81,11 +125,23 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       return;
     }
     if (activeMode === "reset") {
-      // Password reset is an email-channel feature; a username account has
-      // no mailbox to send the reset link to.
-      if (!identifierIsEmail) { setLocalError("用户名账号没有绑定邮箱，没法用邮件重设密码，试试直接登录。"); return; }
-      if (!passwordAvailable) return;
-      void run(() => client.resetPassword(identifier));
+      if (!identifier) { setLocalError("先填邮箱或用户名。"); return; }
+      // Email identifiers keep the Firebase reset mail. Username
+      // identifiers go through the recovery stages instead of the old
+      // dead end: look up, send the code, set a new password.
+      if (identifierIsEmail) {
+        if (!passwordAvailable) { setLocalError("邮箱密码登录还没开通，可以改用用户名或验证码登录。"); return; }
+        void run(() => client.resetPassword(identifier));
+        return;
+      }
+      if (!usernameAvailable) { setLocalError("用户名登录还没开通，可以改用邮箱登录。"); return; }
+      if (resetStage === "code") { void run(() => client.usernameRecoveryReset(identifier, recoveryCode, newPassword)); return; }
+      if (resetStage === "send") {
+        void run(async () => { await client.usernameRecoveryStart(identifier); setRecoverySent(true); setCooldown(60); });
+        return;
+      }
+      if (resetStage === "info") return;
+      void run(async () => { setRecoveryInfo(await client.usernameRecoveryStatus(identifier)); });
       return;
     }
     if (!identifier) { setLocalError("先填邮箱或用户名。"); return; }
@@ -96,7 +152,20 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       return;
     }
     if (!usernameAvailable) { setLocalError("用户名登录还没开通，可以改用邮箱登录。"); return; }
-    void run(() => activeMode === "register" ? client.registerWithUsername(identifier, password) : client.signInWithUsername(identifier, password));
+    void run(() => activeMode === "register" ? client.registerWithUsername(identifier, password, recoveryEmail) : client.signInWithUsername(identifier, password));
+  };
+  const resendRecoveryCode = () => {
+    if (busy || cooldown > 0) return;
+    void run(async () => { await client.usernameRecoveryStart(identifier); setCooldown(60); });
+  };
+  const submitRecoveryBinding = (event) => {
+    event.preventDefault();
+    if (busy) return;
+    void run(async () => { await client.setRecoveryEmail(bindPassword, bindEmail); setBindPassword(""); setBindEmail(""); });
+  };
+  const unbindRecovery = () => {
+    if (busy || !bindPassword) return;
+    void run(async () => { await client.setRecoveryEmail(bindPassword, null); setBindPassword(""); setBindEmail(""); });
   };
   const sendCode = () => {
     if (!codeAvailable || busy || cooldown > 0) return;
@@ -109,8 +178,24 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
         <span className="account-avatar" aria-hidden="true">{(account.user.displayName || account.user.email || "你").slice(0, 1).toUpperCase()}</span>
         <div><h3>{account.user.displayName || "欢迎回来"}</h3><p>{account.user.email || (account.user.provider === "username" ? "用户名账号" : "")}</p></div>
       </div>
+      {account.user.provider === "username" && account.user.hasRecoveryEmail === false && !reminderDismissed && <div className="account-message account-recovery-reminder" role="status">
+        <p>你的用户名账号还没有绑定恢复邮箱——密码忘了将无法找回。可以在下面补绑一个，下次就能用邮箱找回了。</p>
+        <button type="button" onClick={dismissReminder}>不再提醒</button>
+      </div>}
       {account.user.email && <div className="account-detail-row"><span>邮箱状态</span><strong>{account.user.emailVerified ? "已验证" : "等待验证"}</strong></div>}
       <div className="account-detail-row"><span>登录方式</span><strong>{account.user.provider === "username" ? "用户名密码" : account.user.provider === "email-code" ? "邮箱验证码" : "Google / 邮箱密码"}</strong></div>
+      {account.user.provider === "username" && <div className="account-recovery-settings">
+        <div className="account-detail-row"><span>恢复邮箱</span><strong>{account.user.hasRecoveryEmail ? account.user.recoveryEmailMasked : "未绑定"}</strong></div>
+        <form className="account-form" onSubmit={submitRecoveryBinding}>
+          <label>当前密码<input type="password" name="recovery-current-password" autoComplete="current-password" maxLength={128} value={bindPassword} disabled={busy} onChange={(event) => setBindPassword(event.target.value)} placeholder="输入当前密码"/></label>
+          <label>恢复邮箱<input type="email" name="recovery-email" autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} maxLength={254} value={bindEmail} disabled={busy} onChange={(event) => setBindEmail(event.target.value)} placeholder={account.user.recoveryEmailMasked || "you@example.com"}/></label>
+          <div className="account-recovery-actions">
+            <button type="submit" className="button button-primary" disabled={busy || !bindPassword || !bindEmail.trim()}>{account.user.hasRecoveryEmail ? "更新恢复邮箱" : "绑定恢复邮箱"}</button>
+            {account.user.hasRecoveryEmail && <button type="button" className="account-quiet" disabled={busy || !bindPassword} onClick={unbindRecovery}>取消绑定</button>}
+          </div>
+          {!account.user.recoveryChannelOpen && <p className="account-storage-note">邮箱找回通道还没有开通；先绑好，开通后就能用这个邮箱找回密码。</p>}
+        </form>
+      </div>}
       {!account.user.emailVerified && account.user.provider !== "username" && <div className="account-verification">
         <p>请打开邮件中的验证链接，再回来刷新状态。你可以先继续阅读。</p>
         <div><button type="button" disabled={busy} onClick={() => void run(() => client.sendVerification())}>重发验证邮件</button><button type="button" disabled={busy} onClick={() => void run(() => client.refreshUser())}>我已验证</button></div>
@@ -146,16 +231,30 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
         {codeAvailable && <button type="button" aria-pressed={activeMode === "code"} disabled={busy} onClick={() => changeMode("code")}>验证码</button>}
       </div> : <h3 className="account-reset-heading">重设密码</h3>}
       <form onSubmit={submit} className="account-form">
-        {activeMode === "code" || activeMode === "reset"
-          ? <label>邮箱<input type="email" name="email" autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} required maxLength={254} value={accountId} disabled={busy || !configured} onChange={(event) => setAccountId(event.target.value)} placeholder="you@example.com"/></label>
-          : <label>邮箱或用户名<input type="text" name="account" autoComplete="username" autoCapitalize="none" spellCheck={false} required maxLength={254} value={accountId} disabled={busy || !configured} onChange={(event) => setAccountId(event.target.value)} placeholder="邮箱或用户名"/></label>}
+        {activeMode === "code"
+          ? <label>邮箱<input type="email" name="email" autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} required maxLength={254} value={accountId} disabled={busy || !configured} onChange={(event) => changeAccountId(event.target.value)} placeholder="you@example.com"/></label>
+          : <label>邮箱或用户名<input type="text" name="account" autoComplete="username" autoCapitalize="none" spellCheck={false} required maxLength={254} value={accountId} disabled={busy || !configured} onChange={(event) => changeAccountId(event.target.value)} placeholder="邮箱或用户名"/></label>}
         {activeMode === "code" && <label>验证码<div className="account-password"><input type="text" name="code" autoComplete="one-time-code" inputMode="numeric" autoCapitalize="none" spellCheck={false} required maxLength={6} value={code} disabled={busy || !codeAvailable} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} placeholder="6 位数字"/><button type="button" disabled={busy || !codeAvailable || cooldown > 0} onClick={sendCode}>{cooldown > 0 ? `${cooldown} 秒后重发` : "发送验证码"}</button></div></label>}
         {activeMode !== "reset" && activeMode !== "code" && <label>密码<div className="account-password"><input type={showPassword ? "text" : "password"} name="password" autoComplete={activeMode === "register" ? "new-password" : "current-password"} required minLength={activeMode === "register" ? 8 : undefined} maxLength={128} value={password} disabled={busy || !(passwordAvailable || usernameAvailable)} onChange={(event) => setPassword(event.target.value)} placeholder={activeMode === "register" ? "至少 8 位" : "输入密码"}/><button type="button" aria-label={showPassword ? "隐藏密码" : "显示密码"} aria-pressed={showPassword} disabled={busy || !(passwordAvailable || usernameAvailable)} onClick={() => setShowPassword((value) => !value)}>{showPassword ? "隐藏" : "显示"}</button></div></label>}
+        {usernameForm && <>
+          <p className="account-message account-recovery-note">用户名账号没有邮箱验证，密码忘了将无法找回，除非现在绑定一个恢复邮箱。</p>
+          <label>恢复邮箱（可选）<input type="email" name="recoveryEmail" autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} maxLength={254} value={recoveryEmail} disabled={busy || !configured} onChange={(event) => setRecoveryEmail(event.target.value)} placeholder="you@example.com"/></label>
+        </>}
+        {activeMode === "reset" && resetStage === "code" && <>
+          <label>找回验证码<div className="account-password"><input type="text" name="recoveryCode" autoComplete="one-time-code" inputMode="numeric" autoCapitalize="none" spellCheck={false} required maxLength={6} value={recoveryCode} disabled={busy} onChange={(event) => setRecoveryCode(event.target.value.replace(/\D/g, ""))} placeholder="6 位数字"/><button type="button" disabled={busy || cooldown > 0} onClick={resendRecoveryCode}>{cooldown > 0 ? `${cooldown} 秒后重发` : "重新发送"}</button></div></label>
+          <label>新密码<input type="password" name="newPassword" autoComplete="new-password" required minLength={8} maxLength={128} value={newPassword} disabled={busy} onChange={(event) => setNewPassword(event.target.value)} placeholder="至少 8 位"/></label>
+        </>}
+        {activeMode === "reset" && !identifierIsEmail && recoveryInfo && <div className="account-message account-recovery-panel" role="status">
+          {resetStage === "info" && !recoveryInfo.hasRecoveryEmail && <p>这个用户名没有绑定恢复邮箱，没法自助找回密码。如果你还在其他设备上登录着，去账号设置里补绑一个恢复邮箱，下次就能用邮箱找回了。</p>}
+          {resetStage === "info" && recoveryInfo.hasRecoveryEmail && <p>这个账号绑定了恢复邮箱 {recoveryInfo.maskedRecoveryEmail}。邮箱找回通道还没有开通——开通之后，找回验证码会发到这个邮箱。现在还没法自助重设密码，如果你还记得密码，返回登录试试。</p>}
+          {resetStage === "send" && <p>找回验证码会发到你的恢复邮箱 {recoveryInfo.maskedRecoveryEmail}，10 分钟内有效。点下面的按钮发送。</p>}
+          {resetStage === "code" && <p>验证码已发送到 {recoveryInfo.maskedRecoveryEmail}。输入验证码和新密码，就能重设密码并直接登录。</p>}
+        </div>}
         {activeMode === "register" && <p className="account-storage-note">{registerHint}</p>}
         {error && <p className="account-message is-error" role="alert">{error}</p>}
         {account.notice && <p className="account-message" role="status">{account.notice}</p>}
         {account.status === "loading" && <p className="account-message" role="status">正在连接账号服务…</p>}
-        <button type="submit" className="button button-primary account-primary" disabled={busy || !configured || (activeMode === "code" ? !codeAvailable || code.length !== 6 : activeMode === "reset" ? !passwordAvailable : !(passwordAvailable || usernameAvailable))}>{busy ? "正在处理…" : activeMode === "register" ? "创建账号" : activeMode === "reset" ? "发送重设邮件" : activeMode === "code" ? "验证码登录" : "登录账号"}</button>
+        {resetActionable && <button type="submit" className="button button-primary account-primary" disabled={busy || !configured || (activeMode === "code" ? !codeAvailable || code.length !== 6 : activeMode === "reset" ? resetDisabled : !(passwordAvailable || usernameAvailable))}>{busy ? "正在处理…" : activeMode === "register" ? "创建账号" : activeMode === "reset" ? resetLabel : activeMode === "code" ? "验证码登录" : "登录账号"}</button>}
       </form>
       <div className="account-links">
         {activeMode === "login" ? <button type="button" disabled={busy} onClick={() => changeMode("reset")}>忘记密码？</button> : <button type="button" disabled={busy} onClick={() => changeMode("login")}>返回登录</button>}

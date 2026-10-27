@@ -24,6 +24,14 @@
 .account-message { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--selected-surface); color: var(--selected-text); font-size: 13px; line-height: 1.7; }
 .account-message.is-error { background: var(--thread-soft); color: var(--error); }
 .account-reset-heading { margin: 0; font-size: 17px; }
+.account-recovery-note { background: var(--thread-soft); color: var(--ink); font-size: 13px; line-height: 1.7; }
+.account-recovery-panel p, .account-recovery-reminder p { margin: 0; }
+.account-recovery-reminder { display: grid; gap: 8px; }
+.account-recovery-reminder button { justify-self: start; min-height: 36px; padding: 4px 6px; border: 0; background: transparent; color: var(--action); font-size: 13px; }
+.account-recovery-settings { display: grid; gap: 14px; }
+.account-recovery-settings .account-detail-row { border-block: 0; padding-bottom: 0; }
+.account-recovery-actions { display: flex; align-items: center; gap: 14px; }
+.account-recovery-actions .button { min-height: 48px; padding-inline: 20px; }
 .account-profile { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .account-avatar { display: grid; place-items: center; width: 56px; height: 56px; flex-shrink: 0; border-radius: 50%; background: var(--soft-indigo); color: var(--selected-text); font-size: 25px; font-weight: 600; }
 .account-profile h3 { margin: 0 0 4px; font-size: 20px; }

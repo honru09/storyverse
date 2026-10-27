@@ -23,6 +23,11 @@ export function createMemoryIdentityStore() {
     async getSession(key) { return sessions.get(key) ?? null },
     async putSession(key, record) { sessions.set(key, record) },
     async deleteSession(key) { sessions.delete(key) },
+    async deleteSessionsForUid(uid) {
+      for (const [key, record] of sessions) {
+        if (record?.uid === uid) sessions.delete(key)
+      }
+    },
     async getUser(key) { return users.get(key) ?? null },
     async putUser(key, record) { users.set(key, record) },
   }
@@ -43,6 +48,10 @@ export function createFirestoreIdentityStore(loadDb) {
     getSession: (key) => read('site_sessions', key),
     async putSession(key, record) { await (await db()).collection('site_sessions').doc(key).set(record) },
     async deleteSession(key) { await (await db()).collection('site_sessions').doc(key).delete() },
+    async deleteSessionsForUid(uid) {
+      const snapshot = await (await db()).collection('site_sessions').where('uid', '==', uid).get()
+      await Promise.all(snapshot.docs.map((doc) => doc.ref.delete()))
+    },
     getUser: (key) => read('site_users', key),
     async putUser(key, record) { await (await db()).collection('site_users').doc(key).set(record) },
   }

@@ -122,6 +122,14 @@ export function createAuthService({ env = process.env, verifyIdToken, usageServi
 
   async function account(authorization) {
     const resolved = await identity(authorization)
+    // Username accounts carry their recovery state so the account view can
+    // offer binding and the unbound reminder. The state itself is only the
+    // masked shape from the username service; the raw address never enters
+    // this payload (or any other response).
+    let recovery = null
+    if (resolved.provider === 'username' && typeof username.recoveryState === 'function') {
+      recovery = await username.recoveryState(resolved.displayName).catch(() => null)
+    }
     return {
       user: {
         uid: resolved.uid,
@@ -130,6 +138,7 @@ export function createAuthService({ env = process.env, verifyIdToken, usageServi
         emailVerified: resolved.emailVerified,
       },
       provider: resolved.provider,
+      recovery,
       usage: await usage.totals(resolved.uid),
       storage: dataStoreKind(env) ? 'synced' : 'local', entitlements: null, subscription: null,
     }
@@ -147,6 +156,21 @@ export function createAuthService({ env = process.env, verifyIdToken, usageServi
     return { username: body.username, password: body.password }
   }
 
+  const bodyUsername = (body) => {
+    if (!body || typeof body !== 'object' || typeof body.username !== 'string') {
+      throw new ApiError(400, '请求格式有误，请重试。')
+    }
+    return body.username
+  }
+
+  /** Optional field: undefined passes through as "not provided"; a present non-string is a format error. */
+  const bodyOptionalEmail = (body, field) => {
+    const value = body?.[field]
+    if (value === undefined || value === null) return value ?? undefined
+    if (typeof value !== 'string') throw new ApiError(400, '请求格式有误，请重试。')
+    return value
+  }
+
   return {
     config: () => config,
     identity,
@@ -161,11 +185,29 @@ export function createAuthService({ env = process.env, verifyIdToken, usageServi
     emailSignOut: (authorization) => email.revokeSession(bearerToken(authorization)),
     usernameRegister: (body, clientKey) => {
       const credentials = bodyCredentials(body)
-      return username.register(credentials.username, credentials.password, clientKey)
+      return username.register(credentials.username, credentials.password, clientKey, bodyOptionalEmail(body, 'recoveryEmail'))
     },
     usernameLogin: (body, clientKey) => {
       const credentials = bodyCredentials(body)
       return username.login(credentials.username, credentials.password, clientKey)
+    },
+    usernameRecoveryStatus: (body, clientKey) => username.recoveryStatus(bodyUsername(body), clientKey),
+    usernameRecoveryStart: (body, clientKey) => username.requestRecoveryCode(bodyUsername(body), clientKey),
+    usernameRecoveryReset: (body, clientKey) => {
+      const name = bodyUsername(body)
+      if (typeof body.code !== 'string' || typeof body.newPassword !== 'string') {
+        throw new ApiError(400, '请求格式有误，请重试。')
+      }
+      return username.resetPasswordWithCode(name, body.code, body.newPassword, clientKey)
+    },
+    usernameSetRecoveryEmail: async (authorization, body) => {
+      const resolved = await identity(authorization)
+      if (resolved.provider !== 'username') throw new ApiError(400, '这个账号不需要绑定恢复邮箱。')
+      if (!body || typeof body !== 'object' || typeof body.password !== 'string') {
+        throw new ApiError(400, '请求格式有误，请重试。')
+      }
+      const email = body.recoveryEmail === null ? null : bodyOptionalEmail(body, 'recoveryEmail')
+      return username.setRecoveryEmail(resolved.displayName, body.password, email)
     },
     /** Generation requires a signed-in identity once the operator turns auth on and at least one channel works. */
     requiresIdentity: () => env.AUTH_ENABLED === 'true' && (config.enabled || email.enabled || username.enabled),

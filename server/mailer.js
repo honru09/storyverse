@@ -46,5 +46,15 @@ export function createMailer({ env = process.env, createTransport } = {}) {
         text: `你的织界登录验证码是：${code}\n\n验证码 10 分钟内有效，请勿告诉他人。\n如果不是你本人操作，请忽略这封邮件。`,
       })
     },
+    async sendRecoveryCode(to, code) {
+      if (!configured) throw new Error('SMTP is not configured')
+      const transport = await transporter()
+      await transport.sendMail({
+        from: textValue(env.SMTP_FROM),
+        to,
+        subject: '织界找回密码验证码',
+        text: `你正在为织界的用户名账号找回密码，验证码是：${code}\n\n验证码 10 分钟内有效，回到织界的「忘记密码」页面输入它，就能设置新密码。\n请勿把验证码告诉他人。如果不是你本人操作，请忽略这封邮件，你的密码不会被更改。`,
+      })
+    },
   }
 }

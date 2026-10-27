@@ -20,6 +20,9 @@ const ERROR_MESSAGES = {
   'auth/username-taken': '这个用户名已被占用，换个名字试试。',
   'auth/username-invalid': '用户名或密码不正确。',
   'auth/username-format': '用户名只能用字母、数字、下划线和点（3–20 个字符），密码至少 8 个字符。',
+  'auth/recovery-channel-closed': '邮箱找回通道尚未开通。',
+  'auth/recovery-password': '当前密码不正确，请重试。',
+  'auth/recovery-email-invalid': '恢复邮箱格式不正确，请检查。',
   'auth/requires-recent-login': '为了保护账号，请重新登录后再试。',
   'auth/user-disabled': '此账号暂时无法登录，请联系站点维护者。',
   'auth/account-exists-with-different-credential': '此邮箱已使用其他方式注册，请用原来的方式登录。',
@@ -245,6 +248,12 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
         displayName: typeof result.user.displayName === 'string' ? result.user.displayName : null,
         emailVerified: result.user.emailVerified,
         provider: session.provider === 'username' ? 'username' : 'email-code',
+        // Recovery state for username accounts (masked shape only; the
+        // server never sends the raw address). Null/absent for other
+        // channels, which simply never render the recovery UI.
+        hasRecoveryEmail: result.recovery?.hasRecoveryEmail === true,
+        recoveryEmailMasked: typeof result.recovery?.maskedRecoveryEmail === 'string' ? result.recovery.maskedRecoveryEmail : null,
+        recoveryChannelOpen: result.recovery?.channelOpen === true,
       }
       publish({ status: 'authenticated', user: verified, usage: normalizeUsage(result.usage), error: null })
       return verified
@@ -255,6 +264,33 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
     }).finally(() => { if (siteVerification === check) siteVerification = null })
     siteVerification = check
     return check.promise
+  }
+
+  /** Shared tail of every username-channel sign-in: store the issued session, confirm it, or fail honestly. */
+  async function establishUsernameSession(result, fallbackName, guard) {
+    if (!result || typeof result.token !== 'string' || !result.token || typeof result.uid !== 'string' || !result.uid) throw authError('auth/account-unavailable')
+    const session = {
+      token: result.token,
+      uid: result.uid,
+      email: null,
+      displayName: typeof result.username === 'string' ? result.username : fallbackName,
+      provider: 'username',
+      expiresAt: typeof result.expiresAt === 'number' ? result.expiresAt : Date.now() + SITE_SESSION_FALLBACK_TTL,
+    }
+    writeSiteSession(session)
+    guard()
+    const user = await confirmSiteSession(session)
+    guard()
+    if (!user) throw authError('auth/session-invalid')
+    return user
+  }
+
+  /** Recovery endpoints carry machine codes in the error body; map those before any status-based guess. */
+  async function recoveryFailure(response) {
+    const body = await response.json().catch(() => null)
+    if (body?.code === 'recovery-channel-closed') return authError('auth/recovery-channel-closed')
+    if (body?.code === 'recovery-email-invalid') return authError('auth/recovery-email-invalid')
+    return null
   }
 
   /** Returns true when a stored site session existed and was checked. */
@@ -455,30 +491,21 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
       publish({ notice: `已通过邮箱验证码登录。${storageNotice()}` })
       return user
     }),
-    registerWithUsername: (username, password) => runUsername(async (guard) => {
+    registerWithUsername: (username, password, recoveryEmail) => runUsername(async (guard) => {
       const name = usernameInput(username)
+      const body = { username: name, password: passwordInput(password, true) }
+      // Optional and sent only when actually filled in, so the plain
+      // registration payload is unchanged for everyone else.
+      if (typeof recoveryEmail === 'string' && recoveryEmail.trim()) body.recoveryEmail = recoveryEmail.trim()
       const response = await request('/api/auth/username/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: name, password: passwordInput(password, true) }),
+        body: JSON.stringify(body),
       })
       guard()
-      if (!response.ok) throw authError(response.status === 409 ? 'auth/username-taken' : response.status === 400 ? 'auth/username-format' : response.status === 429 ? 'auth/too-many-requests' : response.status === 503 ? 'auth/unavailable' : 'auth/account-unavailable')
+      if (!response.ok) throw (await recoveryFailure(response)) || authError(response.status === 409 ? 'auth/username-taken' : response.status === 400 ? 'auth/username-format' : response.status === 429 ? 'auth/too-many-requests' : response.status === 503 ? 'auth/unavailable' : 'auth/account-unavailable')
       const result = await response.json().catch(() => null)
-      if (!result || typeof result.token !== 'string' || !result.token || typeof result.uid !== 'string' || !result.uid) throw authError('auth/account-unavailable')
-      const session = {
-        token: result.token,
-        uid: result.uid,
-        email: null,
-        displayName: typeof result.username === 'string' ? result.username : name,
-        provider: 'username',
-        expiresAt: typeof result.expiresAt === 'number' ? result.expiresAt : Date.now() + SITE_SESSION_FALLBACK_TTL,
-      }
-      writeSiteSession(session)
-      guard()
-      const user = await confirmSiteSession(session)
-      guard()
-      if (!user) throw authError('auth/session-invalid')
+      const user = await establishUsernameSession(result, name, guard)
       publish({ notice: `账号已创建，你已登录。${storageNotice()}` })
       return user
     }),
@@ -492,22 +519,74 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
       guard()
       if (!response.ok) throw authError(response.status === 401 ? 'auth/username-invalid' : response.status === 400 ? 'auth/username-format' : response.status === 429 ? 'auth/too-many-requests' : response.status === 503 ? 'auth/unavailable' : 'auth/account-unavailable')
       const result = await response.json().catch(() => null)
-      if (!result || typeof result.token !== 'string' || !result.token || typeof result.uid !== 'string' || !result.uid) throw authError('auth/account-unavailable')
-      const session = {
-        token: result.token,
-        uid: result.uid,
-        email: null,
-        displayName: typeof result.username === 'string' ? result.username : name,
-        provider: 'username',
-        expiresAt: typeof result.expiresAt === 'number' ? result.expiresAt : Date.now() + SITE_SESSION_FALLBACK_TTL,
-      }
-      writeSiteSession(session)
+      const user = await establishUsernameSession(result, name, guard)
+      publish({ notice: `已用用户名登录。${storageNotice()}` })
+      return user
+    }),
+    usernameRecoveryStatus: (username) => runUsername(async (guard) => {
+      const name = usernameInput(username)
+      const response = await request('/api/auth/username/recovery/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: name }),
+      })
       guard()
+      if (!response.ok) throw authError(response.status === 503 ? 'auth/unavailable' : response.status === 429 ? 'auth/too-many-requests' : 'auth/account-unavailable')
+      const result = await response.json().catch(() => null)
+      if (!result || typeof result.hasRecoveryEmail !== 'boolean') throw authError('auth/account-unavailable')
+      return {
+        hasRecoveryEmail: result.hasRecoveryEmail,
+        maskedRecoveryEmail: typeof result.maskedRecoveryEmail === 'string' ? result.maskedRecoveryEmail : null,
+        channelOpen: result.channelOpen === true,
+      }
+    }),
+    usernameRecoveryStart: (username) => runUsername(async (guard) => {
+      const name = usernameInput(username)
+      const response = await request('/api/auth/username/recovery/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: name }),
+      })
+      guard()
+      if (!response.ok) throw (await recoveryFailure(response)) || authError(response.status === 429 ? 'auth/too-many-requests' : response.status === 503 ? 'auth/unavailable' : 'auth/account-unavailable')
+      publish({ notice: '找回验证码已发送到你的恢复邮箱，10 分钟内有效。如果没收到，请检查垃圾邮件，或在一分钟后重新发送。' })
+      return { ok: true }
+    }),
+    usernameRecoveryReset: (username, code, newPassword) => runUsername(async (guard) => {
+      const name = usernameInput(username)
+      const value = typeof code === 'string' ? code.trim() : ''
+      if (!/^\d{6}$/.test(value)) throw authError('auth/invalid-code')
+      const response = await request('/api/auth/username/recovery/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: name, code: value, newPassword: passwordInput(newPassword, true) }),
+      })
+      guard()
+      if (!response.ok) throw (await recoveryFailure(response)) || authError(response.status === 401 ? 'auth/invalid-code' : response.status === 400 ? 'auth/weak-password' : response.status === 429 ? 'auth/too-many-requests' : response.status === 503 ? 'auth/unavailable' : 'auth/account-unavailable')
+      const result = await response.json().catch(() => null)
+      const user = await establishUsernameSession(result, name, guard)
+      publish({ notice: `密码已重设，你已登录。${storageNotice()}` })
+      return user
+    }),
+    setRecoveryEmail: (password, recoveryEmail) => runUsername(async (guard) => {
+      const session = readSiteSession()
+      if (!session || snapshot.user?.provider !== 'username') throw authError('auth/session-invalid')
+      const response = await request('/api/auth/username/recovery-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ password: passwordInput(password), recoveryEmail: typeof recoveryEmail === 'string' && recoveryEmail.trim() ? recoveryEmail.trim() : null }),
+      })
+      guard()
+      if (!response.ok) throw (await recoveryFailure(response)) || authError(response.status === 401 ? 'auth/recovery-password' : response.status === 400 ? 'auth/recovery-email-invalid' : response.status === 429 ? 'auth/too-many-requests' : response.status === 503 ? 'auth/unavailable' : 'auth/account-unavailable')
+      const result = await response.json().catch(() => null)
+      if (!result || typeof result.hasRecoveryEmail !== 'boolean') throw authError('auth/account-unavailable')
+      // Resync the snapshot so the account view (and the unbound reminder)
+      // reflects the new state without a manual refresh.
       const user = await confirmSiteSession(session)
       guard()
       if (!user) throw authError('auth/session-invalid')
-      publish({ notice: `已用用户名登录。${storageNotice()}` })
-      return user
+      publish({ notice: result.hasRecoveryEmail ? '恢复邮箱已保存，下次忘记密码可以用它找回。' : '已取消绑定恢复邮箱。' })
+      return result
     }),
     sendVerification: () => run(async (guard) => {
       const user = auth.currentUser

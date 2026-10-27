@@ -142,7 +142,11 @@ async function runOnboarding(browser, width) {
       assert.equal(await dialog.locator('input[name="password"]').getAttribute('autocomplete'), 'new-password');
       await dialog.getByRole('button', { name: '返回登录', exact: true }).click();
       await dialog.getByRole('button', { name: '忘记密码？', exact: true }).click();
-      assert.equal(await dialog.getByRole('button', { name: '发送重设邮件', exact: true }).isDisabled(), true);
+      // RECOVERY batch: reset opens on the fused field and, with no
+      // identifier typed yet, sits at the username recovery lookup stage —
+      // its primary action is 「继续」 (an email-shaped identifier offers
+      // 「发送重设邮件」 instead). Unconfigured, it must still be disabled.
+      assert.equal(await dialog.getByRole('button', { name: '继续', exact: true }).isDisabled(), true);
       await dialog.getByRole('button', { name: '返回登录', exact: true }).click();
       assert.equal(await readRawLibrary(page), initialRaw, 'Browsing account modes must not change local stories.');
       await Promise.all([

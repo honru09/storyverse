@@ -239,6 +239,22 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         if (typeof auth.usernameLogin !== 'function') throw new ApiError(503, '用户名登录尚未配置，请使用其他方式登录。')
         return sendJson(response, 200, await auth.usernameLogin(await readAuthJson(request), clientKeyOf(request)))
       }
+      if (pathname === '/api/auth/username/recovery/status' && request.method === 'POST') {
+        if (typeof auth.usernameRecoveryStatus !== 'function') throw new ApiError(503, '用户名登录尚未配置，请使用其他方式登录。')
+        return sendJson(response, 200, await auth.usernameRecoveryStatus(await readAuthJson(request), clientKeyOf(request)))
+      }
+      if (pathname === '/api/auth/username/recovery/start' && request.method === 'POST') {
+        if (typeof auth.usernameRecoveryStart !== 'function') throw new ApiError(503, '用户名登录尚未配置，请使用其他方式登录。')
+        return sendJson(response, 200, await auth.usernameRecoveryStart(await readAuthJson(request), clientKeyOf(request)))
+      }
+      if (pathname === '/api/auth/username/recovery/reset' && request.method === 'POST') {
+        if (typeof auth.usernameRecoveryReset !== 'function') throw new ApiError(503, '用户名登录尚未配置，请使用其他方式登录。')
+        return sendJson(response, 200, await auth.usernameRecoveryReset(await readAuthJson(request), clientKeyOf(request)))
+      }
+      if (pathname === '/api/auth/username/recovery-email' && request.method === 'POST') {
+        if (typeof auth.usernameSetRecoveryEmail !== 'function') throw new ApiError(503, '用户名登录尚未配置，请使用其他方式登录。')
+        return sendJson(response, 200, await auth.usernameSetRecoveryEmail(request.headers.authorization, await readAuthJson(request)))
+      }
       if (pathname === '/api/generate' && request.method === 'POST') {
         if (!generationEnabled) throw new ApiError(503, GENERATION_PAUSED.message)
         // Once auth is switched on, paid generation is no longer public: a

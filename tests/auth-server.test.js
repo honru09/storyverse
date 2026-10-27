@@ -70,6 +70,9 @@ test('account uses verified claims and grants neither paid privileges nor cloud 
   assert.deepEqual(await response.json(), {
     user: { uid: 'reader-1', email: 'reader@example.com', displayName: '读者', emailVerified: true },
     provider: 'firebase',
+    // Recovery state rides the account payload since the RECOVERY batch;
+    // it is only ever populated for username accounts, null here.
+    recovery: null,
     usage: { prompt: 0, candidates: 0, thoughts: 0, cached: 0, total: 0, generations: 0, updatedAt: null },
     storage: 'local', entitlements: null, subscription: null,
   })

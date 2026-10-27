@@ -37,18 +37,56 @@ test('login panel account field is fused: one input labelled 邮箱或用户名'
   // The standalone username-only field and its separate password block are gone.
   assert.doesNotMatch(panel, /name="username"/)
   assert.doesNotMatch(panel, /placeholder="字母、数字、下划线或点"/)
-  // Code and reset modes keep their email-only field on the same input state.
-  assert.match(panel, /activeMode === "code" \|\| activeMode === "reset"/)
+  // The code mode keeps its email-only field. Since the RECOVERY batch the
+  // reset mode uses the fused field too: a username identifier there goes
+  // to the recovery stages instead of an email input it could never use.
+  assert.match(panel, /activeMode === "code"\s*\? <label>邮箱/)
+  assert.doesNotMatch(panel, /activeMode === "code" \|\| activeMode === "reset"/)
 })
 
 test('panel submit routes by identifier shape to the two password channels', () => {
   assert.match(panel, /identifierKind\(identifier\) === "email"/)
   assert.match(panel, /client\.register\(identifier, password\) : client\.signIn\(identifier, password\)/)
-  assert.match(panel, /client\.registerWithUsername\(identifier, password\) : client\.signInWithUsername\(identifier, password\)/)
+  assert.match(panel, /client\.registerWithUsername\(identifier, password, recoveryEmail\) : client\.signInWithUsername\(identifier, password\)/)
   // The email-code channel still signs in from the same fused identifier.
   assert.match(panel, /client\.signInWithEmailCode\(identifier, code\)/)
-  // Password reset stays an email-channel feature with a plain-language stop.
-  assert.match(panel, /没法用邮件重设密码/)
+  // Password reset: email identifiers keep the Firebase reset mail;
+  // username identifiers run the recovery stages (RECOVERY batch) instead
+  // of the old dead-end message.
+  assert.match(panel, /client\.resetPassword\(identifier\)/)
+  assert.match(panel, /client\.usernameRecoveryStatus\(identifier\)/)
+  assert.match(panel, /client\.usernameRecoveryStart\(identifier\)/)
+  assert.match(panel, /client\.usernameRecoveryReset\(identifier, recoveryCode, newPassword\)/)
+  assert.doesNotMatch(panel, /没法用邮件重设密码/)
+})
+
+test('username registration carries the recovery warning and the optional recovery email field', () => {
+  // The exact risk sentence from the batch brief, next to the password
+  // field, not buried in small print.
+  assert.match(panel, /用户名账号没有邮箱验证，密码忘了将无法找回，除非现在绑定一个恢复邮箱。/)
+  assert.match(panel, /<label>恢复邮箱（可选）<input type="email" name="recoveryEmail"/)
+  // Both appear only on the username form, gated by the same condition
+  // that selects the username register hint.
+  assert.match(panel, /const usernameForm = activeMode === "register" && !\(passwordAvailable && \(identifierIsEmail \|\| !usernameAvailable\)\)/)
+  assert.match(panel, /\{usernameForm && <>/)
+})
+
+test('reset panel copies are honest: masked address, closed channel never claims a send', () => {
+  assert.match(panel, /这个用户名没有绑定恢复邮箱，没法自助找回密码/)
+  assert.match(panel, /这个账号绑定了恢复邮箱 \{recoveryInfo\.maskedRecoveryEmail\}。邮箱找回通道还没有开通/)
+  assert.match(panel, /找回验证码会发到你的恢复邮箱 \{recoveryInfo\.maskedRecoveryEmail\}/)
+  // Editing the identifier after a lookup drops the looked-up state.
+  assert.match(panel, /const changeAccountId = \(value\) => \{ setAccountId\(value\); setRecoveryInfo\(null\)/)
+})
+
+test('signed-in username accounts get the unbound reminder and the password-gated binding form', () => {
+  assert.match(panel, /你的用户名账号还没有绑定恢复邮箱——密码忘了将无法找回/)
+  assert.match(panel, /storyweave:recovery-reminder-dismissed:/)
+  assert.match(panel, /<span>恢复邮箱<\/span><strong>\{account\.user\.hasRecoveryEmail \? account\.user\.recoveryEmailMasked : "未绑定"\}<\/strong>/)
+  assert.match(panel, /client\.setRecoveryEmail\(bindPassword, bindEmail\)/)
+  assert.match(panel, /client\.setRecoveryEmail\(bindPassword, null\)/)
+  // The binding section only exists for username accounts.
+  assert.match(panel, /account\.user\.provider === "username" && <div className="account-recovery-settings">/)
 })
 
 test('register mode shows one dynamic hint that follows the identifier shape', () => {
