@@ -380,23 +380,15 @@ function Brand({ onClick }) {
     <button className="brand-mark" onClick={onClick} aria-label="回到广场">
       <span className="brand-glyph" aria-hidden="true">
         <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true">
-          <defs>
-            <linearGradient id="brand-book" x1="0" y1="64" x2="64" y2="0" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stopColor="#6ee7ff" />
-              <stop offset=".55" stopColor="#a78bfa" />
-              <stop offset="1" stopColor="#f0a6ff" />
-            </linearGradient>
-            <linearGradient id="brand-stars" x1="0" y1="0" x2="64" y2="0" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stopColor="#7dffce" />
-              <stop offset="1" stopColor="#f0a6ff" />
-            </linearGradient>
-          </defs>
           <rect x="1" y="1" width="62" height="62" rx="14" fill="#060d1f" />
-          <path d="M17 27 L27 13 L47 9" fill="none" stroke="url(#brand-stars)" strokeWidth="4.6" strokeLinecap="round" strokeLinejoin="round" />
-          <circle cx="17" cy="27" r="4.2" fill="#7dffce" />
-          <circle cx="27" cy="13" r="4.6" fill="#ffffff" />
-          <circle cx="47" cy="9" r="4.4" fill="#f0a6ff" />
-          <path d="M10 35 C18 30.5, 26 30.5, 32 36.5 C38 30.5, 46 30.5, 54 35 L54 50 C46 45.5, 38 45.5, 32 51.5 C26 45.5, 18 45.5, 10 50 Z" fill="none" stroke="url(#brand-book)" strokeWidth="5.4" strokeLinecap="round" strokeLinejoin="round" />
+          <g transform="translate(4.1 6.3) scale(0.279)">
+            <path d="M14 96 L96 118 L96 158 L14 136 Z" fill="#8b7cf0" />
+            <path d="M104 118 L186 96 L186 136 L104 158 Z" fill="#5a49d6" />
+            <path d="M64 38 L100 72 L136 38 M100 72 L100 112" fill="none" stroke="#1d9e74" strokeWidth="13.5" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="100" cy="72" r="9.5" fill="#1d9e74" />
+            <circle cx="64" cy="38" r="12" fill="#f6a21e" />
+            <circle cx="136" cy="38" r="12" fill="#f6a21e" />
+          </g>
         </svg>
       </span>
       <span className="brand-copy">
