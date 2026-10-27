@@ -1,4 +1,4 @@
-import { acceptChapter, chapterKey, outlineLengthFor, replaceChapter, totalChaptersFor } from './story-engine.js'
+import { acceptChapter, chapterKey, outlineLengthFor, replaceChapter, replaceFrontierChapter, totalChaptersFor } from './story-engine.js'
 import { readerIndexFor } from './reading-flow.js'
 import { emptyLibrary, validateLibrary } from './persistence.js'
 
@@ -134,6 +134,37 @@ export async function requestChapterRevision(story, index, options = {}) {
   const result = await sendGenerateRequest(story, { story, index, mode: 'revise' }, options)
   if (result?.chapter?.index !== index || result?.key !== chapterKey(story, index) || acceptRevisedChapter(story, result) === story) {
     throw new Error('重写结果与当前进度不匹配，请重试。')
+  }
+  return result
+}
+
+// Apply a re-roll result to the current story: the frontier chapter is
+// swapped for a fresh telling of the same slot. If the next chapter has
+// landed in the meantime, the slot is no longer the frontier and the
+// engine refuses the swap whole — the chapter has locked, exactly as
+// the house rule promises.
+export function acceptRerolledChapter(story, result) {
+  const index = result?.chapter?.index
+  if (!Number.isInteger(index) || index < 0 || index >= totalChaptersFor(story)) throw new Error('章节格式不完整，请重试。')
+  if (result.key !== chapterKey(story, index)) return story
+  let next = replaceFrontierChapter(story, result.chapter, result.key)
+  if (next === story) return story
+  // Re-rolling the opening chapter is a fresh opening: the world bible
+  // the server derived for it replaces the old one, as on first accept.
+  if (index === 0 && result.worldBible) next = { ...next, worldBible: result.worldBible }
+  const checked = validateLibrary({ ...emptyLibrary(), stories: [next], activeStoryId: next.id })
+  if (checked.length) throw new Error('章节格式不完整，请重试。')
+  return next
+}
+
+// The frontier re-roll: same endpoint, same quota accounting as a normal
+// generation — the server regenerates the latest chapter from the brief
+// and context as of its slot (its recorded interventions, lorebook hits
+// and ledger state), and the version it replaces is discarded.
+export async function requestChapterReroll(story, index, options = {}) {
+  const result = await sendGenerateRequest(story, { story, index, mode: 'reroll' }, options)
+  if (result?.chapter?.index !== index || result?.key !== chapterKey(story, index) || acceptRerolledChapter(story, result) === story) {
+    throw new Error('换版结果与当前进度不匹配，请重试。')
   }
   return result
 }

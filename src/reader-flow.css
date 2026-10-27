@@ -361,3 +361,29 @@ button.chapter-item:disabled {
   line-height: 1.7;
 }
 .reader-dock-actions .reader-intervene-button { color: var(--reader-accent, var(--cyan)); }
+
+/* ---- 生成控制 (generation control): frontier actions, prose editor ---- */
+.frontier-actions {
+  margin: 26px 0 4px;
+  padding: 14px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 18px;
+  color: var(--reader-text);
+}
+.frontier-note { margin: 0 0 10px; font-size: 13px; line-height: 1.7; opacity: .75; }
+.frontier-buttons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.frontier-buttons .reader-directory-button { display: inline-flex; gap: 6px; align-items: center; }
+.frontier-warn { font-size: 12.5px; line-height: 1.6; color: #ff9d9d; }
+.prose-editor-row { display: grid; gap: 6px; margin-top: 12px; }
+.prose-editor-row textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--glass);
+  color: inherit;
+  font: inherit;
+  line-height: 1.75;
+  resize: vertical;
+}
+.prose-editor-row .small-link { justify-self: end; }

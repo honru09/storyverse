@@ -977,3 +977,8 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .lore-entry-source{color:var(--dim);font-size:12px}
 .settings-intervention{margin:0;color:var(--dim);font-size:13px;line-height:1.65}
 .settings-intervention span{margin-left:8px;color:var(--cyan);font-size:12px;font-weight:650}
+.preset-list{display:grid;gap:8px}
+.preset-row{display:grid;gap:3px;text-align:left;padding:12px 14px;border:1px solid var(--line);border-radius:var(--radius-selection);background:var(--glass);color:var(--ink);cursor:pointer;font:inherit}
+.preset-row b{font-size:14px;font-weight:750}
+.preset-row span{font-size:12.5px;line-height:1.6;color:var(--dim)}
+.preset-row.active{border-color:var(--cyan);background:rgba(46,224,192,.07)}

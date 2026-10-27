@@ -643,6 +643,10 @@ export const DEFAULT_DRAFT = {
   // story (SillyTavern world-info / split text worlds). Owner-private —
   // stripped from every public snapshot. Empty for every pre-import save.
   lorebook: [],
+  // 文风预设 (generation control): one of STYLE_PRESETS' ids. Owner detail —
+  // it steers only the generation instructions, so snapshots strip it back
+  // to 'default' like the other private stock.
+  stylePreset: 'default',
   startPointName: '',
   startPointHook: '',
   avatarId: '',
@@ -978,6 +982,7 @@ const normalizeDraft = (draft = {}) => {
     customWorldName: cleanBounded(input.customWorldName, CUSTOM_WORLD_NAME_MAX),
     customWorldSetting: cleanBounded(input.customWorldSetting, CUSTOM_WORLD_SETTING_MAX),
     lorebook: normalizeLorebookEntries(input.lorebook),
+    stylePreset: stylePresetById(input.stylePreset)?.id || 'default',
     startPointName: cleanBounded(input.startPointName, START_POINT_NAME_MAX),
     startPointHook: cleanBounded(input.startPointHook, START_POINT_HOOK_MAX),
     // The avatar this book was opened with (empty for every pre-avatar
@@ -1782,6 +1787,151 @@ export function updateLorebook(story, entries) {
   }
 }
 
+/*
+ * 文风预设 (style presets): the owner's per-story directing dial for the
+ * generation instructions. A preset is a bounded instruction block the
+ * server appends to its system prompt for every chapter generated AFTER
+ * the preset is set — it modulates pacing, texture and diction only.
+ * The house 文笔总则 (drama first, no ornate AI prose, receipt density)
+ * always stays in force ABOVE every preset: each block below opens by
+ * submitting to it, so a preset can bend the telling but never repeal
+ * the contract. 'default' carries no block at all — the instructions
+ * for a default story are byte-identical to the pre-preset era.
+ */
+export const STYLE_PRESETS = [
+  {
+    id: 'default',
+    label: '默认',
+    description: '爽文总则的原味：事件与冲突为骨，回执密度照旧，不加任何额外口径。',
+    instruction: '',
+  },
+  {
+    id: 'compact',
+    label: '紧凑爽快',
+    description: '段落更短、切换更快，对话与行动优先，删去一切不推进事件的过渡。',
+    instruction: '文风预设·紧凑爽快（本书作者选定；服从上文文笔总则，只调整节奏与质地，不改变事件密度、回执与代价口径）：段落更短，单段只完成一个清晰的动作；场景切换更快，对话与行动优先；删去一切不推进事件的过渡句与铺陈。章末钩子照常成立。',
+  },
+  {
+    id: 'immersive',
+    label: '细腻沉浸',
+    description: '感官细节写足，人物反应有停顿和层次，段落可以更长——但不许景物代替冲突。',
+    instruction: '文风预设·细腻沉浸（本书作者选定；服从上文文笔总则，只调整节奏与质地，不改变事件密度、回执与代价口径）：场景的感官细节（声音、气味、触感、光线）写足，人物反应给出停顿与层次，段落可以更长。仍然以事件与冲突推进，不得用景物或氛围代替冲突，禁止以意境收尾，章末钩子照常成立。',
+  },
+  {
+    id: 'austere',
+    label: '冷峻克制',
+    description: '句子短而硬，情绪靠事实与动作呈现，不渲染、不解释心情。',
+    instruction: '文风预设·冷峻克制（本书作者选定；服从上文文笔总则，只调整节奏与质地，不改变事件密度、回执与代价口径）：句子短而硬，情绪靠事实与动作呈现，不堆形容词，不解释人物心情；对话干脆，留白多于说明。章末钩子照常成立。',
+  },
+]
+
+export const stylePresetById = (id) => STYLE_PRESETS.find((preset) => preset.id === id) || null
+
+// The preset a story (or a bare config) currently runs under. Anything
+// missing or unknown resolves to the default — pre-preset saves behave
+// exactly as they always did.
+export const stylePresetOf = (source) => stylePresetById(configOf(source)?.stylePreset) || STYLE_PRESETS[0]
+
+export function updateStylePreset(story, presetId) {
+  validateStory(story)
+  if (story.readOnly === true) return story
+  const preset = stylePresetById(presetId) || STYLE_PRESETS[0]
+  return {
+    ...story,
+    config: { ...story.config, stylePreset: preset.id },
+    updatedAt: now(),
+  }
+}
+
+/*
+ * 阅读前沿 (the reading frontier): the ONE place where direct rewriting
+ * is still allowed. Interventions steer from outside and only ever aim
+ * at the next chapter; these levers are the owner's hands on the latest
+ * chapter itself — re-rolling it （换一版） or editing its prose — and
+ * they exist only while that chapter is still the last one written.
+ * The moment a later chapter is generated, the frontier moves on and
+ * the chapter behind it locks forever, exactly like every chapter
+ * before it. The boundary is enforced at every layer (affordance,
+ * request validation, accept), so a race — the next chapter landing
+ * while a re-roll is in flight — resolves in favour of the lock: the
+ * late re-roll is refused whole and the chapter stands as written.
+ */
+export const frontierChapterIndex = (story) => {
+  const count = Array.isArray(story?.chapters) ? story.chapters.length : 0
+  return count > 0 ? count - 1 : -1
+}
+
+export const isFrontierChapter = (story, index) =>
+  Number.isInteger(index) && index >= 0 && index === frontierChapterIndex(story)
+
+// Open a re-roll of the frontier chapter: the revision bump is the
+// mutation that makes the pass safe — it rotates the chapter key of the
+// slot AND of the not-yet-written next chapter, so a pre-generation
+// answer computed from the old telling can no longer land on top of
+// the new one (the same rotation the intervention queue performs).
+export function beginChapterReroll(story, index) {
+  validateStory(story)
+  if (story.readOnly === true) return story
+  if (!isFrontierChapter(story, index)) {
+    throw new RangeError('只有最新章节还能换一版——下一章一旦生成，这一章就定稿了')
+  }
+  const next = clone(story)
+  next.revision = (story.revision || 0) + 1
+  next.updatedAt = now()
+  return next
+}
+
+// Land a re-rolled chapter: swap the frontier slot for its fresh telling.
+// Unlike replaceChapter (the intervention revision), the slot being
+// swapped may be the chapter the reader is standing on — that is the
+// whole point of the frontier exception — but it must still be the LAST
+// chapter, carry the key the rotated story implies, and bear the id of
+// the current revision. The chapter's interventions (landed when it was
+// first written, plus any still queued for it) are marked applied,
+// because the fresh telling was generated with them in its brief — the
+// marker and ledger recomputation itself happens at generation time,
+// through the very same assembly the revision path uses.
+export function replaceFrontierChapter(story, chapter, key) {
+  validateStory(story)
+  if (story.readOnly === true) return story
+  if (!chapter || !Number.isInteger(chapter.index)) return story
+  const index = chapter.index
+  if (!isFrontierChapter(story, index)) return story
+  if (typeof key !== 'string' || key !== chapterKey(story, index)) return story
+  if (chapter.id !== `${story.id}:chapter:${index}:r${story.revision}`) return story
+  const next = clone(story)
+  next.chapters = [...story.chapters.slice(0, index).map((item) => clone(item)), clone(chapter)]
+  markInterventionsApplied(next, index)
+  next.updatedAt = now()
+  return next
+}
+
+// Owner prose editing, frontier chapter only. The edited paragraphs
+// become the chapter's canon verbatim: later generation reads its tail
+// context from the story record, so the model continues from the
+// owner's own words. The revision bump retires any in-flight
+// pre-generation of the next chapter, whose context predates the edit.
+export const CHAPTER_PROSE_MAX_PARAGRAPHS = 64
+export const CHAPTER_PROSE_PARAGRAPH_MAX = 4000
+
+export function updateChapterProse(story, index, paragraphs) {
+  validateStory(story)
+  if (story.readOnly === true) return story
+  if (!isFrontierChapter(story, index)) return story
+  if (!Array.isArray(paragraphs) || paragraphs.length === 0 || paragraphs.length > CHAPTER_PROSE_MAX_PARAGRAPHS) {
+    throw new RangeError(`正文要有 1–${CHAPTER_PROSE_MAX_PARAGRAPHS} 段`)
+  }
+  const cleaned = paragraphs.map((paragraph) => (typeof paragraph === 'string' ? paragraph.trim() : ''))
+  if (cleaned.some((paragraph) => !paragraph || paragraph.length > CHAPTER_PROSE_PARAGRAPH_MAX)) {
+    throw new RangeError(`每段都要有内容，且不超过 ${CHAPTER_PROSE_PARAGRAPH_MAX} 字`)
+  }
+  const next = clone(story)
+  next.chapters[index] = { ...next.chapters[index], paragraphs: cleaned }
+  next.revision = (story.revision || 0) + 1
+  next.updatedAt = now()
+  return next
+}
+
 const ACT_LABELS = [
   '第 1 章 · 开篇',
   '第 2 章 · 信号',
@@ -2176,6 +2326,10 @@ const publicConfigFor = (config, name = '匿名旅者') => ({
   // keeps its own; the merged line starts with an empty book.
   lorebook: [],
   persona: '',
+  // The style preset is the owner's own directing hand, not part of the
+  // world being handed off: a merged line starts on the default preset,
+  // and every public snapshot does the same.
+  stylePreset: 'default',
 })
 
 // A share snapshot is stricter than a merge hand-off.  It keeps the genre and

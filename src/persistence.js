@@ -25,8 +25,12 @@ const totalForStory = (story) => {
 }
 const CONFIG_TEXT_FIELDS = [
   'genreId', 'genreTemplateId', 'storyLengthMode', 'originIdentityId', 'customWorldName', 'customWorldSetting', 'startPointName', 'startPointHook', 'avatarId', 'avatarAppearance', 'sourcePublicationId', 'name', 'persona', 'trait', 'origin', 'ability', 'tone', 'hometown',
-  'school', 'company', 'role', 'friend', 'destination', 'protagonist', 'appearance', 'finishedAt',
+  'school', 'company', 'role', 'friend', 'destination', 'protagonist', 'appearance', 'finishedAt', 'stylePreset',
 ]
+
+// 文风预设 ids, mirrored from src/story-engine.js STYLE_PRESETS (this
+// storage layer stays dependency-free, like the length totals above).
+const STYLE_PRESET_IDS = ['default', 'compact', 'immersive', 'austere']
 
 // 世界书 bounds, mirrored from src/lorebook.js (this storage layer stays
 // dependency-free, like the length totals above).
@@ -116,6 +120,9 @@ function validateConfig(config, prefix, errors, merged = false, forStory = false
   validateOptionalFields(config, prefix, ['seasonNumber'], 'number', errors)
   if (config.storyLengthMode !== undefined && !['short', 'season', 'long', 'custom', 'endless'].includes(config.storyLengthMode)) {
     errors.push(`${prefix}.storyLengthMode is invalid`)
+  }
+  if (config.stylePreset !== undefined && !STYLE_PRESET_IDS.includes(config.stylePreset)) {
+    errors.push(`${prefix}.stylePreset is invalid`)
   }
   // 篇幅自由化: a stored custom target must be an integer in range — an
   // out-of-range value (e.g. 5) is a rejected config, not a short custom

@@ -85,7 +85,7 @@ import {
   updateMyProfile,
   uploadMyPicture,
 } from "./users.js";
-import { acceptGeneratedChapter, acceptRevisedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter, requestChapterRevision } from "./generation.js";
+import { acceptGeneratedChapter, acceptRerolledChapter, acceptRevisedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter, requestChapterReroll, requestChapterRevision } from "./generation.js";
 import InterventionOverlay from "./components/InterventionOverlay.jsx";
 import WorldArtwork from "./components/WorldArtwork.jsx";
 import StoryCover from "./components/StoryCover.jsx";
@@ -142,7 +142,15 @@ import {
   queuedInterventionsFor,
   retractChapter,
   PERSONA_MAX,
+  STYLE_PRESETS,
+  stylePresetOf,
+  beginChapterReroll,
+  chapterKey,
+  isFrontierChapter,
+  replaceFrontierChapter,
+  updateChapterProse,
   updateLorebook,
+  updateStylePreset,
   updateWorldBible,
   createMergedStory,
   createStory,
@@ -298,6 +306,18 @@ const Icon = ({ name, size = 18, stroke = 1.8, className = "" }) => {
       </>
     ),
     check: <path d="m5 12 4 4L19 6" />,
+    reroll: (
+      <>
+        <path d="M20 12a8 8 0 1 1-2.3-5.6" />
+        <path d="M20 3v4h-4" />
+      </>
+    ),
+    pencil: (
+      <>
+        <path d="M17 3a2.8 2.8 0 1 1 4 4L8 20l-5 1 1-5L17 3Z" />
+        <path d="m15 5 4 4" />
+      </>
+    ),
     x: (
       <>
         <path d="m6 6 12 12M18 6 6 18" />
@@ -2805,6 +2825,70 @@ function InterventionSheet({ story, readerIndex, onClose, onSubmit }) {
   );
 }
 
+// 正文编辑 (generation control): the owner rewrites the frontier
+// chapter's prose in their own words. Paragraph-level plain text is the
+// whole editor — no formatting, no versions. Saving is final: the
+// edited text becomes the chapter's canon and later chapters continue
+// from it; once the next chapter exists, this editor never opens for
+// this chapter again.
+function ProseEditor({ chapter, onClose, onSave }) {
+  const [paragraphs, setParagraphs] = useState(() => [...(chapter.paragraphs || [])]);
+  const [error, setError] = useState("");
+  const patchParagraph = (position, value) =>
+    setParagraphs((list) => list.map((item, index) => (index === position ? value : item)));
+  const save = () => {
+    const cleaned = paragraphs.map((paragraph) => paragraph.trim()).filter(Boolean);
+    if (!cleaned.length) {
+      setError("正文不能为空，至少留下一段。");
+      return;
+    }
+    onSave(cleaned);
+  };
+  return (
+    <ReadingDialog title="编辑正文 · 本章" onClose={onClose}>
+      <p className="field-hint">
+        这是最新章节，它的下一章还没有生成——现在改还来得及。改动保存后就是这本书的正文，后面的章节会接着你改过的文字往下写；下一章一旦生成，这一章就此定稿，再不能改。
+      </p>
+      {paragraphs.map((paragraph, position) => (
+        <div className="prose-editor-row" key={position}>
+          <textarea
+            rows={Math.min(10, Math.max(2, Math.ceil((paragraph.length || 1) / 36)))}
+            maxLength={4000}
+            value={paragraph}
+            aria-label={`正文第 ${position + 1} 段`}
+            onChange={(event) => patchParagraph(position, event.target.value)}
+          />
+          <button
+            type="button"
+            className="small-link"
+            onClick={() => setParagraphs((list) => list.filter((_, index) => index !== position))}
+          >
+            删除这段
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="small-link"
+        onClick={() => setParagraphs((list) => [...list, ""])}
+      >
+        + 加一段
+      </button>
+      {error && (
+        <p className="intervention-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="reading-dialog-actions">
+        <Button onClick={save}>保存正文</Button>
+        <Button variant="ghost" onClick={onClose}>
+          取消
+        </Button>
+      </div>
+    </ReadingDialog>
+  );
+}
+
 // 设定集 (F-32): the owner's own settings book for this story — the
 // world bible and the lorebook, viewable and editable at last. Edits
 // follow the intervention immutability rule: they shape chapters
@@ -2821,6 +2905,7 @@ function StorySettingsBook({ story, onClose, onSave }) {
       keys: [...(entry.keys || [])],
     })),
   );
+  const [stylePreset, setStylePreset] = useState(() => stylePresetOf(story).id);
   const outline = Array.isArray(story.worldBible?.outline) ? story.worldBible.outline : [];
   const interventions = Array.isArray(story.interventions) ? story.interventions : [];
   const patchEntry = (position, patch) =>
@@ -2840,6 +2925,7 @@ function StorySettingsBook({ story, onClose, onSave }) {
       lorebook: entries
         .filter((entry) => (entry.content || "").trim())
         .map((entry) => ({ ...entry, name: (entry.name || "").trim() })),
+      stylePreset,
     });
   return (
     <ReadingDialog title="设定集" onClose={onClose}>
@@ -2961,6 +3047,27 @@ function StorySettingsBook({ story, onClose, onSave }) {
           + 写一条新条目
         </button>
       </div>
+      <div className="settings-section">
+        <h3>文风预设</h3>
+        <p className="field-hint">
+          预设只调整节奏与质地，管不了剧情：故事的剧情感、回执密度和代价口径由文笔总则保证，任何预设都不会覆盖它。切换只影响之后生成的章节，已经写好的章节不变。
+        </p>
+        <div className="preset-list" role="radiogroup" aria-label="文风预设">
+          {STYLE_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              role="radio"
+              aria-checked={stylePreset === preset.id}
+              className={`preset-row ${stylePreset === preset.id ? "active" : ""}`}
+              onClick={() => setStylePreset(preset.id)}
+            >
+              <b>{preset.label}</b>
+              <span>{preset.description}</span>
+            </button>
+          ))}
+        </div>
+      </div>
       {interventions.length > 0 && (
         <div className="settings-section">
           <h3>介入记录</h3>
@@ -2996,6 +3103,7 @@ function Reader({
   unsaved = false,
   onPrepareChapter,
   onReviseChapter,
+  onRerollChapter,
   onStartNextSeason,
   authClient,
   onRerollCover,
@@ -3046,6 +3154,10 @@ function Reader({
   const [intervening, setIntervening] = useState(false);
   const [interveneSettled, setInterveneSettled] = useState(false);
   const [interveneNote, setInterveneNote] = useState("");
+  const [rerollConfirm, setRerollConfirm] = useState(false);
+  const [rerolling, setRerolling] = useState(false);
+  const [rerollSettled, setRerollSettled] = useState(false);
+  const [proseOpen, setProseOpen] = useState(false);
   const [error, setError] = useState("");
   const [preparing, setPreparing] = useState(false);
   const [generationError, setGenerationError] = useState("");
@@ -3062,7 +3174,7 @@ function Reader({
   const chapterMetrics = useMemo(() => estimateReadingMetrics(chapter?.paragraphs || []), [chapter]);
   const locationKey = story && chapterLocationKey(story.id, index, chapter.paragraphs, readOnly);
   const reading = useReaderExperience({ readerRef, locationKey, settings: preferences.settings,
-    blocked: preferencesOpen || toolsOpen || directoryOpen || shareOpen || interveneOpen || settingsOpen });
+    blocked: preferencesOpen || toolsOpen || directoryOpen || shareOpen || interveneOpen || settingsOpen || proseOpen });
   const bookContextId = `${readOnly ? 'public' : 'private'}:${story?.id}`;
   const bookmarkKeys = readingChapters.map((item, i) => chapterLocationKey(story.id, i, item?.paragraphs || [], readOnly));
   const bookmarks = useMemo(() => reading.store.bookmarks(bookContextId, bookmarkKeys), [bookContextId, story, bookmarkVersion, toolsOpen, reading.store]);
@@ -3084,6 +3196,8 @@ function Reader({
     setInterveneOpen(false);
     setSettingsOpen(false);
     setInterveneNote("");
+    setRerollConfirm(false);
+    setProseOpen(false);
     setError("");
   }, [story?.id, story?.revision, readOnly]);
 
@@ -3094,6 +3208,14 @@ function Reader({
   useEffect(() => {
     setIntervening(false);
     setInterveneSettled(false);
+  }, [story?.id, readOnly]);
+
+  // The re-roll overlay follows the same rule as the intervention one:
+  // the pass it presents is what bumps the revision, so only a different
+  // story (or the read-only flip) may clear it.
+  useEffect(() => {
+    setRerolling(false);
+    setRerollSettled(false);
   }, [story?.id, readOnly]);
 
   useEffect(() => {
@@ -3174,13 +3296,73 @@ function Reader({
     : `${Math.round(((index + 1) / Math.max(story.chapters?.length || 0, index + 1)) * 100)}%`;
   const update = (nextStory, nextIndex = index) =>
     onUpdateStory?.(moveReadingPosition(nextStory, nextIndex));
-  // 设定集 saves: bible + lorebook edits land on the story record and
-  // shape only chapters generated from now on (the engine helpers never
-  // touch chapters). The reading position is preserved by `update`.
-  const saveSettings = ({ worldBible, lorebook }) => {
-    const next = updateLorebook(updateWorldBible(story, worldBible), lorebook);
+  // 设定集 saves: bible + lorebook + style preset land on the story
+  // record and shape only chapters generated from now on (the engine
+  // helpers never touch chapters). The reading position is preserved
+  // by `update`.
+  const saveSettings = ({ worldBible, lorebook, stylePreset }) => {
+    const next = updateStylePreset(updateLorebook(updateWorldBible(story, worldBible), lorebook), stylePreset);
     update(next);
     setSettingsOpen(false);
+  };
+  // 生成控制 (frontier levers): this chapter may still be re-rolled or
+  // edited by hand while it is the latest one written — no later chapter
+  // exists yet. Both levers vanish by omission everywhere else; earlier
+  // chapters offer nothing, which is their locked state.
+  const isFrontier = !readOnly && isFrontierChapter(story, index) && Boolean(story.chapters?.[index]);
+  // 换一版： the frontier chapter is regenerated from the brief and
+  // context as of its slot; the version it replaces is discarded (there
+  // is no version stack — the note in the confirm row says so before
+  // the tap). A gemini line runs the pass over the same endpoint and
+  // quota path as any generation; a local line rotates its revision
+  // and rebuilds the same slot in place. If the next chapter lands
+  // first, the engine refuses the swap and the chapter simply locks.
+  const submitReroll = async () => {
+    if (readOnly || rerolling || intervening || !isFrontier) return;
+    const target = index;
+    setRerollConfirm(false);
+    setError("");
+    if (story.engine === "gemini" && onRerollChapter) {
+      setRerolling(true);
+      setRerollSettled(false);
+      try {
+        await onRerollChapter(story.id, target);
+        setRerollSettled(true);
+      } catch (failure) {
+        setRerolling(false);
+        setError(failure.message || "换一版没能完成，这一章还是原来的样子。");
+      }
+      return;
+    }
+    try {
+      const rotated = beginChapterReroll(story, target);
+      const rebuilt = replaceFrontierChapter(rotated, buildChapter(rotated, target), chapterKey(rotated, target));
+      if (rebuilt === rotated) throw new Error("这一章没能换成新的一版。");
+      setRerolling(true);
+      setRerollSettled(false);
+      update(rebuilt);
+      setRerollSettled(true);
+    } catch (failure) {
+      setError(failure.message || "换一版没能完成，这一章还是原来的样子。");
+    }
+  };
+  // 编辑正文： the owner's words replace the frontier chapter's prose
+  // verbatim and become its canon — later chapters are generated from
+  // the story record, so they continue from the edited tail.
+  const saveProse = (paragraphs) => {
+    try {
+      const next = updateChapterProse(story, index, paragraphs);
+      if (next === story) {
+        setProseOpen(false);
+        setError("这一章已经定稿，不能再改了。");
+        return;
+      }
+      update(next);
+      setProseOpen(false);
+    } catch (failure) {
+      setProseOpen(false);
+      setError(failure.message || "正文没能保存。");
+    }
   };
   // 介入： the nudge is queued against the next unread chapter — never the
   // one on screen, never an earlier one. Three landings, one queue:
@@ -3391,6 +3573,48 @@ function Reader({
               {interveneNote}
             </p>
           )}
+          {isFrontier && (
+            <div className="frontier-actions">
+              <p className="frontier-note">
+                这是最新章节，它的下一章还没有生成——现在还能亲手调度这一章。下一章一旦写下，这一章就此定稿。
+              </p>
+              {rerollConfirm ? (
+                <div className="frontier-buttons">
+                  <Button variant="secondary" onClick={submitReroll}>
+                    确认换掉这一版
+                  </Button>
+                  <button
+                    type="button"
+                    className="reader-directory-button"
+                    onClick={() => setRerollConfirm(false)}
+                  >
+                    再想想
+                  </button>
+                  <span className="frontier-warn">换掉的版本不会保留，也没有历史版本可以找回。</span>
+                </div>
+              ) : (
+                <div className="frontier-buttons">
+                  <button
+                    type="button"
+                    className="reader-directory-button"
+                    onClick={() => setRerollConfirm(true)}
+                  >
+                    <Icon name="reroll" size={15} />
+                    换一版
+                  </button>
+                  <button
+                    type="button"
+                    className="reader-directory-button"
+                    onClick={() => setProseOpen(true)}
+                    aria-haspopup="dialog"
+                  >
+                    <Icon name="pencil" size={15} />
+                    编辑正文
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <div className="reader-starmap">
             <div className="reader-starmap-head">
               <b>剧情星图</b>
@@ -3567,10 +3791,31 @@ function Reader({
           onSave={saveSettings}
         />
       )}
+      {proseOpen && !readOnly && chapter && (
+        <ProseEditor
+          chapter={chapter}
+          onClose={() => setProseOpen(false)}
+          onSave={saveProse}
+        />
+      )}
       {intervening && (
         <InterventionOverlay
           settled={interveneSettled}
           onDone={() => setIntervening(false)}
+        />
+      )}
+      {rerolling && (
+        <InterventionOverlay
+          settled={rerollSettled}
+          onDone={() => setRerolling(false)}
+          title="正在为这一章换一版"
+          ariaLabel="正在重写本章"
+          stages={["收回这一章", "重新写下这一章", "落定"]}
+          notes={[
+            "旧的一版会被换掉，不再保留。",
+            "这一章正按它原来的线索、介入与设定重新成形。",
+            "新的一版已经落定。",
+          ]}
         />
       )}
       {coverOpen && !readOnly && (
@@ -5821,6 +6066,36 @@ function App() {
       return { ...current, stories: current.stories.map((book) => (book.id === id ? next : book)) };
     });
   }, [store, setLibrary, syncLivingPublication, authClient]);
+  // The frontier re-roll. The rotation is landed FIRST (it retires any
+  // pre-generation answer computed from the old telling), then the pass
+  // runs over the same /api/generate endpoint and usage accounting as
+  // any other chapter. A failed pass leaves the old chapter standing —
+  // only its revision has moved on. If the next chapter lands while the
+  // pass is in flight, the accept refuses the swap and the caller hears
+  // about it: the chapter has locked, which is the house rule working.
+  const rerollChapter = useCallback(async (id, targetIndex) => {
+    const source = store.getSnapshot().library.stories.find((book) => book.id === id);
+    if (!source) throw new Error("这本书暂时找不到了。");
+    const rotated = beginChapterReroll(source, targetIndex);
+    if (rotated === source) throw new Error("这一章已经定稿，不能再换了。");
+    setLibrary((current) => ({
+      ...current,
+      stories: current.stories.map((book) => (book.id === id ? rotated : book)),
+    }));
+    const result = await requestChapterReroll(rotated, targetIndex, {
+      getAccessToken: () => authClient.getAccessToken(),
+      onAuthRequired: () => { setAccountIntent(null); setAccountOpen(true); },
+    });
+    const candidate = acceptRerolledChapter(rotated, result);
+    if (candidate !== rotated) syncLivingPublication(candidate);
+    setLibrary((current) => {
+      const latest = current.stories.find((book) => book.id === id);
+      if (!latest) return current;
+      const next = acceptRerolledChapter(latest, result);
+      if (next === latest) return current;
+      return { ...current, stories: current.stories.map((book) => (book.id === id ? next : book)) };
+    });
+  }, [store, setLibrary, syncLivingPublication, authClient]);
   // Cover painting runs beside reading, never inside it: the story is
   // marked pending, the request resolves whenever the server finishes,
   // and only the cover state is written back — chapters and position are
@@ -6048,6 +6323,7 @@ function App() {
         onUpdateStory={commitStory}
         onPrepareChapter={prepareChapter}
         onReviseChapter={reviseChapter}
+        onRerollChapter={rerollChapter}
         onStartNextSeason={startNextSeasonFor}
         onToggleBookmark={commitStory}
         onPublish={publish}
