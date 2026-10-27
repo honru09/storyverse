@@ -1,0 +1,304 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { once } from 'node:events'
+import { PNG } from 'pngjs'
+import { createAvatarService } from '../server/avatar.js'
+import { createMemoryAvatarStore } from '../server/avatar-store.js'
+import { createMemoryPlazaStore } from '../server/plaza-store.js'
+import { createPlazaService } from '../server/plaza.js'
+import { createServer } from '../server/index.js'
+import {
+  acceptChapter,
+  buildChapter,
+  chapterKey,
+  chooseBranch,
+  createMergedStory,
+  createStory,
+} from '../src/story-engine.js'
+
+function tinyPng() {
+  const png = new PNG({ width: 60, height: 80 })
+  for (let index = 0; index < png.data.length; index += 4) {
+    png.data[index] = 200
+    png.data[index + 1] = 120
+    png.data[index + 2] = 60
+    png.data[index + 3] = 255
+  }
+  return PNG.sync.write(png)
+}
+
+const walkLocal = (story, count) => {
+  let current = story
+  for (let index = 0; index < count; index += 1) {
+    const chapter = buildChapter(current, index)
+    current = acceptChapter(current, chapter, chapterKey(current, index))
+    if (chapter.choice && index < count - 1) {
+      current = chooseBranch(current, index, chapter.choice.options[0].id)
+    }
+  }
+  return current
+}
+
+function completedLine(avatarId, { marker = '', redLine = false, title = '' } = {}) {
+  let story = walkLocal(createStory({
+    genreId: 'cultivation',
+    genreTemplateId: 'xianxia',
+    storyLengthMode: 'season',
+    originIdentityId: 'mystery',
+    startPointName: '山神破庙',
+    name: '沈砚',
+    avatarId,
+    avatarAppearance: '银灰长发，左颊一颗泪痣',
+    ability: '借火一瞬',
+    // The private life fields only persist on immersive drafts — that is
+    // exactly the shape whose literals the snapshot must scrub from prose.
+    immersive: true,
+    hometown: marker,
+    friend: marker,
+  }), 24)
+  if (marker || redLine) {
+    story = {
+      ...story,
+      chapters: story.chapters.map((chapter, index) => index === 2 ? {
+        ...chapter,
+        paragraphs: [
+          redLine ? '小学生在河边细说性行为的细节。' : `他想起${marker}，脚步一顿。`,
+          ...chapter.paragraphs.slice(1),
+        ],
+      } : chapter),
+    }
+  }
+  if (title) story = { ...story, title }
+  return { ...story, engine: 'gemini' }
+}
+
+async function startPlazaServer(t) {
+  const avatarStore = createMemoryAvatarStore()
+  const avatarService = createAvatarService({
+    env: { GENAI_BACKEND: 'vertex', GOOGLE_CLOUD_PROJECT: 'project-test-123' },
+    store: avatarStore,
+    imageGenerate: async () => ({ buffer: tinyPng(), mimeType: 'image/png', usage: null }),
+  })
+  const plazaStore = createMemoryPlazaStore()
+  const plazaService = createPlazaService({ env: {}, store: plazaStore, avatarStore })
+  const server = createServer({
+    env: { AUTH_ENABLED: 'true', DATA_STORE: 'memory' },
+    generator: { status: () => ({ configured: false, provider: 'gemini', model: 'fixture' }), generate: async () => { throw new Error('unused') } },
+    avatar: avatarService,
+    plaza: plazaService,
+    fetchImpl: async () => { throw new Error('Unexpected external request in HTTP fixture') },
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(async () => {
+    server.closeAllConnections()
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  })
+  return { base: `http://127.0.0.1:${server.address().port}`, plazaStore }
+}
+
+const ORIGIN = { Origin: 'http://localhost:5173' }
+
+async function register(base, username) {
+  const response = await fetch(`${base}/api/auth/username/register`, {
+    method: 'POST',
+    headers: { ...ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password: 'plaza-pass-123' }),
+  })
+  assert.equal(response.status, 200, `register ${username}`)
+  const { token } = await response.json()
+  return token
+}
+
+async function makeAvatar(base, token, name = '沈砚') {
+  const response = await fetch(`${base}/api/avatar`, {
+    method: 'PUT',
+    headers: { ...ORIGIN, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      profile: {
+        name,
+        description: '清冷安静的剑客。',
+        appearance: { hairColor: 'silver', hairStyle: 'long-straight', outfit: 'xianxia-robe', shoes: 'cloth-shoes', face: 'tear-mole', faceNote: '' },
+      },
+    }),
+  })
+  assert.equal(response.status, 200, 'avatar save')
+  return (await response.json()).avatar
+}
+
+const publish = (base, token, story) => fetch(`${base}/api/plaza/publish`, {
+  method: 'POST',
+  headers: { ...ORIGIN, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ story }),
+})
+
+test('publish → feed → detail round-trip, with the private marker scrubbed everywhere', async (t) => {
+  const { base, plazaStore } = await startPlazaServer(t)
+  const token = await register(base, 'plaza_author_a')
+  const avatar = await makeAvatar(base, token)
+  const MARKER = '私密标记-桥洞暗号-77'
+  const story = completedLine(avatar.id, { marker: MARKER })
+
+  const response = await publish(base, token, story)
+  assert.equal(response.status, 200)
+  const { publication } = await response.json()
+  assert.match(publication.id, /^pub-/)
+  assert.equal(publication.avatar.name, '沈砚')
+  assert.equal(publication.worldName, '青岚宗')
+  assert.equal(publication.chapterCount, 24)
+  assert.equal('authorUid' in publication, false)
+  assert.equal('reporters' in publication, false)
+
+  const stored = await plazaStore.listPublications()
+  assert.equal(stored.length, 1)
+  assert.equal(JSON.stringify(stored[0]).includes(MARKER), false, 'stored record carries no private marker')
+
+  const feedResponse = await fetch(`${base}/api/plaza`)
+  assert.equal(feedResponse.status, 200)
+  const feedText = await feedResponse.text()
+  assert.equal(feedText.includes(MARKER), false, 'feed carries no private marker')
+  const feed = JSON.parse(feedText).publications
+  assert.equal(feed.length, 1)
+  assert.equal(feed[0].id, publication.id)
+
+  const detailResponse = await fetch(`${base}/api/plaza/${publication.id}`)
+  assert.equal(detailResponse.status, 200)
+  const detailText = await detailResponse.text()
+  assert.equal(detailText.includes(MARKER), false, 'detail carries no private marker')
+  const detail = JSON.parse(detailText).publication
+  assert.equal(detail.snapshot.chapters.length, 24)
+  assert.equal(detail.snapshot.config.hometown, '')
+  assert.equal(detail.enterTemplate.worldBible.outline.length, 24)
+  assert.equal(detail.beats.length, 24)
+  assert.equal(detail.snapshot.config.avatarId, '', 'the public snapshot never carries the author avatar id')
+
+  // A second, later publication sorts first in the feed.
+  const second = completedLine(avatar.id, { title: '第二条线' })
+  const secondResponse = await publish(base, token, second)
+  assert.equal(secondResponse.status, 200)
+  const nextFeed = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  assert.equal(nextFeed.length, 2)
+  assert.equal(nextFeed[0].title, '第二条线')
+
+  // The portrait is served under the publication id only once painted.
+  const noPortrait = await fetch(`${base}/api/plaza/${publication.id}/portrait`)
+  assert.equal(noPortrait.status, 404)
+  const generated = await fetch(`${base}/api/avatar/generate`, {
+    method: 'POST',
+    headers: { ...ORIGIN, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+  assert.equal(generated.status, 200)
+  const portrait = await fetch(`${base}/api/plaza/${publication.id}/portrait`)
+  assert.equal(portrait.status, 200)
+  assert.equal(portrait.headers.get('content-type'), 'image/jpeg')
+})
+
+test('publish rejects gated stories, another avatar’s line and red-line content — storing nothing', async (t) => {
+  const { base, plazaStore } = await startPlazaServer(t)
+  const token = await register(base, 'plaza_author_b')
+  const avatar = await makeAvatar(base, token)
+
+  const anon = await fetch(`${base}/api/plaza/publish`, {
+    method: 'POST', headers: { ...ORIGIN, 'Content-Type': 'application/json' }, body: JSON.stringify({ story: {} }),
+  })
+  assert.equal(anon.status, 401)
+
+  const unfinished = walkLocal(createStory({
+    genreId: 'cultivation', genreTemplateId: 'xianxia', storyLengthMode: 'season', avatarId: avatar.id,
+  }), 5)
+  const unfinishedResponse = await publish(base, token, unfinished)
+  assert.equal(unfinishedResponse.status, 400)
+  assert.match((await unfinishedResponse.json()).error, /还没走完/)
+
+  const noAvatar = completedLine('')
+  const noAvatarResponse = await publish(base, token, noAvatar)
+  assert.equal(noAvatarResponse.status, 400)
+  assert.match((await noAvatarResponse.json()).error, /化身/)
+
+  const foreign = completedLine('avatar-someone-else')
+  const foreignResponse = await publish(base, token, foreign)
+  assert.equal(foreignResponse.status, 400)
+  assert.match((await foreignResponse.json()).error, /不是用你现在的化身/)
+
+  const short = { ...walkLocal(createStory({ genreId: 'mist', avatarId: avatar.id }), 6), engine: 'gemini' }
+  const shortResponse = await publish(base, token, short)
+  assert.equal(shortResponse.status, 400)
+  assert.match((await shortResponse.json()).error, /一季或长线/)
+
+  const merged = {
+    ...walkLocal(createMergedStory(
+      createStory({ genreId: 'mist', avatarId: avatar.id }),
+      createStory({ genreId: 'neon' }),
+    ), 6),
+    engine: 'gemini',
+  }
+  const mergedResponse = await publish(base, token, merged)
+  assert.equal(mergedResponse.status, 400)
+  assert.match((await mergedResponse.json()).error, /合流/)
+
+  const redLine = completedLine(avatar.id, { redLine: true })
+  const redLineResponse = await publish(base, token, redLine)
+  assert.equal(redLineResponse.status, 400)
+  assert.match((await redLineResponse.json()).error, /未成年/)
+
+  assert.equal((await plazaStore.listPublications()).length, 0, 'no rejected publish left a record behind')
+  const feed = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  assert.deepEqual(feed, [])
+})
+
+test('three distinct reporters hide a publication; the author can withdraw and re-publish', async (t) => {
+  const { base } = await startPlazaServer(t)
+  const authorToken = await register(base, 'plaza_author_c')
+  const avatar = await makeAvatar(base, authorToken)
+  const story = completedLine(avatar.id)
+  const { publication } = await (await publish(base, authorToken, story)).json()
+
+  const report = (token) => fetch(`${base}/api/plaza/${publication.id}/report`, {
+    method: 'POST',
+    headers: { ...ORIGIN, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: '{}',
+  })
+  const anonReport = await fetch(`${base}/api/plaza/${publication.id}/report`, {
+    method: 'POST', headers: { ...ORIGIN, 'Content-Type': 'application/json' }, body: '{}',
+  })
+  assert.equal(anonReport.status, 401)
+  const selfReport = await report(authorToken)
+  assert.equal(selfReport.status, 400)
+
+  const visible = async () => (await (await fetch(`${base}/api/plaza`)).json()).publications.length === 1
+  const reporterB = await register(base, 'plaza_reader_b')
+  const reporterC = await register(base, 'plaza_reader_c')
+  const reporterD = await register(base, 'plaza_reader_d')
+  assert.equal((await report(reporterB)).status, 200)
+  assert.equal(await visible(), true)
+  assert.equal((await report(reporterB)).status, 200, 'a repeat report is a no-op, not a second vote')
+  assert.equal(await visible(), true)
+  assert.equal((await report(reporterC)).status, 200)
+  assert.equal(await visible(), true)
+  assert.equal((await report(reporterD)).status, 200)
+  assert.equal(await visible(), false, 'the third distinct reporter hides the line')
+  const hiddenDetail = await fetch(`${base}/api/plaza/${publication.id}`)
+  assert.equal(hiddenDetail.status, 404)
+
+  // A fresh line: withdraw is author-only, and re-publishing revives the same id.
+  const second = completedLine(avatar.id, { title: '可下架的线' })
+  const { publication: secondPublication } = await (await publish(base, authorToken, second)).json()
+  const foreignWithdraw = await fetch(`${base}/api/plaza/${secondPublication.id}/withdraw`, {
+    method: 'POST',
+    headers: { ...ORIGIN, Authorization: `Bearer ${reporterB}`, 'Content-Type': 'application/json' },
+    body: '{}',
+  })
+  assert.equal(foreignWithdraw.status, 404)
+  const withdrawn = await fetch(`${base}/api/plaza/${secondPublication.id}/withdraw`, {
+    method: 'POST',
+    headers: { ...ORIGIN, Authorization: `Bearer ${authorToken}`, 'Content-Type': 'application/json' },
+    body: '{}',
+  })
+  assert.equal(withdrawn.status, 200)
+  assert.equal((await (await fetch(`${base}/api/plaza`)).json()).publications.length, 0)
+  const republished = await publish(base, authorToken, second)
+  assert.equal(republished.status, 200)
+  assert.equal((await republished.json()).publication.id, secondPublication.id)
+  assert.equal((await (await fetch(`${base}/api/plaza`)).json()).publications.length, 1)
+})

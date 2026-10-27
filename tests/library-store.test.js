@@ -228,16 +228,28 @@ test('post-write external changes do not become the version of an older in-memor
 })
 
 test('malformed route encodings safely return home and valid encoded IDs round-trip', () => {
-  for (const hash of ['', '#/', '#/unknown', '#/reader', '#/shared/', '#/reader/%', '#/reader/%E0%A4%A', '#/shared/%GG']) {
+  for (const hash of ['', '#/', '#/unknown']) {
+    assert.deepEqual(parseRoute(hash), { view: 'plaza' })
+  }
+  for (const hash of ['#/reader', '#/shared/', '#/reader/%', '#/reader/%E0%A4%A', '#/shared/%GG']) {
     assert.deepEqual(parseRoute(hash), { view: 'home' })
   }
-  for (const view of ['home', 'forge', 'store', 'merge']) {
+  for (const view of ['home', 'forge', 'store', 'merge', 'plaza']) {
     assert.deepEqual(parseRoute(routeHash({ view })), { view })
   }
   for (const shared of [false, true]) {
     const route = { view: 'reader', id: '故事 / 合流#1?选择=甲', shared }
     assert.deepEqual(parseRoute(routeHash(route)), route)
   }
+})
+
+test('plaza routes open the feed, a detail, the enter flow and the line reader', () => {
+  assert.deepEqual(parseRoute('#/plaza'), { view: 'plaza' })
+  assert.deepEqual(parseRoute('#/plaza/pub-1'), { view: 'plaza-detail', id: 'pub-1' })
+  assert.deepEqual(parseRoute('#/plaza-enter/pub-1'), { view: 'plaza-enter', id: 'pub-1' })
+  assert.deepEqual(parseRoute(routeHash({ view: 'plaza-detail', id: 'pub-1' })), { view: 'plaza-detail', id: 'pub-1' })
+  assert.deepEqual(parseRoute(routeHash({ view: 'plaza-enter', id: 'pub-1' })), { view: 'plaza-enter', id: 'pub-1' })
+  assert.deepEqual(parseRoute(routeHash({ view: 'reader', id: 'pub-1', plaza: true })), { view: 'reader', id: 'pub-1', plaza: true })
 })
 
 test('nonportable updates fail without throwing or changing the live library', () => {

@@ -16,7 +16,7 @@ const totalForStory = (story) => {
   return LENGTH_TOTALS[story?.config?.storyLengthMode] || 6
 }
 const CONFIG_TEXT_FIELDS = [
-  'genreId', 'genreTemplateId', 'storyLengthMode', 'originIdentityId', 'customWorldName', 'customWorldSetting', 'startPointName', 'startPointHook', 'avatarId', 'avatarAppearance', 'name', 'trait', 'origin', 'ability', 'tone', 'hometown',
+  'genreId', 'genreTemplateId', 'storyLengthMode', 'originIdentityId', 'customWorldName', 'customWorldSetting', 'startPointName', 'startPointHook', 'avatarId', 'avatarAppearance', 'sourcePublicationId', 'name', 'trait', 'origin', 'ability', 'tone', 'hometown',
   'school', 'company', 'role', 'friend', 'destination', 'protagonist', 'appearance',
 ]
 

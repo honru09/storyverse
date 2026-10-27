@@ -203,6 +203,10 @@ export const START_POINT_HOOK_MAX = 120
 // under the reader's account; editing it never rewrites a book's copy.
 export const AVATAR_ID_MAX = 64
 export const AVATAR_APPEARANCE_MAX = 300
+// The plaza publication a story was entered from, when it was opened by
+// bringing the reader's own avatar into someone else's finished line.
+// Bookkeeping only — like the avatar id, it never reaches the model.
+export const SOURCE_PUBLICATION_ID_MAX = 80
 export const CUSTOM_GENRE = {
   id: CUSTOM_GENRE_ID,
   label: '创世神',
@@ -565,6 +569,7 @@ export const DEFAULT_DRAFT = {
   startPointHook: '',
   avatarId: '',
   avatarAppearance: '',
+  sourcePublicationId: '',
   name: '',
   trait: '冷静观察者',
   // No preset origin or ability: the origin comes only from the identity
@@ -780,6 +785,7 @@ const normalizeDraft = (draft = {}) => {
     // appearance line is the copy generation paints the protagonist from.
     avatarId: cleanBounded(input.avatarId, AVATAR_ID_MAX),
     avatarAppearance: cleanBounded(input.avatarAppearance, AVATAR_APPEARANCE_MAX),
+    sourcePublicationId: cleanBounded(input.sourcePublicationId, SOURCE_PUBLICATION_ID_MAX),
     name: cleanText(input.name, DEFAULT_DRAFT.name),
     trait: cleanText(input.trait, DEFAULT_DRAFT.trait),
     origin: cleanText(input.origin, DEFAULT_DRAFT.origin),
@@ -1746,6 +1752,9 @@ const redactedSnapshotConfig = (config, name) => ({
   // public snapshot is anonymous and keeps neither the id nor the look.
   avatarId: '',
   avatarAppearance: '',
+  // Where an entered line came from is the entrant's own bookkeeping; a
+  // snapshot never points back at another reader's publication.
+  sourcePublicationId: '',
 })
 
 export function createMergedStory(a, b, options = {}) {
@@ -1949,6 +1958,120 @@ export function publicSnapshot(story) {
     safe.chapters = story.chapters.map(chapter => buildChapter(safe, chapter.index))
   }
   return safe
+}
+
+/*
+ * 广场 (plaza) snapshot: the sanitized public copy of a finished avatar
+ * line. It reuses the merge-share redaction machinery — the sanitized
+ * config (private free-form fields replaced) and the literal-value
+ * redactor that scrubs those private values out of any prose that quoted
+ * them — with two deliberate differences from publicSnapshot:
+ *
+ *   1. The line is NOT anonymous. The plaza is a showcase of avatars: the
+ *      author's avatar keeps its real name, and prose mentions of the
+ *      protagonist are re-pointed at that name instead of 匿名旅者. What
+ *      stays stripped is everything private: immersive life details
+ *      (hometown / school / company / role), the friend and destination
+ *      free text, the free-form spawn point, and the avatar id itself.
+ *   2. The payload carries what the plaza's two consumptions need: the
+ *      full original line (chapters + the choices the author actually
+ *      took), a beat skeleton (per-chapter ledger events) for the detail
+ *      page, and an enterable world template — the world config and the
+ *      sanitized bible, minus everything an entrant must choose for
+ *      themselves (their avatar, identity, spawn point, ability).
+ */
+export function plazaSnapshot(story, { avatarName = '' } = {}) {
+  validateStory(story)
+  if (story.kind === 'merged') throw new TypeError('合流故事不能发布到广场')
+  const genre = genreFor(story.genreId || story.config.genreId)
+  const total = totalChaptersFor(story)
+  const mode = storyLengthModeOf(story)
+  const displayName = cleanBounded(avatarName, 40) || '匿名旅者'
+  const safeConfig = { ...redactedSnapshotConfig(story.config, displayName), name: displayName }
+  const genreTemplateId = genreTemplateById(story.genreTemplateId)?.id
+    || genreTemplateById(story.config?.genreTemplateId)?.id
+    || ''
+  const redact = snapshotRedactor(story.config, safeConfig)
+  const bibleSource = story.worldBible && typeof story.worldBible === 'object'
+    ? story.worldBible
+    : worldBibleFor(genre, safeConfig)
+  const redactLine = (value) => redact(typeof value === 'string' ? value : '')
+  const worldBible = {
+    premise: redactLine(bibleSource.premise),
+    rules: (Array.isArray(bibleSource.rules) ? bibleSource.rules : []).map(redactLine),
+    endingAnchor: redactLine(bibleSource.endingAnchor),
+    outline: (Array.isArray(bibleSource.outline) ? bibleSource.outline : []).map(redactLine),
+  }
+  const safeShell = {
+    id: `plaza-${hash(story.id)}`,
+    genreId: genre.id,
+    kind: 'solo',
+    config: safeConfig,
+    worldBible,
+    chapters: story.chapters,
+    choices: story.choices || {},
+    revision: Number.isInteger(story.revision) && story.revision >= 0 ? story.revision : 0,
+  }
+  const choices = {}
+  for (let index = 0; index < story.chapters.length; index += 1) {
+    const selected = validChoiceAt(story, index)
+    if (selected) choices[index] = selected
+  }
+  safeShell.choices = choices
+  let chapters
+  if (story.engine === 'gemini') {
+    chapters = story.chapters.map((chapter, index) => ({
+      id: `${safeShell.id}:chapter:${index}:r${safeShell.revision}`,
+      index,
+      title: redactLine(chapter.title),
+      paragraphs: (Array.isArray(chapter.paragraphs) ? chapter.paragraphs : []).map(redactLine),
+      summary: redactLine(chapter.summary),
+      choice: snapshotChoice(story, safeShell, index, redact),
+      events: (Array.isArray(chapter.events) ? chapter.events : []).map(redactLine),
+      foreshadowing: (Array.isArray(chapter.foreshadowing) ? chapter.foreshadowing : []).map(redactLine),
+    }))
+  } else {
+    chapters = story.chapters.map((chapter) => buildChapter(safeShell, chapter.index))
+  }
+  const ledger = storyLedgerFor(story)
+  const eventsByChapter = new Map()
+  for (const event of ledger.events) {
+    const list = eventsByChapter.get(event.chapter) || []
+    list.push(redactLine(event.text))
+    eventsByChapter.set(event.chapter, list)
+  }
+  const beats = chapters.map((chapter, index) => ({
+    chapter: index + 1,
+    title: chapter.title || '',
+    summary: chapter.summary || '',
+    events: eventsByChapter.get(index + 1) || [],
+  }))
+  return {
+    title: redactLine(story.title),
+    genreId: genre.id,
+    genreTemplateId,
+    worldName: worldNameOf(genre, safeConfig),
+    storyLengthMode: mode,
+    seasonNumber: Number.isInteger(safeConfig.seasonNumber) ? safeConfig.seasonNumber : 1,
+    totalChapters: total,
+    ...(story.engine === 'gemini' ? { engine: 'gemini' } : {}),
+    config: safeConfig,
+    worldBible,
+    chapters,
+    choices,
+    beats,
+    enterTemplate: {
+      config: {
+        genreId: genre.id,
+        genreTemplateId,
+        storyLengthMode: mode,
+        seasonNumber: Number.isInteger(safeConfig.seasonNumber) ? safeConfig.seasonNumber : 1,
+        customWorldName: safeConfig.customWorldName || '',
+        customWorldSetting: safeConfig.customWorldSetting || '',
+      },
+      worldBible,
+    },
+  }
 }
 
 const advanceDemo = (story, count, branchIds = {}) => {

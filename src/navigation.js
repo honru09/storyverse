@@ -1,4 +1,4 @@
-const pages = new Set(['home', 'forge', 'store', 'merge', 'avatar'])
+const pages = new Set(['home', 'forge', 'store', 'merge', 'avatar', 'plaza', 'plaza-publish'])
 
 export function parseRoute(hash = '') {
   const [path, value] = hash.replace(/^#\/?/, '').split('/')
@@ -8,10 +8,26 @@ export function parseRoute(hash = '') {
       return id ? { view: 'reader', id, shared: path === 'shared' } : { view: 'home' }
     } catch { return { view: 'home' } }
   }
-  return { view: pages.has(path) ? path : 'home' }
+  // The plaza is the front door: the bare route and every unknown route
+  // land on the feed. A plaza id opens the line's detail; plaza-read is
+  // the reader over a published line; plaza-enter is the bring-my-avatar
+  // flow for one line.
+  if (path === 'plaza' || path === 'plaza-enter' || path === 'plaza-read') {
+    let id = ''
+    try { id = decodeURIComponent(value || '') } catch { return { view: 'plaza' } }
+    if (!id) return { view: 'plaza' }
+    if (path === 'plaza') return { view: 'plaza-detail', id }
+    if (path === 'plaza-enter') return { view: 'plaza-enter', id }
+    return { view: 'reader', id, plaza: true }
+  }
+  return { view: pages.has(path) ? path : 'plaza' }
 }
 
 export function routeHash(route) {
-  if (route.view === 'reader' && route.id) return `#/${route.shared ? 'shared' : 'reader'}/${encodeURIComponent(route.id)}`
-  return `#/${pages.has(route.view) ? route.view : 'home'}`
+  if (route.view === 'reader' && route.id) {
+    return `#/${route.plaza ? 'plaza-read' : route.shared ? 'shared' : 'reader'}/${encodeURIComponent(route.id)}`
+  }
+  if (route.view === 'plaza-detail' && route.id) return `#/plaza/${encodeURIComponent(route.id)}`
+  if (route.view === 'plaza-enter' && route.id) return `#/plaza-enter/${encodeURIComponent(route.id)}`
+  return `#/${pages.has(route.view) ? route.view : 'plaza'}`
 }

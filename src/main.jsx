@@ -49,6 +49,23 @@ import {
   generateAvatar,
   saveAvatar,
 } from "./avatar.js";
+import {
+  enterDraftFor,
+  fetchPlazaDetail,
+  fetchPlazaFeed,
+  plazaGateFor,
+  plazaLengthLabel,
+  plazaMine,
+  plazaMineForget,
+  plazaMineIds,
+  plazaMineRemember,
+  plazaPortraitPath,
+  plazaReaderStory,
+  plazaTemplateNameFor,
+  publishToPlaza,
+  reportPublication,
+  withdrawPublication,
+} from "./plaza.js";
 import { acceptGeneratedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter } from "./generation.js";
 import WorldArtwork from "./components/WorldArtwork.jsx";
 import StoryCover from "./components/StoryCover.jsx";
@@ -82,6 +99,7 @@ import {
   ALL_ABILITIES,
   COMMUNITY_BOOKS,
   CUSTOM_GENRE,
+  CUSTOM_GENRE_ID,
   CUSTOM_WORLD_NAME_MAX,
   CUSTOM_WORLD_SETTING_MAX,
   DEFAULT_DRAFT,
@@ -359,7 +377,7 @@ function Button({
 
 function Brand({ onClick }) {
   return (
-    <button className="brand-mark" onClick={onClick} aria-label="回到我的世界">
+    <button className="brand-mark" onClick={onClick} aria-label="回到广场">
       <span className="brand-glyph" aria-hidden="true">
         <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true">
           <defs>
@@ -390,6 +408,7 @@ function Brand({ onClick }) {
 
 function Sidebar({ view, onNavigate }) {
   const items = [
+    { id: "plaza", label: "广场", icon: "spark" },
     { id: "home", label: "我的世界", icon: "compass" },
     { id: "forge", label: "造世", icon: "plus" },
     { id: "store", label: "书城", icon: "book" },
@@ -397,7 +416,7 @@ function Sidebar({ view, onNavigate }) {
   ];
   return (
     <aside className="sidebar">
-      <Brand onClick={() => onNavigate("home")} />
+      <Brand onClick={() => onNavigate("plaza")} />
       <div className="sidebar-rule" />
       <nav className="side-nav" aria-label="主导航">
         {items.map((item) => {
@@ -423,7 +442,7 @@ function Sidebar({ view, onNavigate }) {
 function Topbar({ onNavigate, onOpenLibrary, onOpenAccount, account }) {
   return (
     <header className="topbar">
-      <Brand onClick={() => onNavigate("home")} />
+      <Brand onClick={() => onNavigate("plaza")} />
       <div className="topbar-actions">
         <button className="account-entry" onClick={onOpenAccount} aria-label={account.user ? "我的账号" : "登录与注册"} aria-haspopup="dialog">
           {account.user ? <span>{(account.user.displayName || account.user.email || "你").slice(0, 1).toUpperCase()}</span> : <><Icon name="users" size={18}/><span>登录</span></>}
@@ -440,7 +459,7 @@ function Topbar({ onNavigate, onOpenLibrary, onOpenAccount, account }) {
 function MobileBottomNav({ view, onNavigate }) {
   if (view === "reader") return null;
   const items = [
-    { id: "home", label: "世界" },
+    { id: "plaza", label: "广场" },
     { id: "forge", label: "造世" },
     { id: "store", label: "书城" },
     { id: "merge", label: "合流" },
@@ -2203,6 +2222,8 @@ function ChapterDirectory({ story, index, readOnly, onSelect, onClose }) {
 function Reader({
   story,
   readOnly = false,
+  backRoute = null,
+  backText = "",
   onNavigate,
   onUpdateStory,
   onToggleBookmark,
@@ -2442,10 +2463,10 @@ function Reader({
       <div className="reader-topline">
         <button
           className="back-link"
-          onClick={() => onNavigate(readOnly ? "store" : "home")}
+          onClick={() => backRoute ? onNavigate(backRoute.view, { id: backRoute.id }) : onNavigate(readOnly ? "store" : "home")}
         >
           <Icon name="chevron" size={15} className="rotate-180" />
-          {readOnly ? "返回书城" : "我的世界"}
+          {backText || (readOnly ? "返回书城" : "我的世界")}
         </button>
         <div className="reader-chapter">
           <span className="reader-book-title">{story.title}</span>
@@ -2991,6 +3012,627 @@ function Store({ onNavigate, onOpenBook, onOpenOwn, publications }) {
   );
 }
 
+function PlazaAvatarThumb({ publication, large = false }) {
+  const [failed, setFailed] = useState(false);
+  const name = publication?.avatar?.name || "化身";
+  if (!publication?.avatar?.hasPortrait || failed) {
+    return (
+      <span className={`plaza-avatar-fallback ${large ? "is-large" : ""}`} aria-hidden="true">
+        {name.slice(0, 1)}
+      </span>
+    );
+  }
+  return (
+    <img
+      className={`plaza-avatar-img ${large ? "is-large" : ""}`}
+      src={plazaPortraitPath(publication.id)}
+      alt=""
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function PlazaCard({ publication, own, onOpen, onRead, onEnter }) {
+  const genre = genreById[publication.genreId] || GENRES[0];
+  const templateName = plazaTemplateNameFor(publication) || genre.label;
+  return (
+    <article className="plaza-card">
+      <button
+        type="button"
+        className="plaza-card-cover"
+        onClick={onOpen}
+        aria-label={`查看《${publication.title}》详情`}
+      >
+        <WorldArtwork genreId={genre.id} />
+        <span className="plaza-cover-shade" aria-hidden="true" />
+        <span className="plaza-cover-title">《{publication.title}》</span>
+      </button>
+      <div className="plaza-card-body">
+        <div className="plaza-avatar-row">
+          <PlazaAvatarThumb publication={publication} />
+          <span className="plaza-avatar-name">{publication.avatar?.name}</span>
+          <span className="plaza-author">作者 · {publication.authorName}</span>
+          {own && <span className="plaza-own-chip">我发布的</span>}
+        </div>
+        <div className="plaza-chips">
+          <span className="plaza-chip">{publication.worldName}</span>
+          <span className="plaza-chip-x" aria-hidden="true">×</span>
+          <span className="plaza-chip">{templateName}</span>
+        </div>
+        <div className="plaza-meta">
+          <span className="plaza-badge">已完结</span>
+          <span>{plazaLengthLabel(publication)}</span>
+        </div>
+        <div className="plaza-card-actions">
+          <Button onClick={onRead}>读原作线</Button>
+          <Button variant="secondary" onClick={onEnter}>带化身进入</Button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function PlazaFeed({ account, activeStory, onNavigate, onOpenStory, onOpenDetail, onReadLine, onEnter }) {
+  const [feed, setFeed] = useState(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const mineIds = useMemo(() => plazaMineIds(), []);
+  useEffect(() => {
+    let live = true;
+    setError("");
+    fetchPlazaFeed()
+      .then((items) => { if (live) setFeed(items); })
+      .catch(() => { if (live) { setFeed([]); setError("广场暂时没能打开，请稍后再试。"); } });
+    return () => { live = false; };
+  }, [retry]);
+  const activeTotal = activeStory ? totalChaptersFor(activeStory) : 0;
+  const activeChapter = activeStory ? Math.min(activeTotal, readerIndexFor(activeStory) + 1) : 0;
+  return (
+    <div className="page page-plaza page-enter">
+      <header className="plaza-heading">
+        <h1>广场</h1>
+      </header>
+      <p className="page-caption">别人走完的世界，正等你走进去。</p>
+
+      <section className="plaza-publish-card">
+        <div>
+          <strong>把你走完的故事线放到广场</strong>
+          <p>发布后，别人能读你的原作线，也能带自己的化身进入这个世界。</p>
+        </div>
+        <Button onClick={() => onNavigate("plaza-publish")}>发布 <Icon name="arrow" size={15} /></Button>
+      </section>
+
+      <button type="button" className="plaza-mine-row" onClick={() => onNavigate("home")}>
+        <Icon name="book" size={20} />
+        <span>
+          <strong>我的世界</strong>
+          <small>{activeStory ? `正在读《${activeStory.title}》 · 第 ${activeChapter} / ${activeTotal} 章` : "你的书架、化身与草稿都在这里"}</small>
+        </span>
+        <Icon name="chevron" size={16} />
+      </button>
+
+      <div className="plaza-feed-heading">
+        <h2>最新发布</h2>
+        <span>只收已完结的故事线</span>
+      </div>
+
+      {error && (
+        <div className="plaza-empty" role="alert">
+          <p>{error}</p>
+          <Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>再试一次</Button>
+        </div>
+      )}
+      {feed === null && !error && <p className="plaza-loading" role="status">正在打开广场…</p>}
+      {feed !== null && feed.length === 0 && !error && (
+        <div className="plaza-empty" role="status">
+          <Icon name="book" size={27} />
+          <h3>还没有人发布走完的故事线</h3>
+          <p>第一条线，往往是自己的。用化身走完一季，它就会出现在这里。</p>
+          <Button variant="secondary" icon="arrow" onClick={() => onNavigate("forge")}>去造世</Button>
+        </div>
+      )}
+      {feed !== null && feed.length > 0 && (
+        <div className="plaza-feed-list">
+          {feed.map((publication) => (
+            <PlazaCard
+              key={publication.id}
+              publication={publication}
+              own={mineIds.has(publication.id)}
+              onOpen={() => onOpenDetail(publication)}
+              onRead={() => onReadLine(publication)}
+              onEnter={() => onEnter(publication)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter, onOpenAccount, onToast }) {
+  const [detail, setDetail] = useState(null);
+  const [error, setError] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
+  const own = useMemo(() => plazaMineIds().has(id), [id]);
+  useEffect(() => {
+    let live = true;
+    setDetail(null);
+    setError("");
+    fetchPlazaDetail({ id })
+      .then((next) => { if (live) setDetail(next); })
+      .catch((failure) => {
+        if (live) setError(failure?.code === "not-found" ? "这条故事线已下架或不存在。" : "暂时没能打开这条故事线，请稍后再试。");
+      });
+    return () => { live = false; };
+  }, [id]);
+
+  if (error) {
+    return (
+      <div className="page page-plaza page-enter">
+        <button type="button" className="back-link" onClick={() => onNavigate("plaza")}>
+          <Icon name="chevron" size={15} className="rotate-180" /> 返回广场
+        </button>
+        <div className="plaza-empty" role="alert">
+          <h3>{error}</h3>
+          <Button variant="secondary" onClick={() => onNavigate("plaza")}>回到广场</Button>
+        </div>
+      </div>
+    );
+  }
+  if (!detail) {
+    return (
+      <div className="page page-plaza page-enter">
+        <button type="button" className="back-link" onClick={() => onNavigate("plaza")}>
+          <Icon name="chevron" size={15} className="rotate-180" /> 返回广场
+        </button>
+        <p className="plaza-loading" role="status">正在打开这条故事线…</p>
+      </div>
+    );
+  }
+  const genre = genreById[detail.genreId] || GENRES[0];
+  const templateName = plazaTemplateNameFor(detail) || genre.label;
+  const beats = Array.isArray(detail.beats) ? detail.beats : [];
+  const report = async () => {
+    if (!account.user) { onOpenAccount(); return; }
+    setBusy(true);
+    try {
+      await reportPublication({ id, getAccessToken: () => authClient.getAccessToken() });
+      setNote("已举报，谢谢。举报累计到三人，这条故事线会自动隐藏等待核查。");
+    } catch (failure) {
+      if (failure?.code === "auth-required") onOpenAccount();
+      else setNote(failure?.message || "举报没能送出，请稍后再试。");
+    } finally { setBusy(false); }
+  };
+  const withdraw = async () => {
+    setBusy(true);
+    try {
+      await withdrawPublication({ id, getAccessToken: () => authClient.getAccessToken() });
+      plazaMineForget(undefined, id);
+      onToast("已下架，广场上不再显示这条故事线。");
+      onNavigate("plaza");
+    } catch {
+      setNote("下架没能完成，请稍后再试。");
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="page page-plaza page-enter">
+      <div className="plaza-detail-top">
+        <button type="button" className="back-link" onClick={() => onNavigate("plaza")}>
+          <Icon name="chevron" size={15} className="rotate-180" /> 返回广场
+        </button>
+        <span className="plaza-author">作者 · {detail.authorName}</span>
+      </div>
+
+      <section className="plaza-detail-cover">
+        <WorldArtwork genreId={genre.id} />
+        <span className="plaza-cover-shade" aria-hidden="true" />
+        <div className="plaza-detail-cover-copy">
+          <h1>《{detail.title}》</h1>
+          <p>{detail.worldName} × {templateName} · {plazaLengthLabel(detail)} · 已完结</p>
+        </div>
+      </section>
+
+      <section className="plaza-panel plaza-avatar-panel">
+        <PlazaAvatarThumb publication={detail} large />
+        <div>
+          <div className="plaza-avatar-name-row">
+            <strong>{detail.avatar?.name}</strong>
+            <span className="plaza-chip">作者的化身</span>
+          </div>
+          <p>这条线，是这个化身一步步走完的。</p>
+          {detail.avatar?.appearance && <small>化身设定：{detail.avatar.appearance}</small>}
+        </div>
+      </section>
+
+      <section className="plaza-panel">
+        <div className="plaza-panel-heading">
+          <h2>世界设定</h2>
+          <span className="plaza-chip is-mint">脱敏版</span>
+        </div>
+        <p className="plaza-prose">{detail.worldBible?.premise}</p>
+        <small className="plaza-note">发布时已脱敏：作者的私有设定与未公开分支不会出现在这里。</small>
+      </section>
+
+      <section className="plaza-panel">
+        <div className="plaza-panel-heading">
+          <h2>主线节拍</h2>
+        </div>
+        <p className="plaza-note">进入重演时，你的新线会沿用这套骨架，走向由你的选择分叉。</p>
+        <ol className="plaza-beats">
+          {beats.slice(0, 4).map((beat) => (
+            <li key={beat.chapter}>
+              <span className="plaza-beat-dot" aria-hidden="true" />
+              <span>第 {beat.chapter} 章</span>
+              <strong>{beat.title}</strong>
+            </li>
+          ))}
+        </ol>
+        {beats.length > 4 && <small className="plaza-note">其余 {beats.length - 4} 章节拍，进入后逐步展开</small>}
+      </section>
+
+      <section className="plaza-panel plaza-cta-panel">
+        <h2>你想怎样走这条线？</h2>
+        <Button className="plaza-cta-main" onClick={() => onReadLine(detail)}>读原作线</Button>
+        <p className="plaza-note">读作者化身走完的版本 · 不消耗你的生成额度</p>
+        <Button variant="secondary" className="plaza-cta-main" onClick={() => onEnter(detail)}>带我的化身进入</Button>
+        <p className="plaza-note">同一世界、同步节拍，捞出一条只属于你的新线</p>
+        <p className="plaza-fee-note"><span aria-hidden="true">●</span> 进入重演后，新章节的生成费用计入你自己的额度。</p>
+      </section>
+
+      {note && <p className="plaza-inline-note" role="status">{note}</p>}
+      {own ? (
+        <div className="plaza-owner-row">
+          {confirmingWithdraw ? (
+            <>
+              <span>下架后广场不再显示，本地原作不受影响。</span>
+              <Button variant="secondary" disabled={busy} onClick={() => void withdraw()}>确认下架</Button>
+              <Button variant="ghost" disabled={busy} onClick={() => setConfirmingWithdraw(false)}>再想想</Button>
+            </>
+          ) : (
+            <>
+              <span>这是你发布的故事线。</span>
+              <Button variant="ghost" onClick={() => setConfirmingWithdraw(true)}>下架</Button>
+            </>
+          )}
+        </div>
+      ) : (
+        <button type="button" className="plaza-report" disabled={busy} onClick={() => void report()}>
+          内容有问题？举报这条故事线
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onToast }) {
+  const [selectedId, setSelectedId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const mine = useMemo(() => plazaMine(), []);
+  const rows = useMemo(() => {
+    const decorated = stories.map((story) => ({ story, gate: plazaGateFor(story) }));
+    return decorated.sort((a, b) => Number(b.gate.publishable) - Number(a.gate.publishable));
+  }, [stories]);
+  const selected = rows.find((row) => row.story.id === selectedId && row.gate.publishable)?.story || null;
+  const publish = async () => {
+    if (!selected || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const publication = await publishToPlaza({ story: selected, getAccessToken: () => authClient.getAccessToken() });
+      plazaMineRemember(undefined, selected.id, publication);
+      onToast("已发布到广场。");
+      onNavigate("plaza");
+    } catch (failure) {
+      if (failure?.code === "auth-required") { onOpenAccount(); setError("请先登录，再发布。"); }
+      else setError(failure?.message || "发布没能完成，请稍后再试。");
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="page page-plaza page-enter">
+      <button type="button" className="back-link" onClick={() => onNavigate("plaza")}>
+        <Icon name="chevron" size={15} className="rotate-180" /> 返回
+      </button>
+      <header className="plaza-heading">
+        <h1>发布到广场</h1>
+      </header>
+      <p className="page-caption">把一条走完的故事线放上广场。发布后，其他人能读你的原作线，也能带自己的化身进入这个世界重演一条新线。</p>
+
+      {!account.user ? (
+        <div className="plaza-empty" role="status">
+          <h3>先登录，再发布你的故事线</h3>
+          <p>发布会记在你的账号名下，别人举报时也由你下架处理。</p>
+          <Button onClick={onOpenAccount}>登录 / 注册</Button>
+        </div>
+      ) : avatarLoaded && !avatar ? (
+        <div className="plaza-empty" role="status">
+          <h3>先有化身，才能发布它的故事线</h3>
+          <p>广场上的每条线，都是某个化身走完的旅程。</p>
+          <Button onClick={onOpenAvatar}>创建我的化身</Button>
+        </div>
+      ) : (
+        <>
+          <h2 className="plaza-section-title">选择要发布的故事线</h2>
+          {rows.length === 0 && (
+            <div className="plaza-empty" role="status">
+              <p>你还没有故事线。先用化身走完一季，再来发布。</p>
+              <Button variant="secondary" icon="arrow" onClick={() => onNavigate("forge")}>去造世</Button>
+            </div>
+          )}
+          <div className="plaza-pick-list">
+            {rows.map(({ story, gate }) => {
+              const genre = genreOf(story);
+              const published = Boolean(mine[story.id]);
+              return (
+                <button
+                  type="button"
+                  key={story.id}
+                  className={`plaza-pick ${selectedId === story.id && gate.publishable ? "active" : ""} ${gate.publishable ? "" : "is-disabled"}`}
+                  aria-pressed={selectedId === story.id && gate.publishable}
+                  disabled={!gate.publishable}
+                  onClick={() => setSelectedId(story.id)}
+                >
+                  <span className="plaza-pick-cover"><WorldArtwork genreId={genre.id} /></span>
+                  <span className="plaza-pick-copy">
+                    <strong>《{story.title}》</strong>
+                    <span>
+                      {gate.publishable
+                        ? <><span className="plaza-badge">已完结</span> {plazaLengthLabel(story)}{published ? " · 已在广场上，再次发布会更新" : ""}</>
+                        : <>{story.kind === "merged" ? "合流故事" : "连载中"} · {gate.reason}</>}
+                    </span>
+                  </span>
+                  {selectedId === story.id && gate.publishable && <Icon name="check" size={18} />}
+                </button>
+              );
+            })}
+          </div>
+
+          <section className="plaza-panel">
+            <h2>将发布的内容</h2>
+            <ul className="plaza-checklist">
+              <li><Icon name="check" size={15} /><span><strong>世界设定（脱敏版）</strong><small>私有设定与未公开分支不会发布</small></span></li>
+              <li><Icon name="check" size={15} /><span><strong>原作线全文</strong><small>你化身走完的全部章节与当时的选择</small></span></li>
+              <li><Icon name="check" size={15} /><span><strong>可进入的世界模板</strong><small>主线节拍骨架，供他人带化身重演</small></span></li>
+            </ul>
+          </section>
+
+          <section className="plaza-panel">
+            <div className="plaza-panel-heading">
+              <h2>红线自动检查</h2>
+              <span className="plaza-chip is-mint">发布时由服务端执行</span>
+            </div>
+            <p className="plaza-note">已扫描的口径与造世相同：世界设定与全部章节都会过一遍，命中违规内容会被拒绝发布，不会留下半截记录。</p>
+          </section>
+
+          <section className="plaza-panel">
+            <h2>审核与下架</h2>
+            <p className="plaza-note">发布后进入广场公开列表。下架只影响广场展示，不影响你本地的原作存档，随时可以重新发布。</p>
+          </section>
+
+          {error && <div className="sw-inline-alert" role="alert">{error}</div>}
+          <div className="plaza-publish-actions">
+            <Button disabled={!selected || busy} onClick={() => void publish()}>{busy ? "正在发布…" : "发布到广场"}</Button>
+            <Button variant="ghost" disabled={busy} onClick={() => onNavigate("plaza")}>暂不发布</Button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PlazaEnter({ id, account, authClient, avatar, avatarLoaded, onNavigate, onOpenAccount, onOpenAvatar, onEnterLine }) {
+  const [detail, setDetail] = useState(null);
+  const [loadError, setLoadError] = useState("");
+  const [identityId, setIdentityId] = useState("");
+  const [spawnName, setSpawnName] = useState("");
+  const [spawnHook, setSpawnHook] = useState("");
+  const [abilityName, setAbilityName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const operation = useRef(null);
+  useEffect(() => {
+    let live = true;
+    fetchPlazaDetail({ id })
+      .then((next) => { if (live) setDetail(next); })
+      .catch((failure) => {
+        if (live) setLoadError(failure?.code === "not-found" ? "这条故事线已下架或不存在。" : "暂时没能打开这条故事线，请稍后再试。");
+      });
+    return () => { live = false; };
+  }, [id]);
+  useEffect(() => () => { operation.current?.abort(); }, []);
+
+  const genre = detail ? genreById[detail.genreId] || GENRES[0] : null;
+  const isCustom = detail?.genreId === CUSTOM_GENRE_ID;
+  const abilities = useMemo(
+    () => (detail ? abilityCandidatesFor({ genreId: detail.genreId, genreTemplateId: detail.genreTemplateId, custom: isCustom }) : []),
+    [detail, isCustom],
+  );
+  useEffect(() => {
+    if (abilities.length && !abilities.some((item) => item.name === abilityName)) setAbilityName(abilities[0].name);
+  }, [abilities, abilityName]);
+  const identity = originIdentityById(identityId);
+  const points = useMemo(
+    () => (identity && genre && !isCustom ? spawnPointsForIdentity(genre, identity.id) : []),
+    [identity, genre, isCustom],
+  );
+  const pickIdentity = (nextId) => {
+    setIdentityId(nextId);
+    if (!isCustom && genre) {
+      const first = spawnPointsForIdentity(genre, nextId)[0];
+      setSpawnName(first?.name || "");
+      setSpawnHook(first?.hook || "");
+    }
+  };
+  const enter = async () => {
+    if (!detail || !identityId || busy) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    setBusy(true);
+    setError("");
+    try {
+      await onEnterLine(detail, {
+        identityId,
+        startPointName: spawnName,
+        startPointHook: spawnHook,
+        ability: abilityName,
+      }, { signal: controller.signal });
+    } catch (failure) {
+      if (!controller.signal.aborted) setError(failure?.message || "进入没能完成，请稍后再试。");
+    } finally {
+      if (operation.current === controller) { operation.current = null; setBusy(false); }
+    }
+  };
+
+  if (loadError) {
+    return (
+      <div className="page page-plaza page-enter">
+        <button type="button" className="back-link" onClick={() => onNavigate("plaza")}>
+          <Icon name="chevron" size={15} className="rotate-180" /> 返回广场
+        </button>
+        <div className="plaza-empty" role="alert">
+          <h3>{loadError}</h3>
+          <Button variant="secondary" onClick={() => onNavigate("plaza")}>回到广场</Button>
+        </div>
+      </div>
+    );
+  }
+  if (!detail) {
+    return (
+      <div className="page page-plaza page-enter">
+        <p className="plaza-loading" role="status">正在准备这个世界…</p>
+      </div>
+    );
+  }
+  return (
+    <div className="page page-plaza page-enter">
+      <button type="button" className="back-link" disabled={busy} onClick={() => onNavigate("plaza-detail", { id })}>
+        <Icon name="chevron" size={15} className="rotate-180" /> 返回详情
+      </button>
+      <header className="plaza-heading">
+        <h1>带化身进入</h1>
+      </header>
+      <p className="page-caption">《{detail.title}》 · {detail.worldName} × {plazaTemplateNameFor(detail) || genre.label} · {plazaLengthLabel(detail)}</p>
+
+      {!account.user ? (
+        <div className="plaza-empty" role="status">
+          <h3>先登录，再带化身进入</h3>
+          <p>重演出的新线会记在你的账号名下，生成费用也计入你的额度。</p>
+          <Button onClick={onOpenAccount}>登录 / 注册</Button>
+        </div>
+      ) : avatarLoaded && !avatar ? (
+        <div className="plaza-empty" role="status">
+          <h3>还没有你自己的化身</h3>
+          <p>进入别人的世界，走的必须是属于你的那个人。</p>
+          <Button onClick={onOpenAvatar}>创建我的化身</Button>
+        </div>
+      ) : (
+        <>
+          <section className="plaza-panel plaza-avatar-panel">
+            <AvatarPortrait avatar={avatar} getAccessToken={() => authClient.getAccessToken()} />
+            <div>
+              <div className="plaza-avatar-name-row">
+                <strong>{avatar.name}</strong>
+                <span className="plaza-chip">你的化身</span>
+              </div>
+              <small>{avatarAppearanceText(avatar.appearance)}</small>
+            </div>
+          </section>
+
+          <div className="form-block">
+            <span className="field-label">在这个世界里，TA是谁？</span>
+            <div className="chip-grid" role="group" aria-label="身份">
+              {ORIGIN_IDENTITIES.map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  className={`choice-chip ${identityId === item.id ? "active" : ""}`}
+                  aria-pressed={identityId === item.id}
+                  disabled={busy}
+                  onClick={() => pickIdentity(item.id)}
+                >
+                  {isCustom ? item.name : localIdentityTitle(genre, item.id)}
+                  {identityId === item.id && <Icon name="check" size={13} />}
+                </button>
+              ))}
+            </div>
+            {identity && <p className="field-hint">{identity.name} · {identity.description}</p>}
+          </div>
+
+          {identityId && (isCustom ? (
+            <label className="field-label">
+              出生点（选填）
+              <input
+                maxLength={START_POINT_NAME_MAX}
+                autoComplete="off"
+                value={spawnName}
+                disabled={busy}
+                onChange={(event) => { setSpawnName(event.target.value); setSpawnHook(""); }}
+                placeholder="主角睁开眼的地方"
+              />
+            </label>
+          ) : (
+            <div className="form-block">
+              <span className="field-label">出生点</span>
+              <div className="chip-grid" role="group" aria-label="出生点">
+                {points.map((point) => (
+                  <button
+                    type="button"
+                    key={point.id || point.name}
+                    className={`choice-chip ${spawnName === point.name ? "active" : ""}`}
+                    aria-pressed={spawnName === point.name}
+                    disabled={busy}
+                    onClick={() => { setSpawnName(point.name); setSpawnHook(point.hook || ""); }}
+                  >
+                    {point.name}
+                    {spawnName === point.name && <Icon name="check" size={13} />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          <div className="form-block">
+            <span className="field-label">带进这个世界的能力</span>
+            <div className="chip-grid" role="group" aria-label="能力">
+              {abilities.map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  className={`choice-chip ${abilityName === item.name ? "active" : ""}`}
+                  aria-pressed={abilityName === item.name}
+                  disabled={busy}
+                  onClick={() => setAbilityName(item.name)}
+                >
+                  {item.name}
+                  {abilityName === item.name && <Icon name="check" size={13} />}
+                </button>
+              ))}
+            </div>
+            {abilities.find((item) => item.name === abilityName) && (
+              <p className="field-hint">{abilities.find((item) => item.name === abilityName).desc}</p>
+            )}
+          </div>
+
+          <p className="plaza-fee-note"><span aria-hidden="true">●</span> 进入重演后，新章节的生成费用计入你自己的额度。</p>
+          {error && <div className="sw-inline-alert" role="alert">{error}</div>}
+          <div className="plaza-publish-actions">
+            <Button disabled={!identityId || busy} onClick={() => void enter()}>
+              {busy ? "正在进入…" : `带${avatar.name}进入 · 写下第一章`}
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => onNavigate("plaza-detail", { id })}>先不进入</Button>
+          </div>
+          {busy && <GenerationOverlay kind="story" onCancel={() => { operation.current?.abort(); operation.current = null; setBusy(false); }} />}
+        </>
+      )}
+    </div>
+  );
+}
+
 function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClient, onAuthRequired, avatar }) {
   const operation = useRef(null);
   const candidate = useRef(null);
@@ -3406,6 +4048,9 @@ function App() {
   const setLibrary = store.update;
   const [route, setRoute] = useState(() => parseRoute(window.location.hash));
   const view = route.view;
+  // Plaza sub-views (detail / publish / enter / plaza-read) all keep the
+  // 广场 tab active in the sidebar and the bottom bar.
+  const navView = route.plaza || view.startsWith("plaza") ? "plaza" : view;
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [shareRequest, setShareRequest] = useState(false);
   const [toast, setToast] = useState("");
@@ -3426,13 +4071,30 @@ function App() {
   const readerExternal = route.shared
     ? COMMUNITY_BOOKS.find((book) => book.id === route.id) || library.publications.find((item) => item.id === route.id)?.snapshot
     : null;
-  const readerStory = route.shared ? readerExternal : library.stories.find((story) => story.id === route.id);
+  const [plazaLines, setPlazaLines] = useState({});
+  const readerStory = route.shared
+    ? readerExternal
+    : route.plaza
+      ? plazaLines[route.id]
+      : library.stories.find((story) => story.id === route.id);
+  useEffect(() => {
+    if (!route.plaza || !route.id || plazaLines[route.id]) return;
+    let cancelled = false;
+    fetchPlazaDetail({ id: route.id })
+      .then((detail) => {
+        if (cancelled || !detail) return;
+        const story = plazaReaderStory(detail);
+        if (story) setPlazaLines((current) => ({ ...current, [route.id]: story }));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [route.plaza, route.id, plazaLines]);
   const { animate } = useMotionPolicy(view);
   useSmoothScroll(view);
   useSceneMotion(
     sceneRef,
     view,
-    ".hero-copy h1, .store-heading h1, .merge-heading h1",
+    ".hero-copy h1, .store-heading h1, .merge-heading h1, .plaza-heading h1",
   );
   useEffect(() => {
     const onHash = () => { setRoute(parseRoute(window.location.hash)); setShareRequest(false); };
@@ -3455,7 +4117,17 @@ function App() {
     return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
   }, [unsaved]);
   useEffect(() => {
-    const titles = { home: "我的世界", forge: "新故事", store: "书城", merge: "世界合流", avatar: "我的化身" };
+    const titles = {
+      plaza: "广场",
+      "plaza-detail": "故事线详情",
+      "plaza-publish": "发布到广场",
+      "plaza-enter": "进入世界",
+      home: "我的世界",
+      forge: "新故事",
+      store: "书城",
+      merge: "世界合流",
+      avatar: "我的化身",
+    };
     document.title = `${view === "reader" ? readerStory?.title || "故事未找到" : titles[view]} · 织界`;
     if (view !== "reader" && view !== "forge") {
       const heading = sceneRef.current?.querySelector(".page h1");
@@ -3471,8 +4143,15 @@ function App() {
   }, [toast]);
   const navigate = (next, options = {}) => {
     const nextRoute = next === "reader"
-      ? { view: next, id: options.storyId || activeStory?.id, shared: Boolean(options.shared) }
-      : { view: next };
+      ? {
+          view: next,
+          id: options.storyId || activeStory?.id,
+          shared: Boolean(options.shared),
+          ...(options.plaza ? { plaza: true } : {}),
+        }
+      : next === "plaza-detail" || next === "plaza-enter"
+        ? { view: next, id: options.id }
+        : { view: next };
     const hash = routeHash(nextRoute);
     if (window.location.hash !== hash) window.history.pushState(null, "", hash);
     setRoute(parseRoute(hash));
@@ -3653,6 +4332,45 @@ function App() {
     commitStory(story);
     setToast("");
   };
+  // Plaza （广场）: reading a published line is a pure local view over
+  // the public snapshot; entering one seeds a brand-new local story of
+  // the entrant's own, whose generation flows through /api/generate and
+  // meters to the entrant.
+  const openPlazaDetail = (publication) => navigate("plaza-detail", { id: publication.id });
+  const openPlazaLine = async (publication) => {
+    let story = plazaLines[publication.id];
+    if (!story) {
+      const detail = publication.snapshot ? publication : await fetchPlazaDetail({ id: publication.id });
+      story = plazaReaderStory(detail);
+      if (!story) { setToast("这条故事线暂时打不开。"); return; }
+      setPlazaLines((current) => ({ ...current, [publication.id]: story }));
+    }
+    navigate("reader", { storyId: publication.id, plaza: true });
+  };
+  const enterPlazaLine = async (detail, picks, { signal } = {}) => {
+    const ownAvatar = avatarState.avatar;
+    if (!ownAvatar) { navigate("avatar"); throw new Error("先创建你的化身，再带它进入这个世界。"); }
+    const draft = enterDraftFor(detail, { avatar: ownAvatar, ...picks });
+    const settingViolation = findSettingViolation(draft.customWorldSetting);
+    if (settingViolation) throw new Error(settingViolation);
+    let story = createStory(draft);
+    const bible = detail.enterTemplate?.worldBible;
+    if (bible) story = { ...story, worldBible: bible };
+    if (provider.configured) {
+      story = { ...story, engine: "gemini" };
+      story = acceptGeneratedChapter(story, await requestChapter(story, 0, {
+        signal,
+        getAccessToken: () => authClient.getAccessToken(),
+        onAuthRequired: () => { setAccountIntent(null); setAccountOpen(true); },
+      }));
+    } else {
+      story = seedStory(story);
+    }
+    setLibrary((current) => ({ ...libraryWithStory(current, story), draft: null }));
+    setShareRequest(false);
+    navigate("reader", { storyId: story.id });
+    return story;
+  };
   let page;
   if (view === "forge")
     page = (
@@ -3668,11 +4386,18 @@ function App() {
       />
     );
   else if (view === "reader")
-    page = (
+    page = route.plaza && !readerStory ? (
+      <div className="page page-plaza page-enter">
+        <p className="plaza-loading" role="status">正在打开这条故事线…</p>
+        <Button variant="secondary" onClick={() => navigate("plaza")}>回到广场</Button>
+      </div>
+    ) : (
       <Reader
-        key={`${readerStory?.id || "empty"}:${readerExternal ? "shared" : "own"}`}
+        key={`${readerStory?.id || "empty"}:${readerExternal ? "shared" : route.plaza ? "plaza" : "own"}`}
         story={readerStory}
-        readOnly={Boolean(readerExternal)}
+        readOnly={Boolean(readerExternal) || Boolean(route.plaza)}
+        backRoute={route.plaza ? { view: "plaza-detail", id: route.id } : null}
+        backText={route.plaza ? "返回广场" : ""}
         onNavigate={navigate}
         onUpdateStory={commitStory}
         onPrepareChapter={prepareChapter}
@@ -3725,6 +4450,59 @@ function App() {
         onNavigate={navigate}
       />
     );
+  else if (view === "plaza")
+    page = (
+      <PlazaFeed
+        account={account}
+        activeStory={activeStory}
+        onNavigate={navigate}
+        onOpenStory={openOwnReader}
+        onOpenDetail={openPlazaDetail}
+        onReadLine={(publication) => void openPlazaLine(publication)}
+        onEnter={(publication) => navigate("plaza-enter", { id: publication.id })}
+      />
+    );
+  else if (view === "plaza-detail")
+    page = (
+      <PlazaDetail
+        id={route.id}
+        account={account}
+        authClient={authClient}
+        onNavigate={navigate}
+        onReadLine={(detail) => void openPlazaLine(detail)}
+        onEnter={(detail) => navigate("plaza-enter", { id: detail.id })}
+        onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
+        onToast={setToast}
+      />
+    );
+  else if (view === "plaza-publish")
+    page = (
+      <PlazaPublish
+        stories={library.stories}
+        avatar={avatarState.avatar}
+        avatarLoaded={avatarState.loaded}
+        account={account}
+        authClient={authClient}
+        onNavigate={navigate}
+        onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
+        onOpenAvatar={() => navigate("avatar")}
+        onToast={setToast}
+      />
+    );
+  else if (view === "plaza-enter")
+    page = (
+      <PlazaEnter
+        id={route.id}
+        account={account}
+        authClient={authClient}
+        avatar={avatarState.avatar}
+        avatarLoaded={avatarState.loaded}
+        onNavigate={navigate}
+        onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
+        onOpenAvatar={() => navigate("avatar")}
+        onEnterLine={enterPlazaLine}
+      />
+    );
   else
     page = (
       <Home
@@ -3748,7 +4526,7 @@ function App() {
       data-motion={animate ? "on" : "off"}
     >
       <AuroraBackground />
-      <Sidebar view={view} onNavigate={navigate} />
+      <Sidebar view={navView} onNavigate={navigate} />
       <main className="main-shell">
         <Topbar onNavigate={navigate} onOpenLibrary={() => setLibraryOpen(true)} account={account} onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }} />
         {warning && (
@@ -3758,7 +4536,7 @@ function App() {
             <button onClick={() => setLibraryOpen(true)}>备份与恢复</button>
           </div>
         )}
-        <MobileBottomNav view={view} onNavigate={navigate} />
+        <MobileBottomNav view={navView} onNavigate={navigate} />
         {page}
       </main>
       {accountOpen && <ReadingDialog title={account.user ? "我的账号" : "登录与注册"} onClose={() => setAccountOpen(false)}>

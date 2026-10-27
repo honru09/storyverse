@@ -13,7 +13,7 @@ const storeBlock = main.slice(main.indexOf('function StoreRanking'), main.indexO
 test('bottom nav is a full-width text bar: no icons, four text items', () => {
   assert.doesNotMatch(navBlock, /<Icon/)
   assert.match(navBlock, /className="mobile-bottom-nav"/)
-  for (const label of ['世界', '造世', '书城', '合流']) {
+  for (const label of ['广场', '造世', '书城', '合流']) {
     assert.match(navBlock, new RegExp(`label: "${label}"`))
   }
   // The reader still hides the bar entirely.

@@ -6,6 +6,7 @@ import { ApiError, createGeminiGenerator, MAX_REQUEST_BYTES } from './gemini.js'
 import { createAuthService } from './auth.js'
 import { createCoverService } from './cover.js'
 import { createAvatarService } from './avatar.js'
+import { createPlazaService } from './plaza.js'
 
 const DEFAULT_DIST = fileURLToPath(new URL('../dist/', import.meta.url))
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2' }
@@ -116,6 +117,25 @@ async function readAuthJson(request) {
   } catch { throw new ApiError(400, '请求格式有误，请重试。') }
 }
 
+async function readPlazaJson(request) {
+  if (request.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
+    throw new ApiError(415, '请使用 JSON 格式提交。')
+  }
+  if (Number(request.headers['content-length']) > MAX_REQUEST_BYTES) throw new ApiError(413, '故事数据过大，请先导出备份。')
+  const chunks = []
+  let length = 0
+  for await (const chunk of request) {
+    length += chunk.length
+    if (length > MAX_REQUEST_BYTES) throw new ApiError(413, '故事数据过大，请先导出备份。')
+    chunks.push(chunk)
+  }
+  try {
+    const result = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error()
+    return result
+  } catch { throw new ApiError(400, '请求格式有误，请重试。') }
+}
+
 async function serveStatic(request, response, pathname, distDir) {
   let decoded
   try { decoded = decodeURIComponent(pathname) } catch { throw new ApiError(400, '页面地址无效。') }
@@ -139,7 +159,7 @@ async function serveStatic(request, response, pathname, distDir) {
   response.end(request.method === 'HEAD' ? undefined : bytes)
 }
 
-export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth = createAuthService({ env }), cover = createCoverService({ env }), avatar = createAvatarService({ env }), distDir = DEFAULT_DIST } = {}) {
+export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth = createAuthService({ env }), cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza = createPlazaService({ env }), distDir = DEFAULT_DIST } = {}) {
   // Explicit opt-out preserves existing deployments until the release owner sets it.
   const generationEnabled = env.GENERATION_ENABLED !== 'false'
   // The model id is static configuration; remember it the first time status
@@ -330,6 +350,57 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           response.end(image.buffer)
         }
         return
+      }
+      if (pathname === '/api/plaza' && request.method === 'GET') {
+        return sendJson(response, 200, { publications: await plaza.feed() })
+      }
+      if (pathname === '/api/plaza/publish' && request.method === 'POST') {
+        // Publishing is account property: a signed-in identity is always
+        // required, and the plaza service re-validates the line, its gate
+        // and the red-line scan before anything is stored.
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再发布到广场。', 'auth-required')
+          throw error
+        }
+        const publication = await plaza.publish(identity, await readPlazaJson(request))
+        return sendJson(response, 200, { publication })
+      }
+      const plazaMatch = pathname.match(/^\/api\/plaza\/([^/]+)(?:\/(report|withdraw|portrait))?$/)
+      if (plazaMatch) {
+        const id = decodeURIComponent(plazaMatch[1])
+        const action = plazaMatch[2]
+        if (!action && request.method === 'GET') {
+          return sendJson(response, 200, { publication: await plaza.detail(id) })
+        }
+        if (action === 'portrait' && request.method === 'GET') {
+          const image = await plaza.portrait(id)
+          if (!image) throw new ApiError(404, '这条故事线还没有立绘。')
+          if (!response.destroyed && !response.writableEnded) {
+            response.writeHead(200, {
+              'Content-Type': image.contentType,
+              'Content-Length': image.buffer.length,
+              'Cache-Control': 'public, max-age=300',
+            })
+            response.end(image.buffer)
+          }
+          return
+        }
+        if ((action === 'report' || action === 'withdraw') && request.method === 'POST') {
+          let identity
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) {
+              throw new ApiError(401, action === 'report' ? '请先登录，再举报。' : '请先登录，再下架。', 'auth-required')
+            }
+            throw error
+          }
+          const result = action === 'report' ? await plaza.report(identity, id) : await plaza.withdraw(identity, id)
+          return sendJson(response, 200, result)
+        }
       }
       if (pathname.startsWith('/api/')) throw new ApiError(404, '接口不存在。')
       if (request.method !== 'GET' && request.method !== 'HEAD') throw new ApiError(405, '此操作不支持。')

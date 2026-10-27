@@ -1,0 +1,281 @@
+import { randomUUID } from 'node:crypto'
+import { ApiError, sanitizeSettingText } from './gemini.js'
+import { findSettingViolation } from '../src/setting-guard.js'
+import { plazaSnapshot } from '../src/story-engine.js'
+import { PLAZA_REPORT_THRESHOLD, plazaGateFor } from '../src/plaza.js'
+import { emptyLibrary, validateLibrary } from '../src/persistence.js'
+import { avatarAppearanceText } from '../src/avatar.js'
+import { createPlazaStore } from './plaza-store.js'
+import { createAvatarStore } from './avatar-store.js'
+
+/**
+ * The plaza service: publication of finished avatar lines, the public
+ * feed and detail, and the minimal moderation loop (report → auto-hide,
+ * author withdraw).
+ *
+ * Trust boundaries:
+ * - The publish endpoint re-checks everything the client claims: the
+ *   story must validate as a library story, pass the shared publish gate
+ *   (avatar line, season/long, finished), belong to the caller's CURRENT
+ *   avatar (the avatar snapshot is read from the caller's own server-side
+ *   profile, never from the request body), and pass the setting-guard
+ *   red-line scan over the world setting and every chapter.
+ * - What is stored is the engine's sanitized snapshot (private free-form
+ *   fields stripped, private literals scrubbed from prose). The record
+ *   additionally carries server-only fields — author uid, reporter uids —
+ *   which summaryOf/detailOf never copy out.
+ */
+const clip = (value, length) => typeof value === 'string' ? value.trim().slice(0, length) : ''
+
+function authorNameFor(identity) {
+  const name = sanitizeSettingText(clip(identity?.displayName, 40)).trim()
+    || sanitizeSettingText(clip(identity?.email, 40)).trim()
+  return name || '织界旅人'
+}
+
+function summaryOf(record) {
+  return {
+    id: record.id,
+    title: record.title,
+    authorName: record.authorName,
+    avatar: record.avatar,
+    genreId: record.genreId,
+    genreTemplateId: record.genreTemplateId,
+    worldName: record.worldName,
+    storyLengthMode: record.storyLengthMode,
+    seasonNumber: record.seasonNumber,
+    chapterCount: record.chapterCount,
+    totalChapters: record.totalChapters,
+    publishedAt: record.publishedAt,
+  }
+}
+
+function detailOf(record) {
+  return {
+    ...summaryOf(record),
+    worldBible: record.snapshot.worldBible,
+    beats: record.snapshot.beats,
+    enterTemplate: record.snapshot.enterTemplate,
+    snapshot: {
+      config: record.snapshot.config,
+      chapters: record.snapshot.chapters,
+      choices: record.snapshot.choices,
+      ...(record.snapshot.engine ? { engine: record.snapshot.engine } : {}),
+    },
+  }
+}
+
+const NOT_FOUND = () => new ApiError(404, '这条故事线已下架或不存在。')
+
+function redLineViolation(story) {
+  const texts = []
+  const push = (value) => { if (typeof value === 'string' && value) texts.push(value) }
+  push(story.config?.customWorldName)
+  push(story.config?.customWorldSetting)
+  const bible = story.worldBible || {}
+  push(bible.premise)
+  push(bible.endingAnchor)
+  for (const line of Array.isArray(bible.rules) ? bible.rules : []) push(line)
+  for (const line of Array.isArray(bible.outline) ? bible.outline : []) push(line)
+  for (const chapter of Array.isArray(story.chapters) ? story.chapters : []) {
+    push(chapter?.title)
+    push(chapter?.summary)
+    for (const line of Array.isArray(chapter?.paragraphs) ? chapter.paragraphs : []) push(line)
+    for (const line of Array.isArray(chapter?.events) ? chapter.events : []) push(line)
+    for (const line of Array.isArray(chapter?.foreshadowing) ? chapter.foreshadowing : []) push(line)
+    push(chapter?.choice?.prompt)
+    for (const option of Array.isArray(chapter?.choice?.options) ? chapter.choice.options : []) {
+      push(option?.label)
+      push(option?.detail)
+      push(option?.consequence)
+    }
+  }
+  for (const text of texts) {
+    const violation = findSettingViolation(text)
+    if (violation) return violation
+  }
+  return null
+}
+
+// The god-mode setting is the one free-form text a snapshot keeps verbatim
+// (it IS the world). It still goes through the same structural-impersonation
+// scrub as every other prompt-bound text before it is stored, and any
+// verbatim copy inside the bible follows it.
+function scrubSnapshotSetting(snapshot) {
+  const raw = snapshot.enterTemplate?.config?.customWorldSetting || ''
+  if (!raw) return snapshot
+  const safe = sanitizeSettingText(raw)
+  if (safe === raw) return snapshot
+  const swap = (value) => typeof value === 'string' ? value.split(raw).join(safe) : value
+  const bible = snapshot.worldBible || {}
+  const nextBible = {
+    premise: swap(bible.premise || ''),
+    rules: (bible.rules || []).map(swap),
+    endingAnchor: swap(bible.endingAnchor || ''),
+    outline: (bible.outline || []).map(swap),
+  }
+  return {
+    ...snapshot,
+    worldBible: nextBible,
+    config: { ...snapshot.config, customWorldSetting: safe },
+    enterTemplate: {
+      ...snapshot.enterTemplate,
+      config: { ...snapshot.enterTemplate.config, customWorldSetting: safe },
+      worldBible: nextBible,
+    },
+  }
+}
+
+export function createPlazaService({ env = process.env, store, avatarStore, now = () => new Date() } = {}) {
+  const backend = store === undefined ? createPlazaStore({ env }) : store
+  const avatars = avatarStore === undefined ? createAvatarStore({ env }) : avatarStore
+  const tails = new Map()
+  const serialise = (key, task) => {
+    const previous = tails.get(key) || Promise.resolve()
+    const run = previous.then(task, task)
+    tails.set(key, run.catch(() => {}))
+    return run
+  }
+
+  async function findOwnPublication(uid, sourceStoryId) {
+    const all = await backend.listPublications()
+    return all.find((record) => record.authorUid === uid && record.sourceStoryId === sourceStoryId) || null
+  }
+
+  // The avatar snapshot stores a portrait REFERENCE, not a copy: whether
+  // a portrait exists follows the author's current profile, so painting
+  // (or repainting) after publishing lights the card up without a
+  // re-publish.
+  async function withLivePortrait(record) {
+    if (!avatars) return record
+    try {
+      const profileRecord = await avatars.getProfile(record.authorUid)
+      const ready = profileRecord?.avatar?.portrait?.status === 'ready'
+      if (ready === Boolean(record.avatar?.hasPortrait)) return record
+      return { ...record, avatar: { ...record.avatar, hasPortrait: ready } }
+    } catch {
+      return record
+    }
+  }
+
+  return {
+    available: backend !== null && backend !== undefined,
+
+    async feed() {
+      if (!backend) return []
+      const all = await backend.listPublications()
+      const visible = all
+        .filter((record) => record.status === 'published')
+        .sort((a, b) => String(b.publishedAt).localeCompare(String(a.publishedAt)))
+      return (await Promise.all(visible.map(withLivePortrait))).map(summaryOf)
+    },
+
+    async detail(id) {
+      if (!backend) throw NOT_FOUND()
+      const record = await backend.getPublication(id)
+      if (!record || record.status !== 'published') throw NOT_FOUND()
+      return detailOf(await withLivePortrait(record))
+    },
+
+    async publish(identity, body) {
+      if (!backend) throw new ApiError(503, '广场服务尚未配置。')
+      return serialise(`publish:${identity.uid}`, async () => {
+        const story = body && typeof body === 'object' ? body.story : null
+        if (!story || typeof story !== 'object' || Array.isArray(story)) {
+          throw new ApiError(400, '没有收到要发布的故事线。')
+        }
+        const errors = validateLibrary({ ...emptyLibrary(), stories: [story] })
+        if (errors.length) throw new ApiError(400, '这条故事线的数据不完整，暂时不能发布。')
+        const gate = plazaGateFor(story)
+        if (!gate.publishable) throw new ApiError(400, gate.reason)
+        if (!avatars) throw new ApiError(400, '先创建你的化身，再发布它的故事线。')
+        const profileRecord = await avatars.getProfile(identity.uid)
+        const profile = profileRecord?.avatar || null
+        if (!profile || profile.id !== story.config.avatarId) {
+          throw new ApiError(400, '这条故事线不是用你现在的化身走完的，无法发布。')
+        }
+        const violation = redLineViolation(story)
+        if (violation) throw new ApiError(400, violation)
+        const snapshot = scrubSnapshotSetting(plazaSnapshot(story, { avatarName: profile.name }))
+        const timestamp = now().toISOString()
+        const existing = await findOwnPublication(identity.uid, story.id)
+        const record = {
+          id: existing?.id || `pub-${randomUUID().slice(0, 12)}`,
+          authorUid: identity.uid,
+          authorName: authorNameFor(identity),
+          sourceStoryId: story.id,
+          title: snapshot.title,
+          genreId: snapshot.genreId,
+          genreTemplateId: snapshot.genreTemplateId,
+          worldName: snapshot.worldName,
+          storyLengthMode: snapshot.storyLengthMode,
+          seasonNumber: snapshot.seasonNumber,
+          chapterCount: snapshot.chapters.length,
+          totalChapters: snapshot.totalChapters,
+          avatar: {
+            name: profile.name,
+            appearance: avatarAppearanceText(profile.appearance),
+            hasPortrait: profile.portrait?.status === 'ready',
+          },
+          snapshot,
+          status: 'published',
+          reporters: existing?.reporters || [],
+          createdAt: existing?.createdAt || timestamp,
+          publishedAt: timestamp,
+          updatedAt: timestamp,
+        }
+        await backend.putPublication(record)
+        return summaryOf(record)
+      })
+    },
+
+    async report(identity, id) {
+      if (!backend) throw NOT_FOUND()
+      return serialise(`publication:${id}`, async () => {
+        const record = await backend.getPublication(id)
+        if (!record || record.status !== 'published') throw NOT_FOUND()
+        if (record.authorUid === identity.uid) throw new ApiError(400, '这是你发布的故事线，不能举报。')
+        const reporters = Array.isArray(record.reporters) ? [...record.reporters] : []
+        if (!reporters.includes(identity.uid)) reporters.push(identity.uid)
+        const next = { ...record, reporters, updatedAt: now().toISOString() }
+        if (reporters.length >= PLAZA_REPORT_THRESHOLD && next.status === 'published') {
+          next.status = 'hidden'
+          next.hiddenReason = 'reports'
+          next.hiddenAt = now().toISOString()
+        }
+        await backend.putPublication(next)
+        return { reported: true }
+      })
+    },
+
+    async withdraw(identity, id) {
+      if (!backend) throw NOT_FOUND()
+      return serialise(`publication:${id}`, async () => {
+        const record = await backend.getPublication(id)
+        if (!record || record.authorUid !== identity.uid) throw NOT_FOUND()
+        if (record.status !== 'withdrawn') {
+          await backend.putPublication({
+            ...record,
+            status: 'withdrawn',
+            withdrawnAt: now().toISOString(),
+            updatedAt: now().toISOString(),
+          })
+        }
+        return { withdrawn: true, id: record.id }
+      })
+    },
+
+    /** The author's current portrait, served under the publication so no account id is ever exposed. */
+    async portrait(id) {
+      if (!backend || !avatars) return null
+      const record = await backend.getPublication(id)
+      if (!record || record.status !== 'published') return null
+      const image = await avatars.getImage(record.authorUid, 'current')
+      if (!image?.image) return null
+      return {
+        buffer: Buffer.from(image.image, 'base64'),
+        contentType: image.contentType || 'image/jpeg',
+      }
+    },
+  }
+}
