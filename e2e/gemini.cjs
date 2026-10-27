@@ -21,6 +21,22 @@ function deferred() {
   return gate;
 }
 
+// The reader menu chrome is summoned by a tap in the middle of the
+// screen; tests dispatch that same tap on the article so the scroll
+// position never decides whether it lands.
+async function openChrome(page) {
+  if (await page.locator('.reader-chrome-bottom').count() === 0) {
+    await page.evaluate(() => {
+      const el = document.querySelector('.reader-article');
+      const rect = el.getBoundingClientRect();
+      const options = { bubbles: true, clientX: Math.round(window.innerWidth / 2), clientY: Math.round(Math.min(window.innerHeight / 2, Math.max(80, rect.top + 140))) };
+      el.dispatchEvent(new PointerEvent('pointerdown', options));
+      el.dispatchEvent(new MouseEvent('click', options));
+    });
+  }
+  await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
+}
+
 async function library(page) {
   return page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
 }
@@ -139,6 +155,7 @@ async function finishBook(page, requests, { total = 24, ending = '这一季，�
       await finishBook(page, requests);
       const original = (await library(page)).stories[0];
       assert.equal(original.engine, 'gemini');
+      await openChrome(page);
       await page.getByRole('button', { name: '分享', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: '分享预览' });
       assert.equal(await dialog.locator('details').count(), 24);
@@ -269,6 +286,7 @@ async function finishBook(page, requests, { total = 24, ending = '这一季，�
       await staleSeen.promise;
       // Intervene while it flies: the nudge queues for chapter three, the
       // chapter key rotates, and the in-flight answer becomes stale.
+      await openChrome(page);
       await page.getByRole('button', { name: '介入', exact: true }).click();
       const sheet = page.getByRole('dialog', { name: '介入 · 扰动世界线' });
       await sheet.getByLabel(/亲手写下/).fill('让纸鲸今晚掉头向南');

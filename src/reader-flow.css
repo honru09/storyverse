@@ -153,9 +153,17 @@ button.chapter-item:disabled {
   font-size: 0.85rem;
   line-height: 1.7;
 }
+/* The close button is a standard 44px circle inside the heading's own
+   grid — pinned on all four sides so no theme or shell rule can stretch
+   it over the sheet's rounded corner or push it outside the padding. */
 .reading-dialog .icon-button {
+  width: 44px;
+  height: 44px;
   min-width: 44px;
   min-height: 44px;
+  flex: none;
+  align-self: center;
+  margin: 0;
   background: var(--surface-tide);
   border-radius: 50%;
 }
@@ -252,10 +260,6 @@ button.chapter-item:disabled {
     margin: -0.5rem auto 1rem;
     border-radius: 3px;
     background: var(--line-strong);
-  }
-  .reader-actions .reader-directory-button {
-    min-width: 44px;
-    padding-inline: 0.7rem;
   }
   .chapter-navigation {
     padding-bottom: 0.5rem;
@@ -360,7 +364,7 @@ button.chapter-item:disabled {
   font-weight: 600;
   line-height: 1.7;
 }
-.reader-dock-actions .reader-intervene-button { color: var(--reader-accent, var(--cyan)); }
+.reader-chrome-grid .reader-chrome-intervene { color: var(--reader-accent, var(--cyan)); }
 
 /* ---- 生成控制 (generation control): frontier actions, prose editor ---- */
 .frontier-actions {

@@ -64,7 +64,6 @@ button:disabled{cursor:not-allowed}
 .local-badge{margin-right:8px;padding:6px 9px;border-radius:var(--radius-nav);background:var(--glass);border:1px solid var(--line);color:var(--dim);font-size:11px;font-weight:650}
 .motion-toggle,.icon-button{display:grid;place-items:center;min-width:44px;min-height:44px;border:1px solid transparent;border-radius:var(--radius-nav);background:transparent;color:var(--ink);transition:background-color var(--dur-state) var(--ease-out),transform var(--dur-press) var(--ease-press)}
 .motion-toggle[aria-pressed="false"]{color:var(--dim-2)}
-.sw-share-button{display:inline-flex;align-items:center;gap:5px;min-height:44px;padding:8px 8px;border:0;background:transparent;color:var(--cyan);font-size:13px;font-weight:650}
 .sidebar{display:none}
 .page{width:min(100%,1240px);margin:0 auto;padding:24px 20px calc(84px + env(safe-area-inset-bottom))}
 .page-enter{animation:page-in var(--dur-page) var(--ease-out) both}
@@ -322,15 +321,6 @@ select{appearance:auto}
 .app-shell[data-view="reader"] .brand-glyph svg{width:28px;height:28px}
 .app-shell[data-view="reader"] .brand-copy strong{font-size:20px}
 .page-reader{max-width:1020px;padding-top:12px;padding-bottom:40px}
-.reader-topline{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
-.reader-topline .back-link{font-size:12px}
-.reader-chapter{display:flex;align-items:center;flex-wrap:wrap;order:3;width:100%;gap:10px;margin-top:12px}
-.reader-book-title{flex:1;min-width:0;font-size:12px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.reader-position{flex-shrink:0;color:var(--dim);font-size:12px;font-variant-numeric:tabular-nums}
-.chapter-progress{flex-basis:100%;width:100%;height:4px;border-radius:99px;background:var(--glass-2);overflow:hidden}
-.chapter-progress i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--cyan),var(--pink));transition:width var(--dur-page) var(--ease-out)}
-.reader-actions{display:flex;align-items:center;gap:2px}
-.reader-actions .icon-button.is-active{color:var(--pink)}
 .reader-readonly-note{display:flex;align-items:center;gap:7px;margin:16px 0 0;color:var(--dim);font-size:12px}
 .reader-layout{display:flex;justify-content:center;margin-top:36px}
 .reader-article{width:min(100%,700px);font-size:17px}
@@ -514,7 +504,6 @@ input[type="checkbox"]{accent-color:var(--cyan)}
   .merge-controls{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:44px;display:grid}
   .merge-action{align-self:end;margin-top:0}
   .page-reader{padding-top:18px}.reader-layout{margin-top:48px}.reader-article{font-size:18px}
-  .reader-topline .back-link{font-size:14px}.reader-book-title,.reader-position{font-size:13px}.sw-share-button{font-size:14px;padding-inline:12px}
   .opening-art{width:260px}
   .wood-shelf-books{gap:18px}
   .home-heading{margin-bottom:24px}
@@ -566,8 +555,7 @@ input[type="checkbox"]{accent-color:var(--cyan)}
   .hero-copy h1{font-size:30px}.has-story .hero-copy h1{font-size:28px}
   .template-wall{gap:8px}.template-brick-copy{padding:8px}.template-brick-copy strong{font-size:13px}.template-brick-copy small{font-size:10px}
   .book-grid{gap:28px 12px}.book-cover b{font-size:17px}
-  .reader-topline{gap:2px}.reader-actions{gap:0}
-  .reader-topline>.back-link{font-size:11px}.sw-share-button{padding-inline:4px}.reader-article{font-size:16px}
+  .reader-article{font-size:16px}
   .merge-art-label{font-size:15px}.merge-stage{grid-template-columns:minmax(0,1fr) 20px minmax(0,1fr)}
   .merge-core{width:20px}.merge-core svg{width:18px}.merge-card-bottom b{font-size:14px}.merge-card-bottom span{font-size:10px}
   .priority-options button,.sw-bond-options button{font-size:13px}

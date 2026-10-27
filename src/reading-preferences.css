@@ -119,15 +119,6 @@ body:has(.page-reader[data-reader-theme="oled"]) { background: #000000; }
   text-align-last: start; text-justify: inter-ideograph; line-break: strict;
   overflow-wrap: anywhere; word-break: normal; hyphens: auto;
 }
-.page-reader[data-reader-theme] .reader-topline {
-  padding: .5rem .625rem .75rem; margin-inline: -.375rem;
-  border: 1px solid var(--reader-border); border-radius: 1.375rem;
-  background: var(--reader-surface); box-shadow: var(--reader-shadow);
-   
-}
-.page-reader[data-reader-theme] .reader-chapter { padding-inline: .375rem; }
-.page-reader[data-reader-theme] .chapter-progress { background: var(--reader-border); }
-.page-reader[data-reader-theme] .chapter-progress i { background: var(--reader-accent); }
 .page-reader[data-reader-theme] .reading-dialog {
   color: var(--reader-text); background: var(--reader-surface); border-color: var(--reader-border);
 }
@@ -241,7 +232,7 @@ html[data-input="keyboard"] .reading-preference-option:active > span { transform
   .reading-preference-option:active > span, .reading-preferences button:not(:disabled):active { transform: none; }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .page-reader[data-reader-theme] :is(.reader-topline, .reading-dialog),
+  .page-reader[data-reader-theme] :is(.reader-chrome, .reading-dialog),
   .app-shell:has(.page-reader[data-reader-theme]) :is(.topbar, .sidebar, .mobile-bottom-nav) {
     background: var(--reader-surface);  
   }
@@ -249,7 +240,7 @@ html[data-input="keyboard"] .reading-preference-option:active > span { transform
 @media (prefers-contrast: more) {
   .reading-preference-option > span { border-color: currentColor; }
   .reading-preference-option input:checked + span { outline: 2px solid currentColor; outline-offset: -3px; }
-  .page-reader[data-reader-theme] :is(.reader-topline, .reading-dialog),
+  .page-reader[data-reader-theme] :is(.reader-chrome, .reading-dialog),
   .app-shell:has(.page-reader[data-reader-theme]) :is(.topbar, .sidebar, .mobile-bottom-nav) {
     background: var(--reader-surface); border-color: var(--reader-text);  
   }

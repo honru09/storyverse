@@ -41,6 +41,22 @@ function deferred() {
   return { promise, resolve };
 }
 
+// The reader menu chrome is summoned by a tap in the middle of the
+// screen; tests dispatch that same tap on the article so the scroll
+// position never decides whether it lands.
+async function openChrome(page) {
+  if (await page.locator('.reader-chrome-bottom').count() === 0) {
+    await page.evaluate(() => {
+      const el = document.querySelector('.reader-article');
+      const rect = el.getBoundingClientRect();
+      const options = { bubbles: true, clientX: Math.round(window.innerWidth / 2), clientY: Math.round(Math.min(window.innerHeight / 2, Math.max(80, rect.top + 140))) };
+      el.dispatchEvent(new PointerEvent('pointerdown', options));
+      el.dispatchEvent(new MouseEvent('click', options));
+    });
+  }
+  await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
+}
+
 async function library(page) {
   return page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
 }
@@ -232,6 +248,7 @@ async function savedChapters(page, count) {
       const fourth = requests.filter(request => request.mode !== 'reroll' && request.index === 3).at(-1);
       assert.equal(fourth.story.config.stylePreset ?? 'default', 'default');
       await page.evaluate(() => window.scrollTo(0, 0));
+      await openChrome(page);
       await page.getByRole('button', { name: '设定集', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: '设定集' });
       await dialog.waitFor();

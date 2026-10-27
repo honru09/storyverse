@@ -30,16 +30,31 @@ async function library(page) {
   return page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
 }
 
-// The reader topline hides while scrolling down by design; a short scroll
-// up is the reader's gesture to bring the chrome (and its buttons) back.
-async function revealTopline(page) {
-  await page.evaluate(() => window.scrollTo(0, Math.max(0, window.scrollY - 400)));
-  await page.locator('.reader-topline').waitFor({ state: 'visible' });
+// The reader menu chrome is summoned by a tap in the middle of the
+// screen; tests dispatch that same tap on the article so the scroll
+// position never decides whether it lands. The hairline back button
+// stays put at all times, so leaving the reader needs no summoning.
+async function toggleChrome(page) {
+  await page.evaluate(() => {
+    const el = document.querySelector('.reader-article');
+    const rect = el.getBoundingClientRect();
+    const options = { bubbles: true, clientX: Math.round(window.innerWidth / 2), clientY: Math.round(Math.min(window.innerHeight / 2, Math.max(80, rect.top + 140))) };
+    el.dispatchEvent(new PointerEvent('pointerdown', options));
+    el.dispatchEvent(new MouseEvent('click', options));
+  });
+}
+async function openChrome(page) {
+  if (await page.locator('.reader-chrome-bottom').count() === 0) await toggleChrome(page);
+  await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
+}
+async function closeChrome(page) {
+  if (await page.locator('.reader-chrome-bottom').count() > 0) await toggleChrome(page);
+  await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
 }
 
-async function currentChapter(page, number) {  // Attached, not visible: the progress bar lives in the topline, which by
-  // design slides away while the reader is scrolling down. What this
-  // helper asserts is the chapter identity, not the chrome's visibility.
+async function currentChapter(page, number) {  // The chapter identity rides the screen-reader progress node inside
+  // the top hairline; what this helper asserts is identity, and it
+  // holds whether or not the menu chrome is summoned.
   await page.getByRole('progressbar', { name: '阅读进度' }).waitFor({ state: 'attached' });
   await page.waitForFunction(expected => {
     const progress = document.querySelector('[role="progressbar"][aria-label="阅读进度"]');
@@ -172,11 +187,9 @@ async function runJourney(browser, width) {
       await currentChapter(page, 3);
     }
     await check(`${label} browser back and forward preserve reading context`, async () => {
-      await revealTopline(page);
       await page.getByRole('button', { name: '我的世界', exact: true }).click();
       await page.getByRole('button', { name: '继续阅读', exact: true }).waitFor();
       await page.goBack();
-      await revealTopline(page);
       await currentChapter(page, 3);
       await page.goForward();
       await page.getByRole('button', { name: '继续阅读', exact: true }).click();
@@ -194,6 +207,7 @@ async function runJourney(browser, width) {
     });
 
     await selectChapter(page, 1);
+    await openChrome(page);
     await page.getByRole('button', { name: '介入', exact: true }).click();
     const endSheet = page.getByRole('dialog', { name: '介入 · 扰动世界线' });
     await endSheet.waitFor();
@@ -205,7 +219,7 @@ async function runJourney(browser, width) {
     });
     await endSheet.getByRole('button', { name: '关闭面板' }).click();
 
-    await revealTopline(page);
+    await openChrome(page);
     await page.getByRole('button', { name: '分享', exact: true }).click();
     await page.getByRole('dialog', { name: '分享预览' }).getByRole('button', { name: '保存到本机书城' }).click();
     const publishedLibrary = await library(page);
@@ -214,7 +228,6 @@ async function runJourney(browser, width) {
       const serialized = JSON.stringify(publishedLibrary.publications[0].snapshot);
       for (const privateName of privateNames) assert.ok(!serialized.includes(privateName), `privacy leak: ${privateName}`);
     });
-    await revealTopline(page);
     await page.getByRole('button', { name: '我的世界', exact: true }).click();
     await navigation(page, '书城');
     await page.getByRole('heading', { name: '书城', exact: true }).waitFor();
@@ -223,12 +236,14 @@ async function runJourney(browser, width) {
     await currentChapter(page, 1);
     await check(`${label} published book is read-only and leaves originals intact`, async () => {
       await page.getByText('只读版本 · 不会改变原作', { exact: true }).waitFor();
+      await openChrome(page);
       assert.equal(await page.getByRole('button', { name: '分享', exact: true }).count(), 0);
+      // A read-only copy offers no way to reach into the worldline either.
+      assert.equal(await page.getByRole('button', { name: '介入', exact: true }).count(), 0);
+      await closeChrome(page);
       await page.getByRole('button', { name: '下一章', exact: true }).click();
       await currentChapter(page, 2);
       assert.equal(await page.getByRole('group', { name: '剧情选择' }).count(), 0);
-      // A read-only copy offers no way to reach into the worldline either.
-      assert.equal(await page.getByRole('button', { name: '介入', exact: true }).count(), 0);
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.getByText('只读版本 · 不会改变原作', { exact: true }).waitFor();
       await selectChapter(page, 23);
@@ -251,7 +266,6 @@ async function runJourney(browser, width) {
     await currentChapter(page, 1);
     const twoBookLibrary = await library(page);
     const partnerId = twoBookLibrary.activeStoryId;
-    await revealTopline(page);
     await page.getByRole('button', { name: '我的世界', exact: true }).click();
     await navigation(page, '合流');
     await page.getByRole('heading', { name: '世界合流', exact: true }).waitFor();
@@ -287,7 +301,6 @@ async function runJourney(browser, width) {
       assert.deepEqual(saved.stories.find(story => story.id === originalId), publishedLibrary.stories.find(story => story.id === originalId));
       assert.deepEqual(saved.stories.find(story => story.id === partnerId), twoBookLibrary.stories.find(story => story.id === partnerId));
     });
-    await revealTopline(page);
     await page.getByRole('button', { name: '我的世界', exact: true }).click();
     await page.screenshot({ path: path.join(artifactDir, `journey-${width}.png`), fullPage: true });
     await check(`${label} mobile home has no overflow or uncaught errors`, async () => {

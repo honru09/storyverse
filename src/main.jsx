@@ -99,7 +99,7 @@ import AccountPanel from "./components/AccountPanel.jsx";
 import { createAuthClient } from "./auth/client.js";
 import ReadingPreferences from "./components/ReadingPreferences.jsx";
 import { createReadingPreferencesStore, getReaderAppearance } from "./reading-preferences.js";
-import { chapterLocationKey, estimateReadingMetrics, READING_LOCATION_KEY } from "./reading-location.js";
+import { chapterLocationKey, READING_LOCATION_KEY } from "./reading-location.js";
 import { useReaderExperience } from "./useReaderExperience.js";
 import ReadingTools from "./components/ReadingTools.jsx";
 import "./reader-experience.css";
@@ -3301,33 +3301,32 @@ function Reader({
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [focused, setFocused] = useState(false);
-  // The floating topline card must never sit half over a line of prose:
-  // while the reader scrolls down it slides away, and it comes back on
-  // the first upward scroll or near the top — the same hide the focus
-  // mode applies, driven by scroll direction instead of a toggle. The
-  // flag is written straight to the DOM, not React state: a scroll
-  // listener must never re-render the reader mid-gesture (it would swap
-  // DOM nodes under the reader's own taps).
+  // 番茄式 chrome: reading is full-screen immersion — two hairlines
+  // (chapter line on top, progress + clock at the bottom) and nothing
+  // else. Tapping the middle of the screen summons the menu chrome;
+  // tapping again, opening any sheet, changing chapter, or starting to
+  // scroll puts it away. The state lives in React (not a DOM flag): a
+  // toggle tap is a deliberate gesture, never a scroll listener firing
+  // mid-gesture.
+  const [chromeOpen, setChromeOpen] = useState(false);
+  const [clock, setClock] = useState(() => new Date());
   useEffect(() => {
-    const root = readerRef.current;
-    if (!root) return undefined;
-    let lastY = window.scrollY;
-    const apply = (hidden) => { root.dataset.toplineHidden = hidden ? "true" : "false"; };
-    apply(false);
+    const timer = setInterval(() => setClock(new Date()), 20_000);
+    return () => clearInterval(timer);
+  }, []);
+  const seekStamp = useRef(0);
+  useEffect(() => {
+    if (!chromeOpen) return undefined;
+    let base = window.scrollY;
     const onScroll = () => {
-      const y = window.scrollY;
-      const delta = y - lastY;
-      lastY = y;
-      // A single leap is a programmatic jump (position restore, anchor or
-      // search jump), never a reading gesture: the chrome stays for it.
-      if (Math.abs(delta) > 240) { apply(false); return; }
-      if (y < 80) apply(false);
-      else if (delta > 4) apply(true);
-      else if (delta < -4) apply(false);
+      // Scrolls the slider itself causes while scrubbing must not fold
+      // the menu away under the reader's finger — re-baseline instead.
+      if (performance.now() - seekStamp.current < 800) { base = window.scrollY; return; }
+      if (Math.abs(window.scrollY - base) > 24) setChromeOpen(false);
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
-  }, [story.id]);
+  }, [chromeOpen]);
   const [bookmarkVersion, setBookmarkVersion] = useState(0);
   const bookmarkAnchor = useRef(null);
   const requestedLocation = useRef(null);
@@ -3355,7 +3354,6 @@ function Reader({
   const readingChapters = useMemo(() => story?.chapters.map((_, i) => chapterForReading(story, i)) || [], [story]);
   const chapter = story ? (readingChapters[index] || buildChapter(story, index)) : null;
   const coverState = coverStateOf(story);
-  const chapterMetrics = useMemo(() => estimateReadingMetrics(chapter?.paragraphs || []), [chapter]);
   const locationKey = story && chapterLocationKey(story.id, index, chapter.paragraphs, readOnly);
   const reading = useReaderExperience({ readerRef, locationKey, settings: preferences.settings,
     blocked: preferencesOpen || toolsOpen || directoryOpen || shareOpen || interveneOpen || settingsOpen || proseOpen });
@@ -3376,7 +3374,7 @@ function Reader({
     setCoverOpen(false);
     setDirectoryOpen(false);
     setToolsOpen(false);
-    if (readerRef.current) readerRef.current.dataset.toplineHidden = "false";
+    setChromeOpen(false);
     setInterveneOpen(false);
     setSettingsOpen(false);
     setInterveneNote("");
@@ -3475,9 +3473,6 @@ function Reader({
   const nextAvailable = index < lastAccessibleIndex(story, readOnly);
   const isFinal = index >= total - 1
     || (lengthMode === "endless" && isManuallyFinished(story) && index >= (story.chapters?.length || 1) - 1);
-  const progress = Number.isFinite(total)
-    ? `${Math.round(((index + 1) / total) * 100)}%`
-    : `${Math.round(((index + 1) / Math.max(story.chapters?.length || 0, index + 1)) * 100)}%`;
   const update = (nextStory, nextIndex = index) =>
     onUpdateStory?.(moveReadingPosition(nextStory, nextIndex));
   // 设定集 saves: bible + lorebook + style preset land on the story
@@ -3637,84 +3632,159 @@ function Reader({
       anchor, title: chapter.title, excerpt: chapter.paragraphs[anchor.paragraph] || '' });
     setBookmarkVersion(value => value + 1);
   };
+  const toggleStoryBookmark = () =>
+    onToggleBookmark?.({ ...story, bookmarked: !story.bookmarked });
+  const goBack = () =>
+    backRoute ? onNavigate(backRoute.view, { id: backRoute.id }) : onNavigate(readOnly ? "store" : "home");
+  const anySheetOpen = preferencesOpen || toolsOpen || directoryOpen || shareOpen
+    || interveneOpen || settingsOpen || proseOpen || coverOpen;
+  useEffect(() => { if (anySheetOpen) setChromeOpen(false); }, [anySheetOpen]);
+  useEffect(() => { if (focused) setChromeOpen(false); }, [focused]);
+  // Tap zones (番茄 model): left / right thirds turn one screen, the
+  // middle third toggles the chrome. A tap only counts when the finger
+  // barely moved and the page did not scroll under it — drags, scrolls,
+  // text selection and long-presses must never page or summon menus.
+  const tapStart = useRef(null);
+  const noteTapStart = (event) => {
+    tapStart.current = { x: event.clientX, y: event.clientY, scrollY: window.scrollY };
+  };
+  const turnScreen = (direction) => {
+    setChromeOpen(false);
+    const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    if (direction > 0 && window.scrollY >= maxY - 2) { handleNext(); return; }
+    if (direction < 0 && window.scrollY <= 2) { if (index > 0) goToChapter(index - 1); return; }
+    if (preferences.settings.readingMode === "page") { reading.pageBy(direction); return; }
+    const step = Math.max(160, window.innerHeight - 56);
+    window.scrollTo({ top: Math.min(maxY, Math.max(0, window.scrollY + direction * step)), behavior: "smooth" });
+  };
+  const handleReaderTap = (event) => {
+    const start = tapStart.current;
+    tapStart.current = null;
+    if (anySheetOpen || intervening || rerolling) return;
+    if (window.getSelection && window.getSelection().toString()) return;
+    if (event.target.closest("button, a, input, textarea, select, summary, label, dialog, .reader-chrome")) return;
+    if (start && (Math.abs(event.clientX - start.x) > 12 || Math.abs(event.clientY - start.y) > 12
+      || Math.abs(window.scrollY - start.scrollY) > 4)) return;
+    const zone = event.clientX / Math.max(1, window.innerWidth);
+    if (zone < 1 / 3) turnScreen(-1);
+    else if (zone > 2 / 3) turnScreen(1);
+    else setChromeOpen((open) => !open);
+  };
+  const clockText = clock.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 
   return (
-    <div ref={readerRef} className="page page-reader page-enter" data-reader-focused={focused ? 'true' : 'false'} {...getReaderAppearance(preferences.settings, { inputMethod: preferences.inputMethod })}>
-      <div className="reader-topline">
+    <div ref={readerRef} className="page page-reader page-enter" data-reader-focused={focused ? 'true' : 'false'} onPointerDown={noteTapStart} onClick={handleReaderTap} {...getReaderAppearance(preferences.settings, { inputMethod: preferences.inputMethod })}>
+      <div className="reader-status-top">
         <button
-          className="back-link"
-          onClick={() => backRoute ? onNavigate(backRoute.view, { id: backRoute.id }) : onNavigate(readOnly ? "store" : "home")}
+          type="button"
+          className="reader-status-back"
+          aria-label={backText || (readOnly ? "返回书城" : "我的世界")}
+          onClick={goBack}
         >
-          <Icon name="chevron" size={15} className="rotate-180" />
-          {backText || (readOnly ? "返回书城" : "我的世界")}
+          <Icon name="chevron" size={13} className="rotate-180" />
+          <span>第 {index + 1} 章 · {chapter.title}</span>
         </button>
-        <div className="reader-chapter">
-          <span className="reader-book-title">{story.title}</span>
-          <span className="reader-position">第 {index + 1} 章</span>
-          <div
-            className="chapter-progress"
-            role="progressbar"
-            aria-label="阅读进度"
-            aria-valuemin={0}
-            aria-valuemax={displayTotal}
-            aria-valuenow={index + 1}
-            aria-valuetext={serializing ? `第 ${index + 1} 章，连载中` : `第 ${index + 1} 章，共 ${total} 章`}
-          >
-            <i style={{ width: progress }} />
-          </div>
-        </div>
-        <div className="reader-actions">
-          <button
-            className="reader-directory-button"
-            onClick={() => setDirectoryOpen(true)}
-            aria-haspopup="dialog"
-          >
-            <Icon name="menu" size={17} />
-            目录
-          </button>
-          {!readOnly && (
-            <button
-              className={`icon-button ${story.bookmarked ? "is-active" : ""}`}
-              onClick={() =>
-                onToggleBookmark?.({ ...story, bookmarked: !story.bookmarked })
-              }
-              aria-pressed={Boolean(story.bookmarked)}
-              aria-label={story.bookmarked ? "取消收藏" : "收藏"}
-            >
-              <Icon name="bookmark" size={18} />
-            </button>
-          )}
-          {!readOnly && (
-            <button
-              className="reader-directory-button"
-              onClick={() => setCoverOpen(true)}
-              aria-haspopup="dialog"
-            >
-              <Icon name="image" size={16} />
-              封面
-            </button>
-          )}
-          {!readOnly && (
-            <button
-              className="reader-directory-button"
-              onClick={() => setSettingsOpen(true)}
-              aria-haspopup="dialog"
-            >
-              <Icon name="sliders" size={16} />
-              设定集
-            </button>
-          )}
-          {!readOnly && (
-            <button
-              className="sw-share-button"
-              onClick={() => setShareOpen(true)}
-            >
-              <Icon name="send" size={15} />
-              分享
-            </button>
-          )}
-        </div>
+        <span
+          className="sr-only"
+          role="progressbar"
+          aria-label="阅读进度"
+          aria-valuemin={1}
+          aria-valuemax={displayTotal}
+          aria-valuenow={index + 1}
+          aria-valuetext={serializing ? `第 ${index + 1} 章，连载中` : `第 ${index + 1} 章，共 ${total} 章`}
+        />
       </div>
+      <div className="reader-status-bottom" aria-hidden="true">
+        <span>{Number.isFinite(total) && !serializing
+          ? `第 ${index + 1} / ${total} 章 · 本章 ${reading.progress}%`
+          : `第 ${index + 1} 章 · 本章 ${reading.progress}%`}</span>
+        <span>{clockText}</span>
+      </div>
+      {chromeOpen && (
+        <>
+          <div className="reader-chrome reader-chrome-top">
+            <button
+              type="button"
+              className="reader-chrome-back"
+              aria-label="返回"
+              onClick={goBack}
+            >
+              <Icon name="chevron" size={20} className="rotate-180" />
+            </button>
+            <div className="reader-chrome-title">
+              <b>{story.title}</b>
+              <span>第 {index + 1} 章 · {chapter.title}</span>
+            </div>
+            {!readOnly && (
+              <div className="reader-chrome-actions">
+                <button type="button" aria-label="设定集" aria-haspopup="dialog" onClick={() => setSettingsOpen(true)}>
+                  <Icon name="sliders" size={19} />
+                </button>
+                <button type="button" aria-label="封面" aria-haspopup="dialog" onClick={() => setCoverOpen(true)}>
+                  <Icon name="image" size={19} />
+                </button>
+                <button type="button" aria-label="分享" onClick={() => setShareOpen(true)}>
+                  <Icon name="send" size={17} />
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="reader-chrome reader-chrome-bottom">
+            <div className="reader-chrome-navrow">
+              <button
+                type="button"
+                className="reader-chrome-chapter-nav"
+                onClick={() => goToChapter(index - 1)}
+                disabled={index <= 0}
+              >
+                上一章
+              </button>
+              <input
+                type="range"
+                className="reader-chrome-slider"
+                min={0}
+                max={100}
+                step={1}
+                value={reading.progress}
+                onChange={(event) => { seekStamp.current = performance.now(); reading.seekToProgress(Number(event.target.value)); }}
+                aria-label="本章进度"
+              />
+              <button
+                type="button"
+                className="reader-chrome-chapter-nav"
+                onClick={handleNext}
+                disabled={isFinal || (readOnly && !nextAvailable)}
+              >
+                下一章
+              </button>
+            </div>
+            <div className="reader-chrome-grid" role="group" aria-label="阅读工具栏">
+              <button type="button" onClick={() => setDirectoryOpen(true)} aria-haspopup="dialog">
+                <Icon name="menu" size={20} />
+                <span>目录</span>
+              </button>
+              <button type="button" aria-label="阅读设置" aria-haspopup="dialog" onClick={() => setPreferencesOpen(true)}>
+                <b aria-hidden="true">Aa</b>
+                <span>设置</span>
+              </button>
+              <button type="button" onClick={openTools} aria-haspopup="dialog">
+                <Icon name="search" size={20} />
+                <span>查找</span>
+              </button>
+              <button type="button" aria-pressed={focused} onClick={() => setFocused((value) => !value)}>
+                <Icon name="book" size={20} />
+                <span>专注</span>
+              </button>
+              {!readOnly && (
+                <button type="button" className="reader-chrome-intervene" onClick={() => setInterveneOpen(true)} aria-haspopup="dialog">
+                  <Icon name="ripple" size={20} />
+                  <span>介入</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
       {readOnly && (
         <p className="reader-readonly-note">
           <Icon name="lock" size={14} />
@@ -3922,27 +3992,6 @@ function Reader({
           )}
         </article>
       </div>
-      <div className="reader-floating-dock" role="region" aria-label="阅读工具栏">
-        <div className="reader-live-progress">
-          <span>第 {index + 1} 章{chapterMetrics.charCount ? ` · 约 ${chapterMetrics.charCount} 字` : ""}</span>
-          <span>本章 {reading.progress}%</span>
-        </div>
-        {focused ? <div className="reader-dock-actions">
-            <button type="button" className="reader-focus-exit" onClick={() => setFocused(false)}>退出专注阅读</button>
-            {!readOnly && <button type="button" className="reader-intervene-button" onClick={() => setInterveneOpen(true)} aria-haspopup="dialog"><Icon name="ripple" size={19}/><span>介入</span></button>}
-          </div> :
-          <div className="reader-dock-actions">
-            <button type="button" onClick={() => setDirectoryOpen(true)} aria-haspopup="dialog"><Icon name="menu" size={19}/><span>目录</span></button>
-            <button type="button" className="reader-dock-settings" aria-label="阅读设置" aria-haspopup="dialog" onClick={() => setPreferencesOpen(true)}><b aria-hidden="true">Aa</b><span>设置</span></button>
-            <button type="button" onClick={openTools} aria-haspopup="dialog"><Icon name="search" size={19}/><span>查找</span></button>
-            <button type="button" onClick={() => setFocused(true)}><Icon name="book" size={19}/><span>专注</span></button>
-            {!readOnly && <button type="button" className="reader-intervene-button" onClick={() => setInterveneOpen(true)} aria-haspopup="dialog"><Icon name="ripple" size={19}/><span>介入</span></button>}
-          </div>}
-        {preferences.settings.readingMode === 'page' && <div className="reader-page-controls" role="group" aria-label="逐屏阅读">
-          <button type="button" onClick={() => reading.pageBy(-1)}><Icon name="chevron" className="rotate-180" size={17}/>上一屏</button>
-          <button type="button" onClick={() => reading.pageBy(1)}>下一屏<Icon name="chevron" size={17}/></button>
-        </div>}
-      </div>
       {reading.warning && <p className="reader-location-warning" role="status">{reading.warning}</p>}
       {preferencesOpen && <ReadingDialog title="阅读设置" onClose={() => setPreferencesOpen(false)}>
         <ReadingPreferences value={preferences.settings} onChange={changePreferences} storageWarning={preferences.storageWarning}/>
@@ -3951,6 +4000,8 @@ function Reader({
       {toolsOpen && <ReadingDialog title="查找与书签" onClose={() => setToolsOpen(false)}>
         <ReadingTools chapters={readingChapters} lastAccessible={lastAccessibleIndex(story, readOnly)} bookmarks={bookmarks}
           story={story} currentChapterIndex={index}
+          storyBookmarked={Boolean(story.bookmarked)}
+          onToggleStoryBookmark={readOnly ? undefined : toggleStoryBookmark}
           onSelect={selectLocation} onBookmark={togglePositionBookmark} warning={reading.store.warning()}
           onRemove={item => { reading.store.removeBookmark(item.key, item.anchor.paragraph); setBookmarkVersion(value => value + 1); }}/>
       </ReadingDialog>}

@@ -25,14 +25,14 @@ fs.mkdirSync(artifactDir, { recursive: true });
           await Promise.all([...document.images].map(image => image.decode().catch(() => {})));
         });
         const measurement = await page.evaluate(() => {
-          const hitTargets = [...document.querySelectorAll('.reader-actions .icon-button, .account-entry, .reader-floating-dock button')].filter(button => button.getClientRects().length).map(button => {
+          const hitTargets = [...document.querySelectorAll('.reader-chrome-actions button, .account-entry, .reader-chrome-grid button')].filter(button => button.getClientRects().length).map(button => {
             const rect = button.getBoundingClientRect();
             return { label: button.getAttribute('aria-label'), width: rect.width, height: rect.height };
           });
           // The shipped topline stacks the back link above the actions by
           // design; the invariant that matters is the actions row itself
           // staying on one line.
-          const toolbarRows = [...document.querySelectorAll('.reader-topline > .reader-actions > *')].map(element => {
+          const toolbarRows = [...document.querySelectorAll('.reader-chrome-grid button span')].map(element => {
             const rect = element.getBoundingClientRect();
             return { top: rect.top, bottom: rect.bottom };
           });

@@ -42,6 +42,22 @@ async function currentChapter(page, number) {
   }, number);
 }
 
+// The reader menu chrome is summoned by a tap in the middle of the
+// screen; tests dispatch that same tap on the article so the scroll
+// position never decides whether it lands.
+async function openChrome(page) {
+  if (await page.locator('.reader-chrome-bottom').count() === 0) {
+    await page.evaluate(() => {
+      const el = document.querySelector('.reader-article');
+      const rect = el.getBoundingClientRect();
+      const options = { bubbles: true, clientX: Math.round(window.innerWidth / 2), clientY: Math.round(Math.min(window.innerHeight / 2, Math.max(80, rect.top + 140))) };
+      el.dispatchEvent(new PointerEvent('pointerdown', options));
+      el.dispatchEvent(new MouseEvent('click', options));
+    });
+  }
+  await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
+}
+
 async function forgeLocalBook(page) {
   await page.goto(`${targetUrl}#/home`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: '开启第一本书', exact: true }).click();
@@ -87,15 +103,14 @@ async function forgeLocalBook(page) {
       before = structuredClone(saved.stories[0]);
     });
 
-    await check('the intervene entry sits in the reader dock', async () => {
-      await page.getByRole('button', { name: '介入', exact: true }).waitFor();
-      // Settle at the chapter end: dock, star map and the pregen status
-      // line share the frame.
+    await check('the intervene entry sits in the reader chrome grid', async () => {
+      // Settle at the chapter end, summon the menu chrome, and the
+      // intervene cell shares the frame with the star map card.
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await page.waitForTimeout(700);
+      await openChrome(page);
+      await page.getByRole('button', { name: '介入', exact: true }).waitFor();
       await page.screenshot({ path: path.join(shotsDir, '01-reader-button.png') });
-      await page.evaluate(() => window.scrollTo(0, 0));
-      await page.waitForTimeout(300);
     });
 
     await page.getByRole('button', { name: '介入', exact: true }).click();

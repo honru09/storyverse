@@ -24,7 +24,23 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
       const check = async (name, work) => { await work(); report.checks.push({ width, name }); console.log(`PASS ${width} ${name}`); };
       const capture = async name => { if (process.env.SKIP_CAPTURE === 'true') return; const file = path.join(artifacts, `${width}-${name}.png`); await page.screenshot({ path: file, fullPage: false }); report.captures.push(file); };
       const noOverflow = async () => assert.ok(await page.evaluate(() => Math.max(document.body.scrollWidth, document.documentElement.scrollWidth) <= window.innerWidth + 1));
-      const openSettings = async () => { await page.getByRole('button', { name: '阅读设置', exact: true }).click(); return page.getByRole('dialog', { name: '阅读设置', exact: true }); };
+      // The menu chrome is summoned by a tap in the middle of the
+      // screen. Tests dispatch that same tap on the article so the
+      // scroll position never decides whether it lands.
+      const tapReaderCenter = async () => {
+        await page.evaluate(() => {
+          const el = document.querySelector('.reader-article');
+          const rect = el.getBoundingClientRect();
+          const options = { bubbles: true, clientX: Math.round(window.innerWidth / 2), clientY: Math.round(Math.min(window.innerHeight / 2, Math.max(80, rect.top + 140))) };
+          el.dispatchEvent(new PointerEvent('pointerdown', options));
+          el.dispatchEvent(new MouseEvent('click', options));
+        });
+      };
+      const openChrome = async () => {
+        if (await page.locator('.reader-chrome-bottom').count() === 0) await tapReaderCenter();
+        await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
+      };
+      const openSettings = async () => { await openChrome(); await page.getByRole('button', { name: '阅读设置', exact: true }).click(); return page.getByRole('dialog', { name: '阅读设置', exact: true }); };
       const close = async () => { await page.getByRole('button', { name: '关闭面板', exact: true }).click(); };
       try {
         await page.goto(target);
@@ -50,47 +66,49 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
         await page.reload();
         await page.locator('[data-reading-paragraph="21"]').waitFor();
         const storyBefore = await page.evaluate(key => localStorage.getItem(key), key);
-        await check('solid reader chrome is reachable and unclipped', async () => {
+        await check('immersive reader chrome is reachable, solid and unclipped', async () => {
           await noOverflow();
-          const buttons = await page.locator('.reader-floating-dock button').evaluateAll(nodes => nodes.map(node => ({ w: node.getBoundingClientRect().width, h: node.getBoundingClientRect().height })));
-          assert.ok(buttons.every(item => item.w >= 44 && item.h >= 44));
-          const dockMaterial = await page.locator('.reader-floating-dock').evaluate(node => { const style = getComputedStyle(node); return { backdropFilter: style.backdropFilter, backgroundColor: style.backgroundColor }; });
-          assert.equal(dockMaterial.backdropFilter, 'none');
-          assert.ok(!/rgba\([^)]*,\s*0\)$/.test(dockMaterial.backgroundColor) && dockMaterial.backgroundColor !== 'transparent', 'reader dock must be a solid surface');
+          assert.equal(await page.locator('.reader-topline').count(), 0, 'the topline card is retired');
+          assert.equal(await page.locator('.reader-floating-dock').count(), 0, 'the floating dock is retired');
+          await openChrome();
+          const buttons = await page.locator('.reader-chrome-grid button, .reader-chrome-actions button, .reader-chrome-back').evaluateAll(nodes => nodes.map(node => ({ w: node.getBoundingClientRect().width, h: node.getBoundingClientRect().height })));
+          assert.ok(buttons.every(item => item.w >= 44 && item.h >= 44), 'every chrome control is at least 44px');
+          const labels = await page.locator('.reader-chrome-grid button span').evaluateAll(nodes => nodes.map(node => ({ h: node.offsetHeight, sw: node.scrollWidth, cw: node.clientWidth })));
+          assert.ok(labels.every(label => label.h <= 20 && label.sw <= label.cw + 1), 'chrome labels stay on one line at this width');
+          const material = await page.locator('.reader-chrome-bottom').evaluate(node => { const style = getComputedStyle(node); return { backdropFilter: style.backdropFilter, backgroundColor: style.backgroundColor }; });
+          // Headless compositors report backdrop-filter as none even
+          // when the blur is declared; the translucency itself (alpha
+          // strictly between clear and opaque) is what can be proven
+          // here — the blur rides on the same declaration on device.
+          const alphaMatch = material.backgroundColor.match(/\/\s*([\d.]+)\)$/) || material.backgroundColor.match(/,\s*([\d.]+)\)$/);
+          const alpha = alphaMatch ? Number(alphaMatch[1]) : 1;
+          assert.ok(alpha > 0.05 && alpha < 0.99, `the chrome floats translucent over the prose (alpha ${alpha})`);
+          assert.ok(material.backgroundColor !== 'transparent', 'reader chrome must be a real surface');
+          await tapReaderCenter();
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
           await capture('reading-light');
         });
-        await check('floating topline never half-covers prose while scrolling', async () => {
+        await check('hairlines never cover the first line and chrome yields to scrolling', async () => {
           await page.evaluate(() => window.scrollTo(0, 0));
-          assert.equal(await page.locator('.reader-topline').isVisible(), true, 'topline shows at the top');
-          // A reading gesture is many small steps, not one teleport: scroll
-          // down in increments like a thumb would.
+          const geometry = await page.evaluate(() => {
+            const line = document.querySelector('.reader-status-top').getBoundingClientRect();
+            const title = document.querySelector('.reader-article h1').getBoundingClientRect();
+            const first = document.querySelector('[data-reading-paragraph="0"]').getBoundingClientRect();
+            return { lineBottom: line.bottom, titleTop: title.top, firstTop: first.top };
+          });
+          assert.ok(geometry.titleTop >= geometry.lineBottom - 1, 'the chapter title starts below the top hairline');
+          assert.ok(geometry.firstTop >= geometry.lineBottom, 'the first paragraph clears the top hairline');
+          // Summon the menu, then scroll like a thumb: the chrome must
+          // fold away instead of riding over the prose.
+          await openChrome();
           await page.evaluate(async () => {
             for (let y = 150; y <= 900; y += 150) {
               window.scrollTo(0, y);
               await new Promise((resolve) => setTimeout(resolve, 40));
             }
-            // WebKit dispatches coalesced scroll events only while a page
-            // task is alive; settle inside this evaluate before returning.
-            // Chromium must not settle here: with desktop Lenis active, the
-            // pause lets it re-assert its own scroll state and the topline
-            // flag never lands.
-            const isWebKit = /AppleWebKit/.test(navigator.userAgent) && !/Chrome|Chromium|Edg/.test(navigator.userAgent);
-            if (isWebKit) await new Promise((resolve) => setTimeout(resolve, 500));
           });
-          await page.waitForFunction(() => document.querySelector('.page-reader').dataset.toplineHidden === 'true');
-          assert.equal(await page.locator('.reader-topline').isVisible(), false, 'topline slides away on scroll down');
-          const overlap = await page.evaluate(() => {
-            const barNode = document.querySelector('.reader-topline');
-            if (getComputedStyle(barNode).visibility === 'hidden') return 0;
-            const bar = barNode.getBoundingClientRect();
-            return [...document.querySelectorAll('[data-reading-paragraph]')]
-              .filter(node => { const r = node.getBoundingClientRect(); return r.top < bar.bottom && r.bottom > bar.top; }).length;
-          });
-          assert.equal(overlap, 0, 'no paragraph may sit half under the topline');
-          await capture('topline-mid-scroll');
-          await page.evaluate(() => window.scrollTo(0, 500));
-          await page.waitForFunction(() => document.querySelector('.page-reader').dataset.toplineHidden === 'false');
-          assert.equal(await page.locator('.reader-topline').isVisible(), true, 'topline returns on scroll up');
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
+          await capture('hairline-immersive');
           await page.evaluate(() => window.scrollTo(0, 0));
         });
         await check('six themes preserve contrast and preview / page agreement', async () => {
@@ -168,6 +186,7 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           assert.equal(saved.version, 2); assert.equal(saved.fontSize, 18); assert.equal(saved.fontWeight, 400);
         });
         await check('literal search and position bookmarks lead to exact paragraphs', async () => {
+          await openChrome();
           await page.getByRole('button', { name:'查找', exact:true }).click();
           const dialog = page.getByRole('dialog', { name:'查找与书签', exact:true });
           const inputSize = await dialog.getByRole('searchbox').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
@@ -177,6 +196,7 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           assert.equal(await result.count(), 1);
           await result.click();
           await page.waitForFunction(() => { const node=document.querySelector('[data-reading-paragraph="10"]'); const r=node.getBoundingClientRect(); return r.top>=0 && r.top<250; });
+          await openChrome();
           await page.getByRole('button', { name:'查找', exact:true }).click();
           await dialog.getByRole('button', { name:'位置书签', exact:true }).click();
           await dialog.getByRole('button', { name:'标记／取消当前位置', exact:true }).click();
@@ -184,6 +204,7 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           await capture('bookmarks');
           await close();
           await page.reload();
+          await openChrome();
           await page.getByRole('button', { name:'查找', exact:true }).click();
           await dialog.getByRole('button', { name:/位置书签/ }).click();
           assert.equal(await dialog.locator('.reading-bookmark-row').count(), 1);
@@ -195,15 +216,37 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           const dialog = await openSettings();
           await dialog.getByRole('group', { name:'阅读方式', exact:true }).getByRole('radio', { name:'逐屏阅读', exact:true }).click();
           await close();
+          // The dock's page buttons are gone: in page mode the side
+          // thirds of the screen do the paging now.
+          const tapZone = async (fraction) => {
+            const size = page.viewportSize();
+            const x = Math.round(size.width * fraction);
+            const y = Math.round(size.height * 0.5);
+            if (size.width < 700) await page.touchscreen.tap(x, y);
+            else await page.mouse.click(x, y);
+            await page.waitForTimeout(200);
+          };
           const y = await page.evaluate(() => window.scrollY);
-          await page.getByRole('button', { name:'下一屏', exact:true }).click();
-          assert.ok(await page.evaluate(() => window.scrollY) > y);
-          await page.getByRole('button', { name:'上一屏', exact:true }).click();
+          await tapZone(0.92);
+          assert.ok(await page.evaluate(() => window.scrollY) > y, 'right-third tap pages forward');
+          await tapZone(0.08);
+          assert.ok(await page.evaluate(() => window.scrollY) <= y + 40, 'left-third tap pages back');
+          await openChrome();
           await page.getByRole('button', { name:'专注', exact:true }).click();
-          assert.equal(await page.locator('.reader-topline').isVisible(), false);
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
+          assert.equal(await page.locator('.reader-status-top').isVisible(), false, 'focus hides the top hairline');
+          assert.equal(await page.locator('.reader-status-bottom').isVisible(), false, 'focus hides the bottom hairline');
           await capture('focus-screen-mode');
-          await page.getByRole('button', { name:'退出专注阅读', exact:true }).click();
-          assert.equal(await page.locator('.reader-topline').isVisible(), true);
+          // The centre tap still summons the chrome in focus mode; the
+          // 专注 cell itself (now pressed) is the way back out.
+          await openChrome();
+          const focusCell = page.getByRole('button', { name:'专注', exact:true });
+          assert.equal(await focusCell.getAttribute('aria-pressed'), 'true');
+          await focusCell.click();
+          await page.waitForFunction(() => getComputedStyle(document.querySelector('.reader-status-top')).visibility === 'visible');
+          assert.equal(await page.locator('.reader-status-top').isVisible(), true, 'leaving focus restores the hairlines');
+          await tapReaderCenter();
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
         });
         await check('large-font chapter end remains reachable and nothing gates the next chapter', async () => {
           await page.getByRole('button', { name:'下一章', exact:true }).click();
@@ -211,35 +254,21 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           for (let i=0;i<7;i++) await dialog.getByRole('button',{name:'放大字号',exact:true}).click();
           await close();
           await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-          const progressProbe = await page.evaluate(async () => {
-            const snapshot = () => ({
-              y: window.scrollY,
-              progress: document.querySelector('.reader-live-progress span:last-child')?.textContent,
-              prose: document.querySelector('.reader-prose')?.getBoundingClientRect().toJSON(),
-              intervene: document.querySelector('.reader-intervene-button')?.getBoundingClientRect().toJSON(),
-              dock: document.querySelector('.reader-floating-dock')?.getBoundingClientRect().toJSON(),
-              innerHeight: window.innerHeight,
-            });
-            const before = snapshot();
-            await new Promise(requestAnimationFrame);
-            const frame1 = snapshot();
-            await new Promise(requestAnimationFrame);
-            const frame2 = snapshot();
-            return { before, frame1, frame2 };
-          });
-          console.log('[DEBUG-progress]', JSON.stringify(progressProbe));
-          assert.equal(await page.locator('.reader-live-progress span').last().textContent(), '本章 100%');
+          // The bottom hairline is the progress readout now: at the very
+          // end of the chapter it must settle on 100%.
+          await page.waitForFunction(() => document.querySelector('.reader-status-bottom span')?.textContent.includes('本章 100%'));
           await noOverflow(); await capture('large-chapter-end');
           // No decision waits at the chapter end: the next chapter is
           // immediately available, and the intervene entry stays in reach.
           assert.equal(await page.getByRole('button',{name:'下一章',exact:true}).isEnabled(),true);
+          await openChrome();
           await page.getByRole('button',{name:'介入',exact:true}).click();
           await page.getByRole('dialog',{name:'介入 · 扰动世界线'}).waitFor();
           await page.getByRole('button',{name:'关闭面板'}).click();
           assert.deepEqual(errors, []);
         });
         await check('directory opens on the current chapter, not the top of the list', async () => {
-          const position = async () => Number((await page.locator('.reader-position').textContent()).match(/\d+/)[0]);
+          const position = async () => Number((await page.locator('.reader-status-back span').textContent()).match(/\d+/)[0]);
           for (let guard = 0; guard < 40 && (await position()) < 10; guard++) {
             const next = page.getByRole('button', { name: '下一章', exact: true });
             if (await next.isEnabled()) await next.click();

@@ -11,7 +11,12 @@ export function useReaderExperience({ readerRef, locationKey, settings, blocked 
   const blockedRef = useRef(blocked);
   blockedRef.current = blocked;
   const nodes = useCallback(() => [...(readerRef.current?.querySelectorAll('[data-reading-paragraph]') || [])], [readerRef]);
-  const inset = useCallback(() => (readerRef.current?.querySelector('.reader-topline')?.getBoundingClientRect().height || 72) + 18, [readerRef]);
+  // The immersive chrome leaves only two hairlines over the prose: the
+  // top status line (back + chapter) and the bottom one (progress +
+  // clock). Position math aims a paragraph just below the top hairline
+  // and counts the visible band as what sits between the two lines.
+  const inset = useCallback(() => (readerRef.current?.querySelector('.reader-status-top')?.getBoundingClientRect().height || 38) + 10, [readerRef]);
+  const bottomInset = useCallback(() => (readerRef.current?.querySelector('.reader-status-bottom')?.getBoundingClientRect().height || 30) + 8, [readerRef]);
 
   const capture = useCallback(() => {
     const paragraphs = nodes();
@@ -36,10 +41,22 @@ export function useReaderExperience({ readerRef, locationKey, settings, blocked 
     const content = readerRef.current?.querySelector('.reader-prose');
     if (!content) return;
     const box = content.getBoundingClientRect();
-    const visible = window.innerHeight - inset() - 104;
+    const visible = window.innerHeight - inset() - bottomInset();
     const percent = box.height <= visible ? 100 : clamp(Math.round((inset() - box.top) / (box.height - visible) * 100), 0, 100);
     setProgress(percent);
-  }, [readerRef, inset]);
+  }, [readerRef, inset, bottomInset]);
+
+  // Inverse of readProgress for the chrome slider: land the prose so
+  // that the requested share of this chapter sits above the fold line.
+  const seekToProgress = useCallback((percent) => {
+    const content = readerRef.current?.querySelector('.reader-prose');
+    if (!content) return;
+    const box = content.getBoundingClientRect();
+    const visible = window.innerHeight - inset() - bottomInset();
+    if (box.height <= visible) return;
+    const targetTop = inset() - (clamp(percent, 0, 100) / 100) * (box.height - visible);
+    window.scrollTo({ top: Math.max(0, window.scrollY + box.top - targetTop), behavior: 'instant' });
+  }, [readerRef, inset, bottomInset]);
 
   useLayoutEffect(() => {
     if (!locationKey) return;
@@ -97,7 +114,7 @@ export function useReaderExperience({ readerRef, locationKey, settings, blocked 
   const preserve = useCallback(() => { pending.current = capture(); }, [capture]);
   const jump = useCallback(value => { restore(value); readProgress(); setWarning(store.set(locationKey, value)); }, [restore, readProgress, store, locationKey]);
   const pageBy = useCallback(direction => {
-    const top = window.scrollY + direction * Math.max(120, window.innerHeight - inset() - 120);
+    const top = window.scrollY + direction * Math.max(120, window.innerHeight - inset() - 96);
     window.scrollTo({ top: Math.max(0, top), behavior: 'instant' });
   }, [inset]);
 
@@ -136,5 +153,5 @@ export function useReaderExperience({ readerRef, locationKey, settings, blocked 
     document.addEventListener('visibilitychange', request);
     return () => { active = false; document.removeEventListener('visibilitychange', request); if (lock) void lock.release().catch(() => {}); };
   }, [settings.keepAwake]);
-  return { progress, warning, wakeStatus, store, capture, preserve, jump, pageBy };
+  return { progress, warning, wakeStatus, store, capture, preserve, jump, pageBy, seekToProgress };
 }

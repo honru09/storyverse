@@ -12,6 +12,8 @@ export default function ReadingTools({
   warning,
   story = null,
   currentChapterIndex = 0,
+  storyBookmarked = false,
+  onToggleStoryBookmark = undefined,
 }) {
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState('search');
@@ -47,6 +49,11 @@ export default function ReadingTools({
       </div>
     </>}
     {tab === 'bookmarks' && <>
+      {onToggleStoryBookmark && (
+        <button type="button" className="reading-bookmark-add" onClick={onToggleStoryBookmark} aria-pressed={storyBookmarked}>
+          {storyBookmarked ? '取消收藏本书' : '收藏本书'}
+        </button>
+      )}
       <button type="button" className="reading-bookmark-add" onClick={onBookmark}>标记／取消当前位置</button>
       <p className="reading-tools-status">书签保存在本机；重写后的旧剧情书签不会跳到新剧情。</p>
       {!bookmarks.length && <p className="reading-tools-empty">还没有位置书签。</p>}
