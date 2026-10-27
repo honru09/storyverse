@@ -679,7 +679,9 @@ export const DEFAULT_DRAFT = {
  * length mode, never written as a bare 6 anywhere in the engine.
  * - 'short'  6 chapters — the original single-volume shape; also the shape of
  *   every pre-mode save (a missing storyLengthMode means 'short') and of
- *   merged stories, which stay capped at the shorter structure.
+ *   merged stories born from two finished-side lines, which stay capped at
+ *   the shorter structure. A merged story born from a still-serialising
+ *   endless line is the one exception: it inherits 'endless' (FUSION2).
  * - 'season' 24 chapters = 4 acts × 6; acts end in a small upgrade point and
  *   chapter 24 closes the season with the big one, after which the reader
  *   may open the next season (seasonNumber + 1, stakes raised).
@@ -726,7 +728,13 @@ const configOf = (source) =>
 
 export const storyLengthModeOf = (source) => {
   if (!source || typeof source !== 'object') return 'short'
-  if (source.kind === 'merged') return 'short'
+  if (source.kind === 'merged') {
+    // A fused line is 'short' by birth — except when the fusion itself
+    // inherited a still-serialising endless line, in which case the
+    // product is a running endless line in its own right and its config
+    // says so (createMergedStory pins the product mode explicitly).
+    return configOf(source)?.storyLengthMode === 'endless' ? 'endless' : 'short'
+  }
   const mode = configOf(source)?.storyLengthMode
   return STORY_LENGTH_MODES[mode] ? mode : 'short'
 }
@@ -1298,6 +1306,29 @@ const variationSceneFor = (story, genre, index, ctx) => {
   return positions[structure.beatPosition]
 }
 
+/*
+ * A fused line that inherited endless mode outgrows the six base merge
+ * scenes: past them, arcs roll on the lead world's motifs with the same
+ * six-position skeleton as a solo line's variation scenes, re-skinned for
+ * two protagonists — the pair's joint ledger, never a solo hero's.
+ */
+const mergedVariationSceneFor = (story, index, { first, second, lead, bond }) => {
+  const structure = structureFor(story, index)
+  const genre = genreFor(story.genreId || story.config?.genreId)
+  const motifs = ACT_MOTIFS[genre.id] || ACT_MOTIFS.custom
+  const motif = motifs[structure.unitIndex % motifs.length]
+  const other = lead === first ? second : first
+  const positions = [
+    [`合流点在${motif}里重新亮起，两种规则的光交叠成新的颜色。`, `${lead}先一步踏进去，${other}紧随其后——上一弧的账还没算完，新的局势已经压到眼前。`, `这一弧里，两个人共同见证的每一次扰动，都要比上一弧更贵。`],
+    [`新的信号同时抵达${first}与${second}手边，比上一弧更急，也更不容拒绝。`, '信号停在两个人中间，安静地等着一个共同的回答。', `${bond}的两个人，第一次为同一件事皱眉。`],
+    [`${first}与${second}把两条原线各带来的一条未解线索，在合流点拼成一张完整的图。`, `图的全貌刚刚显形，缺口处就先亮出了对手的名字。`],
+    [`${motif}把两套规则的冲突推到台前，价码比上一弧抬高一格。`, '翻译还是分离，两个人必须当场选一边站。', '真正的对手还没有露面，只先送来了一句写在价目表上的话。'],
+    [`${first}与${second}把这一弧攒下的筹码一次押上，局势当场翻面。`, `合流点深处传来回应——比预想的更快，也更近。`],
+    [`${motif}落幕，这一弧的账当场结清：标尺、代价与新到手的筹码，一样不少。`, `${first}与${second}站稳了新的一格，下一弧的门已经开了一条缝，缝里的光和这一弧的结尾完全不同。`],
+  ]
+  return positions[structure.beatPosition]
+}
+
 const sceneFor = (story, index) => {
   const config = story.config || {}
   const genre = genreFor(story.genreId || config.genreId)
@@ -1326,7 +1357,8 @@ const sceneFor = (story, index) => {
       [`合流点开始坍缩，所有未说出口的话变成可见的路标。`, `他们决定把最重要的秘密留给彼此，而不是留给任何一条旧世界线。`],
       [`新的宇宙终于找到共同的呼吸。`, `${first}与${second}站在同一片晨光里：边界没有消失，只是终于学会了相遇。`],
     ]
-    return mergedScenes[index]
+    if (index < mergedScenes.length) return mergedScenes[index]
+    return mergedVariationSceneFor(story, index, { first, second, lead, bond })
   }
 
   if (index >= 6) {
@@ -2369,12 +2401,44 @@ const redactedSnapshotConfig = (config, name) => ({
   persona: '',
 })
 
+/*
+ * 合流组合规则 (fusion combination table, FUSION2): for fusion purposes a
+ * source line is in exactly one of two states —
+ * - 'serializing' （连载中）: an endless line still running — not finished
+ *   by hand, not complete. It has no ending to hand over, so any fusion
+ *   it joins must keep running too.
+ * - 'finished' （完结）: the line has reached its end — a finite line at
+ *   its total, or an endless line its owner finished by hand. A finite
+ *   line still mid-run also counts on this side: its unwritten remainder
+ *   is NOT carried into the product — the fusion opens a fresh short
+ *   book, exactly as merges always have.
+ * The product mode follows the table: 完结×完结 → short (the historical
+ * cap); any combination touching a serialising line → endless, rolling
+ * on with no finale until its owner finishes it by hand.
+ */
+export const fusionSourceStateFor = (source) => {
+  if (!source || typeof source !== 'object') return 'finished'
+  return storyLengthModeOf(source) === 'endless' && !isManuallyFinished(source) ? 'serializing' : 'finished'
+}
+
+export const fusionProductModeFor = (a, b) =>
+  fusionSourceStateFor(a) === 'serializing' || fusionSourceStateFor(b) === 'serializing' ? 'endless' : 'short'
+
 export function createMergedStory(a, b, options = {}) {
   validateStory(a)
   validateStory(b)
+  // 防自融 / 防套娃： a line never fuses with itself, and a fused line —
+  // already the crystal of two lines — never serves as a fusion source
+  // again. The merge UI filters both out before this point; the engine
+  // refuses them outright so no caller can mint a nested line.
+  if (a.id === b.id) throw new RangeError('同一条故事线不能和自己合流。')
+  if (a.kind === 'merged' || b.kind === 'merged') {
+    throw new RangeError('合流故事是两条线合流的结晶，不能再作合流的来源。')
+  }
   const rules = options.rules === 'separate' ? 'separate' : 'bridge'
   const lead = options.lead === 'b' ? 'b' : 'a'
   const bond = options.bond === 'rivals' ? 'rivals' : 'allies'
+  const productMode = fusionProductModeFor(a, b)
   const sourceA = publicConfigFor(a.config, protagonistName(a.config, '旅者甲'))
   const sourceB = publicConfigFor(b.config, protagonistName(b.config, '旅者乙'))
   const leadConfig = lead === 'b' ? sourceB : sourceA
@@ -2383,6 +2447,12 @@ export function createMergedStory(a, b, options = {}) {
   const mergedConfig = {
     ...leadConfig,
     genreId: leadConfig.genreId,
+    // The product mode is pinned by the combination table, never
+    // inherited from whichever source happened to lead: a fused line is
+    // born running (never pre-finished, never carrying a custom target).
+    storyLengthMode: productMode,
+    targetChapters: null,
+    finishedAt: '',
     name: `${sourceA.name} × ${sourceB.name}`,
     trait: `${sourceA.trait} / ${sourceB.trait}`,
     origin: `${sourceA.origin} & ${sourceB.origin}`,
@@ -2412,15 +2482,24 @@ export function createMergedStory(a, b, options = {}) {
       rules: rules === 'bridge'
         ? ['两种世界规则可以互相翻译，但每次翻译都会消耗稳定度。', '双主角共同见证合流点的每一次扰动，任何一方都不能被静默抹去。', '合流后的新规则必须被两位主角共同见证。']
         : ['两种世界规则保持各自边界，只在合流点短暂交叠。', '双主角可以同行，但不能替对方决定原世界的命运。', '任何跨界行动都必须留下可追溯的回声。'],
-      endingAnchor: bond === 'rivals' ? '两位主角必须决定竞争是否值得牺牲共同的未来。' : '两位主角必须决定要把共同的未来交给哪一种规则。',
-      outline: [
-        '两条世界线在合流点相撞，双主角同时收到信号。',
-        '他们决定暂时同行，第一条共同规则浮现。',
-        '新的敌人从旧世界的缝隙里出现。',
-        '规则冲突逼迫双主角选择翻译或分离。',
-        '合流点坍缩，他们为未来保留一条路。',
-        '两个世界找到共同呼吸，新的故事开始。',
-      ],
+      // A short fusion closes: its anchor is the decision the pair owes
+      // the future. An endless fusion has no finale to anchor to — the
+      // anchor is the open road itself: arcs settle one by one, and both
+      // source lines' unrecovered foreshadowing stays on this line's
+      // books until it finds its resolution here.
+      endingAnchor: productMode === 'endless'
+        ? '这条融合线没有预设的终点：每一弧结清一笔账，两位主角再一起决定下一弧往哪走；两条原线未回收的伏笔，都要在这条线上逐步有着落。'
+        : bond === 'rivals' ? '两位主角必须决定竞争是否值得牺牲共同的未来。' : '两位主角必须决定要把共同的未来交给哪一种规则。',
+      outline: productMode === 'endless'
+        ? outlineFor(genreFor(mergedConfig.genreId), mergedConfig)
+        : [
+          '两条世界线在合流点相撞，双主角同时收到信号。',
+          '他们决定暂时同行，第一条共同规则浮现。',
+          '新的敌人从旧世界的缝隙里出现。',
+          '规则冲突逼迫双主角选择翻译或分离。',
+          '合流点坍缩，他们为未来保留一条路。',
+          '两个世界找到共同呼吸，新的故事开始。',
+        ],
     },
     chapterIndex: 0,
     chapters: [],
@@ -2428,6 +2507,12 @@ export function createMergedStory(a, b, options = {}) {
     revision: 0,
     kind: 'merged',
     sourceIds: [a.id, b.id],
+    // 来源标注 (FUSION2): where this line came from, kept on the story
+    // itself so the settings book, the shelf and (via the snapshot) the
+    // plaza can say 「由《A》×《B》融合而来」 without re-resolving the
+    // sources — which may since have been renamed or deleted.
+    derivedFrom: [a.id, b.id],
+    sourceTitles: [cleanText(a.title, '未命名故事'), cleanText(b.title, '未命名故事')],
     author: '我',
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -2599,7 +2684,14 @@ export function publicSnapshot(story) {
  */
 export function plazaSnapshot(story, { avatarName = '' } = {}) {
   validateStory(story)
-  if (story.kind === 'merged') throw new TypeError('合流故事不能发布到广场')
+  // A SHORT fused line never publishes (the gate says the same). A fused
+  // line that inherited endless mode publishes exactly like any other
+  // endless line — living while it runs, finished once its owner ends
+  // it by hand (FUSION2).
+  const mergedLine = story.kind === 'merged'
+  if (mergedLine && storyLengthModeOf(story) !== 'endless') {
+    throw new TypeError('合流故事不能发布到广场')
+  }
   const genre = genreFor(story.genreId || story.config.genreId)
   const mode = storyLengthModeOf(story)
   // The payload's chapter total is always a real count: a finite line's
@@ -2612,6 +2704,32 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
   const lineStatus = mode === 'endless' && !isManuallyFinished(story) ? 'serializing' : 'finished'
   const displayName = cleanBounded(avatarName, 40) || '匿名旅者'
   const safeConfig = { ...redactedSnapshotConfig(story.config, displayName), name: displayName }
+  if (mergedLine) {
+    // The fused line is NOT anonymous either: both leads keep their real
+    // names (the plaza is a showcase of avatars), while everything
+    // private follows the share-snapshot rule — traits, origins and
+    // abilities are replaced, avatar ids and appearances stay home. The
+    // source titles ride along (redacted below) so the detail page can
+    // label the line 「由《A》×《B》融合而来」.
+    const protagonists = [0, 1].map((index) => {
+      const person = story.config.protagonists?.[index] || {}
+      return {
+        name: cleanText(person.name, index === 0 ? '旅者甲' : '旅者乙'),
+        trait: '匿名探索者',
+        origin: '未知来处',
+        ability: '匿名火种',
+        genreId: genreFor(person.genreId || story.genreId).id,
+      }
+    })
+    safeConfig.name = protagonists.map((person) => person.name).join(' × ')
+    safeConfig.protagonists = protagonists
+    safeConfig.merge = {
+      rules: story.config.merge?.rules === 'separate' ? 'separate' : 'bridge',
+      lead: story.config.merge?.lead === 'b' ? 'b' : 'a',
+      bond: story.config.merge?.bond === 'rivals' ? 'rivals' : 'allies',
+    }
+    safeConfig.sourceGenres = protagonists.map((person) => person.genreId)
+  }
   const genreTemplateId = genreTemplateById(story.genreTemplateId)?.id
     || genreTemplateById(story.config?.genreTemplateId)?.id
     || ''
@@ -2620,6 +2738,13 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
     ? story.worldBible
     : worldBibleFor(genre, safeConfig)
   const redactLine = (value) => redact(typeof value === 'string' ? value : '')
+  // The fused line's public provenance: the two source titles, redacted
+  // like every other string in the snapshot (a source title quoting a
+  // private literal is scrubbed the same way).
+  const sourceTitles = mergedLine
+    ? (Array.isArray(story.sourceTitles) ? story.sourceTitles : []).map((title) => redactLine(title)).filter(Boolean)
+    : []
+  if (mergedLine && safeConfig.merge) safeConfig.merge.sourceTitles = sourceTitles
   const worldBible = {
     premise: redactLine(bibleSource.premise),
     rules: (Array.isArray(bibleSource.rules) ? bibleSource.rules : []).map(redactLine),
@@ -2629,7 +2754,7 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
   const safeShell = {
     id: `plaza-${hash(story.id)}`,
     genreId: genre.id,
-    kind: 'solo',
+    kind: mergedLine ? 'merged' : 'solo',
     config: safeConfig,
     worldBible,
     chapters: story.chapters,
@@ -2679,6 +2804,7 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
     seasonNumber: Number.isInteger(safeConfig.seasonNumber) ? safeConfig.seasonNumber : 1,
     totalChapters: total,
     lineStatus,
+    ...(mergedLine ? { merged: true, sourceTitles } : {}),
     ...(story.engine === 'gemini' ? { engine: 'gemini' } : {}),
     config: safeConfig,
     worldBible,

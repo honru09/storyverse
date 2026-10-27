@@ -269,8 +269,12 @@ async function runJourney(browser, width) {
     await page.getByRole('button', { name: '我的世界', exact: true }).click();
     await navigation(page, '合流');
     await page.getByRole('heading', { name: '世界合流', exact: true }).waitFor();
-    await page.getByRole('combobox', { name: /^你的故事/ }).selectOption(originalId);
-    await page.getByRole('combobox', { name: /^相遇的故事/ }).selectOption(partnerId);
+    const originalTitle = publishedLibrary.stories.find(story => story.id === originalId).title;
+    const partnerTitle = twoBookLibrary.stories.find(story => story.id === partnerId).title;
+    await page.getByRole('radiogroup', { name: '你的故事' }).getByRole('radio').filter({ hasText: originalTitle }).click();
+    await page.getByRole('radiogroup', { name: '相遇的故事' }).getByRole('radio').filter({ hasText: partnerTitle }).click();
+    // Both lines are finite shorts: the product-mode note must say so.
+    await page.getByText(/融合出的新线是一本 6 章的短篇/).waitFor();
     await noOverflow(page, 'merge choices');
     await page.getByRole('group', { name: '世界规则' }).getByRole('button', { name: '各自独立' }).click();
     await page.getByRole('group', { name: '初次关系' }).getByRole('button', { name: '彼此试探' }).click();
@@ -287,6 +291,8 @@ async function runJourney(browser, width) {
       assert.notEqual(merged.id, originalId);
       assert.equal(merged.kind, 'merged');
       assert.deepEqual(merged.sourceIds, [originalId, partnerId]);
+      assert.deepEqual(merged.derivedFrom, [originalId, partnerId]);
+      assert.deepEqual(merged.sourceTitles, [originalTitle, partnerTitle]);
       assert.deepEqual(merged.config.protagonists.map(person => person.name), [privateNames[0], '测试剑客星河']);
       assert.equal(merged.config.merge.rules, 'separate');
       assert.equal(merged.config.merge.bond, 'rivals');

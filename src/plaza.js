@@ -6,13 +6,15 @@
 // gate the publish endpoint enforces.
 //
 // Product rules that live here and nowhere else:
-// - A publishable line is a solo story an avatar actually walked (config
+// - A publishable line is a story an avatar actually walked (config
 //   carries avatarId). Finite lines (season / long / custom) publish once
 //   finished. An ENDLESS line publishes while still running — as a living
 //   publication marked 连载中 whose content follows the line as new
 //   chapters land, flipping to 完结 when the owner finishes it by hand —
-//   but never at zero chapters. Short lines and merged lines never
-//   publish.
+//   but never at zero chapters. Short lines never publish. A fused
+//   （合流） line publishes only when the fusion itself inherited endless
+//   mode (FUSION2) — it then follows the endless rule exactly; a short
+//   fused line never publishes.
 // - Entering a line never touches the original: it seeds a brand-new local
 //   story from the publication's sanitized world template, with the
 //   entrant's own avatar as protagonist, and records where it came from
@@ -38,7 +40,12 @@ const genreByWorldId = (id) => GENRES.find((genre) => genre.id === id) || null
 /** The publish gate, identical on the publish screen and the server. */
 export function plazaGateFor(story) {
   if (!story || typeof story !== 'object') return { publishable: false, reason: '故事不存在。', lineStatus: 'finished' }
-  if (story.kind === 'merged') return { publishable: false, reason: '合流故事不能发布到广场。', lineStatus: 'finished' }
+  // A short fused line never publishes. A fused line that inherited
+  // endless mode falls through to the ordinary endless rule below (the
+  // avatar check and the ≥1-chapter floor included).
+  if (story.kind === 'merged' && storyLengthModeOf(story) !== 'endless') {
+    return { publishable: false, reason: '合流故事不能发布到广场。', lineStatus: 'finished' }
+  }
   if (typeof story.config?.avatarId !== 'string' || !story.config.avatarId) {
     return { publishable: false, reason: '只有用化身走完的故事线才能发布。', lineStatus: 'finished' }
   }
@@ -166,7 +173,11 @@ export function plazaReaderStory(detail) {
     genreId: detail.genreId || snapshot.config?.genreId || '',
     ...(detail.genreTemplateId ? { genreTemplateId: detail.genreTemplateId } : {}),
     ...(snapshot.engine ? { engine: snapshot.engine } : {}),
-    kind: 'solo',
+    // A published fused line reads as what it is — a two-protagonist
+    // merged line — and carries its source titles for the provenance
+    // label; the ids themselves never leave the server.
+    kind: detail.merged ? 'merged' : 'solo',
+    ...(detail.merged && Array.isArray(detail.sourceTitles) ? { sourceTitles: detail.sourceTitles } : {}),
     config: snapshot.config || {},
     worldBible: snapshot.worldBible || { premise: '', rules: [], endingAnchor: '', outline: [] },
     chapters: snapshot.chapters,

@@ -66,6 +66,12 @@ function summaryOf(record) {
     genreId: record.genreId,
     genreTemplateId: record.genreTemplateId,
     worldName: record.worldName,
+    // Fused-line provenance (FUSION2): a fused endless line publishes
+    // like any endless line; the flag and the two source titles (already
+    // redacted inside the snapshot) let every surface label it
+    // 「由《A》×《B》融合而来」. The source ids never leave the server.
+    merged: record.merged === true,
+    sourceTitles: Array.isArray(record.sourceTitles) ? record.sourceTitles : [],
     storyLengthMode: record.storyLengthMode,
     seasonNumber: record.seasonNumber,
     chapterCount: record.chapterCount,
@@ -282,6 +288,17 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           const legacy = (await avatars.getProfile(identity.uid))?.avatar || null
           if (legacy?.id === story.config.avatarId) profile = legacy
         }
+        // A fused line was walked by TWO avatars; the caller's may be
+        // either lead (config.avatarId names the lead side only). Either
+        // protagonist's avatar, resolved from the caller's own
+        // collection, qualifies the line as theirs to publish.
+        if (!profile && story.kind === 'merged' && Array.isArray(story.config?.protagonists)) {
+          for (const person of story.config.protagonists) {
+            if (!person?.avatarId) continue
+            profile = collection?.avatars.find((item) => item.id === person.avatarId) || null
+            if (profile) break
+          }
+        }
         if (!profile) {
           throw new ApiError(400, '这条故事线不是用你的化身走完的，无法发布。')
         }
@@ -299,6 +316,8 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           genreId: snapshot.genreId,
           genreTemplateId: snapshot.genreTemplateId,
           worldName: snapshot.worldName,
+          merged: snapshot.merged === true,
+          sourceTitles: Array.isArray(snapshot.sourceTitles) ? snapshot.sourceTitles : [],
           storyLengthMode: snapshot.storyLengthMode,
           seasonNumber: snapshot.seasonNumber,
           chapterCount: snapshot.chapters.length,

@@ -27,6 +27,22 @@ export function parseRoute(hash = '') {
     try { uid = decodeURIComponent(value || '') } catch { return { view: 'plaza' } }
     return uid ? { view: 'profile', id: uid } : { view: 'plaza' }
   }
+  // The fusion flow accepts a preselected source (FUSION2 contextual
+  // entries): merge/<storyId> preselects one of the reader's own lines;
+  // merge/plaza:<publicationId> preselects a plaza line, resolved inside
+  // the flow to the line as entered on this shelf (or to the reader's
+  // own original behind the publication).
+  if (path === 'merge') {
+    if (!value) return { view: 'merge' }
+    try {
+      const decoded = decodeURIComponent(value)
+      if (decoded.startsWith('plaza:')) {
+        const publicationId = decoded.slice('plaza:'.length)
+        return publicationId ? { view: 'merge', publicationId } : { view: 'merge' }
+      }
+      return decoded ? { view: 'merge', id: decoded } : { view: 'merge' }
+    } catch { return { view: 'merge' } }
+  }
   return { view: pages.has(path) ? path : 'plaza' }
 }
 
@@ -37,5 +53,7 @@ export function routeHash(route) {
   if (route.view === 'plaza-detail' && route.id) return `#/plaza/${encodeURIComponent(route.id)}`
   if (route.view === 'profile' && route.id) return `#/profile/${encodeURIComponent(route.id)}`
   if (route.view === 'plaza-enter' && route.id) return `#/plaza-enter/${encodeURIComponent(route.id)}`
+  if (route.view === 'merge' && route.publicationId) return `#/merge/${encodeURIComponent(`plaza:${route.publicationId}`)}`
+  if (route.view === 'merge' && route.id) return `#/merge/${encodeURIComponent(route.id)}`
   return `#/${pages.has(route.view) ? route.view : 'plaza'}`
 }

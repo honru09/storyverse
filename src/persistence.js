@@ -8,13 +8,17 @@ export const MAX_BACKUP_BYTES = 5 * 1024 * 1024
 // engine's length resolution so this storage layer stays dependency-free):
 // short 6 / season 24 / long 100 / custom = the story's own stored target
 // (10–999) / endless = unbounded, capped here at the largest supported
-// chapter count; merged stories and pre-mode saves are 6.
+// chapter count; merged stories are 6, except a fused line that
+// inherited endless mode from a still-serialising source (FUSION2),
+// which is unbounded like any endless line. Pre-mode saves are 6.
 // The cursor points to the next accepted chapter and stays at total-1 once
 // the final chapter exists.
 const LENGTH_TOTALS = { short: 6, season: 24, long: 100 }
 const MAX_SUPPORTED_CHAPTERS = 999
 const totalForStory = (story) => {
-  if (story?.kind === 'merged') return 6
+  if (story?.kind === 'merged') {
+    return story?.config?.storyLengthMode === 'endless' ? MAX_SUPPORTED_CHAPTERS : 6
+  }
   const mode = story?.config?.storyLengthMode
   if (mode === 'custom') {
     const target = story?.config?.targetChapters
@@ -326,6 +330,11 @@ function validateStory(story, prefix) {
   }
   if (story.kind !== undefined && !['solo', 'merged'].includes(story.kind)) errors.push(`${prefix}.kind is invalid`)
   if (story.sourceIds !== undefined) validateStringArray(story.sourceIds, `${prefix}.sourceIds`, errors)
+  // 来源标注 (FUSION2): a fused line records the two source ids and their
+  // titles at fusion time. Absent on every solo line and on fused lines
+  // minted before the field existed.
+  if (story.derivedFrom !== undefined) validateStringArray(story.derivedFrom, `${prefix}.derivedFrom`, errors)
+  if (story.sourceTitles !== undefined) validateStringArray(story.sourceTitles, `${prefix}.sourceTitles`, errors)
 
   return errors
 }

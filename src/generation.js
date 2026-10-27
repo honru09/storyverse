@@ -1,4 +1,4 @@
-import { acceptChapter, chapterKey, outlineLengthFor, replaceChapter, replaceFrontierChapter, totalChaptersFor } from './story-engine.js'
+import { acceptChapter, chapterKey, outlineLengthFor, replaceChapter, replaceFrontierChapter, storyLedgerFor, totalChaptersFor } from './story-engine.js'
 import { readerIndexFor } from './reading-flow.js'
 import { emptyLibrary, validateLibrary } from './persistence.js'
 
@@ -27,6 +27,12 @@ export function mergeSourceContext(story) {
     // A merged source can be a finished season or long line; the hand-off
     // carries its most recent summaries rather than the whole book.
     summaries: story.chapters.slice(-12).map((chapter) => ({ chapter: chapter.index + 1, summary: text(chapter.summary, 600) })),
+    // 伏笔并账 (FUSION2): the source's still-open foreshadowing moves onto
+    // the fused line's books. The ledger is chapter-derived, so a
+    // serialising source hands over every hook it has planted so far —
+    // the fused line is expected to resolve them, not forget them.
+    openForeshadowing: storyLedgerFor(story).foreshadowing.slice(-8)
+      .map((entry) => ({ chapter: entry.chapter, text: text(entry.text, 300) })),
   }
 }
 

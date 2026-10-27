@@ -186,8 +186,8 @@ async function finishBook(page, requests, { total = 24, ending = '这一季，�
       const partner = twoBooks.find(story => story.id !== original.id);
       await page.getByRole('button', { name: '我的世界', exact: true }).click();
       await page.getByRole('navigation', { name: '移动端主导航' }).getByRole('button', { name: '合流', exact: true }).click();
-      await page.getByRole('combobox', { name: '你的故事', exact: true }).selectOption(original.id);
-      await page.getByRole('combobox', { name: '相遇的故事', exact: true }).selectOption(partner.id);
+      await page.getByRole('radiogroup', { name: '你的故事' }).getByRole('radio').filter({ hasText: original.title }).click();
+      await page.getByRole('radiogroup', { name: '相遇的故事' }).getByRole('radio').filter({ hasText: partner.title }).click();
       await page.getByRole('button', { name: '开启合流故事', exact: true }).click();
       await page.getByRole('button', { name: '阅读新书', exact: true }).click();
       await position(page, 1);

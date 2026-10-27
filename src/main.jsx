@@ -161,6 +161,7 @@ import {
   createMergedStory,
   createStory,
   finishEndlessLine,
+  fusionProductModeFor,
   genreTemplateById,
   isManuallyFinished,
   localIdentityTitle,
@@ -185,6 +186,11 @@ import {
   upsertStory,
 } from "./persistence";
 import { findSettingViolation } from "./setting-guard";
+import {
+  fusionCandidatesFor,
+  fusionLineMetaFor,
+  resolveFusionPreselect,
+} from "./fusion.js";
 import {
   leadingExcerpt,
   parseCharacterCardJson,
@@ -644,6 +650,15 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
                   : "继续阅读"
                 : "开启第一本书"}
             </Button>
+            {activeStory && activeStory.kind !== "merged" && !activeStory.readOnly && (
+              <Button
+                variant="ghost"
+                icon="git"
+                onClick={() => onNavigate("merge", { storyId: activeStory.id })}
+              >
+                与另一条线合流
+              </Button>
+            )}
           </div>
         </div>
       </section>
@@ -674,6 +689,7 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
           stories={stories}
           activeStoryId={activeStory?.id}
           onOpenStory={onOpenStory}
+          onFuseStory={(storyId) => onNavigate("merge", { storyId })}
           authClient={authClient}
           authSignal={account.status}
         />
@@ -716,7 +732,7 @@ function useShelfCapacity() {
   return capacity;
 }
 
-function LibrarySwitcher({ stories, activeStoryId, onOpenStory, authClient, authSignal = '' }) {
+function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, authClient, authSignal = '' }) {
   const otherStories = stories.filter((story) => story.id !== activeStoryId);
   const capacity = useShelfCapacity();
   const [pulledId, setPulledId] = useState(null);
@@ -755,27 +771,38 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, authClient, auth
                 const titleLayout = coverTitleLayoutFor(story);
                 const leaning = partial && shelfIndex === shelves.length - 1 && bookIndex === row.length - 1;
                 return (
-                  <button
-                    type="button"
-                    key={story.id}
-                    className={`wood-book ${leaning ? "is-leaning" : ""} ${pulledId === story.id ? "is-pulled" : ""}`}
-                    style={{ "--tilt": `${shelfTiltFor(story)}deg` }}
-                    onClick={() => handleOpen(story)}
-                    aria-label={`${story.title}，${shelfMetaFor(story)}`}
-                  >
-                    <span className="wood-book-cover">
-                      <StoryCover story={story} genreId={genre.id} sources={coverSources(story)} getAccessToken={() => authClient.getAccessToken()} authSignal={authSignal} />
-                      <span className="wood-book-spine" aria-hidden="true" />
-                      <span className={`wood-book-ribbon ${ribbonKind}`} aria-hidden="true">{statusBadgeFor(story)}</span>
-                      {titleLayout === "vertical" && (
-                        <span className="wood-book-title-tag" aria-hidden="true">{story.title}</span>
-                      )}
-                      <span className="wood-book-face" aria-hidden="true">
-                        {titleLayout === "horizontal" && <b>{story.title}</b>}
-                        <small>{shelfMetaFor(story)}</small>
+                  <div className="wood-book-cell" key={story.id}>
+                    <button
+                      type="button"
+                      className={`wood-book ${leaning ? "is-leaning" : ""} ${pulledId === story.id ? "is-pulled" : ""}`}
+                      style={{ "--tilt": `${shelfTiltFor(story)}deg` }}
+                      onClick={() => handleOpen(story)}
+                      aria-label={`${story.title}，${shelfMetaFor(story)}`}
+                    >
+                      <span className="wood-book-cover">
+                        <StoryCover story={story} genreId={genre.id} sources={coverSources(story)} getAccessToken={() => authClient.getAccessToken()} authSignal={authSignal} />
+                        <span className="wood-book-spine" aria-hidden="true" />
+                        <span className={`wood-book-ribbon ${ribbonKind}`} aria-hidden="true">{statusBadgeFor(story)}</span>
+                        {titleLayout === "vertical" && (
+                          <span className="wood-book-title-tag" aria-hidden="true">{story.title}</span>
+                        )}
+                        <span className="wood-book-face" aria-hidden="true">
+                          {titleLayout === "horizontal" && <b>{story.title}</b>}
+                          <small>{shelfMetaFor(story)}</small>
+                        </span>
                       </span>
-                    </span>
-                  </button>
+                    </button>
+                    {story.kind !== "merged" && !story.readOnly && onFuseStory && (
+                      <button
+                        type="button"
+                        className="wood-book-fuse"
+                        aria-label={`让《${story.title}》与另一条线合流`}
+                        onClick={() => onFuseStory(story.id)}
+                      >
+                        合流
+                      </button>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -3079,7 +3106,7 @@ function ProseEditor({ chapter, onClose, onSave }) {
 // generated after the edit; chapters that already exist never change.
 // The lorebook shown here is the owner's private material (imported or
 // hand-written): it appears in no public snapshot, ever.
-function StorySettingsBook({ story, onClose, onSave }) {
+function StorySettingsBook({ story, onClose, onSave, onFuse }) {
   const [premise, setPremise] = useState(story.worldBible?.premise || "");
   const [rules, setRules] = useState(() => [...(story.worldBible?.rules || [])]);
   const [endingAnchor, setEndingAnchor] = useState(story.worldBible?.endingAnchor || "");
@@ -3116,6 +3143,30 @@ function StorySettingsBook({ story, onClose, onSave }) {
       <p className="field-hint">
         这本书的世界设定都在这里。在这里改，只影响之后生成的章节——已经写好的章节，一个字都不会动。
       </p>
+      {story.kind === "merged" ? (
+        <div className="settings-section settings-fusion">
+          <h3>这本书的来历</h3>
+          <p className="settings-fusion-line">
+            {Array.isArray(story.sourceTitles) && story.sourceTitles.length === 2
+              ? <>由《{story.sourceTitles[0]}》×《{story.sourceTitles[1]}》融合而来，两位主角共同走这条线。</>
+              : <>由两条故事线融合而来，两位主角共同走这条线。</>}
+          </p>
+          <p className="field-hint">
+            {storyLengthModeOf(story) === "endless"
+              ? "这条线继承了无限连载：没有预设终章，每 12 章一弧，直到你亲手为它完结。"
+              : "这是一本 6 章的合流短篇，走完即止。"}
+            合流故事是两条线的结晶，不能再作合流的来源。
+          </p>
+        </div>
+      ) : onFuse ? (
+        <div className="settings-section settings-fusion">
+          <h3>合流</h3>
+          <p className="field-hint">让这条线与另一条线相遇，融合成一本双主角的新书——原书保留。如果另一条线还在连载中（无限连载），新线会继承无限连载继续往下写。</p>
+          <Button variant="secondary" icon="git" onClick={onFuse}>
+            与另一条线合流
+          </Button>
+        </div>
+      ) : null}
       <div className="settings-section">
         <h3>世界圣经</h3>
         <label className="field-label">
@@ -4027,6 +4078,7 @@ function Reader({
           story={story}
           onClose={() => setSettingsOpen(false)}
           onSave={saveSettings}
+          onFuse={() => { setSettingsOpen(false); onNavigate("merge", { storyId: story.id }); }}
         />
       )}
       {proseOpen && !readOnly && chapter && (
@@ -4563,6 +4615,9 @@ function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter,
         <div className="plaza-detail-cover-copy">
           <h1>《{detail.title}》</h1>
           <p>{detail.worldName} × {templateName} · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"}</p>
+          {detail.merged && Array.isArray(detail.sourceTitles) && detail.sourceTitles.length === 2 && (
+            <span className="plaza-badge is-fused">由《{detail.sourceTitles[0]}》×《{detail.sourceTitles[1]}》融合而来</span>
+          )}
           {detail.official && <span className="plaza-badge is-official">官方示例 · 织界官方走完的完整故事线</span>}
         </div>
       </section>
@@ -4622,6 +4677,8 @@ function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter,
         <p className="plaza-note">读作者化身走完的版本 · 不消耗你的生成额度</p>
         <Button variant="secondary" className="plaza-cta-main" onClick={() => onEnter(detail)}>带我的化身进入</Button>
         <p className="plaza-note">同一世界、同步节拍，捞出一条只属于你的新线</p>
+        <Button variant="ghost" className="plaza-cta-main" onClick={() => onNavigate("merge", { publicationId: detail.id })}>与我的线合流</Button>
+        <p className="plaza-note">把这条线和你的一条线接在一起，双主角共同往下写（需要先进入过这条线，或它本就是你发布的线）</p>
         <p className="plaza-fee-note"><span aria-hidden="true">●</span> 进入重演后，新章节的生成费用计入你自己的额度。</p>
       </section>
 
@@ -5685,16 +5742,79 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
   );
 }
 
-function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClient, onAuthRequired, avatar, avatars = [] }) {
+function MergeLineCard({ book, selected, onSelect, badge = "" }) {
+  const genre = genreOf(book);
+  const meta = fusionLineMetaFor(book);
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      className={`merge-line-card ${selected ? "active" : ""}`}
+      onClick={onSelect}
+    >
+      <span className="merge-line-thumb">
+        <WorldArtwork genreId={genre.id} />
+      </span>
+      <span className="merge-line-copy">
+        <b>{book.title}</b>
+        <small>{genre.world} · {meta.modeLabel} · {meta.progressLabel}</small>
+      </span>
+      <span className={`merge-line-badge ${badge ? "is-sample" : meta.stateKind}`}>{badge || meta.stateLabel}</span>
+      {selected && <Icon name="check" size={15} />}
+    </button>
+  );
+}
+
+function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClient, onAuthRequired, avatar, avatars = [], preselect = null, onEnterPublication }) {
   const operation = useRef(null);
   const candidate = useRef(null);
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState(null);
   const engine = mode || (provider.configured ? "gemini" : "local");
   useEffect(() => () => operation.current?.abort(), []);
-  const originals = stories.filter((story) => story.kind !== "merged" && !story.readOnly);
-  const [sourceId, setSourceId] = useState(activeStory?.kind !== "merged" ? activeStory?.id : originals[0]?.id);
-  const [partnerId, setPartnerId] = useState(originals.find((story) => story.id !== sourceId)?.id || FRIEND_BOOK.id);
+  const originals = fusionCandidatesFor(stories);
+  // Contextual entries （书籍详情 / 书架 / 广场详情） arrive with a
+  // preselected source; the plain 合流 entry arrives with none and keeps
+  // the historical default (the active story, then the first other).
+  const resolution = useMemo(
+    () => resolveFusionPreselect({
+      stories,
+      storyId: preselect?.storyId || "",
+      publicationId: preselect?.publicationId || "",
+      mine: plazaMine(),
+    }),
+    [stories, preselect?.storyId, preselect?.publicationId],
+  );
+  const initialSourceId = resolution.sourceId
+    || (activeStory?.kind !== "merged" ? activeStory?.id : originals[0]?.id);
+  const [sourceId, setSourceId] = useState(initialSourceId);
+  const [partnerId, setPartnerId] = useState(
+    () => resolution.partnerId || originals.find((story) => story.id !== initialSourceId)?.id || FRIEND_BOOK.id,
+  );
+  // A preselection that resolves after mount (the route changed while
+  // the flow was open) still lands — once; afterwards the picks belong
+  // to the reader.
+  const appliedPreselect = useRef("");
+  useEffect(() => {
+    const key = `${resolution.sourceId}|${resolution.partnerId}|${resolution.pendingPublication}`;
+    if (!resolution.sourceId && !resolution.partnerId && !resolution.pendingPublication) return;
+    if (appliedPreselect.current === key) return;
+    appliedPreselect.current = key;
+    if (resolution.sourceId) setSourceId(resolution.sourceId);
+    if (resolution.partnerId) setPartnerId(resolution.partnerId);
+  }, [resolution]);
+  // The pending-publication notice reads better with the line's title;
+  // the fetch is best-effort and the notice stands without it.
+  const [pendingTitle, setPendingTitle] = useState("");
+  useEffect(() => {
+    if (!resolution.pendingPublication) { setPendingTitle(""); return undefined; }
+    let live = true;
+    fetchPlazaDetail({ id: resolution.pendingPublication })
+      .then((detail) => { if (live && detail) setPendingTitle(detail.title || ""); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [resolution.pendingPublication]);
   const sourceStory = originals.find((story) => story.id === sourceId) || originals[0];
   const partnerStory = originals.find((story) => story.id === partnerId && story.id !== sourceStory?.id) || FRIEND_BOOK;
   // Each side's avatar is the one that lived the chosen story, resolved
@@ -5763,21 +5883,54 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
           <p>两个主角，一本新故事。原书保留。</p>
         </div>
       </div>
+      {!started && resolution.pendingPublication && (
+        <div className="merge-pending" role="note">
+          <p>
+            广场上的{pendingTitle ? `《${pendingTitle}》` : "这条故事线"}还不在你的书架上——合流的来源只能是你自己的线，或你已带化身进入过的广场线。先进入这条线，它就会出现在下面的选择里。
+          </p>
+          {onEnterPublication && (
+            <Button variant="secondary" onClick={() => onEnterPublication(resolution.pendingPublication)}>
+              先带化身进入这条线
+            </Button>
+          )}
+        </div>
+      )}
       {!started && <div className="merge-book-selectors" inert={busy ? true : undefined}>
-        <label className="field-label">你的故事
-          <select aria-label="你的故事" value={sourceStory.id} onChange={(event) => {
-            setSourceId(event.target.value);
-            if (event.target.value === partnerId) setPartnerId(FRIEND_BOOK.id);
-          }}>
-            {originals.map((book) => <option key={book.id} value={book.id}>{book.title}</option>)}
-          </select>
-        </label>
-        <label className="field-label">相遇的故事
-          <select aria-label="相遇的故事" value={partnerStory.id} onChange={(event) => setPartnerId(event.target.value)}>
-            {originals.filter((book) => book.id !== sourceStory.id).map((book) => <option key={book.id} value={book.id}>{book.title}</option>)}
-            <option value={FRIEND_BOOK.id}>体验角色 · {displayName(FRIEND_BOOK)}</option>
-          </select>
-        </label>
+        <div className="merge-picker">
+          <span className="field-label" id="merge-source-label">你的故事</span>
+          <div className="merge-line-list" role="radiogroup" aria-labelledby="merge-source-label">
+            {originals.map((book) => (
+              <MergeLineCard
+                key={book.id}
+                book={book}
+                selected={sourceStory.id === book.id}
+                onSelect={() => {
+                  setSourceId(book.id);
+                  if (book.id === partnerId) setPartnerId(FRIEND_BOOK.id);
+                }}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="merge-picker">
+          <span className="field-label" id="merge-partner-label">相遇的故事</span>
+          <div className="merge-line-list" role="radiogroup" aria-labelledby="merge-partner-label">
+            {originals.filter((book) => book.id !== sourceStory.id).map((book) => (
+              <MergeLineCard
+                key={book.id}
+                book={book}
+                selected={partnerStory.id === book.id}
+                onSelect={() => setPartnerId(book.id)}
+              />
+            ))}
+            <MergeLineCard
+              book={FRIEND_BOOK}
+              badge="示例"
+              selected={partnerStory.id === FRIEND_BOOK.id}
+              onSelect={() => setPartnerId(FRIEND_BOOK.id)}
+            />
+          </div>
+        </div>
       </div>}
       <div className="merge-stage">
         <div className="merge-world-card mine">
@@ -5857,6 +6010,9 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
               </div>
               <div>
                 <b>{mergedStory.title}</b>
+                {Array.isArray(mergedStory.sourceTitles) && mergedStory.sourceTitles.length === 2 && (
+                  <small className="merge-result-source">由《{mergedStory.sourceTitles[0]}》×《{mergedStory.sourceTitles[1]}》融合而来</small>
+                )}
               </div>
               <button onClick={() => onNavigate("reader", mergedStory.id)}>
                 阅读新书 <Icon name="arrow" size={17} />
@@ -5942,6 +6098,13 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
             </div>
           )}
         </section>
+          {!started && (
+            <p className="merge-product-note">
+              {fusionProductModeFor(sourceStory, partnerStory) === "endless"
+                ? "有一条线还在连载中：融合出的新线会继承无限连载——没有预设终章，每 12 章一弧小升格，直到你亲手为它完结；两条原线未回收的伏笔，都会记到新线的账上。"
+                : "融合出的新线是一本 6 章的短篇，走完即止——只有连载中的无限长线参与时，新线才会继承无限连载。"}
+            </p>
+          )}
           {!started && (
           <div className="merge-action">
             <GenerationMode provider={provider} value={engine} onChange={setMode} disabled={busy} />
@@ -6321,7 +6484,13 @@ function App() {
         }
       : next === "plaza-detail" || next === "plaza-enter" || next === "profile"
         ? { view: next, id: options.id }
-        : { view: next };
+        : next === "merge"
+          ? {
+              view: next,
+              ...(options.storyId ? { id: options.storyId } : {}),
+              ...(options.publicationId ? { publicationId: options.publicationId } : {}),
+            }
+          : { view: next };
     const hash = routeHash(nextRoute);
     if (window.location.hash !== hash) window.history.pushState(null, "", hash);
     setRoute(parseRoute(hash));
@@ -6694,6 +6863,8 @@ function App() {
         }
         onNavigate={(next, id) => (id ? openOwnReader(id) : navigate(next))}
         onMerged={addMergedStory}
+        preselect={{ storyId: route.id || "", publicationId: route.publicationId || "" }}
+        onEnterPublication={(id) => navigate("plaza-enter", { id })}
         authClient={authClient}
         onAuthRequired={() => { setAccountIntent(null); setAccountOpen(true); }}
         avatar={avatarState.avatar}
