@@ -9,7 +9,7 @@ function GoogleMark() {
 
 // The SDK owns Firebase credentials and the session; the email-code session
 // token is owned by the auth client too. This panel only holds form input.
-export default function AccountPanel({ client, account, onContinue, onOpenAvatar }) {
+export default function AccountPanel({ client, account, onContinue, onOpenAvatar, onOpenProfile }) {
   const [mode, setMode] = useState("login");
   const [accountId, setAccountId] = useState("");
   const [password, setPassword] = useState("");
@@ -128,6 +128,7 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       </div>}
       <p className="account-storage-note">书架与阅读进度保存在当前浏览器，暂不跨设备同步。退出账号不会删除本机故事。</p>
       {onOpenAvatar && <button className="account-avatar-entry" type="button" onClick={onOpenAvatar}>我的化身 <span aria-hidden="true">→</span></button>}
+      {onOpenProfile && <button className="account-avatar-entry" type="button" onClick={onOpenProfile}>我的主页 <span aria-hidden="true">→</span></button>}
       {error && <p className="account-message is-error" role="alert">{error}</p>}
       {account.notice && <p className="account-message" role="status">{account.notice}</p>}
       <button className="button button-primary account-primary" type="button" onClick={onContinue}>继续体验</button>

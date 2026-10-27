@@ -7,6 +7,7 @@ import { createAuthService } from './auth.js'
 import { createCoverService } from './cover.js'
 import { createAvatarService } from './avatar.js'
 import { createPlazaService } from './plaza.js'
+import { createSocialService } from './social.js'
 
 const DEFAULT_DIST = fileURLToPath(new URL('../dist/', import.meta.url))
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2' }
@@ -136,6 +137,27 @@ async function readPlazaJson(request) {
   } catch { throw new ApiError(400, '请求格式有误，请重试。') }
 }
 
+async function readPictureJson(request) {
+  if (request.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
+    throw new ApiError(415, '请使用 JSON 格式提交。')
+  }
+  // A ≤1 MB picture travels as base64 (~1.4 MB) plus JSON framing.
+  const LIMIT = 1_900_000
+  if (Number(request.headers['content-length']) > LIMIT) throw new ApiError(413, '图片太大了，换一张 1MB 以内的。')
+  const chunks = []
+  let length = 0
+  for await (const chunk of request) {
+    length += chunk.length
+    if (length > LIMIT) throw new ApiError(413, '图片太大了，换一张 1MB 以内的。')
+    chunks.push(chunk)
+  }
+  try {
+    const result = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error()
+    return result
+  } catch { throw new ApiError(400, '请求格式有误，请重试。') }
+}
+
 async function serveStatic(request, response, pathname, distDir) {
   let decoded
   try { decoded = decodeURIComponent(pathname) } catch { throw new ApiError(400, '页面地址无效。') }
@@ -159,7 +181,7 @@ async function serveStatic(request, response, pathname, distDir) {
   response.end(request.method === 'HEAD' ? undefined : bytes)
 }
 
-export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth = createAuthService({ env }), cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza = createPlazaService({ env }), distDir = DEFAULT_DIST } = {}) {
+export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth = createAuthService({ env }), cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza = createPlazaService({ env }), social = createSocialService({ env }), distDir = DEFAULT_DIST } = {}) {
   // Explicit opt-out preserves existing deployments until the release owner sets it.
   const generationEnabled = env.GENERATION_ENABLED !== 'false'
   // The model id is static configuration; remember it the first time status
@@ -352,7 +374,113 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         return
       }
       if (pathname === '/api/plaza' && request.method === 'GET') {
-        return sendJson(response, 200, { publications: await plaza.feed() })
+        const publications = await plaza.feed()
+        // Presence rides along with the feed so the header count is never
+        // staler than the list itself; a presence failure never sinks the feed.
+        let onlineCount = 0
+        try { onlineCount = await social.onlineCount() } catch { /* count is decorative */ }
+        return sendJson(response, 200, { publications, onlineCount })
+      }
+      if (pathname === '/api/me/profile' && request.method === 'PUT') {
+        // Profile customization is account property: a signed-in
+        // identity is always required, and the social service validates
+        // the name, the @handle (unique across profile handles and
+        // login usernames) and the picture choice.
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再编辑资料。', 'auth-required')
+          throw error
+        }
+        return sendJson(response, 200, { profile: await social.saveMyProfile(identity, await readCoverJson(request)) })
+      }
+      if (pathname === '/api/me/profile/picture' && request.method === 'POST') {
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再换头像。', 'auth-required')
+          throw error
+        }
+        return sendJson(response, 200, { profile: await social.saveMyPicture(identity, await readPictureJson(request)) })
+      }
+      if (pathname === '/api/me/handle' && request.method === 'GET') {
+        const identity = await auth.identity(request.headers.authorization)
+        const value = new URL(request.url, 'http://localhost').searchParams.get('value') || ''
+        return sendJson(response, 200, await social.checkHandle(identity, value))
+      }
+      if (pathname === '/api/presence/heartbeat' && request.method === 'POST') {
+        const identity = await auth.identity(request.headers.authorization)
+        await social.heartbeat(identity)
+        return sendJson(response, 200, { ok: true })
+      }
+      const userMatch = pathname.match(/^\/api\/users\/([^/]+)(?:\/(profile|portrait|picture|follow|unfollow|report))?$/)
+      if (userMatch) {
+        const uid = decodeURIComponent(userMatch[1])
+        const action = userMatch[2]
+        if (action === 'portrait' && request.method === 'GET') {
+          const image = await social.portrait(uid)
+          if (!image) throw new ApiError(404, '这位用户还没有立绘。')
+          if (!response.destroyed && !response.writableEnded) {
+            response.writeHead(200, {
+              'Content-Type': image.contentType,
+              'Content-Length': image.buffer.length,
+              'Cache-Control': 'public, max-age=300',
+            })
+            response.end(image.buffer)
+          }
+          return
+        }
+        if (action === 'picture' && request.method === 'GET') {
+          // The resolved profile picture (upload or portrait). The
+          // default avatar is a static asset and never lands here.
+          const image = await social.picture(uid)
+          if (!image) throw new ApiError(404, '这位用户还没有自定义头像。')
+          if (!response.destroyed && !response.writableEnded) {
+            response.writeHead(200, {
+              'Content-Type': image.contentType,
+              'Content-Length': image.buffer.length,
+              'Cache-Control': 'public, max-age=300',
+            })
+            response.end(image.buffer)
+          }
+          return
+        }
+        if (action === 'profile' && request.method === 'GET') {
+          // Public page; a valid credential only fills in viewerState —
+          // an absent or stale one still gets the public profile.
+          let viewer = null
+          if (request.headers.authorization) {
+            try { viewer = await auth.identity(request.headers.authorization) } catch { viewer = null }
+          }
+          return sendJson(response, 200, { profile: await social.profile(viewer, uid) })
+        }
+        if ((action === 'follow' || action === 'unfollow') && request.method === 'POST') {
+          let identity
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) {
+              throw new ApiError(401, action === 'follow' ? '请先登录，再关注。' : '请先登录，再取消关注。', 'auth-required')
+            }
+            throw error
+          }
+          const result = action === 'follow' ? await social.follow(identity, uid) : await social.unfollow(identity, uid)
+          return sendJson(response, 200, result)
+        }
+        if (action === 'report' && request.method === 'POST') {
+          let identity
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) {
+              throw new ApiError(401, '请先登录，再举报。', 'auth-required')
+            }
+            throw error
+          }
+          return sendJson(response, 200, await social.reportUser(identity, uid))
+        }
       }
       if (pathname === '/api/plaza/publish' && request.method === 'POST') {
         // Publishing is account property: a signed-in identity is always
@@ -368,12 +496,28 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         const publication = await plaza.publish(identity, await readPlazaJson(request))
         return sendJson(response, 200, { publication })
       }
-      const plazaMatch = pathname.match(/^\/api\/plaza\/([^/]+)(?:\/(report|withdraw|portrait))?$/)
+      const plazaMatch = pathname.match(/^\/api\/plaza\/([^/]+)(?:\/(report|withdraw|portrait|cover))?$/)
       if (plazaMatch) {
         const id = decodeURIComponent(plazaMatch[1])
         const action = plazaMatch[2]
         if (!action && request.method === 'GET') {
           return sendJson(response, 200, { publication: await plaza.detail(id) })
+        }
+        if (action === 'cover' && request.method === 'GET') {
+          // The story's own generated cover is public like the portrait:
+          // it is the book's face on the plaza, fetched by publication
+          // id so the author's account id never appears in a URL.
+          const image = await plaza.cover(id)
+          if (!image) throw new ApiError(404, '这条故事线还没有专属封面。')
+          if (!response.destroyed && !response.writableEnded) {
+            response.writeHead(200, {
+              'Content-Type': image.contentType,
+              'Content-Length': image.buffer.length,
+              'Cache-Control': 'public, max-age=300',
+            })
+            response.end(image.buffer)
+          }
+          return
         }
         if (action === 'portrait' && request.method === 'GET') {
           const image = await plaza.portrait(id)

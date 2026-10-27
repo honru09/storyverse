@@ -6,6 +6,7 @@ import { createAvatarService } from '../server/avatar.js'
 import { createMemoryAvatarStore } from '../server/avatar-store.js'
 import { createMemoryPlazaStore } from '../server/plaza-store.js'
 import { createPlazaService } from '../server/plaza.js'
+import { createMemoryCoverStore } from '../server/cover-store.js'
 import { createServer } from '../server/index.js'
 import {
   acceptChapter,
@@ -80,7 +81,8 @@ async function startPlazaServer(t) {
     imageGenerate: async () => ({ buffer: tinyPng(), mimeType: 'image/png', usage: null }),
   })
   const plazaStore = createMemoryPlazaStore()
-  const plazaService = createPlazaService({ env: {}, store: plazaStore, avatarStore })
+  const coverStore = createMemoryCoverStore()
+  const plazaService = createPlazaService({ env: {}, store: plazaStore, avatarStore, coverStore })
   const server = createServer({
     env: { AUTH_ENABLED: 'true', DATA_STORE: 'memory' },
     generator: { status: () => ({ configured: false, provider: 'gemini', model: 'fixture' }), generate: async () => { throw new Error('unused') } },
@@ -94,7 +96,7 @@ async function startPlazaServer(t) {
     server.closeAllConnections()
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   })
-  return { base: `http://127.0.0.1:${server.address().port}`, plazaStore }
+  return { base: `http://127.0.0.1:${server.address().port}`, plazaStore, coverStore }
 }
 
 const ORIGIN = { Origin: 'http://localhost:5173' }
@@ -192,6 +194,60 @@ test('publish → feed → detail round-trip, with the private marker scrubbed e
   const portrait = await fetch(`${base}/api/plaza/${publication.id}/portrait`)
   assert.equal(portrait.status, 200)
   assert.equal(portrait.headers.get('content-type'), 'image/jpeg')
+})
+
+test('a story’s own generated cover rides the feed/detail summaries and is served under the publication id', async (t) => {
+  const { base, coverStore } = await startPlazaServer(t)
+  const token = await register(base, 'plaza_author_cover')
+  const avatar = await makeAvatar(base, token)
+  const story = completedLine(avatar.id, { title: '带封面的线' })
+  const { publication } = await (await publish(base, token, story)).json()
+
+  // No cover painted yet: the summary carries null and the route 404s,
+  // so surfaces keep the world-artwork fallback exactly as before.
+  const bareFeed = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  assert.equal(bareFeed[0].coverUrl, null)
+  const missing = await fetch(`${base}/api/plaza/${publication.id}/cover`)
+  assert.equal(missing.status, 404)
+
+  // Paint the cover (the store record the cover service would write).
+  const account = await (await fetch(`${base}/api/account`, { headers: { Authorization: `Bearer ${token}` } })).json()
+  const coverBytes = tinyPng()
+  await coverStore.putCover(account.user.uid, story.id, {
+    uid: account.user.uid,
+    storyId: story.id,
+    version: 1,
+    contentType: 'image/png',
+    image: coverBytes.toString('base64'),
+    bytes: coverBytes.length,
+    model: 'fixture',
+    updatedAt: new Date().toISOString(),
+  })
+
+  const expectedUrl = `/api/plaza/${publication.id}/cover?v=1`
+  const feed = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  assert.equal(feed[0].coverUrl, expectedUrl, 'feed summary carries the story’s own cover')
+  const detail = (await (await fetch(`${base}/api/plaza/${publication.id}`)).json()).publication
+  assert.equal(detail.coverUrl, expectedUrl, 'detail summary carries the story’s own cover')
+
+  const served = await fetch(`${base}${expectedUrl}`)
+  assert.equal(served.status, 200)
+  assert.equal(served.headers.get('content-type'), 'image/png')
+  assert.deepEqual(Buffer.from(await served.arrayBuffer()), coverBytes)
+
+  // A repaint bumps the version and the summary URL follows it live.
+  await coverStore.putCover(account.user.uid, story.id, {
+    uid: account.user.uid,
+    storyId: story.id,
+    version: 2,
+    contentType: 'image/png',
+    image: coverBytes.toString('base64'),
+    bytes: coverBytes.length,
+    model: 'fixture',
+    updatedAt: new Date().toISOString(),
+  })
+  const repainted = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  assert.equal(repainted[0].coverUrl, `/api/plaza/${publication.id}/cover?v=2`)
 })
 
 test('publish rejects gated stories, another avatar’s line and red-line content — storing nothing', async (t) => {

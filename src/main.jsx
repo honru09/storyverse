@@ -59,13 +59,28 @@ import {
   plazaMineForget,
   plazaMineIds,
   plazaMineRemember,
-  plazaPortraitPath,
   plazaReaderStory,
   plazaTemplateNameFor,
   publishToPlaza,
   reportPublication,
   withdrawPublication,
 } from "./plaza.js";
+import {
+  profileBoardsFor,
+  searchProfileLines,
+  sortProfileLines,
+} from "./profile-boards.js";
+import {
+  checkHandleAvailable,
+  fetchUserProfile,
+  fileToSquareJpeg,
+  followUser,
+  reportUser,
+  sendPresenceHeartbeat,
+  unfollowUser,
+  updateMyProfile,
+  uploadMyPicture,
+} from "./users.js";
 import { acceptGeneratedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter } from "./generation.js";
 import WorldArtwork from "./components/WorldArtwork.jsx";
 import StoryCover from "./components/StoryCover.jsx";
@@ -87,6 +102,7 @@ import {
   useSceneMotion,
   useSmoothScroll,
 } from "./motion/useSceneMotion.js";
+import { gsap } from "./motion/gsap.js";
 import {
   lastAccessibleIndex,
   materialize,
@@ -265,6 +281,13 @@ const Icon = ({ name, size = 18, stroke = 1.8, className = "" }) => {
         <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
         <circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" />
       </>
+    ),
+    share: (
+      <path
+        d="M13.2 4.4 20.6 11.8l-7.4 7.4v-4.2c-5 .1-8.4 2-10.6 5.2.3-7.1 3.7-11.4 10.6-11.8V4.4Z"
+        fill="currentColor"
+        stroke="none"
+      />
     ),
     refresh: (
       <>
@@ -450,6 +473,7 @@ function Topbar({ onNavigate, onOpenLibrary, onOpenAccount, account }) {
 
 function MobileBottomNav({ view, onNavigate }) {
   if (view === "reader") return null;
+  if (view === "profile") return null;
   const items = [
     { id: "plaza", label: "广场" },
     { id: "forge", label: "造世" },
@@ -3005,27 +3029,26 @@ function Store({ onNavigate, onOpenBook, onOpenOwn, publications }) {
 }
 
 function PlazaAvatarThumb({ publication, large = false }) {
-  const [failed, setFailed] = useState(false);
-  const name = publication?.avatar?.name || "化身";
-  if (!publication?.avatar?.hasPortrait || failed) {
-    return (
-      <span className={`plaza-avatar-fallback ${large ? "is-large" : ""}`} aria-hidden="true">
-        {name.slice(0, 1)}
-      </span>
-    );
-  }
+  // The server resolves the author's picture through their profile
+  // record (uploaded picture → avatar portrait → the designed default
+  // avatar), so there is always a real image to show — never an empty
+  // circle or an initial tile. A failed load falls back to the same
+  // default asset rather than to nothing.
+  const resolved = publication?.avatar?.pictureUrl || "/default-avatar.svg";
+  const [src, setSrc] = useState(resolved);
+  useEffect(() => { setSrc(resolved); }, [resolved]);
   return (
     <img
       className={`plaza-avatar-img ${large ? "is-large" : ""}`}
-      src={plazaPortraitPath(publication.id)}
+      src={src}
       alt=""
       loading="lazy"
-      onError={() => setFailed(true)}
+      onError={() => { if (src !== "/default-avatar.svg") setSrc("/default-avatar.svg"); }}
     />
   );
 }
 
-function PlazaCard({ publication, own, onOpen, onRead, onEnter }) {
+function PlazaCard({ publication, own, onOpen, onRead, onEnter, onOpenProfile }) {
   const genre = genreById[publication.genreId] || GENRES[0];
   const templateName = plazaTemplateNameFor(publication) || genre.label;
   return (
@@ -3042,9 +3065,24 @@ function PlazaCard({ publication, own, onOpen, onRead, onEnter }) {
       </button>
       <div className="plaza-card-body">
         <div className="plaza-avatar-row">
-          <PlazaAvatarThumb publication={publication} />
-          <span className="plaza-avatar-name">{publication.avatar?.name}</span>
-          <span className="plaza-author">作者 · {publication.authorName}</span>
+          {onOpenProfile && publication.authorUid ? (
+            <button
+              type="button"
+              className="plaza-author-link"
+              onClick={() => onOpenProfile(publication.authorUid)}
+              aria-label={`打开 ${publication.authorName} 的主页`}
+            >
+              <PlazaAvatarThumb publication={publication} />
+              <span className="plaza-avatar-name">{publication.avatar?.name}</span>
+              <span className="plaza-author">作者 · {publication.authorName}</span>
+            </button>
+          ) : (
+            <>
+              <PlazaAvatarThumb publication={publication} />
+              <span className="plaza-avatar-name">{publication.avatar?.name}</span>
+              <span className="plaza-author">作者 · {publication.authorName}</span>
+            </>
+          )}
           {own && <span className="plaza-own-chip">我发布的</span>}
         </div>
         <div className="plaza-chips">
@@ -3065,18 +3103,27 @@ function PlazaCard({ publication, own, onOpen, onRead, onEnter }) {
   );
 }
 
-function PlazaFeed({ account, activeStory, onNavigate, onOpenStory, onOpenDetail, onReadLine, onEnter }) {
+function PlazaFeed({ account, activeStory, onNavigate, onOpenStory, onOpenDetail, onReadLine, onEnter, onOpenProfile }) {
   const [feed, setFeed] = useState(null);
+  const [onlineCount, setOnlineCount] = useState(0);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const mineIds = useMemo(() => plazaMineIds(), []);
   useEffect(() => {
     let live = true;
     setError("");
-    fetchPlazaFeed()
-      .then((items) => { if (live) setFeed(items); })
+    const load = () => fetchPlazaFeed()
+      .then(({ publications, onlineCount: count }) => {
+        if (!live) return;
+        setFeed(publications);
+        setOnlineCount(count);
+      })
       .catch(() => { if (live) { setFeed([]); setError("广场暂时没能打开，请稍后再试。"); } });
-    return () => { live = false; };
+    void load();
+    // The presence count must not go stale while the plaza sits open:
+    // refetch on a slow tick (which also freshens the list itself).
+    const timer = window.setInterval(() => { void load(); }, 60_000);
+    return () => { live = false; window.clearInterval(timer); };
   }, [retry]);
   const activeTotal = activeStory ? totalChaptersFor(activeStory) : 0;
   const activeChapter = activeStory ? Math.min(activeTotal, readerIndexFor(activeStory) + 1) : 0;
@@ -3084,6 +3131,12 @@ function PlazaFeed({ account, activeStory, onNavigate, onOpenStory, onOpenDetail
     <div className="page page-plaza page-enter">
       <header className="plaza-heading">
         <h1>广场</h1>
+        {onlineCount >= 1 && (
+          <span className="plaza-online" role="status">
+            <span className="plaza-online-dot" aria-hidden="true" />
+            {onlineCount} 人在线
+          </span>
+        )}
       </header>
       <p className="page-caption">别人走完的世界，正等你走进去。</p>
 
@@ -3134,6 +3187,7 @@ function PlazaFeed({ account, activeStory, onNavigate, onOpenStory, onOpenDetail
               onOpen={() => onOpenDetail(publication)}
               onRead={() => onReadLine(publication)}
               onEnter={() => onEnter(publication)}
+              onOpenProfile={onOpenProfile}
             />
           ))}
         </div>
@@ -3142,7 +3196,7 @@ function PlazaFeed({ account, activeStory, onNavigate, onOpenStory, onOpenDetail
   );
 }
 
-function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter, onOpenAccount, onToast }) {
+function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter, onOpenAccount, onToast, onOpenProfile }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
@@ -3216,7 +3270,13 @@ function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter,
         <button type="button" className="back-link" onClick={() => onNavigate("plaza")}>
           <Icon name="chevron" size={15} className="rotate-180" /> 返回广场
         </button>
-        <span className="plaza-author">作者 · {detail.authorName}</span>
+        {onOpenProfile && detail.authorUid ? (
+          <button type="button" className="plaza-author plaza-author-button" onClick={() => onOpenProfile(detail.authorUid)}>
+            作者 · {detail.authorName}
+          </button>
+        ) : (
+          <span className="plaza-author">作者 · {detail.authorName}</span>
+        )}
       </div>
 
       <section className="plaza-detail-cover">
@@ -3229,7 +3289,18 @@ function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter,
       </section>
 
       <section className="plaza-panel plaza-avatar-panel">
-        <PlazaAvatarThumb publication={detail} large />
+        {onOpenProfile && detail.authorUid ? (
+          <button
+            type="button"
+            className="plaza-avatar-profile-link"
+            onClick={() => onOpenProfile(detail.authorUid)}
+            aria-label={`打开 ${detail.authorName} 的主页`}
+          >
+            <PlazaAvatarThumb publication={detail} large />
+          </button>
+        ) : (
+          <PlazaAvatarThumb publication={detail} large />
+        )}
         <div>
           <div className="plaza-avatar-name-row">
             <strong>{detail.avatar?.name}</strong>
@@ -3300,6 +3371,657 @@ function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter,
   );
 }
 
+function formatProfileDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
+  const editable = profile.editable || {};
+  const [displayName, setDisplayName] = useState(profile.displayName || "");
+  const [handle, setHandle] = useState(editable.handle || "");
+  const [handleState, setHandleState] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [pictureBusy, setPictureBusy] = useState("");
+  const [error, setError] = useState("");
+  const fileRef = useRef(null);
+  const pictureKind = profile.picture?.kind || "default";
+  const pictureStateLabel = pictureKind === "upload" ? "自定义图片" : pictureKind === "avatar" ? "化身立绘" : "默认头像";
+
+  const checkHandle = async () => {
+    const value = handle.trim().toLowerCase();
+    if (!value || value === (editable.handle || "")) { setHandleState(null); return; }
+    try {
+      setHandleState(await checkHandleAvailable({ handle: value, getAccessToken: getToken }));
+    } catch { setHandleState(null); }
+  };
+
+  const pickKind = async (kind) => {
+    if (pictureBusy) return;
+    setPictureBusy(kind);
+    setError("");
+    try {
+      onSaved(await updateMyProfile({ patch: { pictureKind: kind }, getAccessToken: getToken }));
+    } catch (failure) {
+      setError(failure?.message || "头像没能切换，请稍后再试。");
+    } finally { setPictureBusy(""); }
+  };
+
+  const onPickFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || pictureBusy) return;
+    setPictureBusy("upload");
+    setError("");
+    try {
+      const processed = await fileToSquareJpeg(file);
+      onSaved(await uploadMyPicture({ ...processed, getAccessToken: getToken }));
+    } catch (failure) {
+      setError(failure?.message || "图片没能上传，请换一张试试。");
+    } finally { setPictureBusy(""); }
+  };
+
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const next = await updateMyProfile({
+        patch: { displayName: displayName.trim(), handle: handle.trim().toLowerCase() || null },
+        getAccessToken: getToken,
+      });
+      onSaved(next);
+      onClose();
+    } catch (failure) {
+      if (failure?.code === "conflict") {
+        setHandleState({ available: false, message: failure.message });
+      }
+      setError(failure?.message || "资料没能保存，请稍后再试。");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="profile-edit-overlay" role="dialog" aria-modal="true" aria-label="编辑资料">
+      <div className="profile-edit-sheet">
+        <span className="ryan-sheet-handle" aria-hidden="true" />
+        <div className="profile-edit-heading">
+          <h2>编辑资料</h2>
+          <button type="button" className="profile-edit-close" onClick={onClose} aria-label="关闭">
+            <Icon name="x" size={16} />
+          </button>
+        </div>
+
+        <div className="profile-edit-picture">
+          <span className={`profile-edit-preview-frame${pictureKind === "avatar" ? " is-portrait" : ""}`}>
+            <img className="profile-edit-preview" src={profile.picture?.url || "/default-avatar.svg"} alt="" />
+          </span>
+          <div className="profile-edit-picture-copy">
+            <strong>头像</strong>
+            <small>现在使用的是：{pictureStateLabel}</small>
+          </div>
+        </div>
+        <div className="profile-edit-picture-actions">
+          <button type="button" disabled={Boolean(pictureBusy)} onClick={() => fileRef.current?.click()}>
+            {pictureBusy === "upload" ? "上传中…" : "上传图片"}
+          </button>
+          <button
+            type="button"
+            disabled={Boolean(pictureBusy) || !editable.hasPortrait}
+            onClick={() => void pickKind("avatar")}
+            title={editable.hasPortrait ? "" : "还没有化身立绘"}
+          >
+            用化身立绘
+          </button>
+          <button type="button" disabled={Boolean(pictureBusy)} onClick={() => void pickKind("default")}>
+            恢复默认
+          </button>
+          <input ref={fileRef} type="file" accept="image/jpeg,image/png" hidden onChange={(event) => void onPickFile(event)} />
+        </div>
+
+        <label className="profile-edit-field">
+          <span>显示名</span>
+          <input
+            value={displayName}
+            maxLength={20}
+            onChange={(event) => setDisplayName(event.target.value)}
+            placeholder="给自己起个名字"
+          />
+        </label>
+        <label className="profile-edit-field">
+          <span>@用户名</span>
+          <input
+            value={handle}
+            maxLength={20}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            onChange={(event) => { setHandle(event.target.value); setHandleState(null); }}
+            onBlur={() => void checkHandle()}
+            placeholder="小写字母、数字、下划线"
+          />
+          {handleState && (
+            <small className={`profile-edit-handle-state ${handleState.available ? "is-ok" : "is-bad"}`}>
+              {handleState.message}
+            </small>
+          )}
+        </label>
+
+        {error && <p className="profile-edit-error" role="alert">{error}</p>}
+        <button type="button" className="profile-edit-save" disabled={busy} onClick={() => void save()}>
+          {busy ? "保存中…" : "保存"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// A line's face on the bookshelf: its OWN generated cover when the plaza
+// payload carries one (resolved server-side from the cover store), the
+// shared world artwork only as the fallback for lines never painted.
+function ProfileCoverArt({ publication }) {
+  const genre = genreById[publication.genreId] || GENRES[0];
+  if (publication.coverUrl) {
+    return <img className="profile-cover-img" src={publication.coverUrl} alt="" loading="lazy" />;
+  }
+  return <WorldArtwork genreId={genre.id} />;
+}
+
+// Stack geometry (gate7, front-cover-led — like a physical stack of
+// books): the front card takes 62% of the tile width at full height, so
+// at the tile's 1.25 aspect its face lands within a few percent of the
+// covers' natural 3:4 and reads as an actual book cover, never a sliced
+// sliver. Each further cover is the same card stepped 14px right behind
+// the front one, showing only its edge (max 3 peeks, so at most 4 lines
+// are stacked). No borders or seams anywhere: cards separate only
+// through their own soft shadow, and the stack sits centered on the
+// tile's dark ground.
+const STACK_CARD_WIDTH_PCT = 62;
+const STACK_STEP_PX = 14;
+
+function ProfileBoardCollage({ board }) {
+  const lines = board.publications || [];
+  if (lines.length === 0) return <span className="profile-board-collage is-empty" aria-hidden="true" />;
+
+  if (lines.length === 1) {
+    const publication = lines[0];
+    const genre = genreById[publication.genreId] || GENRES[0];
+    const templateName = plazaTemplateNameFor(publication) || genre.label;
+    // The side tiles are narrow: the length label is split at its own
+    // separator so each tile leads with the short half ("全 24 章" /
+    // "第 1 季 · 已完结") instead of wrapping mid-phrase.
+    const lengthParts = plazaLengthLabel(publication).split(" · ");
+    const lengthLead = lengthParts.length > 1 ? lengthParts[lengthParts.length - 1] : lengthParts[0];
+    const lengthNote = lengthParts.length > 1 ? `${lengthParts.slice(0, -1).join(" · ")} · 已完结` : "已完结";
+    return (
+      <span className="profile-board-collage is-single" aria-hidden="true">
+        <span className="profile-board-main">
+          <ProfileCoverArt publication={publication} />
+        </span>
+        <span className="profile-board-side">
+          <span className="profile-board-tile">
+            <b>{lengthLead}</b>
+            <small>{lengthNote}</small>
+          </span>
+          <span className="profile-board-tile">
+            <b>{publication.worldName || genre.world}</b>
+            <small>{templateName}</small>
+          </span>
+        </span>
+      </span>
+    );
+  }
+
+  const cards = lines.slice(0, 4);
+  const stackWidth = `calc(${STACK_CARD_WIDTH_PCT}% + ${(cards.length - 1) * STACK_STEP_PX}px)`;
+  return (
+    <span className="profile-board-collage is-stack" aria-hidden="true">
+      {cards.map((publication, index) => (
+        <span
+          className="profile-board-stack-layer"
+          key={publication.id}
+          style={{
+            width: `${STACK_CARD_WIDTH_PCT}%`,
+            left: `calc((100% - ${stackWidth}) / 2 + ${index * STACK_STEP_PX}px)`,
+            zIndex: cards.length - index,
+          }}
+        >
+          <ProfileCoverArt publication={publication} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function ProfileBoardCard({ board, onOpen }) {
+  return (
+    <button
+      type="button"
+      className="profile-board-card"
+      onClick={() => onOpen(board)}
+      aria-label={`打开合集${board.title}，共 ${board.publications.length} 条故事线`}
+    >
+      <ProfileBoardCollage board={board} />
+      <span className="profile-board-copy">
+        <strong>{board.title}</strong>
+        <small>{board.publications.length} 条故事线</small>
+      </span>
+    </button>
+  );
+}
+
+function ProfileLineRow({ publication, onOpen }) {
+  const genre = genreById[publication.genreId] || GENRES[0];
+  const templateName = plazaTemplateNameFor(publication) || genre.label;
+  return (
+    <button type="button" className="profile-line-row" onClick={() => onOpen(publication)}>
+      <span className="profile-line-art"><ProfileCoverArt publication={publication} /></span>
+      <span className="profile-line-copy">
+        <strong>{publication.title}</strong>
+        <small>{publication.worldName || genre.world} × {templateName} · {plazaLengthLabel(publication)}</small>
+        <small>{formatProfileDate(publication.publishedAt)}发布</small>
+      </span>
+      <Icon name="chevron" size={16} />
+    </button>
+  );
+}
+
+function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onOpenDetail }) {
+  const [profile, setProfile] = useState(null);
+  const [error, setError] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [segment, setSegment] = useState("boards");
+  const [selectedBoardId, setSelectedBoardId] = useState("");
+  const [shelfQuery, setShelfQuery] = useState("");
+  const [sortMode, setSortMode] = useState("newest");
+  const [sortOpen, setSortOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [reported, setReported] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [pictureSrc, setPictureSrc] = useState("");
+  const getToken = useCallback(() => authClient.getAccessToken(), [authClient]);
+  const viewerUid = account.user?.uid || "";
+  const { animate } = useMotionPolicy("profile");
+  const pageRef = useRef(null);
+  const tabsRef = useRef(null);
+  const enteredUidRef = useRef("");
+  // One orchestrated entrance (frontend-design playbook): the header
+  // elements rise in a single staggered sequence when the profile first
+  // paints — nothing loops, and the app's motion policy (user toggle,
+  // prefers-reduced-motion, save-data) silences it entirely.
+  useEffect(() => {
+    if (!profile || !animate || !pageRef.current) return;
+    if (enteredUidRef.current === profile.uid) return;
+    enteredUidRef.current = profile.uid;
+    const targets = pageRef.current.querySelectorAll("[data-enter]");
+    if (!targets.length) return;
+    gsap.fromTo(
+      targets,
+      { opacity: 0, y: 14 },
+      { opacity: 1, y: 0, duration: 0.5, stagger: 0.055, ease: "power3.out", clearProps: "transform,opacity" },
+    );
+  }, [profile, animate]);
+  // The segment's white pill slides between 合集 / 全部 (GSAP, transform
+  // only); with motion off it is set in place instantly.
+  useEffect(() => {
+    const pill = tabsRef.current?.querySelector("[data-segment-pill]");
+    if (!pill) return;
+    const xPercent = segment === "all" ? 100 : 0;
+    if (animate) gsap.to(pill, { xPercent, duration: 0.32, ease: "power3.out" });
+    else gsap.set(pill, { xPercent });
+  }, [segment, animate, profile]);
+  useEffect(() => {
+    let live = true;
+    setProfile(null);
+    setError("");
+    setNote("");
+    setSegment("boards");
+    setSelectedBoardId("");
+    setShelfQuery("");
+    setSortMode("newest");
+    setSortOpen(false);
+    setMenuOpen(false);
+    setReported(false);
+    setEditOpen(false);
+    fetchUserProfile({ uid, getAccessToken: getToken })
+      .then((next) => { if (live) setProfile(next); })
+      .catch((failure) => {
+        if (live) setError(failure?.code === "not-found" ? "这位用户还不存在。" : "暂时没能打开这个主页，请稍后再试。");
+      });
+    return () => { live = false; };
+  }, [uid, getToken, viewerUid]);
+
+  useEffect(() => { setPictureSrc(profile?.picture?.url || ""); }, [profile?.picture?.url]);
+
+  if (error) {
+    return (
+      <div className="page page-profile page-enter">
+        <div className="plaza-empty" role="alert">
+          <h3>{error}</h3>
+          <Button variant="secondary" onClick={() => onNavigate("plaza")}>回到广场</Button>
+        </div>
+      </div>
+    );
+  }
+  if (!profile) {
+    return (
+      <div className="page page-profile page-enter">
+        <p className="plaza-loading" role="status">正在打开主页…</p>
+      </div>
+    );
+  }
+
+  const isSelf = Boolean(profile.viewerState?.isSelf);
+  const following = Boolean(profile.viewerState?.isFollowing);
+  const publications = profile.publications || [];
+  const boards = profileBoardsFor(profile, sortMode);
+  const selectedBoard = boards.find((board) => board.id === selectedBoardId) || null;
+  const allLines = sortProfileLines(publications, sortMode);
+  const searchResults = searchProfileLines(publications, shelfQuery, sortMode);
+  const searching = shelfQuery.trim().length > 0;
+  const sortOptions = [
+    { id: "newest", label: "最新发布" },
+    { id: "oldest", label: "最早发布" },
+    { id: "title", label: "按标题" },
+  ];
+
+  const toggleFollow = async () => {
+    if (busy) return;
+    if (!account.user) { onOpenAccount(); return; }
+    setBusy(true);
+    setNote("");
+    try {
+      const result = following
+        ? await unfollowUser({ uid, getAccessToken: getToken })
+        : await followUser({ uid, getAccessToken: getToken });
+      setProfile((current) => current ? {
+        ...current,
+        counts: { ...current.counts, followers: result.followers },
+        viewerState: { ...current.viewerState, isFollowing: result.following },
+      } : current);
+    } catch (failure) {
+      if (failure?.code === "auth-required") onOpenAccount();
+      else setNote(failure?.message || "操作没能完成，请稍后再试。");
+    } finally { setBusy(false); }
+  };
+
+  const shareProfile = async () => {
+    const url = `${window.location.origin}${window.location.pathname}#/profile/${encodeURIComponent(uid)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setNote("主页链接已复制。");
+    } catch {
+      setNote("没能复制链接，请稍后再试。");
+    }
+  };
+
+  const reportThisUser = async () => {
+    if (reported) return;
+    if (!account.user) { onOpenAccount(); return; }
+    try {
+      await reportUser({ uid, getAccessToken: getToken });
+      setReported(true);
+      setMenuOpen(false);
+      setNote("已收到你的举报，我们会来看。");
+    } catch (failure) {
+      if (failure?.code === "auth-required") onOpenAccount();
+      else setNote(failure?.message || "举报没能送出，请稍后再试。");
+    }
+  };
+
+  const copyProfileLink = async () => {
+    setMenuOpen(false);
+    await shareProfile();
+  };
+
+  return (
+    <>
+    <div className="page page-profile page-enter" ref={pageRef}>
+      <div className="ryan-topbar" data-enter>
+        <button type="button" className="ryan-glyph-btn" onClick={() => onNavigate("plaza")} aria-label="返回广场">
+          <Icon name="chevron" size={22} className="rotate-180" />
+        </button>
+        <span className="ryan-topbar-actions">
+          <button type="button" className="ryan-glyph-btn" onClick={() => void shareProfile()} aria-label="分享主页">
+            <Icon name="share" size={22} />
+          </button>
+          <button
+            type="button"
+            className="ryan-glyph-btn"
+            aria-label="更多操作"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <Icon name="dots" size={22} />
+          </button>
+        </span>
+      </div>
+      {menuOpen && (
+        <div className="ryan-menu" role="menu">
+          {!isSelf && (
+            <button type="button" disabled={reported} onClick={() => void reportThisUser()}>
+              {reported ? "已举报" : "举报该用户"}
+            </button>
+          )}
+          <button type="button" onClick={() => void copyProfileLink()}>复制主页链接</button>
+        </div>
+      )}
+
+      <div className="ryan-avatar-wrap" data-enter>
+        <span className={`ryan-avatar-frame${profile.picture?.kind === "avatar" ? " is-portrait" : ""}`}>
+          <img
+            className="ryan-avatar"
+            src={pictureSrc || "/default-avatar.svg"}
+            alt=""
+            onError={() => { if (pictureSrc !== "/default-avatar.svg") setPictureSrc("/default-avatar.svg"); }}
+          />
+        </span>
+      </div>
+      <h1 className="ryan-name" data-enter>{profile.displayName}</h1>
+      {profile.handle && <p className="ryan-handle" data-enter>@{profile.handle}</p>}
+      {profile.avatar?.description ? (
+        <p className="ryan-bio" data-enter>
+          <strong>{profile.avatar.name}</strong>
+          {profile.handle ? <> · @{profile.handle} · </> : <> · </>}
+          {profile.avatar.description}
+        </p>
+      ) : null}
+      <p className="ryan-counts" data-enter>
+        {profile.counts.followers} 粉丝 · {profile.counts.following} 关注
+      </p>
+
+      <div className="ryan-actions" data-enter>
+        {isSelf ? (
+          <button type="button" className="btn-pill-white" onClick={() => setEditOpen(true)}>编辑资料</button>
+        ) : (
+          <button
+            type="button"
+            className={`btn-pill-white ${following ? "is-following" : ""}`}
+            disabled={busy}
+            aria-pressed={following}
+            onClick={() => void toggleFollow()}
+          >
+            {following ? "已关注" : "关注"}
+          </button>
+        )}
+      </div>
+      {note && <p className="ryan-note" role="status">{note}</p>}
+
+      <section className="profile-shelf" aria-label="主页书架" data-enter>
+        {publications.length > 0 ? (
+          <>
+            <div className="profile-shelf-tabs" role="tablist" aria-label="书架视图" ref={tabsRef}>
+              <span className="profile-shelf-tabs-pill" data-segment-pill aria-hidden="true" />
+              <button
+                type="button"
+                role="tab"
+                aria-selected={segment === "boards"}
+                className={segment === "boards" ? "is-active" : ""}
+                onClick={() => { setSegment("boards"); setSelectedBoardId(""); setShelfQuery(""); }}
+              >
+                合集
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={segment === "all"}
+                className={segment === "all" ? "is-active" : ""}
+                onClick={() => { setSegment("all"); setSelectedBoardId(""); setShelfQuery(""); }}
+              >
+                全部
+              </button>
+            </div>
+
+            <div className="profile-shelf-tools">
+              <label className="profile-shelf-search">
+                <Icon name="search" size={19} />
+                <input
+                  value={shelfQuery}
+                  onChange={(event) => setShelfQuery(event.target.value)}
+                  placeholder="搜索故事线"
+                  aria-label="搜索这个主页的故事线"
+                />
+                {shelfQuery && (
+                  <button type="button" onClick={() => setShelfQuery("")} aria-label="清空搜索">
+                    <Icon name="x" size={14} />
+                  </button>
+                )}
+              </label>
+              <button
+                type="button"
+                className={`profile-shelf-tool ${sortOpen ? "is-active" : ""}`}
+                onClick={() => setSortOpen((open) => !open)}
+                aria-label="调整故事线排序"
+                aria-expanded={sortOpen}
+              >
+                <Icon name="sliders" size={24} />
+              </button>
+              <button
+                type="button"
+                className="profile-shelf-tool"
+                onClick={() => onNavigate("forge")}
+                aria-label="新建故事"
+              >
+                <Icon name="plus" size={26} />
+              </button>
+              {sortOpen && (
+                <div className="profile-sort-menu" role="menu" aria-label="故事线排序">
+                  {sortOptions.map((option) => (
+                    <button
+                      type="button"
+                      key={option.id}
+                      role="menuitemradio"
+                      aria-checked={sortMode === option.id}
+                      className={sortMode === option.id ? "is-active" : ""}
+                      onClick={() => { setSortMode(option.id); setSortOpen(false); }}
+                    >
+                      <span>{option.label}</span>
+                      {sortMode === option.id && <Icon name="check" size={15} />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {searching ? (
+              <div className="profile-line-list-wrap">
+                <div className="profile-list-heading">
+                  <h2>搜索结果</h2>
+                  <span>{searchResults.length} 条故事线</span>
+                </div>
+                {searchResults.length > 0 ? (
+                  <div className="profile-line-list">
+                    {searchResults.map((publication) => (
+                      <ProfileLineRow key={publication.id} publication={publication} onOpen={onOpenDetail} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="profile-line-empty">没有找到匹配的故事线。</p>
+                )}
+              </div>
+            ) : selectedBoard ? (
+              <div className="profile-line-list-wrap">
+                <div className="profile-collection-heading">
+                  <button
+                    type="button"
+                    className="profile-back-chip"
+                    onClick={() => setSelectedBoardId("")}
+                    aria-label="返回全部合集"
+                  >
+                    <Icon name="chevron" size={15} className="rotate-180" />
+                    全部合集
+                  </button>
+                  <div>
+                    <h2>{selectedBoard.title}</h2>
+                    <p>{selectedBoard.publications.length} 条故事线</p>
+                  </div>
+                </div>
+                <div className="profile-line-list">
+                  {selectedBoard.publications.map((publication) => (
+                    <ProfileLineRow key={publication.id} publication={publication} onOpen={onOpenDetail} />
+                  ))}
+                </div>
+              </div>
+            ) : segment === "all" ? (
+              <div className="profile-line-list-wrap">
+                <div className="profile-list-heading">
+                  <h2>全部故事线</h2>
+                  <span>{allLines.length} 条</span>
+                </div>
+                <div className="profile-line-list">
+                  {allLines.map((publication) => (
+                    <ProfileLineRow key={publication.id} publication={publication} onOpen={onOpenDetail} />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="profile-board-grid">
+                {boards.map((board) => (
+                  <ProfileBoardCard
+                    key={board.id}
+                    board={board}
+                    onOpen={(nextBoard) => {
+                      if (nextBoard.id === "all") {
+                        setSegment("all");
+                        setSelectedBoardId("");
+                      } else {
+                        setSelectedBoardId(nextBoard.id);
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="profile-shelf-empty">
+            <h2>还没有发布故事线</h2>
+            <p>{isSelf
+              ? "走完一整季或一整条长线，就能把故事线发布到广场，书架上会按世界摆成合集。"
+              : "TA 还没有把走完的故事线发布到广场。"}</p>
+            {isSelf && (
+              <button type="button" className="btn-pill-white" onClick={() => onNavigate("forge")}>
+                去造世开一本新书
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+
+    </div>
+    {editOpen && isSelf && (
+      <EditProfileSheet
+        profile={profile}
+        getToken={getToken}
+        onClose={() => setEditOpen(false)}
+        onSaved={(next) => { if (next) setProfile(next); }}
+      />
+    )}
+    </>
+  );
+}
 function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onToast }) {
   const [selectedId, setSelectedId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -4042,7 +4764,7 @@ function App() {
   const view = route.view;
   // Plaza sub-views (detail / publish / enter / plaza-read) all keep the
   // 广场 tab active in the sidebar and the bottom bar.
-  const navView = route.plaza || view.startsWith("plaza") ? "plaza" : view;
+  const navView = route.plaza || view.startsWith("plaza") || view === "profile" ? "plaza" : view;
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [shareRequest, setShareRequest] = useState(false);
   const [toast, setToast] = useState("");
@@ -4053,6 +4775,24 @@ function App() {
     generationStatus({ signal: controller.signal }).then((status) => { if (!controller.signal.aborted) setProvider(status); });
     return () => controller.abort();
   }, []);
+  // Presence: while signed in and foregrounded, stamp a heartbeat every
+  // 30 s (and on every return to the foreground) so the plaza can show a
+  // truthful "N 人在线". Hidden tabs stop stamping and age out server-side.
+  const viewerUid = account.user?.uid || "";
+  useEffect(() => {
+    if (!viewerUid) return undefined;
+    const beat = () => {
+      if (!document.hidden) void sendPresenceHeartbeat({ getAccessToken: () => authClient.getAccessToken() });
+    };
+    beat();
+    const timer = window.setInterval(beat, 30_000);
+    const onVisible = () => { if (!document.hidden) beat(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [authClient, viewerUid]);
   const activeStory = useMemo(
     () =>
       library.stories.find((story) => story.id === library.activeStoryId) ||
@@ -4114,6 +4854,7 @@ function App() {
       "plaza-detail": "故事线详情",
       "plaza-publish": "发布到广场",
       "plaza-enter": "进入世界",
+      profile: "个人主页",
       home: "我的世界",
       forge: "新故事",
       store: "书城",
@@ -4141,7 +4882,7 @@ function App() {
           shared: Boolean(options.shared),
           ...(options.plaza ? { plaza: true } : {}),
         }
-      : next === "plaza-detail" || next === "plaza-enter"
+      : next === "plaza-detail" || next === "plaza-enter" || next === "profile"
         ? { view: next, id: options.id }
         : { view: next };
     const hash = routeHash(nextRoute);
@@ -4329,6 +5070,7 @@ function App() {
   // the entrant's own, whose generation flows through /api/generate and
   // meters to the entrant.
   const openPlazaDetail = (publication) => navigate("plaza-detail", { id: publication.id });
+  const openProfile = (uid) => { if (uid) navigate("profile", { id: uid }); };
   const openPlazaLine = async (publication) => {
     let story = plazaLines[publication.id];
     if (!story) {
@@ -4452,6 +5194,7 @@ function App() {
         onOpenDetail={openPlazaDetail}
         onReadLine={(publication) => void openPlazaLine(publication)}
         onEnter={(publication) => navigate("plaza-enter", { id: publication.id })}
+        onOpenProfile={openProfile}
       />
     );
   else if (view === "plaza-detail")
@@ -4465,6 +5208,19 @@ function App() {
         onEnter={(detail) => navigate("plaza-enter", { id: detail.id })}
         onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
         onToast={setToast}
+        onOpenProfile={openProfile}
+      />
+    );
+  else if (view === "profile")
+    page = (
+      <ProfilePage
+        uid={route.id}
+        account={account}
+        authClient={authClient}
+        onNavigate={navigate}
+        onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
+        onOpenAvatar={() => navigate("avatar")}
+        onOpenDetail={openPlazaDetail}
       />
     );
   else if (view === "plaza-publish")
@@ -4520,7 +5276,7 @@ function App() {
       <AuroraBackground />
       <Sidebar view={navView} onNavigate={navigate} />
       <main className="main-shell">
-        <Topbar onNavigate={navigate} onOpenLibrary={() => setLibraryOpen(true)} account={account} onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }} />
+        {view !== "profile" && <Topbar onNavigate={navigate} onOpenLibrary={() => setLibraryOpen(true)} account={account} onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }} />}
         {warning && (
           <div className="sw-storage-warning" role="alert">
             <Icon name="lock" size={14} />
@@ -4528,11 +5284,11 @@ function App() {
             <button onClick={() => setLibraryOpen(true)}>备份与恢复</button>
           </div>
         )}
-        <MobileBottomNav view={navView} onNavigate={navigate} />
+        <MobileBottomNav view={view === "profile" ? "profile" : navView} onNavigate={navigate} />
         {page}
       </main>
       {accountOpen && <ReadingDialog title={account.user ? "我的账号" : "登录与注册"} onClose={() => setAccountOpen(false)}>
-        <AccountPanel client={authClient} account={account} onOpenAvatar={() => { setAccountOpen(false); navigate("avatar"); }} onContinue={() => {
+        <AccountPanel client={authClient} account={account} onOpenAvatar={() => { setAccountOpen(false); navigate("avatar"); }} onOpenProfile={() => { setAccountOpen(false); if (account.user?.uid) navigate("profile", { id: account.user.uid }); }} onContinue={() => {
           setAccountOpen(false);
           if (accountIntent === "forge") navigate("forge");
           setAccountIntent(null);

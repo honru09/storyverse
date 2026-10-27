@@ -220,11 +220,14 @@ async function plazaJson(response) {
   return result
 }
 
-/** The public feed: visible publication summaries, newest first. */
+/** The public feed: visible publication summaries, newest first, plus the live presence count. */
 export async function fetchPlazaFeed({ fetchImpl = globalThis.fetch } = {}) {
   const response = await fetchImpl('/api/plaza')
   const result = await plazaJson(response)
-  return Array.isArray(result?.publications) ? result.publications : []
+  return {
+    publications: Array.isArray(result?.publications) ? result.publications : [],
+    onlineCount: Number.isInteger(result?.onlineCount) ? result.onlineCount : 0,
+  }
 }
 
 /** One publication's detail: summary + sanitized bible, beats, read copy and enter template. */

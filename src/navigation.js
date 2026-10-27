@@ -20,6 +20,13 @@ export function parseRoute(hash = '') {
     if (path === 'plaza-enter') return { view: 'plaza-enter', id }
     return { view: 'reader', id, plaza: true }
   }
+  // Public profile pages live under profile/<uid>; uids are opaque to the
+  // router (they may carry a `username:` prefix) and are decoded whole.
+  if (path === 'profile') {
+    let uid = ''
+    try { uid = decodeURIComponent(value || '') } catch { return { view: 'plaza' } }
+    return uid ? { view: 'profile', id: uid } : { view: 'plaza' }
+  }
   return { view: pages.has(path) ? path : 'plaza' }
 }
 
@@ -28,6 +35,7 @@ export function routeHash(route) {
     return `#/${route.plaza ? 'plaza-read' : route.shared ? 'shared' : 'reader'}/${encodeURIComponent(route.id)}`
   }
   if (route.view === 'plaza-detail' && route.id) return `#/plaza/${encodeURIComponent(route.id)}`
+  if (route.view === 'profile' && route.id) return `#/profile/${encodeURIComponent(route.id)}`
   if (route.view === 'plaza-enter' && route.id) return `#/plaza-enter/${encodeURIComponent(route.id)}`
   return `#/${pages.has(route.view) ? route.view : 'plaza'}`
 }

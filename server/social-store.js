@@ -1,0 +1,181 @@
+import { createHash } from 'node:crypto'
+import { dataStoreKind } from './data-store.js'
+import { loadFirestore } from './firebase-app.js'
+
+/**
+ * Persistence for the social graph, plaza presence, custom profile
+ * records, uploaded profile pictures and user reports.
+ *
+ * Follows are one record per (follower, followee) pair, keyed by a hash
+ * of the pair so neither uid needs to be a valid document id. Presence
+ * is one record per account holding only the last heartbeat instant —
+ * no location, no device, nothing else. Profile records hold only what
+ * the owner chose to publish (display name, @handle, picture choice);
+ * a handle index maps each claimed handle to its owner's uid so
+ * uniqueness is one lookup. Counts are computed by listing,
+ * which is fine at plaza scale (the same trade plaza publications make)
+ * and keeps a single source of truth: the pair records themselves.
+ */
+export const followKeyFor = (followerUid, followeeUid) =>
+  createHash('sha256').update(`follow\n${followerUid}\n${followeeUid}`).digest('hex')
+export const presenceKeyFor = (uid) => createHash('sha256').update(`presence\n${uid}`).digest('hex')
+export const profileKeyFor = (uid) => createHash('sha256').update(`user-profile\n${uid}`).digest('hex')
+export const pictureKeyFor = (uid) => createHash('sha256').update(`profile-picture\n${uid}`).digest('hex')
+export const userReportKeyFor = (reporterUid, targetUid) =>
+  createHash('sha256').update(`user-report\n${reporterUid}\n${targetUid}`).digest('hex')
+
+/**
+ * Which picture a profile shows, given the owner's stored preference and
+ * what actually exists. The chain always ends at the designed default
+ * avatar asset — a profile never renders an empty placeholder.
+ * - 'upload' chosen → the uploaded picture, else the default asset
+ * - 'avatar' chosen → the avatar portrait, else the default asset
+ * - 'default' chosen → the default asset
+ * - unset (null) → the uploaded picture if one exists, else the portrait
+ *   if one is ready, else the default asset (the historical behaviour:
+ *   painting a portrait lights the profile up without further setup)
+ */
+export function pictureSourceFor(record, { hasUpload = false, portraitReady = false } = {}) {
+  const kind = record?.pictureKind
+  if (kind === 'upload') return hasUpload ? 'upload' : 'default'
+  if (kind === 'avatar') return portraitReady ? 'avatar' : 'default'
+  if (kind === 'default') return 'default'
+  if (hasUpload) return 'upload'
+  if (portraitReady) return 'avatar'
+  return 'default'
+}
+
+export function createMemorySocialStore() {
+  const follows = new Map()
+  const presence = new Map()
+  const profiles = new Map()
+  const handles = new Map()
+  const pictures = new Map()
+  const reports = new Map()
+  return {
+    kind: 'memory',
+    async getFollow(followerUid, followeeUid) {
+      return follows.get(followKeyFor(followerUid, followeeUid)) ?? null
+    },
+    async putFollow(record) {
+      follows.set(followKeyFor(record.followerUid, record.followeeUid), { ...record })
+    },
+    async deleteFollow(followerUid, followeeUid) {
+      follows.delete(followKeyFor(followerUid, followeeUid))
+    },
+    async listFollowsByFollower(uid) {
+      return [...follows.values()].filter((record) => record.followerUid === uid).map((record) => ({ ...record }))
+    },
+    async listFollowsByFollowee(uid) {
+      return [...follows.values()].filter((record) => record.followeeUid === uid).map((record) => ({ ...record }))
+    },
+    async putPresence(uid, lastSeen) { presence.set(uid, { uid, lastSeen }) },
+    async listPresence() { return [...presence.values()].map((record) => ({ ...record })) },
+    async getProfileRecord(uid) {
+      const record = profiles.get(profileKeyFor(uid))
+      return record ? { ...record } : null
+    },
+    async putProfileRecord(record) {
+      const key = profileKeyFor(record.uid)
+      const existing = profiles.get(key)
+      if (existing?.handle && existing.handle !== record.handle && handles.get(existing.handle) === record.uid) {
+        handles.delete(existing.handle)
+      }
+      profiles.set(key, { ...record })
+      if (record.handle) handles.set(record.handle, record.uid)
+    },
+    async getUidByHandle(handle) { return handles.get(handle) ?? null },
+    async getPicture(uid) {
+      const record = pictures.get(pictureKeyFor(uid))
+      return record ? { ...record } : null
+    },
+    async putPicture(uid, record) { pictures.set(pictureKeyFor(uid), { ...record }) },
+    async deletePicture(uid) { pictures.delete(pictureKeyFor(uid)) },
+    async getUserReport(reporterUid, targetUid) {
+      return reports.get(userReportKeyFor(reporterUid, targetUid)) ?? null
+    },
+    async putUserReport(record) {
+      reports.set(userReportKeyFor(record.reporterUid, record.targetUid), { ...record })
+    },
+  }
+}
+
+export function createFirestoreSocialStore(loadDb) {
+  let dbPromise
+  const db = () => (dbPromise ??= Promise.resolve().then(loadDb).catch((error) => { dbPromise = undefined; throw error }))
+  const listBy = async (field, uid) => {
+    const snapshot = await (await db()).collection('follows').where(field, '==', uid).get()
+    return snapshot.docs.map((doc) => doc.data())
+  }
+  return {
+    kind: 'firestore',
+    async getFollow(followerUid, followeeUid) {
+      const snapshot = await (await db()).collection('follows').doc(followKeyFor(followerUid, followeeUid)).get()
+      return snapshot.exists ? snapshot.data() : null
+    },
+    async putFollow(record) {
+      await (await db()).collection('follows')
+        .doc(followKeyFor(record.followerUid, record.followeeUid))
+        .set({ ...record })
+    },
+    async deleteFollow(followerUid, followeeUid) {
+      await (await db()).collection('follows').doc(followKeyFor(followerUid, followeeUid)).delete()
+    },
+    listFollowsByFollower: (uid) => listBy('followerUid', uid),
+    listFollowsByFollowee: (uid) => listBy('followeeUid', uid),
+    async putPresence(uid, lastSeen) {
+      await (await db()).collection('presence').doc(presenceKeyFor(uid)).set({ uid, lastSeen })
+    },
+    async listPresence() {
+      const snapshot = await (await db()).collection('presence').get()
+      return snapshot.docs.map((doc) => doc.data())
+    },
+    async getProfileRecord(uid) {
+      const snapshot = await (await db()).collection('user_profiles').doc(profileKeyFor(uid)).get()
+      return snapshot.exists ? snapshot.data() : null
+    },
+    async putProfileRecord(record) {
+      const database = await db()
+      const existing = await database.collection('user_profiles').doc(profileKeyFor(record.uid)).get()
+      const previous = existing.exists ? existing.data() : null
+      if (previous?.handle && previous.handle !== record.handle) {
+        const stale = await database.collection('profile_handles').doc(previous.handle).get()
+        if (stale.exists && stale.data()?.uid === record.uid) await stale.ref.delete()
+      }
+      await database.collection('user_profiles').doc(profileKeyFor(record.uid)).set({ ...record })
+      if (record.handle) {
+        await database.collection('profile_handles').doc(record.handle).set({ uid: record.uid })
+      }
+    },
+    async getUidByHandle(handle) {
+      const snapshot = await (await db()).collection('profile_handles').doc(handle).get()
+      return snapshot.exists ? (snapshot.data()?.uid ?? null) : null
+    },
+    async getPicture(uid) {
+      const snapshot = await (await db()).collection('profile_pictures').doc(pictureKeyFor(uid)).get()
+      return snapshot.exists ? snapshot.data() : null
+    },
+    async putPicture(uid, record) {
+      await (await db()).collection('profile_pictures').doc(pictureKeyFor(uid)).set({ ...record })
+    },
+    async deletePicture(uid) {
+      await (await db()).collection('profile_pictures').doc(pictureKeyFor(uid)).delete()
+    },
+    async getUserReport(reporterUid, targetUid) {
+      const snapshot = await (await db()).collection('user_reports').doc(userReportKeyFor(reporterUid, targetUid)).get()
+      return snapshot.exists ? snapshot.data() : null
+    },
+    async putUserReport(record) {
+      await (await db()).collection('user_reports')
+        .doc(userReportKeyFor(record.reporterUid, record.targetUid))
+        .set({ ...record })
+    },
+  }
+}
+
+export function createSocialStore({ env = process.env, db } = {}) {
+  const kind = dataStoreKind(env)
+  if (kind === null) return null
+  if (kind === 'memory') return createMemorySocialStore()
+  return createFirestoreSocialStore(db ? async () => db : () => loadFirestore(env))
+}

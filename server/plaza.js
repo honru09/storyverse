@@ -7,6 +7,8 @@ import { emptyLibrary, validateLibrary } from '../src/persistence.js'
 import { avatarAppearanceText } from '../src/avatar.js'
 import { createPlazaStore } from './plaza-store.js'
 import { createAvatarStore } from './avatar-store.js'
+import { createCoverStore } from './cover-store.js'
+import { createSocialStore, pictureSourceFor } from './social-store.js'
 
 /**
  * The plaza service: publication of finished avatar lines, the public
@@ -46,13 +48,24 @@ function summaryOf(record) {
     seasonNumber: record.seasonNumber,
     chapterCount: record.chapterCount,
     totalChapters: record.totalChapters,
+    premise: clip(record.snapshot?.worldBible?.premise, 120),
     publishedAt: record.publishedAt,
+    completedAt: record.completedAt || record.publishedAt,
+    // The story's own generated cover, resolved live by the identity
+    // pass below (null until one exists — surfaces then fall back to
+    // the shared world artwork, exactly as before covers existed).
+    coverUrl: typeof record.coverUrl === 'string' && record.coverUrl ? record.coverUrl : null,
   }
 }
 
 function detailOf(record) {
   return {
     ...summaryOf(record),
+    // The author's uid rides along on feed/detail payloads only, so a
+    // reader can open the author's public profile. It is an opaque id
+    // (or the public username); the publish response keeps using the
+    // bare summary, and emails never appear anywhere.
+    authorUid: record.authorUid,
     worldBible: record.snapshot.worldBible,
     beats: record.snapshot.beats,
     enterTemplate: record.snapshot.enterTemplate,
@@ -126,9 +139,11 @@ function scrubSnapshotSetting(snapshot) {
   }
 }
 
-export function createPlazaService({ env = process.env, store, avatarStore, now = () => new Date() } = {}) {
+export function createPlazaService({ env = process.env, store, avatarStore, socialStore, coverStore, now = () => new Date() } = {}) {
   const backend = store === undefined ? createPlazaStore({ env }) : store
   const avatars = avatarStore === undefined ? createAvatarStore({ env }) : avatarStore
+  const socialBackend = socialStore === undefined ? createSocialStore({ env }) : socialStore
+  const covers = coverStore === undefined ? createCoverStore({ env }) : coverStore
   const tails = new Map()
   const serialise = (key, task) => {
     const previous = tails.get(key) || Promise.resolve()
@@ -145,16 +160,55 @@ export function createPlazaService({ env = process.env, store, avatarStore, now 
   // The avatar snapshot stores a portrait REFERENCE, not a copy: whether
   // a portrait exists follows the author's current profile, so painting
   // (or repainting) after publishing lights the card up without a
-  // re-publish.
-  async function withLivePortrait(record) {
-    if (!avatars) return record
-    try {
-      const profileRecord = await avatars.getProfile(record.authorUid)
-      const ready = profileRecord?.avatar?.portrait?.status === 'ready'
-      if (ready === Boolean(record.avatar?.hasPortrait)) return record
-      return { ...record, avatar: { ...record.avatar, hasPortrait: ready } }
-    } catch {
-      return record
+  // re-publish. The author's public identity resolves through their
+  // profile record the same way: a custom display name set on the
+  // 编辑资料 sheet replaces the publish-time name everywhere, and the
+  // author picture follows the shared chain (uploaded picture → avatar
+  // portrait → the designed default avatar asset).
+  async function withAuthorIdentity(record) {
+    let portraitReady = Boolean(record.avatar?.hasPortrait)
+    if (avatars) {
+      try {
+        const profileRecord = await avatars.getProfile(record.authorUid)
+        portraitReady = profileRecord?.avatar?.portrait?.status === 'ready'
+      } catch { /* keep the publish-time flag */ }
+    }
+    let authorName = record.authorName
+    let pictureKind = 'default'
+    let pictureUrl = '/default-avatar.svg'
+    if (socialBackend) {
+      try {
+        const profileRecord = await socialBackend.getProfileRecord(record.authorUid)
+        if (profileRecord?.displayName) authorName = profileRecord.displayName
+        const hasUpload = Boolean(await socialBackend.getPicture(record.authorUid))
+        pictureKind = pictureSourceFor(profileRecord, { hasUpload, portraitReady })
+        pictureUrl = pictureKind === 'default'
+          ? '/default-avatar.svg'
+          : `/api/users/${encodeURIComponent(record.authorUid)}/picture?v=${profileRecord?.pictureVersion || 0}`
+      } catch { /* fall back to the default asset */ }
+    } else if (portraitReady) {
+      pictureKind = 'avatar'
+      pictureUrl = `/api/users/${encodeURIComponent(record.authorUid)}/picture?v=0`
+    }
+    // The publication's own cover follows the same live-reference rule
+    // as the portrait: the cover store is keyed by author + source
+    // story, so painting (or repainting) the book lights its plaza and
+    // profile cards up without a re-publish. The URL rides under the
+    // publication id, so no account id is exposed to fetch it.
+    let coverUrl = null
+    if (covers) {
+      try {
+        const coverRecord = await covers.getCover(record.authorUid, record.sourceStoryId)
+        if (coverRecord?.image) {
+          coverUrl = `/api/plaza/${encodeURIComponent(record.id)}/cover?v=${coverRecord.version || 1}`
+        }
+      } catch { /* the world artwork remains the fallback */ }
+    }
+    return {
+      ...record,
+      authorName,
+      coverUrl,
+      avatar: { ...record.avatar, hasPortrait: portraitReady, pictureKind, pictureUrl },
     }
   }
 
@@ -167,14 +221,15 @@ export function createPlazaService({ env = process.env, store, avatarStore, now 
       const visible = all
         .filter((record) => record.status === 'published')
         .sort((a, b) => String(b.publishedAt).localeCompare(String(a.publishedAt)))
-      return (await Promise.all(visible.map(withLivePortrait))).map(summaryOf)
+      return (await Promise.all(visible.map(withAuthorIdentity)))
+        .map((record) => ({ ...summaryOf(record), authorUid: record.authorUid }))
     },
 
     async detail(id) {
       if (!backend) throw NOT_FOUND()
       const record = await backend.getPublication(id)
       if (!record || record.status !== 'published') throw NOT_FOUND()
-      return detailOf(await withLivePortrait(record))
+      return detailOf(await withAuthorIdentity(record))
     },
 
     async publish(identity, body) {
@@ -221,6 +276,11 @@ export function createPlazaService({ env = process.env, store, avatarStore, now 
           status: 'published',
           reporters: existing?.reporters || [],
           createdAt: existing?.createdAt || timestamp,
+          // The line's finish line: the story's own last-accept stamp
+          // (acceptChapter maintains updatedAt), falling back to the
+          // publish instant for stories that carry none.
+          completedAt: existing?.completedAt
+            || (typeof story.updatedAt === 'string' && !Number.isNaN(Date.parse(story.updatedAt)) ? story.updatedAt : timestamp),
           publishedAt: timestamp,
           updatedAt: timestamp,
         }
@@ -265,6 +325,19 @@ export function createPlazaService({ env = process.env, store, avatarStore, now 
       })
     },
 
+    /** The story's own generated cover, served under the publication so no account id is ever exposed. */
+    async cover(id) {
+      if (!backend || !covers) return null
+      const record = await backend.getPublication(id)
+      if (!record || record.status !== 'published') return null
+      const coverRecord = await covers.getCover(record.authorUid, record.sourceStoryId)
+      if (!coverRecord?.image) return null
+      return {
+        buffer: Buffer.from(coverRecord.image, 'base64'),
+        contentType: coverRecord.contentType || 'image/jpeg',
+      }
+    },
+
     /** The author's current portrait, served under the publication so no account id is ever exposed. */
     async portrait(id) {
       if (!backend || !avatars) return null
@@ -279,3 +352,8 @@ export function createPlazaService({ env = process.env, store, avatarStore, now 
     },
   }
 }
+
+// Shared with the social service: profile pages resolve author display
+// names and publication summaries through exactly the same helpers the
+// plaza itself uses, so a name reads identically everywhere it appears.
+export { authorNameFor as plazaAuthorNameFor, summaryOf as plazaSummaryOf }
