@@ -30,9 +30,13 @@ import { createSocialStore, pictureSourceFor } from './social-store.js'
 const clip = (value, length) => typeof value === 'string' ? value.trim().slice(0, length) : ''
 
 function authorNameFor(identity) {
+  // A public author name is never an email address: an identity whose
+  // only "name" is its email (email/password or email-code accounts
+  // that never set a name) yields no name here, and callers fall back
+  // to their own neutral label. Copying the email into author fields
+  // once put users' addresses on plaza cards and profile titles.
   const name = sanitizeSettingText(clip(identity?.displayName, 40)).trim()
-    || sanitizeSettingText(clip(identity?.email, 40)).trim()
-  return name || '织界旅人'
+  return name && !name.includes('@') ? name : ''
 }
 
 function summaryOf(record) {
@@ -257,7 +261,7 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         const record = {
           id: existing?.id || `pub-${randomUUID().slice(0, 12)}`,
           authorUid: identity.uid,
-          authorName: authorNameFor(identity),
+          authorName: authorNameFor(identity) || '织界旅人',
           sourceStoryId: story.id,
           title: snapshot.title,
           genreId: snapshot.genreId,

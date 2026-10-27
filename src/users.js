@@ -63,6 +63,27 @@ export async function unfollowUser({ uid, getAccessToken, fetchImpl = globalThis
 /** Public URL of a user's current avatar portrait (may 404 → hero fallback). */
 export const userPortraitPath = (uid) => `/api/users/${encodeURIComponent(uid)}/portrait`
 
+/**
+ * The name a profile page may print, decided client-side as a second
+ * line of defense behind the server resolver: the payload's display
+ * name wins unless it is empty or email-shaped, then the avatar's
+ * name, then the neutral label. An email address must never render
+ * as a profile title, whatever an older payload still carries.
+ */
+export function publicDisplayName(profile) {
+  for (const candidate of [profile?.displayName, profile?.avatar?.name]) {
+    const name = typeof candidate === 'string' ? candidate.trim() : ''
+    if (name && !name.includes('@')) return name
+  }
+  return '未命名旅人'
+}
+
+/** The @handle a profile page may print, or '' for no handle line. */
+export function publicHandle(profile) {
+  const handle = typeof profile?.handle === 'string' ? profile.handle.trim() : ''
+  return handle && !handle.includes('@') ? handle : ''
+}
+
 /** Public URL of a user's resolved profile picture (upload or portrait). */
 export const userPicturePath = (uid) => `/api/users/${encodeURIComponent(uid)}/picture`
 

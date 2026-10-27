@@ -6,7 +6,7 @@ import { createPlazaStore } from './plaza-store.js'
 import { createAvatarStore } from './avatar-store.js'
 import { createCoverStore } from './cover-store.js'
 import { createIdentityStore } from './identity-store.js'
-import { plazaAuthorNameFor, plazaSummaryOf } from './plaza.js'
+import { plazaSummaryOf } from './plaza.js'
 
 /**
  * The social service: public profile pages, the follow graph, plaza
@@ -18,10 +18,13 @@ import { plazaAuthorNameFor, plazaSummaryOf } from './plaza.js'
  * (there is no separate account registry):
  * - a username account's uid IS its public name (`username:<name>` is
  *   the uid, the handle and the display name in one);
- * - the signed-in caller's own name resolves from their live identity
- *   through the same helper plaza publishing uses;
+ * - the signed-in caller's own name resolves from the raw name on
+ *   their live identity;
  * - anyone else's name is the author name stored on their most recent
  *   plaza publication (captured from their identity at publish time).
+ * Whatever the layer, a candidate that is empty — or that looks like
+ * an email address — never reaches the payload: resolution then falls
+ * to the avatar's name, and finally to the neutral label 未命名旅人.
  * Emails are never copied into any profile payload.
  *
  * The profile picture resolves uploaded picture → avatar portrait →
@@ -46,17 +49,23 @@ const NOT_FOUND = () => new ApiError(404, '这位用户还不存在。')
 const HANDLE_INVALID_MESSAGE = '用户名只能用小写字母、数字和下划线，3–20 个字符。'
 const HANDLE_TAKEN_MESSAGE = '这个用户名已经被占用了，换一个试试。'
 
+/**
+ * Raw identity candidates for a uid, most deliberate first. Nothing
+ * here is presentable yet: values may be empty, and a stored author
+ * name captured before the email guard existed may BE an email
+ * address. `resolveProfileIdentity` does the presenting.
+ */
 function publicIdentityFor(uid, publications, viewerIdentity) {
   if (uid.startsWith('username:')) {
     const name = clip(uid.slice('username:'.length), 40)
     if (name) return { displayName: name, handle: name }
   }
   if (viewerIdentity && viewerIdentity.uid === uid) {
-    return { displayName: plazaAuthorNameFor(viewerIdentity), handle: '' }
+    return { displayName: clip(viewerIdentity.displayName, 40), handle: '' }
   }
   const named = publications.find((record) => record.authorName)
   if (named) return { displayName: named.authorName, handle: '' }
-  return { displayName: '织界旅人', handle: '' }
+  return { displayName: '', handle: '' }
 }
 
 /** The resolved display identity for any surface that names an author. */
@@ -65,6 +74,32 @@ export function identityFromRecord(record, fallback) {
     displayName: record?.displayName || fallback.displayName,
     handle: record?.handle || fallback.handle,
   }
+}
+
+export const PROFILE_FALLBACK_NAME = '未命名旅人'
+
+const looksLikeEmail = (value) => typeof value === 'string' && value.includes('@')
+
+/**
+ * The one place a public display name is decided. The first candidate
+ * that is non-empty and not email-shaped wins; an unset or
+ * email-shaped name falls back through the avatar's name to the
+ * neutral label. An email address is an account credential, never a
+ * name — accounts that signed up by email and never set a name used
+ * to render their full address as the profile's giant title.
+ */
+export function publicDisplayName(candidates) {
+  for (const candidate of candidates) {
+    const name = typeof candidate === 'string' ? candidate.trim() : ''
+    if (name && !looksLikeEmail(name)) return name
+  }
+  return PROFILE_FALLBACK_NAME
+}
+
+/** A public @handle, or '' (no handle line) when there is none. */
+export function publicHandle(candidate) {
+  const handle = typeof candidate === 'string' ? candidate.trim() : ''
+  return handle && !looksLikeEmail(handle) ? handle : ''
 }
 
 export function createSocialService({
@@ -236,7 +271,10 @@ export function createSocialService({
         throw NOT_FOUND()
       }
       const fallback = publicIdentityFor(target, publications, viewerIdentity)
-      const { displayName, handle } = identityFromRecord(record, fallback)
+      const merged = identityFromRecord(record, fallback)
+      const avatarName = profile ? sanitizeSettingText(clip(profile.name, 40)).trim() : ''
+      const displayName = publicDisplayName([merged.displayName, avatarName])
+      const handle = publicHandle(merged.handle)
       const picture = await pictureFor(target, record, profile)
       const coverUrls = await Promise.all(publications.map((publication) => coverUrlOf(publication)))
       const worlds = []
@@ -272,6 +310,9 @@ export function createSocialService({
         worlds,
         publications: publications.map((publication, index) => ({
           ...plazaSummaryOf({ ...publication, coverUrl: coverUrls[index] }),
+          // The stored publish-time author name may predate the email
+          // guard; the profile payload speaks with the resolved name.
+          authorName: displayName,
           authorUid: publication.authorUid,
           // Same live-portrait rule as the plaza feed: the snapshot only
           // carries a reference, so readiness follows the author's

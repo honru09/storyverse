@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {
   fetchUserProfile,
   followUser,
+  publicDisplayName,
+  publicHandle,
   sendPresenceHeartbeat,
   userPortraitPath,
 } from '../src/users.js'
@@ -121,4 +123,23 @@ test('a 409 from the profile editor surfaces as a conflict with the server messa
     }),
     (error) => error.code === 'conflict' && /已经被占用/.test(error.message),
   )
+})
+
+test('publicDisplayName never prints an email as a profile title', () => {
+  // A legacy payload whose display name IS the account email renders
+  // the avatar's name instead — the exact live bug this guards.
+  assert.equal(publicDisplayName({ displayName: '2066647277@qq.com', avatar: { name: '阿灿' } }), '阿灿')
+  assert.equal(publicDisplayName({ displayName: 'boss@qq.com', avatar: null }), '未命名旅人')
+  assert.equal(publicDisplayName({ displayName: '', avatar: { name: '沈砚' } }), '沈砚')
+  assert.equal(publicDisplayName({ displayName: '夜航船主', avatar: { name: '阿灿' } }), '夜航船主')
+  assert.equal(publicDisplayName({}), '未命名旅人')
+  assert.equal(publicDisplayName(null), '未命名旅人')
+})
+
+test('publicHandle drops email-shaped handles entirely', () => {
+  assert.equal(publicHandle({ handle: 'night_sail' }), 'night_sail')
+  assert.equal(publicHandle({ handle: 'boss@qq.com' }), '')
+  assert.equal(publicHandle({ handle: '' }), '')
+  assert.equal(publicHandle({}), '')
+  assert.equal(publicHandle(null), '')
 })

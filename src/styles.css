@@ -797,18 +797,20 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .ryan-glyph-btn{width:40px;height:40px;padding:0;border:0;background:transparent;color:#fff;display:grid;place-items:center;cursor:pointer;transition:transform 160ms var(--ease-press-ui)}
 .ryan-glyph-btn:active{transform:scale(.92)}
 .ryan-avatar-wrap{display:flex;justify-content:center;margin-top:24px}
-.ryan-avatar-frame{width:148px;height:148px;flex:none;display:block;border-radius:50%;overflow:hidden;background:var(--medal-bg)}
+.ryan-avatar-frame{width:136px;height:136px;flex:none;display:block;border-radius:50%;overflow:hidden;background:var(--medal-bg)}
 .ryan-avatar{width:100%;height:100%;display:block;object-fit:cover;object-position:50% 12%}
 /* Avatar portraits are full-body 3:4 figures: zoom the circle onto the
    head-and-shoulders so the face carries the circle, like a headshot.
    Uploads and the default asset are already framed for the circle. */
 .ryan-avatar-frame.is-portrait .ryan-avatar{transform:scale(2.05);transform-origin:50% 14%}
-.ryan-name{margin:20px 0 0;text-align:center;font-size:37px;font-weight:800;letter-spacing:-.5px;line-height:1.15;color:#fff}
+.ryan-name{margin:20px 0 0;padding:0 8px;text-align:center;font-size:37px;font-weight:800;letter-spacing:-.5px;line-height:1.15;color:#fff;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden}
+.ryan-name[data-name-tier="mid"]{font-size:28px}
+.ryan-name[data-name-tier="long"]{font-size:22px;letter-spacing:0}
 .ryan-handle{margin:8px 0 0;text-align:center;font-size:14px;line-height:1.4;color:var(--profile-dim)}
-.ryan-bio{flex:none;margin:16px auto 0;max-width:320px;max-height:calc(1.45em * 3);overflow:hidden;text-align:center;font-size:15px;line-height:1.45;color:#f4f5f7}
+.ryan-bio{flex:none;margin:8px auto 0;max-width:320px;max-height:calc(1.45em * 3);overflow:hidden;text-align:center;font-size:15px;line-height:1.45;color:#f4f5f7}
 .ryan-bio strong{font-weight:700}
-.ryan-counts{margin:16px 0 0;text-align:center;font-size:15px;line-height:1.4;color:#fff}
-.ryan-actions{display:flex;align-items:center;justify-content:center;margin-top:20px}
+.ryan-counts{margin:8px 0 0;text-align:center;font-size:15px;line-height:1.4;color:#fff}
+.ryan-actions{display:flex;align-items:center;justify-content:center;margin-top:12px}
 .ryan-actions .btn-pill-white{width:200px;height:48px;font-size:16px}
 .ryan-menu{margin:8px 0 0 auto;width:200px;padding:6px;display:grid;background:#1b1b20;border:1px solid rgba(255,255,255,.1);border-radius:16px;box-shadow:var(--profile-shadow);animation:ryan-rise 220ms var(--ease-sheet) both}
 .ryan-menu button{padding:12px 14px;border:0;border-radius:12px;background:none;color:#e8eaed;font-size:14px;text-align:left;cursor:pointer}
@@ -870,9 +872,10 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .profile-line-copy small{display:block;margin-top:4px;font-size:12px;line-height:1.45;color:#a7a7ad;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .profile-line-row>svg{color:#77777f;flex:none}
 .profile-line-empty{margin:24px 0 8px;text-align:center;font-size:14px;color:#a7a7ad}
-.profile-shelf-empty{padding:56px 8px 24px;text-align:center}
-.profile-shelf-empty h2{margin:0;font-size:24px;font-weight:800;color:#fff}
-.profile-shelf-empty p{margin:12px auto 24px;max-width:320px;font-size:14px;line-height:1.6;color:#a7a7ad}
+.profile-shelf-empty{padding:28px 8px 24px;text-align:center}
+.profile-shelf-empty h2{margin:0;font-size:20px;font-weight:600;color:#fff}
+.profile-shelf-empty p{margin:12px auto 24px;max-width:320px;font-size:14px;line-height:1.5;color:#a7a7ad}
+.profile-shelf-empty .btn-pill-white{width:200px;height:48px;font-size:16px}
 @media (min-width:760px){
   .profile-shelf{max-width:720px;margin-inline:auto}
 }

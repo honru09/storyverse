@@ -75,6 +75,8 @@ import {
   fetchUserProfile,
   fileToSquareJpeg,
   followUser,
+  publicDisplayName as profileDisplayName,
+  publicHandle as profileHandle,
   reportUser,
   sendPresenceHeartbeat,
   unfollowUser,
@@ -3415,7 +3417,11 @@ function formatProfileDate(value) {
 
 function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
   const editable = profile.editable || {};
-  const [displayName, setDisplayName] = useState(profile.displayName || "");
+  // The name field starts from what the owner actually stored
+  // (editable), never from the resolved public name — pre-filling the
+  // fallback would silently save the avatar's name (or, before the
+  // email guard, the account email) as a deliberate display name.
+  const [displayName, setDisplayName] = useState(editable.displayName || "");
   const [handle, setHandle] = useState(editable.handle || "");
   const [handleState, setHandleState] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -3751,6 +3757,12 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
 
   const isSelf = Boolean(profile.viewerState?.isSelf);
   const following = Boolean(profile.viewerState?.isFollowing);
+  // The printed identity goes through the client guard even though the
+  // server resolves it too: an email-shaped value renders as the
+  // avatar's name (or the neutral label), never as the title.
+  const shownName = profileDisplayName(profile);
+  const shownHandle = profileHandle(profile);
+  const nameTier = [...shownName].length <= 8 ? "full" : [...shownName].length <= 16 ? "mid" : "long";
   const publications = profile.publications || [];
   const boards = profileBoardsFor(profile, sortMode);
   const selectedBoard = boards.find((board) => board.id === selectedBoardId) || null;
@@ -3855,12 +3867,12 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           />
         </span>
       </div>
-      <h1 className="ryan-name" data-enter>{profile.displayName}</h1>
-      {profile.handle && <p className="ryan-handle" data-enter>@{profile.handle}</p>}
+      <h1 className="ryan-name" data-enter data-name-tier={nameTier}>{shownName}</h1>
+      {shownHandle && <p className="ryan-handle" data-enter>@{shownHandle}</p>}
       {profile.avatar?.description ? (
         <p className="ryan-bio" data-enter>
           <strong>{profile.avatar.name}</strong>
-          {profile.handle ? <> · @{profile.handle} · </> : <> · </>}
+          {shownHandle ? <> · @{shownHandle} · </> : <> · </>}
           {profile.avatar.description}
         </p>
       ) : null}
