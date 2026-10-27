@@ -1,4 +1,4 @@
-const pages = new Set(['home', 'forge', 'store', 'merge'])
+const pages = new Set(['home', 'forge', 'store', 'merge', 'avatar'])
 
 export function parseRoute(hash = '') {
   const [path, value] = hash.replace(/^#\/?/, '').split('/')

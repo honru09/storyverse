@@ -5,6 +5,7 @@ import path from 'node:path'
 import { ApiError, createGeminiGenerator, MAX_REQUEST_BYTES } from './gemini.js'
 import { createAuthService } from './auth.js'
 import { createCoverService } from './cover.js'
+import { createAvatarService } from './avatar.js'
 
 const DEFAULT_DIST = fileURLToPath(new URL('../dist/', import.meta.url))
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2' }
@@ -138,7 +139,7 @@ async function serveStatic(request, response, pathname, distDir) {
   response.end(request.method === 'HEAD' ? undefined : bytes)
 }
 
-export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth = createAuthService({ env }), cover = createCoverService({ env }), distDir = DEFAULT_DIST } = {}) {
+export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth = createAuthService({ env }), cover = createCoverService({ env }), avatar = createAvatarService({ env }), distDir = DEFAULT_DIST } = {}) {
   // Explicit opt-out preserves existing deployments until the release owner sets it.
   const generationEnabled = env.GENERATION_ENABLED !== 'false'
   // The model id is static configuration; remember it the first time status
@@ -269,6 +270,57 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         const storyId = new URL(request.url, 'http://localhost').searchParams.get('storyId') || ''
         const image = await cover.fetch(identity, storyId)
         if (!image) throw new ApiError(404, '这本书还没有专属封面。')
+        if (!response.destroyed && !response.writableEnded) {
+          response.writeHead(200, {
+            'Content-Type': image.contentType,
+            'Content-Length': image.buffer.length,
+            'Cache-Control': 'private, max-age=300',
+          })
+          response.end(image.buffer)
+        }
+        return
+      }
+      if (pathname === '/api/avatar' && request.method === 'GET') {
+        const identity = await auth.identity(request.headers.authorization)
+        return sendJson(response, 200, { avatar: await avatar.get(identity) })
+      }
+      if (pathname === '/api/avatar' && request.method === 'PUT') {
+        const identity = await auth.identity(request.headers.authorization)
+        const saved = await avatar.save(identity, await readCoverJson(request))
+        return sendJson(response, 200, { avatar: saved })
+      }
+      if (pathname === '/api/avatar/generate' && request.method === 'POST') {
+        // Portraits are account property, like covers: a signed-in identity
+        // is always required, and the avatar service enforces its own
+        // per-account daily limit.
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再生成立绘。', 'auth-required')
+          throw error
+        }
+        const avatarBody = await readCoverJson(request)
+        const result = await avatar.generate(identity, avatarBody)
+        // Avatar ledger: identity, model, anchor kind and provider usage
+        // only — never the description and never image bytes.
+        try {
+          process.stdout.write(`${JSON.stringify({
+            type: 'avatar-usage',
+            kind: 'avatar',
+            uid: identity.uid,
+            model: avatar.model,
+            anchor: result?.anchor ?? null,
+            usage: result?.usage ?? 'unknown',
+          })}\n`)
+        } catch { /* ledger is best-effort */ }
+        return sendJson(response, 200, { avatar: result.avatar })
+      }
+      if (pathname === '/api/avatar/image' && request.method === 'GET') {
+        const identity = await auth.identity(request.headers.authorization)
+        const which = new URL(request.url, 'http://localhost').searchParams.get('which') || 'current'
+        const image = await avatar.fetchImage(identity, which)
+        if (!image) throw new ApiError(404, '还没有这张立绘。')
         if (!response.destroyed && !response.writableEnded) {
           response.writeHead(200, {
             'Content-Type': image.contentType,

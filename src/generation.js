@@ -7,6 +7,11 @@ export function mergeSourceContext(story) {
   return {
     genreId: text(story.genreId, 80),
     storyLengthMode: text(story.config?.storyLengthMode, 20),
+    // The avatar each side brought into the merge, if any: the id records
+    // whose journey this becomes, the appearance line lets the merged
+    // telling keep painting the same person.
+    avatarId: text(story.config?.avatarId, 64),
+    avatarAppearance: text(story.config?.avatarAppearance, 300),
     // The template this source pinned for itself (if any). A merged story
     // borrows each side's own pinned craft — never a world-derived default.
     genreTemplateId: text(story.genreTemplateId || story.config?.genreTemplateId, 80),

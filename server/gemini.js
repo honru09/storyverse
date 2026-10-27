@@ -170,6 +170,11 @@ function compactConfig(config) {
   // so no extra delimited block is needed here.
   result.startPointName = clip(config.startPointName, 30)
   result.startPointHook = clip(config.startPointHook, 120)
+  // The avatar's look, when this book was opened with one: a fixed-line
+  // description the telling paints the protagonist from, so the same
+  // person walks into every world. The id itself is bookkeeping and
+  // never reaches the model.
+  result.avatarAppearance = clip(config.avatarAppearance, 300)
   // Origin identity: only the concept id travels; the local title and the
   // identity-scoped spawn points are resolved by the shared engine (the beat
   // plan carries them), so the server never re-derives them.
@@ -183,9 +188,14 @@ function compactConfig(config) {
     for (const field of ['hometown', 'school', 'company', 'role', 'friend']) result[field] = clip(config[field], 240)
   }
   if (Array.isArray(config.protagonists)) {
-    result.protagonists = config.protagonists.slice(0, 2).map((person) => Object.fromEntries(
-      ['name', 'trait', 'origin', 'ability', 'genreId'].map((field) => [field, clip(person[field], 240)]),
-    ))
+    result.protagonists = config.protagonists.slice(0, 2).map((person) => ({
+      ...Object.fromEntries(
+        ['name', 'trait', 'origin', 'ability', 'genreId'].map((field) => [field, clip(person[field], 240)]),
+      ),
+      // Each lead's avatar look, so a merged telling paints both people
+      // as themselves.
+      appearance: clip(person.appearance, 300),
+    }))
   }
   if (record(config.merge)) result.merge = { rules: config.merge.rules, lead: config.merge.lead, bond: config.merge.bond }
   return result
@@ -360,6 +370,7 @@ function contextFor({ story, index, skeleton }, resolvedTemplates = null) {
         const sourceTotal = source.storyLengthMode === 'long' ? 100 : source.storyLengthMode === 'season' ? 24 : 6
         return {
           genreId: clip(source.genreId, 60),
+          avatarAppearance: clip(source.avatarAppearance, 300),
           worldBible: {
             premise: clip(sourceBible.premise, 600),
             rules: clippedList(sourceBible.rules, 8, 300),

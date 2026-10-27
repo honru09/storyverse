@@ -198,6 +198,11 @@ export const CUSTOM_WORLD_NAME_MAX = 40
 export const CUSTOM_WORLD_SETTING_MAX = 600
 export const START_POINT_NAME_MAX = 30
 export const START_POINT_HOOK_MAX = 120
+// The avatar （化身） a story was opened with: only the id and the one-line
+// appearance travel in the config. The profile itself lives on the server
+// under the reader's account; editing it never rewrites a book's copy.
+export const AVATAR_ID_MAX = 64
+export const AVATAR_APPEARANCE_MAX = 300
 export const CUSTOM_GENRE = {
   id: CUSTOM_GENRE_ID,
   label: '创世神',
@@ -558,6 +563,8 @@ export const DEFAULT_DRAFT = {
   customWorldSetting: '',
   startPointName: '',
   startPointHook: '',
+  avatarId: '',
+  avatarAppearance: '',
   name: '',
   trait: '冷静观察者',
   // No preset origin or ability: the origin comes only from the identity
@@ -768,6 +775,11 @@ const normalizeDraft = (draft = {}) => {
     customWorldSetting: cleanBounded(input.customWorldSetting, CUSTOM_WORLD_SETTING_MAX),
     startPointName: cleanBounded(input.startPointName, START_POINT_NAME_MAX),
     startPointHook: cleanBounded(input.startPointHook, START_POINT_HOOK_MAX),
+    // The avatar this book was opened with (empty for every pre-avatar
+    // save): the id ties the book to the reader's journeys list, and the
+    // appearance line is the copy generation paints the protagonist from.
+    avatarId: cleanBounded(input.avatarId, AVATAR_ID_MAX),
+    avatarAppearance: cleanBounded(input.avatarAppearance, AVATAR_APPEARANCE_MAX),
     name: cleanText(input.name, DEFAULT_DRAFT.name),
     trait: cleanText(input.trait, DEFAULT_DRAFT.trait),
     origin: cleanText(input.origin, DEFAULT_DRAFT.origin),
@@ -1730,6 +1742,10 @@ const redactedSnapshotConfig = (config, name) => ({
   // not carry it (the snapshot resolves to the world's default spawn point).
   startPointName: '',
   startPointHook: '',
+  // The avatar link is the owner's own thread back to their character; a
+  // public snapshot is anonymous and keeps neither the id nor the look.
+  avatarId: '',
+  avatarAppearance: '',
 })
 
 export function createMergedStory(a, b, options = {}) {
@@ -1758,8 +1774,8 @@ export function createMergedStory(a, b, options = {}) {
     destination: `${genreA.location} ↔ ${genreB.location}`,
     step: 1,
     protagonists: [
-      { name: sourceA.name, trait: sourceA.trait, origin: sourceA.origin, ability: sourceA.ability, genreId: sourceA.genreId },
-      { name: sourceB.name, trait: sourceB.trait, origin: sourceB.origin, ability: sourceB.ability, genreId: sourceB.genreId },
+      { name: sourceA.name, trait: sourceA.trait, origin: sourceA.origin, ability: sourceA.ability, genreId: sourceA.genreId, avatarId: sourceA.avatarId || '', appearance: sourceA.avatarAppearance || '' },
+      { name: sourceB.name, trait: sourceB.trait, origin: sourceB.origin, ability: sourceB.ability, genreId: sourceB.genreId, avatarId: sourceB.avatarId || '', appearance: sourceB.avatarAppearance || '' },
     ],
     sourceGenres: [genreA.id, genreB.id],
     merge: { rules, lead, bond },
