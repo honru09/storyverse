@@ -167,6 +167,17 @@ test('migrateLegacy returns null for an empty legacy payload', () => {
   assert.equal(migrateLegacy(storage), null)
 })
 
+// The shape a pre-retirement build stored on a decision chapter. Since
+// the intervention batch, chapters are minted with choice: null; a stored
+// object like this is inert history and only its shape is validated.
+const legacyChoice = () => ({
+  prompt: '雾在脚下合拢，前路分成两条。',
+  options: [
+    { id: 'open', label: '带上潜水服，追着退潮下水' },
+    { id: 'wait', label: '把信压在掌心，先守住退潮口' },
+  ],
+})
+
 function populatedLibrary() {
   const current = prepareReadingWindow(createStory({ name: '阿遥', immersive: true, hometown: '宁波' }))
   const library = upsertStory(emptyLibrary(), current)
@@ -201,12 +212,15 @@ test('render-sensitive corruption is rejected before it can reach the reader or 
     ['missing chapter', (library) => { library.stories[0].chapters[0] = null }],
     ['chapter index gap', (library) => { library.stories[0].chapters[0].index = 2 }],
     ['stale next chapter cursor', (library) => { library.stories[0].chapterIndex = 0 }],
-    ['invalid choice options', (library) => { library.stories[0].chapters[1].choice.options = {} }],
-    ['choice option object label', (library) => { library.stories[0].chapters[1].choice.options[0].label = {} }],
-    ['duplicate choice branches', (library) => { library.stories[0].chapters[1].choice.options[1].id = 'open' }],
-    ['unsupported choice branch', (library) => { library.stories[0].chapters[1].choice.options[0].id = 'unknown' }],
-    ['missing decision gate', (library) => { library.stories[0].chapters[1].choice = null }],
+    // A pre-retirement chapter may still carry a choice object; its shape
+    // is still validated even though the data itself is inert now.
+    ['invalid choice options', (library) => { library.stories[0].chapters[1].choice = legacyChoice(); library.stories[0].chapters[1].choice.options = {} }],
+    ['choice option object label', (library) => { library.stories[0].chapters[1].choice = legacyChoice(); library.stories[0].chapters[1].choice.options[0].label = {} }],
+    ['duplicate choice branches', (library) => { library.stories[0].chapters[1].choice = legacyChoice(); library.stories[0].chapters[1].choice.options[1].id = 'open' }],
     ['invalid choice map', (library) => { library.stories[0].choices = { 1: {} } }],
+    ['malformed intervention entry', (library) => { library.stories[0].interventions = [{ id: 'iv-x' }] }],
+    ['intervention with bad status', (library) => { library.stories[0].interventions = [{ id: 'iv-x', targetIndex: 2, text: '让雾散开', kind: 'text', status: 'pending' }] }],
+    ['malformed chapter intervention marker', (library) => { library.stories[0].chapters[0].interventions = [{ text: '' }] }],
     ['invalid merged protagonists', (library) => { library.stories[0].kind = 'merged'; library.stories[0].config.protagonists = [null, {}] }],
     ['publication null', (library) => { library.publications[0] = null }],
     ['publication malformed snapshot', (library) => { library.publications[0].snapshot = {} }],
@@ -229,6 +243,25 @@ test('render-sensitive corruption is rejected before it can reach the reader or 
       assert.throws(() => importLibrary(raw), /结构无效/)
     })
   }
+})
+
+test('a well-formed legacy choice with unknown ids and a live intervention queue both validate', () => {
+  const library = populatedLibrary()
+  // Unknown branch ids are history, not corruption: no era table is
+  // consulted any more, so this must NOT be rejected.
+  const choice = legacyChoice()
+  choice.options[0].id = 'some-branch-from-a-future-build'
+  library.stories[0].chapters[1].choice = choice
+  library.stories[0].choices = { 1: 'some-branch-from-a-future-build' }
+  library.stories[0].interventions = [
+    { id: 'iv-1', targetIndex: 2, text: '让退潮提前一个时辰', kind: 'text', createdAt: '2026-10-27T00:00:00.000Z', status: 'queued' },
+    { id: 'iv-2', targetIndex: 1, text: '一场危机正从暗处向主角逼近', kind: 'chip', chipId: 'crisis', status: 'applied' },
+  ]
+  library.stories[0].chapters[1].interventions = [{ text: '一场危机正从暗处向主角逼近', kind: 'chip' }]
+  assert.deepEqual(validateLibrary(library), [])
+  const roundTrip = importLibrary(exportLibrary(library))
+  assert.equal(roundTrip.stories[0].interventions.length, 2)
+  assert.equal(roundTrip.stories[0].chapters[1].interventions[0].kind, 'chip')
 })
 
 test('save failures from cycles, BigInt, accessors and toJSON leave the previous library untouched', () => {
@@ -373,15 +406,23 @@ test('season and long stories validate at their mode-sized chapter counts', () =
     }
     return current
   }
-  const season = walk(createStory({ genreId: 'mist', storyLengthMode: 'season', name: '季' }), 24)
+  const walked = walk(createStory({ genreId: 'mist', storyLengthMode: 'season', name: '季' }), 24)
+  // Simulate a pre-retirement save: a choice recorded deep into the
+  // season (chapter 14) plus its chapter object. Both are inert now and
+  // must survive validation and the round trip untouched.
+  const season = {
+    ...walked,
+    choices: { 13: 'open' },
+    chapters: walked.chapters.map((chapter) => chapter.index === 13 ? { ...chapter, choice: legacyChoice() } : chapter),
+  }
   assert.equal(season.chapters.length, 24)
   const library = { ...emptyLibrary(), stories: [season], activeStoryId: season.id }
   assert.deepEqual(validateLibrary(library), [])
   const roundTrip = importLibrary(exportLibrary(library))
   assert.equal(roundTrip.stories[0].chapters.length, 24)
   assert.equal(roundTrip.stories[0].config.storyLengthMode, 'season')
-  // Choices recorded deep into a season (chapter 14) survive validation.
   assert.ok(Object.keys(roundTrip.stories[0].choices).some((key) => Number(key) === 13))
+  assert.equal(roundTrip.stories[0].chapters[13].choice.options[0].id, 'open')
   // A short story with a seventh chapter is still corrupt data.
   const bloated = { ...createStory({ genreId: 'mist' }), chapters: season.chapters.slice(0, 7), chapterIndex: 6 }
   assert.ok(validateLibrary({ ...emptyLibrary(), stories: [bloated] }).length > 0)

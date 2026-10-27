@@ -85,7 +85,8 @@ import {
   updateMyProfile,
   uploadMyPicture,
 } from "./users.js";
-import { acceptGeneratedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter } from "./generation.js";
+import { acceptGeneratedChapter, acceptRevisedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter, requestChapterRevision } from "./generation.js";
+import InterventionOverlay from "./components/InterventionOverlay.jsx";
 import WorldArtwork from "./components/WorldArtwork.jsx";
 import StoryCover from "./components/StoryCover.jsx";
 import AccountPanel from "./components/AccountPanel.jsx";
@@ -113,7 +114,6 @@ import {
   moveReadingPosition,
   prepareReadingWindow,
   readerIndexFor,
-  selectedChoice,
 } from "./reading-flow.js";
 import {
   ALL_ABILITIES,
@@ -135,7 +135,12 @@ import {
   abilityGroupsFor,
   buildChapter,
   chapterForReading,
-  chooseBranch,
+  INTERVENTION_CHIPS,
+  INTERVENTION_TEXT_MAX,
+  interventionTargetIndex,
+  queueIntervention,
+  queuedInterventionsFor,
+  retractChapter,
   createMergedStory,
   createStory,
   finishEndlessLine,
@@ -201,6 +206,15 @@ const Icon = ({ name, size = 18, stroke = 1.8, className = "" }) => {
       <>
         <path d="m12 2 1.3 5.7L19 9l-5.7 1.3L12 16l-1.3-5.7L5 9l5.7-1.3L12 2Z" />
         <path d="m19 15 .6 2.4L22 18l-2.4.6L19 21l-.6-2.4L16 18l2.4-.6L19 15Z" />
+      </>
+    ),
+    ripple: (
+      <>
+        <circle cx="12" cy="12" r="1.8" />
+        <path d="M17.5 6.5a8 8 0 0 1 0 11" />
+        <path d="M6.5 6.5a8 8 0 0 0 0 11" />
+        <path d="M20.5 3.8a13 13 0 0 1 0 16.4" />
+        <path d="M3.5 3.8a13 13 0 0 0 0 16.4" />
       </>
     ),
     git: (
@@ -2339,10 +2353,6 @@ function ShareSheet({ story, onClose, onPublish, authClient, authSignal = "" }) 
           <summary>{chapter.title}</summary>
           {chapter.paragraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
           {chapter.summary && <p>章节摘要：{chapter.summary}</p>}
-          {chapter.choice && <div>
-            <p>{chapter.choice.prompt}</p>
-            {chapter.choice.options.map((option) => <p key={option.id}>{option.label} · {option.detail} · {option.consequence}</p>)}
-          </div>}
         </details>)}</div>
         <label className="share-review"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} />我已检查正文，可保存此副本</label>
       </>}
@@ -2476,8 +2486,8 @@ function ChapterDirectory({ story, index, readOnly, onSelect, onClose }) {
                 ? readOnly
                   ? "尚未分享"
                   : "继续阅读后开启"
-                : chapter.choice
-                  ? "剧情选择"
+                : chapter?.interventions?.length
+                  ? "介入"
                   : "";
           return (
             <button
@@ -2500,6 +2510,120 @@ function ChapterDirectory({ story, index, readOnly, onSelect, onClose }) {
   );
 }
 
+// 介入： the reader reaches into the worldline from outside the story.
+// The sheet is framed in-world — a nameless force, not a remote control
+// for the protagonist — and it can only ever aim at the next unread
+// chapter, which it names before anything is submitted.
+function InterventionSheet({ story, readerIndex, onClose, onSubmit }) {
+  const [text, setText] = useState("");
+  const [chipId, setChipId] = useState("");
+  const [error, setError] = useState("");
+  const target = interventionTargetIndex(story, readerIndex);
+  const queued = target === null ? [] : queuedInterventionsFor(story, target);
+  const targetWritten = target !== null && target < (story.chapters?.length || 0);
+  const submit = () => {
+    if (chipId) {
+      onSubmit({ kind: "chip", chipId });
+      return;
+    }
+    const trimmed = text.trim();
+    const violation = findSettingViolation(trimmed);
+    if (violation) {
+      setError(violation);
+      return;
+    }
+    onSubmit({ kind: "text", text: trimmed });
+  };
+  return (
+    <ReadingDialog title="介入 · 扰动世界线" onClose={onClose}>
+      <p className="intervention-lede">
+        这个世界之外，有一股无名的力量。当它伸手时，巧合会发生，异象会出现，某个人会提前抵达——故事里的人不会知道，只会觉得风向变了。
+      </p>
+      {target === null ? (
+        <p className="intervention-ended">
+          {isStoryComplete(story)
+            ? "这条故事线已经走完，世界线就此定格，不再接受新的扰动。想让命运再动，下次请在故事结束之前伸手。"
+            : "你回到了较早的章节——那些章节已经是定局，后面的故事正站在它们之上。介入只能落在阅读前沿的那一章，读到最新章节时再伸手。"}
+        </p>
+      ) : (
+        <>
+          <p className="intervention-target">
+            你的介入将落在<b>第 {target + 1} 章</b>
+            {targetWritten
+              ? "——那一章已经写好，介入会让它带着这股力量重写一遍。"
+              : "——那一章还没有写下，介入会随它一起生成。"}
+            已经读过的章节，一个字都不会改。
+          </p>
+          <div
+            className="intervention-chips"
+            role="group"
+            aria-label="现成的命运方向"
+          >
+            {INTERVENTION_CHIPS.map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                className={`choice-chip ${chipId === chip.id ? "active" : ""}`}
+                aria-pressed={chipId === chip.id}
+                onClick={() => {
+                  setChipId(chipId === chip.id ? "" : chip.id);
+                  setError("");
+                }}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
+          <label className="intervention-field">
+            <span>或者，亲手写下你想让命运推动的事</span>
+            <textarea
+              rows={3}
+              maxLength={INTERVENTION_TEXT_MAX}
+              value={text}
+              placeholder="例如：让那位失踪的守灯人今晚回到港边"
+              onChange={(event) => {
+                setText(event.target.value);
+                setError("");
+              }}
+            />
+            <small>
+              {text.length} / {INTERVENTION_TEXT_MAX}
+            </small>
+          </label>
+          <p className="intervention-hint">
+            写给这个世界，而不是主角：一件会发生的事——一场雨、一个人的到来、一次运气的转向。
+          </p>
+          {queued.length > 0 && (
+            <div className="intervention-queued">
+              <b>已排队 · 将合并生效</b>
+              {queued.map((entry) => (
+                <p key={entry.id}>{entry.text}</p>
+              ))}
+            </div>
+          )}
+          {error && (
+            <p className="intervention-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="reading-dialog-actions">
+            <Button
+              icon="ripple"
+              disabled={!text.trim() && !chipId}
+              onClick={submit}
+            >
+              {targetWritten ? "介入并重写下一章" : "介入下一章"}
+            </Button>
+            <Button variant="ghost" onClick={onClose}>
+              先不介入
+            </Button>
+          </div>
+        </>
+      )}
+    </ReadingDialog>
+  );
+}
+
 function Reader({
   story,
   readOnly = false,
@@ -2513,6 +2637,7 @@ function Reader({
   onShareOpened,
   unsaved = false,
   onPrepareChapter,
+  onReviseChapter,
   onStartNextSeason,
   authClient,
   onRerollCover,
@@ -2558,8 +2683,10 @@ function Reader({
   const requestedLocation = useRef(null);
   const [preferencesStore] = useState(() => createReadingPreferencesStore());
   const preferences = useSyncExternalStore(preferencesStore.subscribe, preferencesStore.getSnapshot);
-  const [rewriteMode, setRewriteMode] = useState(false);
-  const [pendingChoice, setPendingChoice] = useState(null);
+  const [interveneOpen, setInterveneOpen] = useState(false);
+  const [intervening, setIntervening] = useState(false);
+  const [interveneSettled, setInterveneSettled] = useState(false);
+  const [interveneNote, setInterveneNote] = useState("");
   const [error, setError] = useState("");
   const [preparing, setPreparing] = useState(false);
   const [generationError, setGenerationError] = useState("");
@@ -2576,7 +2703,7 @@ function Reader({
   const chapterMetrics = useMemo(() => estimateReadingMetrics(chapter?.paragraphs || []), [chapter]);
   const locationKey = story && chapterLocationKey(story.id, index, chapter.paragraphs, readOnly);
   const reading = useReaderExperience({ readerRef, locationKey, settings: preferences.settings,
-    blocked: preferencesOpen || toolsOpen || directoryOpen || shareOpen || Boolean(pendingChoice) });
+    blocked: preferencesOpen || toolsOpen || directoryOpen || shareOpen || interveneOpen });
   const bookContextId = `${readOnly ? 'public' : 'private'}:${story?.id}`;
   const bookmarkKeys = readingChapters.map((item, i) => chapterLocationKey(story.id, i, item?.paragraphs || [], readOnly));
   const bookmarks = useMemo(() => reading.store.bookmarks(bookContextId, bookmarkKeys), [bookContextId, story, bookmarkVersion, toolsOpen, reading.store]);
@@ -2595,10 +2722,19 @@ function Reader({
     setDirectoryOpen(false);
     setToolsOpen(false);
     if (readerRef.current) readerRef.current.dataset.toplineHidden = "false";
-    setRewriteMode(false);
-    setPendingChoice(null);
+    setInterveneOpen(false);
+    setInterveneNote("");
     setError("");
   }, [story?.id, story?.revision, readOnly]);
+
+  // The intervention overlay is NOT reset by story revisions: showing it
+  // is what causes the revision that lands the revised chapter, and its
+  // own sequence decides when it leaves. Only a different story (or the
+  // read-only flip) clears it.
+  useEffect(() => {
+    setIntervening(false);
+    setInterveneSettled(false);
+  }, [story?.id, readOnly]);
 
   useEffect(() => {
     if (openShare && !readOnly) {
@@ -2663,11 +2799,6 @@ function Reader({
       <Button variant="ghost" onClick={() => onNavigate("home")}>返回书架</Button>
     </div>
   );
-  const selected = selectedChoice(story, index);
-  const selection = chapter.choice?.options.find(
-    (option) => option.id === selected,
-  );
-  const ready = selected || !chapter.choice;
   const total = totalChaptersFor(story);
   const lengthMode = storyLengthModeOf(story);
   // A running endless line: no denominator anywhere — the position reads
@@ -2683,26 +2814,52 @@ function Reader({
     : `${Math.round(((index + 1) / Math.max(story.chapters?.length || 0, index + 1)) * 100)}%`;
   const update = (nextStory, nextIndex = index) =>
     onUpdateStory?.(moveReadingPosition(nextStory, nextIndex));
-  const applyChoice = (choiceId) => {
-    if (readOnly) return;
+  // 介入： the nudge is queued against the next unread chapter — never the
+  // one on screen, never an earlier one. Three landings, one queue:
+  // the target is not written yet (the nudge folds into its brief), the
+  // target is a local scaffold chapter (retract + rematerialize), or the
+  // target is a generated chapter (a revision pass over the same quota
+  // path as any generation). The reader's place never moves.
+  const submitIntervention = async (payload) => {
+    if (readOnly || intervening) return;
+    const target = interventionTargetIndex(story, index);
+    let queuedStory;
     try {
-      update(chooseBranch(story, index, choiceId));
-      setRewriteMode(false);
-      setPendingChoice(null);
-      setError("");
-    } catch {
-      setError("这个选择暂时没能写入，请再试一次。");
+      queuedStory = queueIntervention(story, { ...payload, readerIndex: index });
+    } catch (failure) {
+      setInterveneOpen(false);
+      setError(failure.message);
+      return;
     }
-  };
-  const handleChoice = (choiceId) => {
-    if (selected && choiceId !== selected && story.chapters.length > index + 1)
-      setPendingChoice(choiceId);
-    else applyChoice(choiceId);
+    setInterveneOpen(false);
+    setError("");
+    const targetExists = target !== null && target < (story.chapters?.length || 0);
+    if (!targetExists) {
+      update(queuedStory);
+      setInterveneNote(`介入已记下，将落在第 ${(target ?? index) + 1} 章。`);
+      return;
+    }
+    setIntervening(true);
+    setInterveneSettled(false);
+    if (story.engine === "gemini" && onReviseChapter) {
+      try {
+        await onReviseChapter(story.id, target, queuedStory);
+        setInterveneSettled(true);
+      } catch (failure) {
+        // The queue was landed before the pass ran, so the nudge survives
+        // the failure and folds into the chapter's next generation.
+        setIntervening(false);
+        setError(failure.message || "重写没能完成，介入还排在队列里。");
+      }
+      return;
+    }
+    const retracted = retractChapter(queuedStory, target);
+    update(retracted);
+    setInterveneSettled(true);
   };
   const goToChapter = (target) => {
     if (target < 0 || target > lastAccessibleIndex(story, readOnly)) return;
     setDirectoryOpen(false);
-    setRewriteMode(false);
     setError("");
     if (readOnly) setSnapshotIndex(target);
     else update(story, target);
@@ -2712,7 +2869,7 @@ function Reader({
       if (nextAvailable) goToChapter(index + 1);
       return;
     }
-    if (!ready || isFinal) return;
+    if (isFinal) return;
     if (story.engine === "gemini") {
       if (nextAvailable) goToChapter(index + 1);
       else if (!requesting.current) {
@@ -2728,7 +2885,6 @@ function Reader({
       if (index + 1 <= lastAccessibleIndex(prepared)) {
         update(prepared, index + 1);
         setError("");
-        setRewriteMode(false);
       } else setError("下一章暂时没能接上，请再试一次。");
     } catch {
       setError("下一章暂时没能接上，请再试一次。");
@@ -2840,79 +2996,22 @@ function Reader({
             ))}
           </div>
           </div>
-          {chapter.choice && (
-            <div className={`choice-block ${selected ? "resolved" : ""}`}>
-              {(readOnly || !selected || rewriteMode) && (
-                <div className="choice-heading">
-                  <h2>
-                    {readOnly
-                      ? "作者的选择"
-                      : rewriteMode
-                        ? "重新选择"
-                        : "你会怎么做？"}
-                  </h2>
-                </div>
-              )}
-              {readOnly ? (
-                <div className="sw-readonly-choice">
-                  <Icon name="lock" size={15} />
-                  <span>
-                    {selection
-                      ? selection.label
-                      : "这个决定尚未分享。"}
-                  </span>
-                </div>
-              ) : !selected || rewriteMode ? (
-                <>
-                  <div className="choice-grid" role="group" aria-label="剧情选择">
-                    {chapter.choice.options.map((option, optionIndex) => (
-                      <button
-                        key={option.id}
-                        className={`decision-card ${optionIndex % 2 === 0 ? "decision-coral" : "decision-mint"} ${selected === option.id ? "selected" : ""}`}
-                        aria-pressed={selected === option.id}
-                        onClick={() => handleChoice(option.id)}
-                      >
-                        <span className="decision-copy">
-                          <b>{option.label}</b>
-                          <small>{option.detail}</small>
-                        </span>
-                        <Icon
-                          name={selected === option.id ? "check" : "arrow"}
-                          size={17}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                  {rewriteMode && (
-                    <button
-                      className="reader-directory-button"
-                      onClick={() => setRewriteMode(false)}
-                    >
-                      取消改选
-                    </button>
-                  )}
-                </>
-              ) : (
-                <div className="choice-resolved">
-                  <div className="resolved-check">
-                    <Icon name="check" size={18} />
-                  </div>
-                  <div className="choice-result-copy" role="status">
-                    <h3>已选：{selection?.label}</h3>
-                    <p>{selection?.consequence}</p>
-                  </div>
-                  <button
-                    className="mini-reset"
-                    onClick={() => {
-                      setRewriteMode(true);
-                      setError("");
-                    }}
-                  >
-                    改选
-                  </button>
-                </div>
-              )}
+          {chapter.interventions?.length > 0 && (
+            <div className="intervention-marker" role="note">
+              <Icon name="ripple" size={16} />
+              <div>
+                <b>命运在这一章伸过手</b>
+                {chapter.interventions.map((entry, entryIndex) => (
+                  <p key={entryIndex}>{entry.text}</p>
+                ))}
+              </div>
             </div>
+          )}
+          {interveneNote && (
+            <p className="intervention-note" role="status">
+              <Icon name="ripple" size={14} />
+              {interveneNote}
+            </p>
           )}
           <div className="reader-starmap">
             <div className="reader-starmap-head">
@@ -2952,11 +3051,10 @@ function Reader({
             <div className="sw-next-action">              <Button
                 icon="arrow"
                 onClick={handleNext}
-                disabled={!readOnly && (!ready || (preparing && !nextAvailable))}
+                disabled={!readOnly && preparing && !nextAvailable}
               >
                 {preparing && !nextAvailable ? "下一章准备中…" : generationError && !nextAvailable ? "重试下一章" : "下一章"}
               </Button>
-              {!readOnly && !ready && <span>做出选择后继续</span>}
               {generationError && <span role="alert">{generationError}</span>}
             </div>
           )}
@@ -3040,12 +3138,16 @@ function Reader({
           <span>第 {index + 1} 章{chapterMetrics.charCount ? ` · 约 ${chapterMetrics.charCount} 字` : ""}</span>
           <span>本章 {reading.progress}%</span>
         </div>
-        {focused ? <button type="button" className="reader-focus-exit" onClick={() => setFocused(false)}>退出专注阅读</button> :
+        {focused ? <div className="reader-dock-actions">
+            <button type="button" className="reader-focus-exit" onClick={() => setFocused(false)}>退出专注阅读</button>
+            {!readOnly && <button type="button" className="reader-intervene-button" onClick={() => setInterveneOpen(true)} aria-haspopup="dialog"><Icon name="ripple" size={19}/><span>介入</span></button>}
+          </div> :
           <div className="reader-dock-actions">
             <button type="button" onClick={() => setDirectoryOpen(true)} aria-haspopup="dialog"><Icon name="menu" size={19}/><span>目录</span></button>
             <button type="button" className="reader-dock-settings" aria-label="阅读设置" aria-haspopup="dialog" onClick={() => setPreferencesOpen(true)}><b aria-hidden="true">Aa</b><span>设置</span></button>
             <button type="button" onClick={openTools} aria-haspopup="dialog"><Icon name="search" size={19}/><span>查找</span></button>
             <button type="button" onClick={() => setFocused(true)}><Icon name="book" size={19}/><span>专注</span></button>
+            {!readOnly && <button type="button" className="reader-intervene-button" onClick={() => setInterveneOpen(true)} aria-haspopup="dialog"><Icon name="ripple" size={19}/><span>介入</span></button>}
           </div>}
         {preferences.settings.readingMode === 'page' && <div className="reader-page-controls" role="group" aria-label="逐屏阅读">
           <button type="button" onClick={() => reading.pageBy(-1)}><Icon name="chevron" className="rotate-180" size={17}/>上一屏</button>
@@ -3072,31 +3174,19 @@ function Reader({
           onClose={() => setDirectoryOpen(false)}
         />
       )}
-      {pendingChoice && (
-        <ReadingDialog
-          title="改选并重写后续？"
-          onClose={() => setPendingChoice(null)}
-        >
-          <p>
-            本章及之前的内容保留，后续章节和选择将被替换。
-          </p>
-          <p className="rewrite-summary">
-            新的选择：
-            {
-              chapter.choice.options.find(
-                (option) => option.id === pendingChoice,
-              )?.label
-            }
-          </p>
-          <div className="reading-dialog-actions">
-            <Button onClick={() => applyChoice(pendingChoice)}>
-              确认改写
-            </Button>
-            <Button variant="ghost" onClick={() => setPendingChoice(null)}>
-              保留原选择
-            </Button>
-          </div>
-        </ReadingDialog>
+      {interveneOpen && !readOnly && (
+        <InterventionSheet
+          story={story}
+          readerIndex={index}
+          onClose={() => setInterveneOpen(false)}
+          onSubmit={submitIntervention}
+        />
+      )}
+      {intervening && (
+        <InterventionOverlay
+          settled={interveneSettled}
+          onDone={() => setIntervening(false)}
+        />
       )}
       {coverOpen && !readOnly && (
         <ReadingDialog title="本书封面" onClose={() => setCoverOpen(false)}>
@@ -5322,6 +5412,30 @@ function App() {
       return { ...current, stories: current.stories.map((book) => book.id === id ? next : book) };
     });
   }, [store, setLibrary, syncLivingPublication]);
+  // The intervention revision pass. The queue is landed FIRST, so a
+  // failed or quota-blocked pass never loses the reader's nudge — it
+  // simply folds into the chapter's next ordinary generation. A landed
+  // pass goes through the same /api/generate endpoint and the same usage
+  // accounting as any other chapter.
+  const reviseChapter = useCallback(async (id, targetIndex, queuedStory) => {
+    setLibrary((current) => ({
+      ...current,
+      stories: current.stories.map((book) => (book.id === id ? queuedStory : book)),
+    }));
+    const result = await requestChapterRevision(queuedStory, targetIndex, {
+      getAccessToken: () => authClient.getAccessToken(),
+      onAuthRequired: () => { setAccountIntent(null); setAccountOpen(true); },
+    });
+    const candidate = acceptRevisedChapter(queuedStory, result);
+    if (candidate !== queuedStory) syncLivingPublication(candidate);
+    setLibrary((current) => {
+      const latest = current.stories.find((book) => book.id === id);
+      if (!latest) return current;
+      const next = acceptRevisedChapter(latest, result);
+      if (next === latest) return current;
+      return { ...current, stories: current.stories.map((book) => (book.id === id ? next : book)) };
+    });
+  }, [store, setLibrary, syncLivingPublication, authClient]);
   // Cover painting runs beside reading, never inside it: the story is
   // marked pending, the request resolves whenever the server finishes,
   // and only the cover state is written back — chapters and position are
@@ -5546,6 +5660,7 @@ function App() {
         onNavigate={navigate}
         onUpdateStory={commitStory}
         onPrepareChapter={prepareChapter}
+        onReviseChapter={reviseChapter}
         onStartNextSeason={startNextSeasonFor}
         onToggleBookmark={commitStory}
         onPublish={publish}

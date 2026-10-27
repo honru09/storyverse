@@ -25,7 +25,7 @@
 .page-reader .chapter-navigation,.page-reader .sw-next-action,.page-reader .reading-end{font-family:var(--font-ui);font-weight:400;text-indent:0;letter-spacing:normal}
 .reader-floating-dock{position:fixed;z-index:14;bottom:max(10px,env(safe-area-inset-bottom));left:max(14px,env(safe-area-inset-left));right:max(14px,env(safe-area-inset-right));width:auto;max-width:460px;margin-inline:auto;padding:9px 10px 7px;border:1px solid var(--reader-border);border-radius:26px;background:var(--reader-surface);color:var(--reader-text);box-shadow:var(--reader-shadow,0 8px 28px rgba(17,30,48,.13));font-family:var(--font-ui)}
 .reader-live-progress{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 12px 4px;font-size:.6875rem;font-variant-numeric:tabular-nums;color:var(--reader-secondary);line-height:1.5}
-.reader-dock-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}
+.reader-dock-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(44px,1fr));gap:3px}
 .reader-dock-actions button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:48px;min-width:44px;padding:5px;border-radius:17px;background:transparent;font-size:.6875rem;color:var(--reader-text)}
 .reader-dock-actions button>b{font-size:1.125rem;line-height:19px;font-weight:550}
 .reader-dock-actions .reader-dock-settings{background:var(--reader-soft);color:var(--reader-accent)}

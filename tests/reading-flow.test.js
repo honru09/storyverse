@@ -11,21 +11,24 @@ test('opening prepares two chapters and warming again is idempotent', () => {
   assert.equal(readingProgress(story), 17)
 })
 
-test('preparation stops before an unresolved decision, including an invalid saved choice', () => {
+test('preparation never stops for a stored choice: legacy recordings are inert', () => {
   const story = prepareReadingWindow(createStory())
-  const atDecision = moveReadingPosition(story, 1)
-  assert.equal(prepareReadingWindow(atDecision), atDecision)
-  assert.equal(prepareReadingWindow({ ...atDecision, choices: { 1: 'invalid' } }).chapters.length, 2)
+  const atFormerGate = moveReadingPosition(story, 1)
+  // Chapter 2 used to be a decision chapter; nothing waits there now, so
+  // the window prepares the next chapter straight away — and a bogus
+  // stored choice from an old save changes nothing either.
+  assert.equal(prepareReadingWindow(atFormerGate).chapters.length, 3)
+  assert.equal(prepareReadingWindow({ ...atFormerGate, choices: { 1: 'invalid' } }).chapters.length, 3)
+  assert.equal(prepareReadingWindow({ ...atFormerGate, choices: { 1: 'open' } }).chapters.length, 3)
 })
 
-test('choosing prepares only the next chapter and entering it prepares one more', () => {
+test('moving the reading position prepares exactly one chapter ahead', () => {
   let story = moveReadingPosition(prepareReadingWindow(createStory()), 1)
-  story = chooseBranch(story, 1, 'open')
   story = prepareReadingWindow(story)
   assert.equal(story.chapters.length, 3)
   story = prepareReadingWindow(moveReadingPosition(story, 2))
   assert.equal(story.chapters.length, 4)
-  assert.equal(prepareReadingWindow(moveReadingPosition(story, 3)).chapters.length, 4)
+  assert.equal(prepareReadingWindow(moveReadingPosition(story, 3)).chapters.length, 5)
 })
 
 test('rewriting and reading back cannot skip a fresh decision or retain future content', () => {
@@ -41,12 +44,12 @@ test('rewriting and reading back cannot skip a fresh decision or retain future c
   assert.equal(prepareReadingWindow(moveReadingPosition(warmed, 0)).chapters.length, 3)
 })
 
-test('directory cannot bypass an unanswered node even with stale stored chapters', () => {
+test('directory reaches every stored chapter; a cleared legacy choice gates nothing', () => {
   let story = materialize(chooseBranch(prepareReadingWindow(createStory()), 1, 'open'), 4)
   story = { ...story, choices: {}, readerIndex: 3 }
-  assert.equal(lastAccessibleIndex(story), 1)
-  assert.equal(readerIndexFor(story), 1)
-  assert.equal(moveReadingPosition(story, 2), story)
+  assert.equal(lastAccessibleIndex(story), 3)
+  assert.equal(readerIndexFor(story), 3)
+  assert.equal(readerIndexFor(moveReadingPosition(story, 2)), 2)
 })
 
 test('public snapshots allow their published chapters but never prepare additional content', () => {

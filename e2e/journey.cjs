@@ -75,15 +75,9 @@ async function navigation(page, name) {
 async function completeBook(page, start = 1, { total = 24, ending = '这一季，读完了。' } = {}) {
   for (let chapter = start; chapter <= total; chapter += 1) {
     await currentChapter(page, chapter);
-    const choices = page.getByRole('group', { name: '剧情选择' });
-    // The choice group can render a tick after the progress bar moves.
-    await choices.first().waitFor({ timeout: 400 }).catch(() => {});
-    if (await choices.count()) {
-      assert.equal(await page.getByRole('button', { name: '下一章', exact: true }).isEnabled(), false,
-        `chapter ${chapter} must wait for a choice`);
-      await choices.getByRole('button').first().click();
-      await page.getByRole('button', { name: '改选', exact: true }).waitFor();
-    }
+    // No chapter waits for a choice any more: the story flows straight on.
+    assert.equal(await page.getByRole('group', { name: '剧情选择' }).count(), 0,
+      `chapter ${chapter} must not render a choice group`);
     if (chapter < total) await page.getByRole('button', { name: '下一章', exact: true }).click();
   }
   await page.getByRole('heading', { name: ending }).waitFor();
@@ -159,16 +153,15 @@ async function runJourney(browser, width) {
 
     await page.getByRole('button', { name: '下一章', exact: true }).click();
     await currentChapter(page, 2);
-    await check(`${label} unresolved choice blocks next chapter and directory`, async () => {
-      assert.equal(await page.getByRole('button', { name: '下一章', exact: true }).isEnabled(), false);
+    await check(`${label} no choice gates the reader: next chapter and directory stay open`, async () => {
+      assert.equal(await page.getByRole('group', { name: '剧情选择' }).count(), 0);
+      assert.equal(await page.getByRole('button', { name: '下一章', exact: true }).isEnabled(), true);
       const dialog = await openDirectory(page);
-      assert.equal(await dialog.locator('.chapter-directory-list').getByRole('button').nth(2).isEnabled(), false);
+      assert.equal(await dialog.locator('.chapter-directory-list').getByRole('button').nth(2).isEnabled(), true);
       await dialog.getByRole('button', { name: '关闭面板' }).click();
     });
-    await page.getByRole('group', { name: '剧情选择' }).getByRole('button').first().click();
     await page.getByRole('button', { name: '下一章', exact: true }).click();
     await currentChapter(page, 3);
-    const originalThirdChapter = await page.locator('.reader-article').innerText();
     await check(`${label} reader reload restores the same chapter`, async () => {
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.getByRole('progressbar', { name: '阅读进度' }).waitFor({ state: 'attached', timeout: 4000 });
@@ -201,34 +194,18 @@ async function runJourney(browser, width) {
     });
 
     await selectChapter(page, 1);
-    await page.getByRole('button', { name: '改选', exact: true }).click();
-    await page.getByRole('group', { name: '剧情选择' }).getByRole('button').nth(1).click();
-    const rewriteDialog = page.getByRole('dialog', { name: '改选并重写后续？' });
-    await rewriteDialog.waitFor();
-    await rewriteDialog.getByRole('button', { name: '保留原选择' }).click();
-    await check(`${label} cancel rewrite keeps the original completed book`, async () => {
+    await page.getByRole('button', { name: '介入', exact: true }).click();
+    const endSheet = page.getByRole('dialog', { name: '介入 · 扰动世界线' });
+    await endSheet.waitFor();
+    await check(`${label} a completed line refuses interventions and stays untouched`, async () => {
+      await endSheet.getByText(/已经走完/).waitFor();
       const saved = (await library(page)).stories.find(story => story.id === originalId);
       assert.equal(saved.chapters.length, 24);
-      assert.equal(saved.choices[1], 'open');
+      assert.deepEqual(saved.interventions || [], []);
     });
-    await page.getByRole('group', { name: '剧情选择' }).getByRole('button').nth(1).click();
-    await page.getByRole('dialog').getByRole('button', { name: '确认改写' }).click();
-    await check(`${label} changed choice invalidates future chapters`, async () => {
-      const saved = (await library(page)).stories.find(story => story.id === originalId);
-      assert.equal(saved.choices[1], 'wait');
-      assert.equal(saved.choices[3], undefined);
-      assert.ok(saved.chapters.length <= 3, 'only next chapter may be prefetched after a rewrite');
-      const dialog = await openDirectory(page);
-      assert.equal(await dialog.locator('.chapter-directory-list').getByRole('button').nth(5).isEnabled(), false);
-      await dialog.getByRole('button', { name: '关闭面板' }).click();
-    });
-    await page.getByRole('button', { name: '下一章', exact: true }).click();
-    await currentChapter(page, 3);
-    await check(`${label} changed choice changes subsequent narrative`, async () => {
-      assert.notEqual(await page.locator('.reader-article').innerText(), originalThirdChapter);
-    });
-    await completeBook(page, 3);
+    await endSheet.getByRole('button', { name: '关闭面板' }).click();
 
+    await revealTopline(page);
     await page.getByRole('button', { name: '分享', exact: true }).click();
     await page.getByRole('dialog', { name: '分享预览' }).getByRole('button', { name: '保存到本机书城' }).click();
     const publishedLibrary = await library(page);
@@ -250,7 +227,8 @@ async function runJourney(browser, width) {
       await page.getByRole('button', { name: '下一章', exact: true }).click();
       await currentChapter(page, 2);
       assert.equal(await page.getByRole('group', { name: '剧情选择' }).count(), 0);
-      assert.equal(await page.getByRole('button', { name: '改选', exact: true }).count(), 0);
+      // A read-only copy offers no way to reach into the worldline either.
+      assert.equal(await page.getByRole('button', { name: '介入', exact: true }).count(), 0);
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.getByText('只读版本 · 不会改变原作', { exact: true }).waitFor();
       await selectChapter(page, 23);

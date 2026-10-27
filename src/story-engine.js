@@ -10,9 +10,14 @@
  * - A chapter index is zero based (0..total-1, total from the length mode).
  * - `chapterIndex` is the next chapter that can be accepted.  It starts at 0
  *   and stays at total-1 after the finale.
- * - A choice is recorded by chapter index.  Choosing a different branch
- *   increments `revision`, truncates future chapters, and invalidates old
- *   chapter keys.
+ * - Chapter-end choices are RETIRED (2026-10-27 intervention batch): the
+ *   engine mints no choices, generation never consults a recorded choice,
+ *   and the reader offers none.  The deterministic choice tables survive
+ *   only as `legacyChoiceAt`, so pre-retirement saves keep validating and
+ *   their already-written prose keeps its read-time repair; a choice stored
+ *   on an old story is inert data, never a gate.  Steering now belongs to
+ *   interventions: reader-injected external-force events that land in the
+ *   next unread chapter and nowhere else (see the intervention section).
  */
 
 export const GENRES = [
@@ -673,10 +678,12 @@ export const DEFAULT_DRAFT = {
  *   by hand (config.finishedAt), which freezes the total at the chapter
  *   count reached. While it runs it is already publishable to the plaza as
  *   a living, still-serialising publication.
- * Decision chapters repeat on the same six-chapter rhythm in every mode:
- * position 1 of each six-block is a first-type decision, position 3 a
- * second-type one, so the pre-generation gate ("previous choice decided")
- * works identically at any length.
+ * Turning beats repeat on the same six-chapter rhythm in every mode:
+ * position 1 of each six-block is a first-type turning point, position 3 a
+ * second-type one.  Before the intervention batch these positions carried
+ * the chapter-end choices and gated pre-generation on them; the rhythm
+ * itself is structural and stays (the beat plan leans on it), but nothing
+ * is gated on a reader decision any more — chapters flow straight on.
  */
 export const CUSTOM_LENGTH_MIN = 10
 export const CUSTOM_LENGTH_MAX = 999
@@ -1089,7 +1096,7 @@ const worldBibleFor = (genre, config) => {
         ...(setting
           ? [`创世设定（这个世界以此为准）：${setting}`]
           : ['这个世界尚无成文规则，第一章将随主角的行动立下第一条。']),
-        '已经做出的选择会留下可追踪的回声，不能被无痕抹去。',
+        '已经发生的事会留下可追踪的回声，不能被无痕抹去。',
         '能力有边界；每一次越界都会改变关系或世界稳定度。',
         ...seasonRules,
       ],
@@ -1101,10 +1108,10 @@ const worldBibleFor = (genre, config) => {
   }
   const spawn = resolveStartPoint(genre, config)
   return {
-    premise: `${seasonNumber > 1 ? `第${seasonNumber}季——` : ''}${genre.world}里，${originPremisePhrase(genre, config)}${name}${detail ? `（${detail}）` : ''}在${spawn?.name || genre.location}发现一条会回应选择的世界线。`,
+    premise: `${seasonNumber > 1 ? `第${seasonNumber}季——` : ''}${genre.world}里，${originPremisePhrase(genre, config)}${name}${detail ? `（${detail}）` : ''}在${spawn?.name || genre.location}发现一条会被无名外力搅动的世界线。`,
     rules: [
       `${genre.world}的秘密只能通过具体行动被唤醒。`,
-      '已经做出的选择会留下可追踪的回声，不能被无痕抹去。',
+      '已经发生的事会留下可追踪的回声，不能被无痕抹去。',
       '能力有边界；每一次越界都会改变关系或世界稳定度。',
       ...seasonRules,
     ],
@@ -1140,7 +1147,14 @@ const hash = (value) => {
   return (result >>> 0).toString(36)
 }
 
-const choiceAt = (story, index) => {
+/*
+ * The retired choice tables, kept ONLY as legacy knowledge: they validate
+ * a choice recorded before retirement (snapshots, the read-time repair of
+ * legacy decision scenes) and nothing else.  No generation path reads
+ * them — `buildChapter` mints `choice: null` for every chapter, in every
+ * mode, from now on.
+ */
+const legacyChoiceAt = (story, index) => {
   const type = decisionTypeAt(index)
   if (!type) return null
   const config = story.config || {}
@@ -1204,36 +1218,34 @@ const choiceAt = (story, index) => {
 }
 
 // Local storage is user-editable, so a stale or hand-written choice must not
-// steer the narrative as if it were a real branch.  The UI also validates this
-// value, but keeping the engine defensive prevents contaminated chapter text.
+// be treated as a real recorded branch even in legacy views.  This validates
+// a PRE-RETIREMENT recording against the legacy tables; it is used only by
+// snapshots and the legacy prose repair — generation never consults it, so
+// a stored choice can no longer steer or gate any new chapter.
 const validChoiceAt = (story, index) => {
   const candidate = story?.choices?.[index]
   if (typeof candidate !== 'string') return null
-  const choice = choiceAt(story, index)
+  const choice = legacyChoiceAt(story, index)
   return choice?.options?.some((option) => option.id === candidate) ? candidate : null
 }
 
-// The most recent recorded decision of a type ('first' | 'second') strictly
-// before `index`: the echo source for later chapters in every length mode.
-const latestDecision = (story, index, type) => {
-  for (let at = index - 1; at >= 0; at -= 1) {
-    if (decisionTypeAt(at) !== type) continue
-    const choiceId = validChoiceAt(story, at)
-    if (!choiceId) continue
-    const option = choiceAt(story, at)?.options.find((item) => item.id === choiceId)
-    if (option) return { at, choiceId, option }
-  }
-  return null
-}
+// Interventions that have already landed strictly before `index`: the echo
+// source for later chapters in every length mode (what decisions used to
+// feed before they retired). Only applied entries count — a queued nudge
+// has not touched the world yet.
+const priorInterventions = (story, index) =>
+  interventionsOf(story)
+    .filter((entry) => entry.status === 'applied' && entry.targetIndex < index)
+    .sort((a, b) => a.targetIndex - b.targetIndex)
 
 /*
  * Chapters past the first six (season acts 2–4, long-line arcs) cannot replay
  * the base scene table — the reader would meet the same scene three more
  * times. Instead each world carries four act motifs, and the six beat
  * positions are re-skinned per act: same dramatic skeleton, new surface,
- * decisions echoed from the LATEST choice of each type rather than the
- * first act's. The tests lock this: scenes at chapters 7/13/25 differ from
- * each other and from every base scene.
+ * earlier interventions echoed rather than replayed. The tests lock this:
+ * scenes at chapters 7/13/25 differ from each other and from every base
+ * scene.
  */
 const ACT_MOTIFS = {
   mist: ['雾季更替', '外港来船', '钟声改点', '退潮见底'],
@@ -1245,36 +1257,22 @@ const ACT_MOTIFS = {
   custom: ['旧设定松动', '新规则试行', '边界之外', '世界回声'],
 }
 
-const ECHO_LINES = {
-  open: '上一次的选择还在发烫：TA选择了立刻回应，线索因此一直没有断。',
-  wait: '上一次的选择还在发烫：TA选择了先按下不动，真相绕了远路，却也避开了正面的价码。',
-  join: '并肩走过的那一步，这一幕还在发烫。',
-  guard: '保持距离的那一次观察，这一幕还在发烫。',
-  cross: '穿过边界的那一步，这一幕还在发烫：风险是TA自己选的。',
-  return: '回到熟悉地方的那一步，这一幕还在发烫：退路还在，旧关系也还在。',
-  bridge: '让规则互相翻译的那一次，这一幕还在发烫。',
-  separate: '保留各自边界的那一次，这一幕还在发烫。',
-}
-
 const variationSceneFor = (story, genre, index, ctx) => {
   const structure = structureFor(story, index)
   const motifs = ACT_MOTIFS[genre.id] || ACT_MOTIFS.custom
   const motif = motifs[structure.unitIndex % motifs.length]
   const unitWord = structure.mode === 'long' ? '弧' : '幕'
-  const first = latestDecision(story, index, 'first')
-  const second = latestDecision(story, index, 'second')
-  const echoOf = (decision) => decision
-    ? ECHO_LINES[decision.choiceId] || `“${decision.option.label}”的决定留下的回声，这一${unitWord}还在发烫。`
+  const landed = priorInterventions(story, index)
+  const echo = landed.length
+    ? `那股无名的力量在第 ${landed[landed.length - 1].targetIndex + 1} 章留下的痕迹，这一${unitWord}还在发烫。`
     : null
-  const echoFirst = echoOf(first)
-  const echoSecond = echoOf(second)
   const { name, ability, friend, destination, world } = ctx
   const positions = [
     [`${world}进入${motif}的时节，空气先一步变了味道。`, `${name}在${destination}重新站稳脚跟——上一${unitWord}的账还没算完，新的局势已经压到眼前。`, `这一${unitWord}里，“${ability}”的回声比从前更响，也更贵。`],
     [`新的信号在${motif}里送到${name}手边，比上一${unitWord}更急，也更不容拒绝。`, '信号停在掌心，封口下有一点微光，安静地等着一个回答。', `留给${name}的时间，只剩下一次呼吸。`],
-    [...(echoFirst ? [echoFirst] : []), `${name}循着新线索抵达${destination}的另一侧，那里和上一${unitWord}隔着一整套新规矩。`, `${friend}带来一条上一${unitWord}没人敢说的消息：局势的价码，已经重标过了。`],
+    [...(echo ? [echo] : []), `${name}循着新线索抵达${destination}的另一侧，那里和上一${unitWord}隔着一整套新规矩。`, `${friend}带来一条上一${unitWord}没人敢说的消息：局势的价码，已经重标过了。`],
     [`${motif}把旧秩序推到${name}面前，价码比上一${unitWord}抬高一格。`, '两条路都摆在面前，一条回头，一条向前；没有人先替TA开口。', '真正的对手还没有露面，只先送来了一句写在价目表上的话。'],
-    [...(echoSecond ? [echoSecond] : []), `${name}把这一${unitWord}攒下的筹码一次押上，局势当场翻面。`, `${destination}方向传来回应——比预想的更快，也更近。`],
+    [`${name}把这一${unitWord}攒下的筹码一次押上，局势当场翻面。`, `${destination}方向传来回应——比预想的更快，也更近。`],
     [`${motif}落幕，这一${unitWord}的账当场结清：名次、代价与新到手的筹码，一样不少。`, `${name}站稳了新的一格，${world}的标尺为TA重新标了一次价。`, `下一${unitWord}的门已经开了一条缝，缝里透出的光，和这一${unitWord}的结尾完全不同。`],
   ]
   return positions[structure.beatPosition]
@@ -1293,8 +1291,6 @@ const sceneFor = (story, index) => {
   const friend = cleanText(config.friend, '') || '一个尚未现身的同行者'
   const destination = cleanText(config.destination, '') || genre.location
   const lived = realityDetail(config)
-  const previousOne = validChoiceAt(story, 1)
-  const previousThree = validChoiceAt(story, 3)
 
   if (story.kind === 'merged') {
     const protagonists = Array.isArray(config.protagonists) ? config.protagonists : []
@@ -1302,18 +1298,12 @@ const sceneFor = (story, index) => {
     const second = protagonistName(protagonists[1], '旅者乙')
     const bond = config.merge?.bond === 'rivals' ? '彼此提防' : '暂时结盟'
     const lead = config.merge?.lead === 'b' ? second : first
-    const branchOne = previousOne
-      ? previousOne === 'guard' ? '他们先在各自的边界上停下，交换了三条不能触碰的规则。' : '他们并肩踏入合流点，脚下同时亮起两种不同颜色的光。'
-      : null
-    const branchThree = previousThree
-      ? previousThree === 'separate' ? '两套规则保持距离，反而在缝隙里找到不伤害彼此的节奏。' : '规则互相翻译，陌生的词语第一次拥有了共同的意思。'
-      : null
     const mergedScenes = [
       [`${first}与${second}的世界在${genre.location}相撞。`, `${lead}先听见另一条世界线的回声；${bond}的两个人，必须在同一秒抬头。`],
       [`合流信号逼近，${first}和${second}面对同一扇没有门的门。`, '门内的光停在两个人脚边，既没有催促，也没有替他们迈出第一步。', `他们各自的能力都被要求说出真实名字。`],
-      [...(branchOne ? [branchOne] : []), `共同的天空短暂地恢复颜色。`, `${first}和${second}把两种记忆叠在一起，发现敌人来自规则之外。`],
+      [`共同的天空短暂地恢复颜色。`, `${first}和${second}把两种记忆叠在一起，发现敌人来自规则之外。`],
       [`两套世界规则同时发出警报。`, '两种声音争相占据天空，尚未有人决定让它们靠近，还是各自退回边界。', `${first}把选择权递给${second}，而${second}没有立即回答。`],
-      [...(branchThree ? [branchThree] : []), `合流点开始坍缩，所有未说出口的话变成可见的路标。`, `他们决定把最重要的秘密留给彼此，而不是留给任何一条旧世界线。`],
+      [`合流点开始坍缩，所有未说出口的话变成可见的路标。`, `他们决定把最重要的秘密留给彼此，而不是留给任何一条旧世界线。`],
       [`新的宇宙终于找到共同的呼吸。`, `${first}与${second}站在同一片晨光里：边界没有消失，只是终于学会了相遇。`],
     ]
     return mergedScenes[index]
@@ -1339,57 +1329,57 @@ const sceneFor = (story, index) => {
     mist: [
       [`${genre.world}的潮汐钟在${genre.location}敲响第七次。`, `${name}作为${identityWithOrigin}站在雾海边，手里握着“${ability}”的微弱回声。`, livedLine],
       [`雾里漂来一封没有落款的信，${name}听见潮水叫出自己的名字。`, '信纸仍然合拢，封口下有一点蓝火，安静地等着一个回答。', '钟声催着潮水倒退，留给TA的时间只剩下一次呼吸。'],
-      [...(previousOne ? [previousOne === 'wait' ? 'TA把信压在掌心，没有让钟声替自己做决定。直到找到岸边的旧灯，才借它的光辨清信上的潮痕。' : 'TA让蓝火沿着指尖亮起，信纸背面浮出一条新的航线。'] : []), `${name}沿着倒流的潮痕抵达${destination}。`, `一位陌生的守钟人说，只有真正记得自己的人才能穿过雾门。`, `TA想起${friend}曾经说过的一句话：不要把每个答案都交给钟声。`],
+      [`${name}沿着倒流的潮痕抵达${destination}。`, `一位陌生的守钟人说，只有真正记得自己的人才能穿过雾门。`, `TA想起${friend}曾经说过的一句话：不要把每个答案都交给钟声。`],
       [`钟塔内部没有楼梯，只有一面把记忆折成房间的墙。`, '门缝里透出陌生的光，身后的旧坐标仍然清晰；两条路都在等待。', `真正的敌人不是潮水，而是被人删掉的那一段历史。`],
-      [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}留下的旧坐标，发现那里藏着一盏仍然温热的灯。` : `TA用“${ability}”缝合裂开的门缝，听见雾海另一端有人回应。`] : []), `风暴把港镇推向同一条轨道，${name}必须决定要保护哪一种记忆。`, `TA把身份、能力与一路收集的回声放在同一架天平上。`, `${destination}的灯亮了三次，像是在等待一个不再犹豫的回答。`],
+      [`风暴把港镇推向同一条轨道，${name}必须决定要保护哪一种记忆。`, `TA把身份、能力与一路收集的回声放在同一架天平上。`, `${destination}的灯亮了三次，像是在等待一个不再犹豫的回答。`],
       [`潮汐终于落下，露出一座从未出现在地图上的岛。`, `${name}没有替世界写死结局；TA只留下一个可以被后来者继续选择的名字。`, `沉潮港记住了这次选择，下一条世界线由此开始。`],
     ],
     cultivation: [
       [`${genre.world}的灵脉在${genre.location}裂开一道细缝。`, `${name}这个${identityWithOrigin}被召到山门前，掌心藏着“${ability}”最后一簇火。`, livedLine],
       [`天门落下一枚无主的火印，${name}必须决定要不要接住。`, '火印悬在掌心上方，温度还没有穿透皮肤，旧符也仍在袖中。', `山风把路吹向${destination}，也吹来仙门不愿承认的真相。`],
-      [...(previousOne ? [previousOne === 'wait' ? 'TA先把火印封进旧符，去寻找能证明它来历的证人。' : 'TA将火印按进心口，听见云海之上有人喊出自己的名字。'] : []), `${name}在${destination}遇见一座倒悬的藏经塔。`, `塔中没有经文，只有${friend}留下的三句批注，字迹仍带着未熄的温度。`, `修行不是把自己变得无坚不摧，而是知道哪一处裂缝必须被保护。`],
+      [`${name}在${destination}遇见一座倒悬的藏经塔。`, `塔中没有经文，只有${friend}留下的三句批注，字迹仍带着未熄的温度。`, `修行不是把自己变得无坚不摧，而是知道哪一处裂缝必须被保护。`],
       [`灵火开始吞噬旧法阵，所有长老都要求${name}交出“${ability}”。`, '旧山门与燃烧的法阵各占据一侧，谁也没有得到TA最后的答复。', `天上第一次传来没有人说过的第三种声音。`],
-      [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}的门下，把证据放在众人面前，先守住可以回来的路。` : `TA以“${ability}”引火入脉，让一条凡人也能走的路从废墟里升起。`] : []), `天门向下开启，凡人与仙门的名字同时被写进天榜。`, `${name}在飞升前回望${genre.location}，发现真正的火种从来不属于某一个宗门。`, `选择留下的代价，比选择登天更需要勇气。`],
+      [`天门向下开启，凡人与仙门的名字同时被写进天榜。`, `${name}在飞升前回望${genre.location}，发现真正的火种从来不属于某一个宗门。`, `选择留下的代价，比选择登天更需要勇气。`],
       [`火种没有熄灭，它只是从一双手传到了更多双手。`, `${name}让自己的名字成为一道可以被质疑的注脚，而不是新的戒律。`, `青岚宗的夜空里，第一颗不属于仙人的星星亮了。`],
     ],
     neon: [
       [`${genre.world}的雨水把${genre.location}刷成深蓝。`, `${name}作为${identityWithOrigin}接入一份名为“${ability}”的异常人格备份。`, livedLine],
       [`备份在${name}耳边说出一句只有TA自己知道的话。`, '读取心跳的请求停在视野中央，确认键与断开键同时闪烁。', `追踪信号指向${destination}，那里的雨没有落地。`],
-      [...(previousOne ? [previousOne === 'wait' ? 'TA先切断外网，把那句声音写进一块不会联网的旧芯片。' : 'TA允许备份读取一秒钟的心跳，城市的广告牌同时暗了下来。'] : []), `${name}穿过${destination}的蓝雨，遇见${friend}的匿名头像。`, `对方说记忆不是证据，选择才是；然后把一把不存在的钥匙推过来。`, `钥匙打开的不是门，而是一个仍在运行的童年。`],
+      [`${name}穿过${destination}的蓝雨，遇见${friend}的匿名头像。`, `对方说记忆不是证据，选择才是；然后把一把不存在的钥匙推过来。`, `钥匙打开的不是门，而是一个仍在运行的童年。`],
       [`城市主机要求${name}删除“${ability}”以恢复秩序。`, '两份冲突的人格等待最后授权，安全屋的地址依然留在离线地图里。', '整座城市的屏幕停在同一秒，等一个尚未落下的指令。'],
-      [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}留下的安全屋，先保存一份可以撤回的证据。` : `TA用“${ability}”把两份冲突人格暂时缝在一起，让系统看见自己的盲点。`] : []), `系统倒计时归零，${name}站在没有摄像头的十字路口。`, `TA发现真正需要被备份的不是记忆，而是每个人仍能改变的权利。`, `${destination}传来一段无主的旋律，像在邀请城市醒来。`],
+      [`系统倒计时归零，${name}站在没有摄像头的十字路口。`, `TA发现真正需要被备份的不是记忆，而是每个人仍能改变的权利。`, `${destination}传来一段无主的旋律，像在邀请城市醒来。`],
       [`雨停了三十秒，足够一座城重新命名自己。`, `${name}没有删除那份人格，只给它留下了可以说“不”的边界。`, `蓝雨再次落下时，故事已经不再属于某一个数据库。`],
     ],
     city: [
       [`${genre.world}的时钟永远停在凌晨四点。`, `${name}作为${identityWithOrigin}在${genre.location}醒来，口袋里有一张写着“${ability}”的车票。`, livedLine],
       [`车票背面出现一条只在夜里发光的留言。`, '一班没有终点的电车停在站台前，车门敞着，还没有人上车。', `站牌上的${destination}忽明忽暗，像一段没有发出的邀请。`],
-      [...(previousOne ? [previousOne === 'wait' ? 'TA先把留言留在站牌下，决定查清是谁把自己的名字写了上去。' : 'TA沿着留言登上一班没有终点的电车，听见陌生人叫出自己的名字。'] : []), `${name}在${destination}遇见${friend}，对方说自己已经等了很多年。`, `他们交换了一段不完整的记忆，发现整座城市都在替某个人保守秘密。`, `凌晨四点不是终点，而是所有错过的人短暂重逢的入口。`],
+      [`${name}在${destination}遇见${friend}，对方说自己已经等了很多年。`, `他们交换了一段不完整的记忆，发现整座城市都在替某个人保守秘密。`, `凌晨四点不是终点，而是所有错过的人短暂重逢的入口。`],
       [`城市广播要求${name}放弃“${ability}”换取一条回家的路。`, '熟悉的街角就在身后，前方熄灭的路灯则等着另一种答案。', '广播重复了最后一个问题，城市还没有等到回答。'],
-      [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}熟悉的街角，先把能回来的门留给所有人。` : `TA用“${ability}”让一条旧街重新亮起，路牌开始显示真正的名字。`] : []), `天快亮了，${name}必须决定哪一段夜晚值得被留下。`, `TA把选择写进${genre.location}的公共墙面，允许下一个路人改写最后一行。`, `${destination}的门没有关，像是在给未来预留座位。`],
+      [`天快亮了，${name}必须决定哪一段夜晚值得被留下。`, `TA把选择写进${genre.location}的公共墙面，允许下一个路人改写最后一行。`, `${destination}的门没有关，像是在给未来预留座位。`],
       [`凌晨四点终于过去，城市没有忘记那些没能赶上的人。`, `${name}带着一张空白车票走向晨光，知道重逢不是结局而是新的选择。`, `长宁街第一次拥有了属于所有人的早晨。`],
     ],
     court: [
       [`${genre.world}的册封礼刚过三日，宫里的钟比往日慢了半拍。`, `${name}这个${identityWithOrigin}第一次走进${genre.location}，掌事姑姑把一册写着“${ability}”的旧档推到TA面前，只说了一句：看完就烧。`, livedLine],
       [`旧档里夹着一封没有寄出的家书，字迹在半途换了人。`, '家书压在妆奁最底层，封口完好，收信人的名字却被人用朱砂划去。', `姑姑说，${destination}那边的席位已经空了三年，只等一个人坐回去。`],
-      [...(previousOne ? [previousOne === 'wait' ? 'TA没有立刻烧档，先把家书的缺页拓了下来，去问经手过这批旧档的人。' : 'TA借着更漏的光读完最后一行，窗外恰好传来升位的钟响——有人欢喜，有人今夜睡不着。'] : []), `${name}在${destination}见到${friend}，对方只问了一句：你想赢，还是想活？`, `两个人隔着一扇屏风谈了一夜，把各自知道的半张棋盘拼到了一起。`, `位分是给外人看的，真正的命数藏在谁先沉不住气里。`],
+      [`${name}在${destination}见到${friend}，对方只问了一句：你想赢，还是想活？`, `两个人隔着一扇屏风谈了一夜，把各自知道的半张棋盘拼到了一起。`, `位分是给外人看的，真正的命数藏在谁先沉不住气里。`],
       [`旧档的来历被翻了出来，太后与陛下同时召见${name}。`, '两道旨意摆在案上，一道给恩宠，一道给出路；殿里的香还没燃尽。', `所有人都看着${name}的手会先伸向哪一道。`],
-      [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}的旧居，把拓下的缺页放在众人面前，先保住能作证的人。` : `TA用“${ability}”换了一次当众对质的机会，让说谎的人自己走完最后一句谎话。`] : []), `王朝的账算到了最后一页，${name}发现最初的那封家书，原是写给自己的。`, `TA把选择权交还给被划去名字的那个人，而不是替TA原谅谁。`, `${destination}的灯次第亮起，像一条终于能走完的路。`],
+      [`王朝的账算到了最后一页，${name}发现最初的那封家书，原是写给自己的。`, `TA把选择权交还给被划去名字的那个人，而不是替TA原谅谁。`, `${destination}的灯次第亮起，像一条终于能走完的路。`],
       [`朱墙依旧，天光落进来时却不再刺眼。`, `${name}没有赢得所有，只赢回了说“不”的资格——这比位分更难，也更长久。`, `宫墙深处，从此多了一盏为后来者留的灯。`],
     ],
     frontier: [
       [`${genre.location}的引力锚第三次失稳，整座${genre.world}的灯都暗了一瞬。`, `${name}这个${identityWithOrigin}攥着最后一张配给卡，听见广播把“${ability}”列为未登记变量。`, livedLine],
       [`废弃货舱里传出一串重复的求救码，落款是三十年前失踪的殖民船。`, '求救码停在最后一位，没有解完，也没有消失，像一句没说完的话。', `导航把航线标向${destination}——那片星域在所有官方图上都是空白。`],
-      [...(previousOne ? [previousOne === 'wait' ? 'TA先把求救码录进离线芯片，去找见过那艘船的老领航员对口供。' : 'TA让“${ability}”接管三秒导航，整条星环的灯顺次暗了一遍，又顺次亮回来。'] : []), `${name}在${destination}遇见${friend}的应急人格备份，对方说自己等这一班船等了三十年。`, `备份交出一张手绘星图：官方版本删掉的航线，全在上面。`, `在边疆，活下去的第一课是承认旧地图是错的。`],
+      [`${name}在${destination}遇见${friend}的应急人格备份，对方说自己等这一班船等了三十年。`, `备份交出一张手绘星图：官方版本删掉的航线，全在上面。`, `在边疆，活下去的第一课是承认旧地图是错的。`],
       [`星环议会要求${name}交出“${ability}”的登记权，换全船队的燃料配额。`, '配给表已经发到每个人手里，倒计时挂在舱门上方；没有人先开口。', `真正的敌人不在废土里，在那张永远算不平的账上。`],
-      [...(previousThree ? [previousThree === 'return' ? `TA回到${friend}的备份舱，先把星图抄了三份，藏进三艘不同的船。` : `TA用“${ability}”重写了前哨站的配给算法，让最底层的人第一次出现在名单上。`] : []), `废土的信号塔全部转向同一片空白星域，${name}必须决定舰队是启程还是留下。`, `TA把启程的决定交给投票，而不是交给配给表。`, `${destination}的方向升起一颗不在任何图上的星。`],
+      [`废土的信号塔全部转向同一片空白星域，${name}必须决定舰队是启程还是留下。`, `TA把启程的决定交给投票，而不是交给配给表。`, `${destination}的方向升起一颗不在任何图上的星。`],
       [`星环以远，第一艘自愿启程的船点火成功。`, `${name}没有成为新的领航神话，只在航行日志第一页写下：规则可以重学，人不能重来。`, `边疆从此有了自己的第一页历史。`],
     ],
     custom: [
       [`${customWorld}在${name}睁开眼时显形——它不属于任何一张现成的地图。`, `${name}作为${identityWithOrigin}站在故事开始的地方，手里握着“${ability}”的第一缕回声。`, customSettingLine],
       [`这个世界的第一条规则在${name}面前运转起来，比设定里写的更不讲道理。`, '一件小事被规则放大，四周安静下来，像在等TA先迈出一步。', `而${friend}——如果这个世界里真有这个人——应该已经听说了这件事。`],
-      [...(previousOne ? [previousOne === 'wait' ? 'TA没有立刻顺着规则走，先把异常记下来，去找这个世界真正的裂缝。' : 'TA顺着规则迈出第一步，世界随之改写了下一行设定。'] : []), `${name}循着回声往前走，发现设定里没写到的东西，比写到的更多。`, `一位同行者说，这个世界只对亲手写下它的人留了一扇后门。`],
+      [`${name}循着回声往前走，发现设定里没写到的东西，比写到的更多。`, `一位同行者说，这个世界只对亲手写下它的人留了一扇后门。`],
       [`旧秩序找上了${name}，要求TA交出“${ability}”，理由写在设定之外的空白处。`, '两条路都摆在面前，一条回头，一条改写；没有人先替TA开口。', `真正的对手还没有露面，只先送来了一句话。`],
-      [...(previousThree ? [previousThree === 'return' ? `TA回到最初醒来的地方，先把能回来的门留给所有人。` : `TA用“${ability}”撬开设定的边界，让一条没人走过的路从空白里升起。`] : []), `${customWorld}开始偏离最初的设定，${name}必须决定：修正它，还是让它长成自己的样子。`, `TA把身份、能力与一路收集的回声放在同一架天平上。`],
+      [`${customWorld}开始偏离最初的设定，${name}必须决定：修正它，还是让它长成自己的样子。`, `TA把身份、能力与一路收集的回声放在同一架天平上。`],
       [`世界走到了设定没有覆盖的地方。`, `${name}没有替它写死结局；TA只留下一个可以被后来者继续改写的名字。`, `${customWorld}从这里开始，拥有了自己的第二页。`],
     ],
   }
@@ -1462,31 +1452,32 @@ export function buildChapter(story, index) {
   const name = story.kind === 'merged'
     ? (story.config.protagonists || []).map((item, itemIndex) => protagonistName(item, `旅者${itemIndex === 0 ? '甲' : '乙'}`)).join('与')
     : protagonistName(story.config)
-  const firstLatest = latestDecision(story, index, 'first')
-  const secondLatest = latestDecision(story, index, 'second')
-  const branchLabel = firstLatest ? `“${firstLatest.option.label}”的决定仍在回响，${firstLatest.option.consequence}` : ''
-  const lateBranchLabel = secondLatest ? `“${secondLatest.option.label}”的决定改变了前路，${secondLatest.option.consequence}` : ''
   const paragraphs = [...scene]
-  if (branchLabel) paragraphs.push(branchLabel)
-  if (lateBranchLabel) paragraphs.push(lateBranchLabel)
-  const choice = choiceAt(story, index)
+  // 介入落地： interventions aimed at this chapter are woven in as an
+  // external-force event — a paragraph right after the opening that no
+  // character can explain, an event on the ledger, and the marker the
+  // reader shows at the chapter head. The model path receives the same
+  // entries through its brief and stamps the same marker via this skeleton.
+  const landedHere = interventionsForChapter(story, index)
+  if (landedHere.length) {
+    const nudges = landedHere.map((entry) => entry.text.replace(/[。；;]+$/, '')).join('；')
+    paragraphs.splice(1, 0, `就在这时，一件不合常理的小事发生了：${nudges}。没有人能说清它从何而来，${name}只觉得风向在这一刻变了——像有一股无名的力量，刚刚伸手拨动过这个世界。`)
+  }
   const spawn = story.kind === 'merged' ? null : resolveStartPoint(genre, story.config)
   const summary = structure.isFinale
     ? `${name}抵达终局，世界为新的选择留出位置。`
     : index === 0 && spawn
       ? `${name}在${spawn.name}醒来，故事的第一幕从这里开始。`
       : index < 6
-        ? `${name}在${worldNameOf(genre, story.config)}推进到第${index + 1}幕${choice ? '，命运节点即将出现' : '。'}`
-        : `${name}在${worldNameOf(genre, story.config)}推进到第${index + 1}章${choice ? '，命运节点即将出现' : '。'}`
+        ? `${name}在${worldNameOf(genre, story.config)}推进到第${index + 1}幕。`
+        : `${name}在${worldNameOf(genre, story.config)}推进到第${index + 1}章。`
   // 章节台账 (deterministic local extraction; the model path supplies its
-  // own): the chapter's headline event, the consequence event when this
-  // chapter directly follows a decision, and a structure event at upgrade
-  // points. Foreshadowing points at the next outline entry that is still
-  // unresolved, plus a warning when the next chapter is a decision gate.
+  // own): the chapter's headline event, one event per intervention that
+  // landed here, and a structure event at upgrade points. Foreshadowing
+  // points at the next outline entry that is still unresolved.
   const events = [summary]
-  const justDecided = [firstLatest, secondLatest].find((decision) => decision && decision.at === index - 1)
-  if (justDecided) {
-    events.push(`承接第 ${justDecided.at + 1} 章选择：“${justDecided.option.label}”——${justDecided.option.consequence}`)
+  for (const entry of landedHere) {
+    events.push(`介入事件：“${entry.text}”——无名外力搅动世界线，已在本章落地`)
   }
   if (structure.isUpgradePoint) {
     events.push(`结构节点：${structure.upgradeKind}——本${structure.unitLabel}的标尺与代价在此结算`)
@@ -1496,19 +1487,20 @@ export function buildChapter(story, index) {
     const outline = Array.isArray(story.worldBible?.outline) ? story.worldBible.outline : []
     const nextOutline = outline[outlineIndexFor(index + 1, story)]
     if (nextOutline) foreshadowing.push(`未解：${nextOutline}`)
-    if (decisionTypeAt(index + 1)) {
-      foreshadowing.push(`命运节点临近：第 ${index + 2} 章的选择将决定这一${structure.unitLabel}的走向`)
-    }
   }
   return {
     id: `${story.id}:chapter:${index}:r${story.revision}`,
     index,
     title,
     paragraphs,
-    choice,
+    // Choices are retired: every chapter, at every position, carries none.
+    choice: null,
     summary,
     events,
     foreshadowing,
+    ...(landedHere.length
+      ? { interventions: landedHere.map((entry) => ({ text: entry.text, kind: entry.kind })) }
+      : {}),
   }
 }
 
@@ -1530,6 +1522,185 @@ export function storyLedgerFor(story, maxChapterIndex = Number.POSITIVE_INFINITY
     }
   }
   return { events, foreshadowing }
+}
+
+/*
+ * 介入 (intervention): the reader's steering hand after choices retired.
+ * From inside the reader, the owner injects one nudge — free text, a preset
+ * chip, or a roll of fate — and the world treats it as an external,
+ * mysterious force stirring the worldline.  The rules are hard:
+ *
+ * - An intervention targets exactly ONE chapter: the next UNREAD chapter
+ *   (the reader's current position + 1).  Current and past chapters are
+ *   immutable — no engine path rewrites them; `retractChapter` /
+ *   `replaceChapter` refuse any index at or behind the reading position.
+ * - If that chapter does not exist yet, the intervention waits in the
+ *   story's queue (`status: 'queued'`) and folds into its generation brief.
+ *   If it already exists (pre-generated), the client runs a revision pass
+ *   that regenerates the same slot with the intervention woven in.
+ * - Several interventions queued for the same chapter combine into that
+ *   one pass.  Accepting (or replacing) the chapter flips its entries to
+ *   `status: 'applied'`; the chapter itself carries the marker — the entry
+ *   texts — so the owner can see which chapter fate touched, and the
+ *   ledger records the event for every later chapter.
+ * - The queue is part of the story record: it validates, persists, and
+ *   syncs through the cloud library like everything else, and the chapter
+ *   key mixes the queue in, so a queued intervention invalidates any
+ *   pre-generated copy of its target chapter.
+ */
+export const INTERVENTION_TEXT_MAX = 120
+
+export const INTERVENTION_CHIPS = [
+  { id: 'fortune', label: '机缘将至', text: '一桩意想不到的机缘正向主角靠近，近得几乎能伸手碰到' },
+  { id: 'crisis', label: '危机逼近', text: '一场危机正从暗处向主角逼近，而主角对此一无所知' },
+  { id: 'return', label: '故人将至', text: '一位故人即将出现在主角面前，带着只有他们才知道的旧事' },
+  { id: 'omen', label: '天象异变', text: '天象毫无征兆地变了，异兆笼罩这个世界，人心跟着浮动' },
+  { id: 'fate', label: '听天命', text: '' },
+]
+
+// The pool 听天命 draws from: generic nudges of fate, small enough to bend
+// any world without breaking it. The pick is a hash of story id + queue
+// length, so the client, the server and a later sync all resolve the same
+// text for the same roll — the roll is fate, but it is the same fate
+// everywhere.
+const INTERVENTION_FATE_POOL = [
+  '一阵无名的风改变了一件小事的走向，而没有人察觉',
+  '一个陌生人即将出现，带着能改变局势的消息',
+  '一件被所有人忽略的旧物，即将被重新看见',
+  '天气毫无征兆地变了，连带着人心也变了',
+  '主角错过的一件小事，将以意想不到的方式回到眼前',
+  '某个远方的人做了一个决定，余波正向主角这边传来',
+]
+
+export const interventionChipById = (id) => INTERVENTION_CHIPS.find((chip) => chip.id === id) || null
+
+const interventionsOf = (story) => (Array.isArray(story?.interventions) ? story.interventions : [])
+  .filter((entry) => entry && Number.isInteger(entry.targetIndex) && typeof entry.text === 'string')
+
+export const interventionsForChapter = (story, index) =>
+  interventionsOf(story).filter((entry) => entry.targetIndex === index)
+
+export const queuedInterventionsFor = (story, index) =>
+  interventionsForChapter(story, index).filter((entry) => entry.status !== 'applied')
+
+// The one chapter an intervention may touch: the next unread one. A
+// finished line (finite total reached, or an endless line its owner has
+// finished by hand) has no next chapter and returns null — the reader
+// explains instead of queueing into the void.
+export const interventionTargetIndex = (story, readerIndex) => {
+  if (!story || typeof story !== 'object') return null
+  const position = Number.isInteger(readerIndex) ? readerIndex : Number.isInteger(story.readerIndex) ? story.readerIndex : 0
+  const target = position + 1
+  // totalChaptersFor stays infinite for an endless line even after its
+  // owner finishes it by hand; for targeting, a finished line's total is
+  // the chapters it actually reached.
+  const total = isManuallyFinished(story) ? (story.chapters?.length || 0) : totalChaptersFor(story)
+  if (Number.isFinite(total) && target >= total) return null
+  // The nudge can only reach the reading frontier: the prepared chapter
+  // (the last one written) or the next unwritten one. A chapter behind
+  // the frontier is settled history — later chapters already stand on
+  // it — so a reader who has wandered back cannot aim at it either.
+  const written = story.chapters?.length || 0
+  if (written > 0 && target < written - 1) return null
+  return target
+}
+
+const resolveInterventionText = (story, { text, kind, chipId }) => {
+  if (kind === 'chip' && chipId && chipId !== 'fate') {
+    const chip = interventionChipById(chipId)
+    if (chip) return chip.text
+  }
+  if (kind === 'chip' || kind === 'random') {
+    const seed = hash(`${story.id}|fate|${interventionsOf(story).length}`)
+    return INTERVENTION_FATE_POOL[parseInt(seed, 36) % INTERVENTION_FATE_POOL.length]
+  }
+  return cleanBounded(text, INTERVENTION_TEXT_MAX)
+}
+
+// Queue one intervention against the story's next unread chapter. The
+// caller supplies the reader's live position; the entry freezes its target
+// at queue time, so later reading never retargets an older nudge onto a
+// chapter it was not aimed at.
+export function queueIntervention(story, { text = '', kind = 'text', chipId = '', readerIndex } = {}) {
+  validateStory(story)
+  if (story.readOnly === true) return story
+  const targetIndex = interventionTargetIndex(story, readerIndex)
+  if (targetIndex === null) {
+    throw new RangeError(isStoryComplete(story)
+      ? '这条故事线已经走完，没有下一章可以介入'
+      : '介入只能落在阅读前沿的那一章，先读到最新章节再伸手')
+  }
+  const resolvedKind = kind === 'chip' || kind === 'random' ? kind : 'text'
+  const resolvedText = resolveInterventionText(story, { text, kind: resolvedKind, chipId })
+  if (!resolvedText) throw new RangeError('先写下你想让命运推动的事，或选一个现成的方向')
+  const entry = {
+    id: makeId('iv'),
+    targetIndex,
+    text: resolvedText,
+    kind: resolvedKind,
+    ...(resolvedKind === 'chip' && chipId ? { chipId } : {}),
+    createdAt: now(),
+    status: 'queued',
+  }
+  const next = clone(story)
+  next.interventions = [...interventionsOf(story).map((item) => ({ ...item })), entry]
+  // A content mutation like the branch rewrites before it: the revision
+  // bump rotates the target chapter's key (with the signature) and makes
+  // reactive readers re-run their preparation effect.
+  next.revision = (story.revision || 0) + 1
+  next.updatedAt = now()
+  return next
+}
+
+// The chapter-key signature of a chapter's intervention queue: queueing a
+// nudge for a chapter changes that chapter's key, which is what makes a
+// pre-generated copy of it stale and routes the client into the revision
+// pass instead of silently accepting the old text.
+export const interventionSignatureFor = (story, index) =>
+  interventionsForChapter(story, index).map((entry) => `${entry.id}:${entry.text}`).join('|')
+
+const markInterventionsApplied = (next, index) => {
+  if (!Array.isArray(next.interventions)) return
+  next.interventions = next.interventions.map((entry) =>
+    entry && entry.targetIndex === index && entry.status !== 'applied' ? { ...entry, status: 'applied' } : entry)
+}
+
+// The local-engine revision: drop the pre-generated copy of the target
+// chapter so the reading window rebuilds it with the queued interventions
+// woven in. Only the LAST chapter may be retracted, and never one at or
+// behind the reading position — what has been read is history.
+export function retractChapter(story, index) {
+  validateStory(story)
+  if (story.readOnly === true) return story
+  if (!Number.isInteger(index) || index !== story.chapters.length - 1) return story
+  const position = Number.isInteger(story.readerIndex) ? story.readerIndex : 0
+  if (index <= position) return story
+  const next = clone(story)
+  next.chapters = next.chapters.slice(0, index)
+  next.chapterIndex = Math.min(index, totalChaptersFor(next) - 1)
+  next.updatedAt = now()
+  return next
+}
+
+// The model-path revision: replace the pre-generated target chapter with
+// its regenerated version, same slot, same id. The replacement must carry
+// the key the current queue implies; the chapter it replaces and every
+// chapter before it are otherwise untouched.
+export function replaceChapter(story, chapter, key) {
+  validateStory(story)
+  if (story.readOnly === true) return story
+  if (!chapter || !Number.isInteger(chapter.index)) return story
+  const index = chapter.index
+  if (index !== story.chapters.length - 1) return story
+  const position = Number.isInteger(story.readerIndex) ? story.readerIndex : 0
+  if (index <= position) return story
+  if (typeof key !== 'string' || key !== chapterKey(story, index)) return story
+  if (chapter.id !== `${story.id}:chapter:${index}:r${story.revision}`) return story
+  const next = clone(story)
+  next.chapters = [...story.chapters.slice(0, index).map((item) => clone(item)), clone(chapter)]
+  markInterventionsApplied(next, index)
+  next.updatedAt = now()
+  return next
 }
 
 // 开启下一季: only a finished season story can roll over. The new story
@@ -1556,9 +1727,9 @@ export function startNextSeason(story) {
 
 const ACT_LABELS = [
   '第 1 章 · 开篇',
-  '第 2 章 · 第一次选择',
+  '第 2 章 · 信号',
   '第 3 章 · 展开',
-  '第 4 章 · 第二次选择',
+  '第 4 章 · 越界',
   '第 5 章 · 转折',
   '第 6 章 · 结局',
 ]
@@ -1620,29 +1791,30 @@ export function storyBeatPlan(story, index) {
   ]
   if (lived && !merged) prerequisites.push(`现实背景：${lived}`)
 
-  const firstLatest = latestDecision(story, index, 'first')
-  const secondLatest = latestDecision(story, index, 'second')
-  const unlockedConsequences = []
-  for (const decision of [firstLatest, secondLatest]) {
-    if (!decision) continue
-    unlockedConsequences.push({
-      chapter: decision.at + 1,
-      choiceId: decision.choiceId,
-      label: decision.option.label,
-      consequence: decision.option.consequence,
-    })
-    prerequisites.push(`第 ${decision.at + 1} 章已选：“${decision.option.label}”——${decision.option.consequence}`)
+  // 已经落地的介入是长篇的既成事实：它们作为前置事实进入每一章的规划，
+  // 后续章节必须让那股外力的影响留痕，而不是当它从未发生。
+  const landedBefore = priorInterventions(story, index)
+  const unlockedInterventions = landedBefore.map((entry) => ({
+    chapter: entry.targetIndex + 1,
+    text: entry.text,
+    kind: entry.kind,
+  }))
+  for (const entry of landedBefore) {
+    prerequisites.push(`第 ${entry.targetIndex + 1} 章介入：“${entry.text}”——无名外力已搅动世界线，其影响须在后续留痕`)
+  }
+  // 本章要落地的介入（排队中）：beat plan 只报事实，落地方式由生成上下文
+  // 的 interventions 字段与系统提示共同约束（写成事件，不写旁白）。
+  const landingHere = queuedInterventionsFor(story, index)
+  for (const entry of landingHere) {
+    prerequisites.push(`本章介入：“${entry.text}”——须在本章写成真实发生的事件（巧合、异象、某人的到来或运气的转向），不得跳出故事解释`)
   }
 
-  const consequenceGround = (decision, fallback) => decision
-    ? `承接第 ${decision.at + 1} 章选择“${decision.option.label}”的结果：${decision.option.consequence}`
-    : fallback
   const mustGroundFinale = [
     `回应主线目标：${story.worldBible?.endingAnchor || '完成主线故事收尾'}`,
-    `交代此前选择带来的最终结果，完成结局`,
+    `交代此前事件与历次介入带来的最终结果，完成结局`,
   ]
   const mustGroundUnitEnd = [
-    consequenceGround(secondLatest, `承接此前选择后的局势变化`),
+    `承接此前局势变化（包括历次介入留下的影响）`,
     structure.mode === 'long'
       ? `完成本弧结算：标尺跳格、代价清账，并以弧过渡打开下一弧`
       : `完成本${structure.unitLabel}结算：标尺跳一格、代价清账，并为下一${structure.unitLabel}留下明确钩子`,
@@ -1656,20 +1828,20 @@ export function storyBeatPlan(story, index) {
     ],
     [
       `推进指向“${destination}”的线索`,
-      `交代两个选项的背景，正文停在读者做出第 ${index + 1} 章选择之前`,
+      `把第一个转折推到台前，章末以事件钩子收束（新人物出现、新消息抵达、新危机爆发或一个决定被当众抛出）`,
     ],
     [
-      consequenceGround(firstLatest, `承接此前选择后的剧情变化`),
+      `承接此前剧情变化（包括历次介入留下的影响）`,
       merged
         ? `展现双主角在合流点的配合与新冲突`
         : `在${destination}推进与${friend}相关的线索`,
     ],
     [
       `升级主要矛盾，要求${name}做出判断`,
-      `交代第二次选择两个方向的利弊，正文停在第 ${index + 1} 章选择之前`,
+      `把主要矛盾的代价与各方立场摆上台面，章末以事件钩子收束`,
     ],
     [
-      consequenceGround(secondLatest, `承接此前选择后的局势变化`),
+      `承接此前局势变化（包括历次介入留下的影响）`,
       structure.mode === 'short' ? `推进主线冲突进入结局前的关键阶段` : `推进主线冲突进入本${structure.unitLabel}的关键阶段`,
     ],
     mustGroundUnitEnd,
@@ -1677,21 +1849,25 @@ export function storyBeatPlan(story, index) {
 
   const dramaticQuestions = [
     '交代主角背景、当前处境与故事起点。',
-    '推进主线线索，给出第一次分支选择。',
-    '承接上一次选择的结果，展开新场景。',
-    '矛盾升级，给出第二次分支选择。',
-    '承接第二次选择的结果，推向高潮。',
+    '推进主线线索，把第一个转折推到台前。',
+    '承接前文的结果，展开新场景。',
+    '矛盾升级，把代价与立场逼到明处。',
+    '承接前文的局势变化，推向高潮。',
     '解决核心冲突，交代故事结局。',
   ]
 
+  // Turning-beat chapters (positions 1 and 3 of each six-block) end on an
+  // event hook instead of a decision: the rhythm that used to carry the
+  // choices now carries the hooks. Every other chapter uses the plain
+  // forward shape.
   const paragraphShape = decisionTypeAt(index) !== null
     ? [
       '承接上文场景，不重复上一章结尾原句',
       '通过具体行动与对话推进冲突',
-      '呈现两个选项的处境，在做出决定前结束本章',
+      '以事件钩子结束本章：新人物、新消息、新危机或当众抛出的决定，四者至少其一',
     ]
     : [
-      '承接当前场景或上一次选择的结果',
+      '承接当前场景或前文的结果',
       '通过具体事件与人物互动推进剧情',
       '补充与当前情节直接相关的信息',
       '自然收尾并引出下一章内容',
@@ -1709,7 +1885,7 @@ export function storyBeatPlan(story, index) {
         : dramaticQuestions[structure.beatPosition],
     prerequisites,
     mustGround: structure.isFinale ? mustGroundFinale : mustGroundByPosition[structure.beatPosition],
-    unlockedConsequences,
+    unlockedInterventions,
     toneDirective,
     paragraphShape,
     structure: {
@@ -1744,7 +1920,7 @@ export function storyNarrativeDossier(story, maxChapterIndex = 0) {
   for (let gate = 0; gate <= limit; gate += 1) {
     if (decisionTypeAt(gate) === null) continue
     const chosenId = validChoiceAt(story, gate)
-    const option = choiceAt(story, gate)?.options.find((opt) => opt.id === chosenId)
+    const option = legacyChoiceAt(story, gate)?.options.find((opt) => opt.id === chosenId)
     if (option) {
       activeConsequences.push({
         chapterNumber: gate + 1,
@@ -1760,7 +1936,7 @@ export function storyNarrativeDossier(story, maxChapterIndex = 0) {
     const chapter = chapterForReading(story, i) || story.chapters?.[i]
     if (!chapter) continue
     const chosenId = validChoiceAt(story, i)
-    const option = choiceAt(story, i)?.options.find((opt) => opt.id === chosenId)
+    const option = legacyChoiceAt(story, i)?.options.find((opt) => opt.id === chosenId)
     timeline.push({
       chapterIndex: i,
       chapterNumber: i + 1,
@@ -1846,7 +2022,7 @@ export function chapterForReading(story, index) {
   const [opening, outcome, tail] = stored.paragraphs
   if (opening !== currentScene[0] || !signature.outcomes.includes(outcome) || tail !== signature.tail) return stored
 
-  const choices = choiceAt(story, 1).options
+  const choices = legacyChoiceAt(story, 1).options
   const selected = choices.find((option) => option.id === validChoiceAt(story, 1))
   const legacyEchoes = new Set(choices.map((option) => `选择“${option.id}”留下的回声正在改变这一章。`))
   const remaining = stored.paragraphs.slice(3).flatMap((paragraph) => {
@@ -1859,15 +2035,24 @@ export function chapterForReading(story, index) {
 export function chapterKey(story, index) {
   validateStory(story)
   validateIndex(index, story)
-  const precedingChoices = Object.entries(story.choices || {})
-    .filter(([chapter]) => Number(chapter) < index)
-    .sort(([a], [b]) => Number(a) - Number(b))
-  const payload = `${story.id}|${story.revision}|${index}|${JSON.stringify(precedingChoices)}`
+  // The key binds the chapter to the story's revision and to the
+  // intervention queue aimed at THIS chapter: queueing a nudge changes the
+  // key, which is exactly what makes a pre-generated copy of the chapter
+  // stale and forces the revision pass. (Before retirement the payload
+  // carried the preceding choices; those are inert data now and no longer
+  // distinguish one telling from another.)
+  const payload = `${story.id}|${story.revision}|${index}|${interventionSignatureFor(story, index)}`
   return `chapter-key:${hash(payload)}`
 }
 
-const hasChoice = (story, index) => Boolean(validChoiceAt(story, index))
-
+/*
+ * LEGACY — records a pre-retirement branch choice on an old story.  The
+ * product no longer calls this (the reader renders no choices and
+ * generation ignores the recording); it survives so archived tooling and
+ * fixtures that walk old saves keep working, and so a recorded choice on a
+ * legacy story can still be amended without corrupting its later entries.
+ * New code must steer through queueIntervention instead.
+ */
 export function chooseBranch(story, index, choiceId) {
   validateStory(story)
   if (story.readOnly === true) return story
@@ -1875,7 +2060,7 @@ export function chooseBranch(story, index, choiceId) {
   if (typeof choiceId !== 'string' || !choiceId.trim()) throw new RangeError('choiceId must be a non-empty string')
   const chapter = story.chapters.find((item) => item?.index === index)
   if (!chapter) throw new RangeError('cannot choose a branch before accepting that chapter')
-  const currentChoice = buildChapter(story, index).choice
+  const currentChoice = legacyChoiceAt(story, index)
   if (!currentChoice || !currentChoice.options.some((option) => option.id === choiceId)) {
     throw new RangeError(`invalid choice ${choiceId} for chapter ${index}`)
   }
@@ -1908,12 +2093,12 @@ export function acceptChapter(story, chapter, key) {
   if (story.chapters.some((item) => item?.index === index)) return story
   const expectedId = `${story.id}:chapter:${index}:r${story.revision}`
   if (chapter.id !== expectedId) return story
-  if (index > 0) {
-    const previous = buildChapter(story, index - 1)
-    if (previous.choice && !hasChoice(story, index - 1)) return story
-  }
+  // No decision gate remains: the previous chapter never blocks this one.
   const next = clone(story)
   next.chapters = [...story.chapters.map((item) => clone(item)), clone(chapter)]
+  // The chapter's interventions have landed: flip them to applied so the
+  // ledger, the beat plans and later sync all see them as history.
+  markInterventionsApplied(next, index)
   next.chapterIndex = Math.min(index + 1, totalChaptersFor(next) - 1)
   next.updatedAt = now()
   return next
@@ -2003,7 +2188,7 @@ export function createMergedStory(a, b, options = {}) {
     worldBible: {
       premise: `${worldNameOf(genreA, a.config)}与${worldNameOf(genreB, b.config)}在一处新的合流点相遇，两位主角必须共同定义边界。`,
       rules: rules === 'bridge'
-        ? ['两种世界规则可以互相翻译，但每次翻译都会消耗稳定度。', '双主角共享合流点的选择，任何一方都不能被静默抹去。', '合流后的新规则必须被两位主角共同见证。']
+        ? ['两种世界规则可以互相翻译，但每次翻译都会消耗稳定度。', '双主角共同见证合流点的每一次扰动，任何一方都不能被静默抹去。', '合流后的新规则必须被两位主角共同见证。']
         : ['两种世界规则保持各自边界，只在合流点短暂交叠。', '双主角可以同行，但不能替对方决定原世界的命运。', '任何跨界行动都必须留下可追溯的回声。'],
       endingAnchor: bond === 'rivals' ? '两位主角必须决定竞争是否值得牺牲共同的未来。' : '两位主角必须决定要把共同的未来交给哪一种规则。',
       outline: [
@@ -2072,7 +2257,7 @@ const snapshotRedactor = (sourceConfig, safeConfig) => {
 }
 
 const snapshotChoice = (story, safe, index, redact) => {
-  const expected = choiceAt(safe, index)
+  const expected = legacyChoiceAt(safe, index)
   if (!expected) return null
   const supplied = story.chapters[index]?.choice
   return {
@@ -2132,7 +2317,7 @@ export function publicSnapshot(story) {
       premise: '两条匿名世界线在一处新的合流点相遇，两位旅者共同定义边界。',
       rules: story.config.merge?.rules === 'separate'
         ? ['两种世界规则保持各自边界，只在合流点短暂交叠。', '双主角可以同行，但不能替对方决定原世界的命运。', '跨界行动必须留下可追溯的回声。']
-        : ['两种世界规则可以互相翻译，但每次翻译都会消耗稳定度。', '双主角共享合流点的选择。', '新规则必须被两位旅者共同见证。'],
+        : ['两种世界规则可以互相翻译，但每次翻译都会消耗稳定度。', '双主角共同见证合流点的每一次扰动。', '新规则必须被两位旅者共同见证。'],
       endingAnchor: '两位匿名旅者为未来保留一条可以继续选择的路。',
       outline: ['两条匿名世界线相撞。', '旅者暂时同行。', '共同规则浮现。', '规则冲突升级。', '合流点坍缩。', '新的宇宙开始呼吸。'],
     }

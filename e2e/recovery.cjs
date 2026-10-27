@@ -28,7 +28,6 @@ async function createBook(page, name) {
   await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByLabel('主角昵称（选填）').fill(name);
   await page.getByRole('button', { name: '继续', exact: true }).click();
-  await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByRole('button', { name: '进入第一章', exact: true }).click();
   await page.getByRole('progressbar', { name: '阅读进度' }).waitFor();
 }
@@ -86,7 +85,6 @@ async function run(browser, name, action, init) {
     await run(browser, 'download and confirmed restore preserve reading progress and old backup', async page => {
       await createBook(page, '备份测试旅人');
       await page.getByRole('button', { name: '下一章', exact: true }).click();
-      await page.getByRole('group', { name: '剧情选择' }).getByRole('button').first().click();
       await page.getByRole('button', { name: '下一章', exact: true }).click();
       const saved = await readLibrary(page);
       assert.equal(saved.stories[0].readerIndex, 2);
@@ -146,7 +144,7 @@ async function run(browser, name, action, init) {
       await page.getByText('进度暂存于此页，请先备份', { exact: true }).waitFor();
       assert.equal(await page.getByText('进度已保存在本机', { exact: true }).count(), 0);
       await page.getByRole('button', { name: '下一章', exact: true }).click();
-      await page.getByRole('group', { name: '剧情选择' }).waitFor();
+      await page.waitForFunction(() => document.querySelector('[role="progressbar"][aria-label="阅读进度"]')?.getAttribute('aria-valuenow') === '2');
       const dialog = await openBackup(page);
       const current = JSON.parse(await downloadText(page, dialog.getByRole('button', { name: '导出书架备份', exact: true })));
       assert.equal(current.stories[0].config.name, '额度测试旅人');

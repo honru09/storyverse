@@ -4,20 +4,10 @@ import { acceptChapter, buildChapter, chapterKey, totalChaptersFor } from './sto
 // total from the story's length mode via totalChaptersFor.
 export const CHAPTER_COUNT = 6
 
-export function selectedChoice(story, index) {
-  const candidate = story?.choices?.[index]
-  if (!candidate) return null
-  try {
-    return buildChapter(story, index).choice?.options.some((option) => option.id === candidate)
-      ? candidate
-      : null
-  } catch {
-    return null
-  }
-}
-
-// A prepared chapter is not necessarily one the reader has reached. Never
-// permit the directory or a restored position to skip an unresolved decision.
+// Every sequentially generated chapter is accessible. Before the
+// intervention batch this walk stopped at an unresolved chapter-end
+// choice; choices are retired, so nothing gates the reader's path any
+// more — a stored legacy choice on an old chapter is simply passed over.
 export function lastAccessibleIndex(story, readOnly = false) {
   const chapters = story?.chapters || []
   const total = story ? totalChaptersFor(story) : CHAPTER_COUNT
@@ -25,7 +15,6 @@ export function lastAccessibleIndex(story, readOnly = false) {
   for (let index = 0; index < Math.min(chapters.length, total); index += 1) {
     if (chapters[index]?.index !== index) break
     last = index
-    if (!readOnly && chapters[index].choice && !selectedChoice(story, index)) break
   }
   return last
 }
@@ -52,8 +41,8 @@ export function materialize(story, targetLength) {
   return current
 }
 
-// One chapter ahead, bounded by the next unresolved decision. Calling again is
-// idempotent, so reading, revisiting, and React effect reruns cannot overproduce.
+// One chapter ahead, unconditionally. Calling again is idempotent, so
+// reading, revisiting, and React effect reruns cannot overproduce.
 export function prepareReadingWindow(story, index = readerIndexFor(story)) {
   if (story?.readOnly || story?.engine === 'gemini') return story
   const position = readerIndexFor({ ...story, readerIndex: index })

@@ -304,3 +304,60 @@ button.chapter-item:disabled {
     color: var(--ink);
   }
 }
+
+/* ---- 介入 (intervention): sheet, chapter marker, dock entry ---- */
+.intervention-lede { line-height: 1.8; }
+.intervention-target { line-height: 1.8; }
+.intervention-target b { color: var(--reader-accent, var(--cyan)); }
+.intervention-ended { line-height: 1.8; }
+.intervention-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
+.intervention-field { display: grid; gap: 8px; margin-top: 16px; font-weight: 600; }
+.intervention-field textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--glass);
+  color: inherit;
+  font: inherit;
+  font-weight: 400;
+  line-height: 1.7;
+  resize: vertical;
+}
+.intervention-field small { justify-self: end; color: var(--dim); font-weight: 500; font-variant-numeric: tabular-nums; }
+.intervention-hint { color: var(--dim); font-size: 13px; line-height: 1.7; }
+.intervention-queued {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px dashed rgba(167, 139, 250, .5);
+  border-radius: 16px;
+  display: grid;
+  gap: 6px;
+}
+.intervention-queued b { font-size: 13px; color: var(--violet); }
+.intervention-queued p { margin: 0; line-height: 1.7; }
+.intervention-error { color: #ff9d9d; line-height: 1.7; }
+.intervention-marker {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 26px 0 4px;
+  padding: 14px 16px;
+  border: 1px solid rgba(167, 139, 250, .4);
+  border-radius: 18px;
+  background: linear-gradient(120deg, rgba(110, 231, 255, .07), rgba(167, 139, 250, .09));
+  color: var(--reader-text);
+}
+.intervention-marker svg { flex: none; margin-top: 3px; color: var(--violet); }
+.intervention-marker b { display: block; margin-bottom: 4px; font-size: 14px; }
+.intervention-marker p { margin: 0; line-height: 1.75; color: var(--reader-text); opacity: .85; }
+.intervention-note {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 18px 0 0;
+  color: var(--violet);
+  font-weight: 600;
+  line-height: 1.7;
+}
+.reader-dock-actions .reader-intervene-button { color: var(--reader-accent, var(--cyan)); }

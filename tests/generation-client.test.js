@@ -1,32 +1,35 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createStory, buildChapter, chapterKey, acceptChapter, chooseBranch } from '../src/story-engine.js'
+import { createStory, buildChapter, chapterKey, acceptChapter, queueIntervention } from '../src/story-engine.js'
 import { acceptGeneratedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter } from '../src/generation.js'
 
 const fresh = () => ({ ...createStory({ name: '旅人' }), engine: 'gemini' })
 const resultFor = (story, index) => ({ chapter: buildChapter(story, index), key: chapterKey(story, index) })
 const append = (story, index) => acceptChapter(story, buildChapter(story, index), chapterKey(story, index))
 
-test('Gemini window stays one chapter ahead and stops at a decision', () => {
+test('Gemini window stays one chapter ahead and never waits for a decision', () => {
   let story = fresh()
   assert.equal(nextGenerationIndex(story), 0)
   story = append(story, 0)
   assert.equal(nextGenerationIndex(story), 1)
   story = append(story, 1)
-  assert.equal(nextGenerationIndex(story), null)
-  assert.equal(nextGenerationIndex(story, 1), null)
-  story = chooseBranch(story, 1, 'open')
+  // Chapter 2 used to be a decision chapter; preparation no longer waits
+  // for anything — only the reader's distance to the frontier matters.
   assert.equal(nextGenerationIndex(story, 1), 2)
+  assert.equal(nextGenerationIndex(story, 0), null)
+  assert.equal(nextGenerationIndex(story), null)
   assert.equal(nextGenerationIndex({ ...story, readOnly: true }, 1), null)
   assert.equal(nextGenerationIndex({ ...story, engine: 'local' }, 1), null)
 })
 
-test('late answers never restore a rewritten branch; preserve current bookmark', () => {
+test('late answers never restore a superseded chapter; preserve current bookmark', () => {
   let story = append(append(fresh(), 0), 1)
-  story = chooseBranch(story, 1, 'open')
   const result = resultFor(story, 2)
-  const rewritten = chooseBranch(story, 1, 'wait')
-  assert.equal(acceptGeneratedChapter(rewritten, result), rewritten)
+  // Queueing an intervention after the request went out rotates the key:
+  // the in-flight answer belongs to a version of the chapter that no
+  // longer exists and is discarded whole.
+  const intervened = queueIntervention(story, { text: '让雾散开一次', readerIndex: 1 })
+  assert.equal(acceptGeneratedChapter(intervened, result), intervened)
   const current = { ...story, bookmarked: true, readerIndex: 1 }
   const next = acceptGeneratedChapter(current, result)
   assert.equal(next.bookmarked, true)
@@ -131,20 +134,18 @@ test('the daily quota response maps to a clear quota message, not the generic 42
   await assert.rejects(requestChapter(fresh(), 0, { fetchImpl }), /今天的生成额度已用完/)
 })
 
-test('season pre-generation: gated by the previous decision, one chapter only, keyed by the choice', () => {
+test('season pre-generation: unconditional, one chapter only, keyed by the intervention queue', () => {
   let current = { ...createStory({ name: '旅人', genreId: 'mist', storyLengthMode: 'season' }), engine: 'gemini' }
   current = acceptGeneratedChapter(current, resultFor(current, 0))
   current = acceptGeneratedChapter(current, resultFor(current, 1))
-  // Chapter two ends on a decision: while it is undecided nothing is prepared.
-  assert.equal(nextGenerationIndex(current, 1), null)
-  current = chooseBranch(current, 1, 'open')
-  // Decided: exactly the next chapter becomes eligible, and only when the
-  // reader is within one chapter of the frontier.
+  // Nothing gates preparation any more: the next chapter is eligible as
+  // soon as the reader is within one chapter of the frontier.
   assert.equal(nextGenerationIndex(current, 1), 2)
   assert.equal(nextGenerationIndex(current, 0), null)
-  // The cache key is the choice signature: rewriting the decision changes it.
+  // The cache key is the intervention signature: queueing a nudge for the
+  // prepared chapter makes any earlier copy of it stale.
   const keyBefore = chapterKey(current, 2)
-  current = chooseBranch(current, 1, 'wait')
+  current = queueIntervention(current, { text: '让退潮提前一个时辰', readerIndex: 1 })
   assert.notEqual(chapterKey(current, 2), keyBefore)
   assert.equal(nextGenerationIndex(current, 1), 2)
 })
@@ -153,8 +154,6 @@ test('pre-generation stops at the end of a season', () => {
   let current = { ...createStory({ name: '旅人', genreId: 'mist', storyLengthMode: 'season' }), engine: 'gemini' }
   for (let index = 0; index < 24; index += 1) {
     current = acceptGeneratedChapter(current, resultFor(current, index))
-    const choice = buildChapter(current, index).choice
-    if (choice && index < 23) current = chooseBranch(current, index, choice.options[0].id)
   }
   assert.equal(current.chapters.length, 24)
   assert.equal(nextGenerationIndex(current, 23), null)

@@ -29,7 +29,10 @@ fs.mkdirSync(artifactDir, { recursive: true });
             const rect = button.getBoundingClientRect();
             return { label: button.getAttribute('aria-label'), width: rect.width, height: rect.height };
           });
-          const toolbarRows = [...document.querySelectorAll('.reader-topline > .back-link, .reader-topline > .reader-actions')].map(element => {
+          // The shipped topline stacks the back link above the actions by
+          // design; the invariant that matters is the actions row itself
+          // staying on one line.
+          const toolbarRows = [...document.querySelectorAll('.reader-topline > .reader-actions > *')].map(element => {
             const rect = element.getBoundingClientRect();
             return { top: rect.top, bottom: rect.bottom };
           });
@@ -62,7 +65,7 @@ fs.mkdirSync(artifactDir, { recursive: true });
         await page.getByRole('navigation', { name: viewport.width < 1050 ? '移动端主导航' : '主导航', exact: true }).getByRole('button', { name, exact: true }).click();
       }
       try {
-        await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+        await page.goto(targetUrl + '#/home', { waitUntil: 'domcontentloaded' });
         await page.getByRole('button', { name: '开启第一本书', exact: true }).waitFor();
         await capture('home');
         await page.getByRole('button', { name: '登录与注册', exact: true }).click();
@@ -79,16 +82,15 @@ fs.mkdirSync(artifactDir, { recursive: true });
         await page.getByRole('heading', { name: '你以什么身份醒来？' }).waitFor();
         await capture('identity');
         await page.getByRole('button', { name: '继续', exact: true }).click();
-        await page.getByRole('heading', { name: '故事从哪里醒来？' }).waitFor();
+        await page.getByRole('heading', { name: '从哪里醒来？' }).waitFor();
         await capture('spawn');
         await page.getByRole('button', { name: '继续', exact: true }).click();
         await page.getByLabel('主角昵称（选填）').fill('阿遥');
         await capture('character');
-        await page.getByRole('button', { name: '继续', exact: true }).click();
-        await page.getByRole('heading', { name: '想拥有什么能力？' }).waitFor();
+        // Ability lives on the same protagonist screen in the five-step forge.
         await capture('ability');
         await page.getByRole('button', { name: '继续', exact: true }).click();
-        await page.getByRole('heading', { name: '故事从这里开始。' }).waitFor();
+        await page.getByRole('heading', { name: '确认你的故事' }).waitFor();
         await capture('opening');
         await page.getByRole('button', { name: '进入第一章', exact: true }).click();
         await page.getByRole('progressbar', { name: '阅读进度' }).waitFor();
@@ -102,8 +104,10 @@ fs.mkdirSync(artifactDir, { recursive: true });
         await page.getByRole('button', { name: '恢复默认', exact: true }).click();
         await page.getByRole('button', { name: '关闭面板' }).click();
         await page.getByRole('button', { name: '下一章', exact: true }).click();
-        await page.getByRole('group', { name: '剧情选择' }).waitFor();
-        await capture('decision');
+        await page.getByRole('button', { name: '介入', exact: true }).click();
+        await page.getByRole('dialog', { name: '介入 · 扰动世界线' }).waitFor();
+        await capture('intervention');
+        await page.getByRole('button', { name: '关闭面板' }).click();
         await page.getByRole('button', { name: '目录', exact: true }).first().click();
         await capture('directory');
         await page.getByRole('button', { name: '关闭面板' }).click();
@@ -115,7 +119,9 @@ fs.mkdirSync(artifactDir, { recursive: true });
         await page.getByRole('button', { name: '开启合流故事', exact: true }).click();
         await page.getByRole('button', { name: '阅读新书', exact: true }).waitFor();
         await capture('merged');
-        await nav(viewport.width < 1050 ? '世界' : '我的世界');
+        // Mobile has no 我的世界 nav item; the plaza tab is its home landing.
+        if (viewport.width < 1050) await nav('广场');
+        else await nav('我的世界');
         await capture('returning');
         assert.deepEqual(errors, [], 'uncaught browser errors');
       } catch (error) {

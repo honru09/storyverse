@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   acceptChapter, buildChapter, chapterForReading, chapterKey, chooseBranch,
-  createMergedStory, createStory, publicSnapshot,
+  createMergedStory, createStory, publicSnapshot, queueIntervention,
 } from '../src/story-engine.js'
 import {
   lastAccessibleIndex, materialize, moveReadingPosition, prepareReadingWindow, readerIndexFor,
@@ -32,20 +32,20 @@ test('remote reading windows never materialize template prose, even for an empty
   assert.equal(chapterForReading(story, 2), null)
 })
 
-test('remote chapter gates require a choice and a separately accepted response', () => {
+test('remote chapters need no choice: position and acceptance follow the frontier directly', () => {
   const initial = accept(accept(remoteStory(), 0), 1)
-  const decision = moveReadingPosition(initial, 1)
-  assert.equal(lastAccessibleIndex(decision), 1)
-  assert.strictEqual(moveReadingPosition(decision, 2), decision)
-  const earlyChapter = generatedChapter(decision, 2)
-  assert.strictEqual(acceptChapter(decision, earlyChapter, chapterKey(decision, 2)), decision)
-  const oldKey = chapterKey(decision, 2)
-  const chosen = chooseBranch(decision, 1, 'open')
-  assert.strictEqual(moveReadingPosition(chosen, 2), chosen)
-  assert.strictEqual(acceptChapter(chosen, earlyChapter, oldKey), chosen)
-  const ready = accept(chosen, 2)
+  const reading = moveReadingPosition(initial, 1)
+  assert.equal(lastAccessibleIndex(reading), 1)
+  // The next chapter accepts as soon as it exists — no decision waits at
+  // the old gate, and the reader may move onto it immediately.
+  const ready = accept(reading, 2)
   assert.equal(moveReadingPosition(ready, 2).readerIndex, 2)
   assert.equal(ready.chapters[2].paragraphs[1], '纸做的鲸鱼在夜空缓缓游过。')
+  // A response keyed before an intervention was queued is stale: the
+  // chapter it answers no longer exists in that form.
+  const staleKey = chapterKey(reading, 2)
+  const intervened = queueIntervention(reading, { text: '让纸鲸掉头向南', readerIndex: 1 })
+  assert.strictEqual(acceptChapter(intervened, generatedChapter(intervened, 2), staleKey), intervened)
 })
 
 test('rewriting remote content preserves the accepted decision and rejects stale future responses', () => {
@@ -82,11 +82,18 @@ test('remote snapshots preserve actual prose and redact known values across all 
   story = { ...story, title: '星鲸与 PRIVATE_NAME', internalPrompt: 'PRIVATE_TOP_EXTRA', config: { ...story.config, privateNote: 'PRIVATE_CONFIG_EXTRA' } }
   const privateSentence = `${Object.values(draft).join('、')}，以及 PRIVATE_CONFIG_EXTRA。`
   story = accept(story, 0, { title: 'PRIVATE_NAME 追逐星鲸', paragraphs: [privateSentence, '纸做的鲸鱼在夜空缓缓游过。'], summary: privateSentence, debugTrace: 'PRIVATE_CHAPTER_EXTRA' })
-  const choice = buildChapter(story, 1).choice
-  story = accept(story, 1, { choice: {
-    ...choice, prompt: 'PRIVATE_NAME 要相信 PRIVATE_FRIEND 吗？', hidden: 'PRIVATE_CHOICE_EXTRA',
-    options: choice.options.map(option => ({ ...option, label: `${option.label} PRIVATE_NAME`, detail: privateSentence, consequence: privateSentence, trace: 'PRIVATE_OPTION_EXTRA' })),
-  } })
+  // Chapters are minted choice-free now; this is the object a
+  // pre-retirement build would have stored on the chapter, laden with
+  // private values the snapshot must never carry over.
+  const choice = {
+    prompt: 'PRIVATE_NAME 要相信 PRIVATE_FRIEND 吗？',
+    hidden: 'PRIVATE_CHOICE_EXTRA',
+    options: [
+      { id: 'open', label: '追着退潮下水 PRIVATE_NAME', detail: privateSentence, consequence: privateSentence, trace: 'PRIVATE_OPTION_EXTRA' },
+      { id: 'wait', label: '守住退潮口 PRIVATE_NAME', detail: privateSentence, consequence: privateSentence, trace: 'PRIVATE_OPTION_EXTRA' },
+    ],
+  }
+  story = accept(story, 1, { choice })
   story = chooseBranch(story, 1, 'wait')
   story.worldBible.privatePrompt = 'PRIVATE_WORLD_EXTRA'
   story.choices = { ...story.choices, 0: 'PRIVATE_BAD_CHOICE', 3: 'cross', 5: 'PRIVATE_FUTURE_CHOICE' }

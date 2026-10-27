@@ -35,6 +35,7 @@ import {
   outlineIndexFor,
   outlineLengthFor,
   publicSnapshot,
+  queueIntervention,
   resolveStartPoint,
   startNextSeason,
   storyLengthModeOf,
@@ -88,11 +89,8 @@ test('exports four worlds and normalizes a draft into a complete story', () => {
 test('six chapters use real world, identity, ability and life-spark details', () => {
   const story = createStory(draft())
   const chapters = Array.from({ length: 6 }, (_, index) => buildChapter(story, index))
-  assert.equal(chapters[0].choice, null)
-  assert.ok(chapters[1].choice?.options.length >= 2)
-  assert.equal(chapters[2].choice, null)
-  assert.ok(chapters[3].choice?.options.length >= 2)
-  assert.equal(chapters[5].choice, null)
+  // Choices are retired: no chapter carries one, at any position.
+  for (const chapter of chapters) assert.equal(chapter.choice, null)
   const text = chapters.flatMap((chapter) => chapter.paragraphs).join('\n')
   for (const value of ['宁笙', '无名漂泊者', '听见潮汐', '海陵', '潮汐档案员', '白潮港', '沉潮港']) {
     assert.match(text, new RegExp(value))
@@ -171,80 +169,38 @@ test('acceptance is sequential, key-bound and idempotent', () => {
   assert.equal(acceptChapter(after1, buildChapter(after1, 3), chapterKey(after1, 3)), after1)
 })
 
-test('branching changes the next chapter and invalidates concurrent keys', () => {
+test('a recorded legacy branch rotates the chapter key but no longer steers its text', () => {
+  // Product paths never record choices any more; chooseBranch survives as
+  // the legacy replay for saves written before retirement. The recording
+  // itself is inert data now: it still bumps the story revision (and with
+  // it the chapter cache key), but the next chapter's scaffold is the
+  // same whichever branch an old save happened to record.
   let story = accept(accept(createStory(draft()), 0), 1)
   const oldKey = chapterKey(story, 2)
-  const chapterOne = story.chapters.find((chapter) => chapter.index === 1)
-  const firstChoice = chapterOne.choice.options[0].id
-  const secondChoice = chapterOne.choice.options[1].id
-  const branchA = chooseBranch(story, 1, firstChoice)
+  const branchA = chooseBranch(story, 1, 'open')
   assert.equal(branchA.revision, story.revision + 1)
   assert.equal(branchA.chapterIndex, 2)
   assert.equal(branchA.chapters.length, 2)
   assert.equal(acceptChapter(branchA, buildChapter(branchA, 2), oldKey), branchA)
-  const nextA = buildChapter(branchA, 2)
-  const branchB = chooseBranch(story, 1, secondChoice)
-  const nextB = buildChapter(branchB, 2)
-  assert.notDeepEqual(nextA.paragraphs, nextB.paragraphs)
-  assert.ok(nextA.paragraphs.join(' ').includes(chapterOne.choice.options[0].label))
-  assert.ok(nextB.paragraphs.join(' ').includes(chapterOne.choice.options[1].label))
-  assert.equal(chooseBranch(branchA, 1, firstChoice), branchA)
+  const branchB = chooseBranch(story, 1, 'wait')
+  assert.deepEqual(buildChapter(branchA, 2).paragraphs, buildChapter(branchB, 2).paragraphs)
+  assert.equal(chooseBranch(branchA, 1, 'open'), branchA)
 })
 
-const verifyDecisionScene = (story, index) => {
-  const before = buildChapter(story, index)
-  const [first, second] = before.choice.options
-  const branchA = chooseBranch(story, index, first.id)
-  const branchB = chooseBranch(story, index, second.id)
-
-  // A decision scene must end before the action, regardless of the chosen
-  // answer. Otherwise a reader sees the protagonist act before being asked.
-  for (const branch of [branchA, branchB]) {
-    assert.deepEqual(branch.chapters[index].paragraphs, before.paragraphs)
-    assert.deepEqual(buildChapter(branch, index).paragraphs, before.paragraphs)
+test('no chapter in any world — or on a merged line — carries a choice anymore', () => {
+  for (const genre of GENRES) {
+    const story = createStory(draft({ genreId: genre.id }))
+    for (let index = 0; index < 6; index += 1) {
+      assert.equal(buildChapter(story, index).choice, null, `${genre.id} chapter ${index + 1}`)
+    }
   }
-  const nextA = buildChapter(branchA, index + 1)
-  const nextB = buildChapter(branchB, index + 1)
-  // The action itself, not merely an appended choice label, must differ.
-  assert.notEqual(nextA.paragraphs[0], nextB.paragraphs[0])
-  assert.match(nextA.paragraphs.join(' '), new RegExp(first.label))
-  assert.match(nextB.paragraphs.join(' '), new RegExp(second.label))
-  for (const chapter of [nextA, nextB]) {
-    assert.doesNotMatch(chapter.paragraphs.join(' '), /“(?:open|wait|cross|return|join|guard|bridge|separate)”/)
+  const merged = createMergedStory(
+    createStory(draft({ name: '甲', genreId: 'mist' })),
+    createStory(draft({ name: '乙', genreId: 'cultivation' })),
+  )
+  for (let index = 0; index < 6; index += 1) {
+    assert.equal(buildChapter(merged, index).choice, null, `merged chapter ${index + 1}`)
   }
-  return branchB
-}
-
-for (const genre of GENRES) {
-  test(`${genre.id} decisions precede their consequences at both story gates`, () => {
-    let story = accept(accept(createStory(draft({ genreId: genre.id })), 0), 1)
-    story = verifyDecisionScene(story, 1)
-    story = accept(accept(story, 2), 3)
-    verifyDecisionScene(story, 3)
-  })
-}
-
-test('merged decisions leave both protagonists waiting until the next chapter', () => {
-  const a = createStory(draft({ name: '甲', genreId: 'mist' }))
-  const b = createStory(draft({ name: '乙', genreId: 'cultivation' }))
-  let story = accept(accept(createMergedStory(a, b), 0), 1)
-  story = verifyDecisionScene(story, 1)
-  story = accept(accept(story, 2), 3)
-  verifyDecisionScene(story, 3)
-})
-
-test('rewriting replaces a legacy decision scene that prematurely revealed its outcome', () => {
-  let story = accept(accept(createStory(draft()), 0), 1)
-  story = {
-    ...story,
-    chapters: story.chapters.map((chapter) => chapter.index === 1
-      ? { ...chapter, paragraphs: [chapter.paragraphs[0], 'TA让蓝火沿着指尖亮起，信纸背面浮出一条新的航线。', '航线指向白潮港，而潮汐正在倒着退去。'] }
-      : chapter),
-  }
-  const rewritten = chooseBranch(story, 1, 'wait')
-  assert.deepEqual(rewritten.chapters[1].paragraphs, buildChapter(rewritten, 1).paragraphs)
-  assert.doesNotMatch(rewritten.chapters[1].paragraphs.join(' '), /TA让蓝火沿着指尖亮起/)
-  assert.match(buildChapter(rewritten, 2).paragraphs[0], /把信压在掌心/)
 })
 
 test('reading an unchosen legacy decision shows a pending scene without modifying the saved story', () => {
@@ -323,7 +279,7 @@ test('reading and rewriting never replace non-template prose or materialize a mi
   assert.deepEqual(chooseBranch(story, 1, 'wait').chapters[1].paragraphs, story.chapters[1].paragraphs)
 })
 
-test('rewriting an earlier branch clears later choices and gates', () => {
+test('rewriting an earlier legacy branch truncates later chapters and clears later recordings', () => {
   let story = createStory(draft())
   story = accept(story, 0)
   story = accept(story, 1)
@@ -336,37 +292,33 @@ test('rewriting an earlier branch clears later choices and gates', () => {
   const rewritten = chooseBranch(story, 1, 'wait')
   assert.equal(rewritten.choices[3], undefined)
   assert.equal(rewritten.chapters.length, 2)
+  // The replay accepts straight through: no gate waits at the old
+  // decision chapters any more.
   let replayed = accept(rewritten, 2)
   replayed = accept(replayed, 3)
-  assert.equal(acceptChapter(replayed, buildChapter(replayed, 4), chapterKey(replayed, 4)), replayed)
+  replayed = accept(replayed, 4)
+  assert.equal(replayed.chapters.length, 5)
 })
 
-test('chapter three choice is required before chapter four and finale remains reachable', () => {
+test('no choice is required anywhere: the finale is reachable by accepting straight through', () => {
   let story = createStory(draft({ genreId: 'cultivation', name: '烬野' }))
-  story = accept(story, 0)
-  story = accept(story, 1)
-  story = chooseBranch(story, 1, 'open')
-  story = accept(story, 2)
-  story = accept(story, 3)
-  assert.equal(story.chapterIndex, 4)
-  const blocked = acceptChapter(story, buildChapter(story, 5), chapterKey(story, 5))
-  assert.equal(blocked, story)
-  story = chooseBranch(story, 3, 'cross')
-  story = accept(story, 4)
-  story = accept(story, 5)
+  for (let index = 0; index < 6; index += 1) story = accept(story, index)
   assert.equal(story.chapters.length, 6)
   assert.equal(story.chapterIndex, 5)
+  assert.deepEqual(story.choices, {})
   assert.equal(buildChapter(story, 5).choice, null)
 })
 
-test('invalid persisted choice cannot satisfy a chapter gate or contaminate text', () => {
+test('an invalid persisted choice is inert: it neither contaminates text nor blocks the next chapter', () => {
   let story = createStory(draft())
   story = accept(story, 0)
   story = accept(story, 1)
   story = { ...story, choices: { ...story.choices, 1: 'not-a-real-option' } }
   const chapterTwo = buildChapter(story, 2)
   assert.doesNotMatch(chapterTwo.paragraphs.join(' '), /not-a-real-option/)
-  assert.equal(acceptChapter(story, chapterTwo, chapterKey(story, 2)), story)
+  const accepted = acceptChapter(story, chapterTwo, chapterKey(story, 2))
+  assert.notEqual(accepted, story)
+  assert.equal(accepted.chapters.length, 3)
 })
 
 test('merged stories contain both protagonists and do not mutate sources', () => {
@@ -426,11 +378,11 @@ test('public solo and merged snapshots reject branch changes and new chapters', 
   const merged = createMergedStory(solo, createStory(draft({ genreId: 'cultivation' })))
   for (const source of [solo, merged]) {
     const undecided = accept(accept(source, 0), 1)
-    const [first, second] = undecided.chapters[1].choice.options
-    const snapshot = publicSnapshot(chooseBranch(undecided, 1, first.id))
+    const [firstId, secondId] = source.kind === 'merged' ? ['join', 'guard'] : ['open', 'wait']
+    const snapshot = publicSnapshot(chooseBranch(undecided, 1, firstId))
     const before = JSON.stringify(snapshot)
 
-    assert.strictEqual(chooseBranch(snapshot, 1, second.id), snapshot)
+    assert.strictEqual(chooseBranch(snapshot, 1, secondId), snapshot)
     const next = buildChapter(snapshot, 2)
     assert.strictEqual(acceptChapter(snapshot, next, chapterKey(snapshot, 2)), snapshot)
     assert.equal(JSON.stringify(snapshot), before)
@@ -466,13 +418,19 @@ test('storyBeatPlan models prerequisites, concept grounding, tone shape, and bra
   assert.equal(beat1.paragraphShape.length, 3)
 
   story = accept(accept(story, 0), 1)
-  story = chooseBranch(story, 1, 'wait')
-  const beat2 = storyBeatPlan(story, 2)
+  // An intervention queued for chapter 3 becomes a landing prerequisite
+  // in that chapter's plan…
+  const queued = queueIntervention(story, { text: '一场突如其来的暴雨封住了码头', readerIndex: 1 })
+  const beat2 = storyBeatPlan(queued, 2)
   assert.equal(beat2.chapterNumber, 3)
   assert.equal(beat2.prerequisites.length, 6)
-  assert.equal(beat2.unlockedConsequences.length, 1)
-  assert.equal(beat2.unlockedConsequences[0].choiceId, 'wait')
-  assert.match(beat2.unlockedConsequences[0].consequence, /稳定度上升/)
+  assert.ok(beat2.prerequisites.some((item) => item.includes('本章介入') && item.includes('暴雨封住了码头')))
+  // …and once the chapter exists, later plans carry it as a landed fact.
+  const landed = accept(queued, 2)
+  const beat3 = storyBeatPlan(landed, 3)
+  assert.equal(beat3.unlockedInterventions.length, 1)
+  assert.equal(beat3.unlockedInterventions[0].chapter, 3)
+  assert.match(beat3.unlockedInterventions[0].text, /暴雨封住了码头/)
 
   const merged = createMergedStory(story, createStory(draft({ name: '烬野', genreId: 'cultivation' })))
   const mergedBeat = storyBeatPlan(merged, 2)
@@ -797,15 +755,14 @@ test('god mode: local chapters run all six chapters on the generic scaffold', ()
   assert.ok(text.includes('倒流港'))
   assert.ok(text.includes('海水每晚倒流一小时'))
   assert.equal(chapters[0].title, '倒流港 · 初声')
-  assert.ok(chapters[1].choice?.options.length >= 2)
-  assert.ok(chapters[3].choice?.prompt.includes('倒流港'))
-  assert.equal(chapters[5].choice, null)
-  // The accept/choose protocol works end to end for a custom world.
+  for (const chapter of chapters) assert.equal(chapter.choice, null)
+  // The accept protocol works end to end for a custom world, and a
+  // pre-retirement branch recording still replays through the legacy path.
   story = accept(story, 0)
   story = accept(story, 1)
   story = chooseBranch(story, 1, 'open')
   const third = buildChapter(story, 2)
-  assert.ok(third.paragraphs.join('').includes('改写了下一行设定'))
+  assert.ok(third.paragraphs.join('').includes('宁笙'))
   assert.equal(chapterForReading(story, 1)?.index, 1)
 })
 
@@ -902,10 +859,8 @@ test('long structure: four arcs of twenty-five with arc-end nodes and a 20-entry
   assert.equal(structureFor(long, 99).upgradeKind, '长线终局结算')
   assert.equal(outlineIndexFor(0, long), 0)
   assert.equal(outlineIndexFor(99, long), 19)
-  // Decision rhythm repeats every six chapters on the long line too.
-  assert.ok(buildChapter(long, 7).choice)
-  assert.ok(buildChapter(long, 9).choice)
-  assert.equal(buildChapter(long, 8).choice, null)
+  // No chapter carries a choice on the long line either.
+  for (const index of [7, 8, 9, 24, 99]) assert.equal(buildChapter(long, index).choice, null)
 })
 
 test('scenes past chapter six vary by act and never replay the base table', () => {
@@ -1046,14 +1001,16 @@ test('a full season walks locally to completion and rolls into the next season',
 })
 
 test('every accepted chapter carries a ledger; the dossier aggregates it without spoiling ahead', () => {
-  const season = walkLocal(createStory({ genreId: 'mist', storyLengthMode: 'season' }), 8, { 1: 'wait' })
+  let season = walkLocal(createStory({ genreId: 'mist', storyLengthMode: 'season' }), 2)
+  season = queueIntervention(season, { text: '退潮时分，灯塔的灯无故熄灭了一次', readerIndex: 1 })
+  for (let index = 2; index < 8; index += 1) season = accept(season, index)
   for (const chapter of season.chapters) {
     assert.ok(Array.isArray(chapter.events) && chapter.events.length >= 1, `chapter ${chapter.index}`)
     assert.ok(Array.isArray(chapter.foreshadowing))
   }
-  // The chapter right after a decision records the consequence as an event.
+  // The chapter an intervention landed in records it as an event.
   const after = season.chapters[2]
-  assert.ok(after.events.some((event) => event.includes('承接第 2 章选择')))
+  assert.ok(after.events.some((event) => event.includes('介入事件') && event.includes('灯塔的灯无故熄灭')))
   // Upgrade-point chapters record their structure node.
   assert.ok(season.chapters[5].events.some((event) => event.includes('小升格')))
   const ledger = storyLedgerFor(season, 3)
@@ -1063,7 +1020,9 @@ test('every accepted chapter carries a ledger; the dossier aggregates it without
   assert.ok(dossier.ledger.events.length >= 1)
   assert.ok(dossier.ledger.openForeshadowing.length >= 1)
   assert.equal(dossier.timeline.length, 8)
-  assert.equal(dossier.activeConsequences.length, 2)
+  // No choices were recorded on this line, so the legacy consequence
+  // view of the dossier stays empty.
+  assert.equal(dossier.activeConsequences.length, 0)
 })
 
 test('pre-mode saves stay short stories and keep reading, merging and sharing', () => {

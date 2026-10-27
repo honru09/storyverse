@@ -41,6 +41,27 @@
 .generation-skeleton .skeleton-line.w60{width:60%}.generation-skeleton .skeleton-line.w85{width:85%}.generation-skeleton .skeleton-line.w45{width:45%}
 .generation-cancel{margin-top:20px}
 
+/* ---- Intervention sequence （介入）: the worldline stirs and reweaves ----
+   Transform/opacity only, so the global motion policy freezes it cleanly. */
+.intervention-overlay{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:24px;background:rgba(4,8,20,.66);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:page-in var(--dur-sheet) var(--ease-out) both}
+.intervention-card{width:min(100%,430px);padding:30px 26px 26px;border:1px solid rgba(168,196,255,.35);border-radius:var(--radius-sheet);background:rgba(8,16,38,.96);box-shadow:var(--shadow-raised);text-align:center;color:#eaf2ff}
+.intervention-card h2{margin:0 0 14px;font-size:21px;font-weight:800;color:#f2f7ff}
+.intervention-weave{width:150px;height:90px;margin:0 auto 16px;display:block;overflow:visible}
+.weave-strand{fill:none;stroke-width:1.6;stroke-linecap:round}
+.strand-a{stroke:rgba(110,231,255,.75);animation:weave-drift-a 2.8s ease-in-out infinite}
+.strand-b{stroke:rgba(167,139,250,.75);animation:weave-drift-b 3.4s ease-in-out infinite}
+.strand-c{stroke:rgba(240,166,255,.55);animation:weave-drift-a 3.9s ease-in-out infinite reverse}
+@keyframes weave-drift-a{0%,100%{transform:translateY(0);opacity:.65}50%{transform:translateY(-3.5px);opacity:1}}
+@keyframes weave-drift-b{0%,100%{transform:translateY(0);opacity:.65}50%{transform:translateY(3.5px);opacity:1}}
+.weave-node{fill:var(--cyan);animation:node-breathe 2.2s ease-in-out infinite}
+.weave-node.node-b{fill:var(--violet);animation-delay:.5s}
+.weave-node.node-c{fill:var(--pink);animation-delay:1s}
+.intervention-stages{display:flex;justify-content:center;gap:8px;margin:0 0 10px;padding:0;list-style:none}
+.intervention-stages li{padding:6px 12px;border:1px solid rgba(168,196,255,.35);border-radius:999px;color:rgba(214,228,255,.75);font-size:13px;font-weight:650;transition:opacity var(--dur-state) var(--ease-out),color var(--dur-state) var(--ease-out),border-color var(--dur-state) var(--ease-out)}
+.intervention-stages li.active{color:#06122b;background:linear-gradient(120deg,var(--cyan),var(--violet));border-color:transparent}
+.intervention-stages li.done{color:var(--mint);border-color:rgba(125,255,206,.45)}
+.intervention-stage-note{min-height:26px;margin:0;color:rgba(214,228,255,.8);font-size:13.5px;line-height:1.75}
+
 /* ---- Story map ---- */
 .storymap{display:block;width:100%}
 .storymap-link{fill:none;stroke:rgba(168,196,255,.28);stroke-width:1.6}

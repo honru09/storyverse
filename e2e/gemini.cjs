@@ -48,7 +48,6 @@ async function prepareOpening(page, name, genre = '奇幻') {
   await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByLabel('主角昵称（选填）').fill(name);
   await page.getByRole('button', { name: '继续', exact: true }).click();
-  await page.getByRole('button', { name: '继续', exact: true }).click();
   const mode = page.getByRole('group', { name: '故事方式' }).getByRole('button', { name: 'Gemini 创作' });
   await mode.waitFor();
   assert.equal(await mode.getAttribute('aria-pressed'), 'true');
@@ -66,13 +65,9 @@ async function finishBook(page, requests, { total = 24, ending = '这一季，�
   for (let index = 0; index < total; index += 1) {
     await position(page, index + 1);
     assert.match(await page.locator('.reader-article').innerText(), new RegExp(`MOCK_GEMINI_CHAPTER_${index}`));
-    const choice = page.getByRole('group', { name: '剧情选择' });
-    await choice.first().waitFor({ timeout: 400 }).catch(() => {});
-    if (await choice.count()) {
-      assert.equal(requests.some(request => request.story.id === id && request.index === index + 1), false, 'a decision must block the next paid request');
-      assert.equal(await page.getByRole('button', { name: '下一章', exact: true }).isEnabled(), false);
-      await choice.getByRole('button').first().click();
-    }
+    // Nothing gates the next paid request any more: chapters prepare
+    // unconditionally, one ahead of the reader.
+    assert.equal(await page.getByRole('group', { name: '剧情选择' }).count(), 0);
     if (index < total - 1) {
       await page.getByRole('button', { name: '下一章', exact: true }).click();
     }
@@ -92,7 +87,7 @@ async function finishBook(page, requests, { total = 24, ending = '这一季，�
       title: `MOCK_GEMINI_CHAPTER_${index} ${story.config.name}`,
       paragraphs: [
         `MOCK_GEMINI_CHAPTER_${index}：${story.config.name}看见一条纸鲸游过夜空。`,
-        `BRANCH_${story.choices[1] || 'none'}_${story.choices[3] || 'none'}：这些句子来自模拟模型响应，必须原样保存在书里。`,
+        `IV_${(story.interventions || []).filter(entry => entry.status === 'queued').map(entry => entry.text).join('、') || 'none'}：这些句子来自模拟模型响应，必须原样保存在书里。`,
       ],
       summary: `模型第 ${index + 1} 章，${story.config.name}跟随纸鲸继续前进。`,
     },
@@ -218,7 +213,6 @@ async function finishBook(page, requests, { total = 24, ending = '这一季，�
       assert.equal(requests[0].story.id, requests[1].story.id, 'retry reuses the opening idempotency key');
       await page.getByRole('button', { name: '下一章', exact: true }).click();
       await position(page, 2);
-      await page.getByRole('group', { name: '剧情选择' }).getByRole('button').first().click();
       await page.getByRole('button', { name: '重试下一章', exact: true }).waitFor();
       assert.equal(continuationRequests, 1);
       await page.getByRole('button', { name: '重试下一章', exact: true }).dblclick();
@@ -264,42 +258,38 @@ async function finishBook(page, requests, { total = 24, ending = '这一季，�
       if (request.index === 0 && ++cancelRequests === 1) { cancelSeen.resolve(); await cancelGate.promise; }
     });
 
-    const oldBranchGate = deferred();
-    const oldBranchSeen = deferred();
-    const oldRefreshGate = deferred();
-    const oldRefreshSeen = deferred();
-    let fourthRequests = 0;
-    await run('late branch responses stay discarded and reload resumes a missing prefetch', async page => {
-      await openBook(page, 'AIQA改选');
+    const staleGate = deferred();
+    const staleSeen = deferred();
+    let thirdRequests = 0;
+    await run('a pre-intervention answer in flight is discarded; the intervened chapter lands instead', async page => {
+      await openBook(page, 'AIQA介入');
       await page.getByRole('button', { name: '下一章', exact: true }).click();
       await position(page, 2);
-      await page.getByRole('group', { name: '剧情选择' }).getByRole('button').first().click();
-      await oldBranchSeen.promise;
-      await page.getByRole('button', { name: '改选', exact: true }).click();
-      await page.getByRole('group', { name: '剧情选择' }).getByRole('button').nth(1).click();
+      // The pre-generation of chapter three is in flight, held at the gate.
+      await staleSeen.promise;
+      // Intervene while it flies: the nudge queues for chapter three, the
+      // chapter key rotates, and the in-flight answer becomes stale.
+      await page.getByRole('button', { name: '介入', exact: true }).click();
+      const sheet = page.getByRole('dialog', { name: '介入 · 扰动世界线' });
+      await sheet.getByLabel(/亲手写下/).fill('让纸鲸今晚掉头向南');
+      await sheet.getByRole('button', { name: '介入下一章', exact: true }).click();
+      staleGate.resolve();
+      // The stale answer is discarded whole; a fresh request carrying the
+      // intervention lands chapter three instead.
       await savedChapters(page, 3);
-      oldBranchGate.resolve();
-      await page.getByRole('button', { name: '下一章', exact: true }).click();
-      await position(page, 3);
-      await oldRefreshSeen.promise;
-      assert.match(await page.locator('.reader-article').innerText(), /BRANCH_wait_none/);
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      await position(page, 3);
-      await savedChapters(page, 4);
-      oldRefreshGate.resolve();
       const saved = (await library(page)).stories[0];
-      assert.equal(saved.choices[1], 'wait');
-      assert.equal(saved.chapters.length, 4);
-      assert.match(saved.chapters[2].paragraphs[1], /BRANCH_wait_none/);
-      assert.match(saved.chapters[3].paragraphs[1], /BRANCH_wait_none/);
-      assert.equal(saved.readerIndex, 2);
-      assert.equal(fourthRequests, 2);
+      assert.equal(thirdRequests, 2);
+      assert.equal(saved.interventions.length, 1);
+      assert.equal(saved.interventions[0].status, 'applied');
+      assert.equal(saved.interventions[0].text, '让纸鲸今晚掉头向南');
+      assert.match(saved.chapters[2].paragraphs[1], /IV_让纸鲸今晚掉头向南/);
+      assert.deepEqual(saved.chapters[2].interventions, [{ text: '让纸鲸今晚掉头向南', kind: 'text' }]);
       await page.getByRole('button', { name: '下一章', exact: true }).click();
-      await position(page, 4);
-      await page.getByRole('group', { name: '剧情选择' }).waitFor();
+      await position(page, 3);
+      assert.match(await page.locator('.reader-article').innerText(), /让纸鲸今晚掉头向南/);
+      await page.getByText('命运在这一章伸过手', { exact: true }).waitFor();
     }, async request => {
-      if (request.index === 2 && request.story.choices[1] === 'open') { oldBranchSeen.resolve(); await oldBranchGate.promise; }
-      if (request.index === 3 && ++fourthRequests === 1) { oldRefreshSeen.resolve(); await oldRefreshGate.promise; }
+      if (request.index === 2 && ++thirdRequests === 1) { staleSeen.resolve(); await staleGate.promise; }
     });
   } finally {
     await browser.close();

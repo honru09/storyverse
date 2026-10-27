@@ -205,19 +205,18 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           await page.getByRole('button', { name:'退出专注阅读', exact:true }).click();
           assert.equal(await page.locator('.reader-topline').isVisible(), true);
         });
-        await check('large-font decision options remain reachable and gated', async () => {
+        await check('large-font chapter end remains reachable and nothing gates the next chapter', async () => {
           await page.getByRole('button', { name:'下一章', exact:true }).click();
           const dialog = await openSettings();
           for (let i=0;i<7;i++) await dialog.getByRole('button',{name:'放大字号',exact:true}).click();
           await close();
-          const group = page.getByRole('group',{name:'剧情选择',exact:true});
-          await group.scrollIntoViewIfNeeded();
+          await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
           const progressProbe = await page.evaluate(async () => {
             const snapshot = () => ({
               y: window.scrollY,
               progress: document.querySelector('.reader-live-progress span:last-child')?.textContent,
               prose: document.querySelector('.reader-prose')?.getBoundingClientRect().toJSON(),
-              group: document.querySelector('[role="group"][aria-label="剧情选择"]')?.getBoundingClientRect().toJSON(),
+              intervene: document.querySelector('.reader-intervene-button')?.getBoundingClientRect().toJSON(),
               dock: document.querySelector('.reader-floating-dock')?.getBoundingClientRect().toJSON(),
               innerHeight: window.innerHeight,
             });
@@ -230,10 +229,13 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           });
           console.log('[DEBUG-progress]', JSON.stringify(progressProbe));
           assert.equal(await page.locator('.reader-live-progress span').last().textContent(), '本章 100%');
-          await noOverflow(); await capture('large-decision');
-          assert.equal(await page.getByRole('button',{name:'下一章',exact:true}).isDisabled(),true);
-          await group.getByRole('button').first().click();
+          await noOverflow(); await capture('large-chapter-end');
+          // No decision waits at the chapter end: the next chapter is
+          // immediately available, and the intervene entry stays in reach.
           assert.equal(await page.getByRole('button',{name:'下一章',exact:true}).isEnabled(),true);
+          await page.getByRole('button',{name:'介入',exact:true}).click();
+          await page.getByRole('dialog',{name:'介入 · 扰动世界线'}).waitFor();
+          await page.getByRole('button',{name:'关闭面板'}).click();
           assert.deepEqual(errors, []);
         });
         await check('directory opens on the current chapter, not the top of the list', async () => {
@@ -241,7 +243,6 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           for (let guard = 0; guard < 40 && (await position()) < 10; guard++) {
             const next = page.getByRole('button', { name: '下一章', exact: true });
             if (await next.isEnabled()) await next.click();
-            else await page.getByRole('group', { name: '剧情选择', exact: true }).getByRole('button').first().click();
             await page.waitForTimeout(150);
           }
           assert.ok((await position()) >= 10, 'advanced deep into the book');

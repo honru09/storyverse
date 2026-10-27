@@ -119,12 +119,13 @@ test('opening uses documented REST JSON schema and returns preserved chapter pro
   assert.ok(!JSON.stringify(result).includes(env.GEMINI_API_KEY))
 })
 
-test('decision chapter preserves exact application options and only one recent chapter of prose is sent', async () => {
+test('a recorded legacy choice stays out of the prompt now; only one recent chapter of prose is sent', async () => {
   let current = acceptLocal(story(), 0)
   current.chapters[0].paragraphs = ['OLD_PROSE_THAT_MUST_NOT_LEAVE_AGAIN']
   current = acceptLocal(current, 1)
   current.chapters[1].paragraphs = ['MOST_RECENT_CHAPTER_CAN_BE_SENT']
-  current = chooseBranch(current, 1, 'wait')
+  // A choice recorded before retirement rides along as inert data.
+  current.choices = { 1: 'wait' }
   current.unrelated = 'UNRELATED_PRIVATE_METADATA'
   current.config.extra = 'UNRELATED_CONFIG_SECRET'
   let input
@@ -137,18 +138,22 @@ test('decision chapter preserves exact application options and only one recent c
   assert.ok(!input.includes('OLD_PROSE_THAT_MUST_NOT_LEAVE_AGAIN'))
   assert.ok(!input.includes('UNRELATED_PRIVATE_METADATA'))
   assert.ok(!input.includes('UNRELATED_CONFIG_SECRET'))
-  assert.deepEqual(JSON.parse(input).choices, { 1: 'wait' })
-  assert.equal(JSON.parse(input).summaries.length, 2)
-  assert.equal(JSON.parse(input).beatPlan.chapterNumber, 3)
-  assert.equal(JSON.parse(input).beatPlan.unlockedConsequences[0].choiceId, 'wait')
+  const context = JSON.parse(input)
+  assert.equal(context.choices, undefined)
+  assert.equal(context.currentDecision, undefined)
+  assert.equal(context.decisionSchedule, undefined)
+  assert.equal(context.summaries.length, 2)
+  assert.equal(context.beatPlan.chapterNumber, 3)
+  assert.deepEqual(context.beatPlan.unlockedInterventions, [])
   assert.equal(result.worldBible, undefined)
-  const decisionStory = acceptLocal(story(), 0)
-  const decision = await generator.generate({ story: decisionStory, index: 1 })
-  assert.deepEqual(decision.chapter.choice, buildChapter(decisionStory, 1).choice)
-  assert.equal(decision.chapter.index, 1)
+  // The chapter that used to carry the decision is generated choice-free.
+  const formerGateStory = acceptLocal(story(), 0)
+  const formerGate = await generator.generate({ story: formerGateStory, index: 1 })
+  assert.equal(formerGate.chapter.choice, null)
+  assert.equal(formerGate.chapter.index, 1)
 })
 
-test('merged character context preserves both protagonists and merge options', async () => {
+test('merged character context preserves both protagonists and merge rules', async () => {
   const current = createMergedStory(story(), FRIEND_BOOK, { rules: 'separate', lead: 'b', bond: 'rivals' })
   current.mergeContext = [{
     genreId: 'mist',
@@ -174,20 +179,23 @@ test('merged character context preserves both protagonists and merge options', a
   assert.deepEqual(context.sourceWorlds[0].worldBible.rules, ['FIRST_SOURCE_RULE'])
   assert.deepEqual(context.sourceWorlds[1].worldBible.rules, ['SECOND_SOURCE_RULE'])
   assert.equal(context.sourceWorlds[0].summaries[0].summary, 'FIRST_SOURCE_HISTORY')
-  assert.deepEqual(context.sourceWorlds[0].choices, { 1: 'wait' })
+  // Source choices no longer travel: they were history even before
+  // retirement, and the merged line takes no branches now.
+  assert.equal('choices' in context.sourceWorlds[0], false)
   assert.doesNotMatch(JSON.stringify(context), /PRIVATE_SOURCE_CONFIG|FULL_SOURCE_PROSE|FORBIDDEN_THIRD_WORLD/)
 })
 
-test('server rejects invalid progress, unresolved earlier decisions and read-only stories before paid work', async () => {
+test('server rejects invalid progress and read-only stories before paid work', async () => {
   let calls = 0
   const generator = createGeminiGenerator({ env, fetchImpl: async () => { calls += 1; return response(output(true)) } })
   const initial = story()
-  let undecided = acceptLocal(acceptLocal(initial, 0), 1)
-  const forged = { ...undecided, chapters: [...undecided.chapters, buildChapter(undecided, 2)], chapterIndex: 3 }
+  const walked = acceptLocal(acceptLocal(initial, 0), 1)
   const cases = [
     [{ story: initial, index: 1 }, 409],
-    [{ story: undecided, index: 2 }, 409],
-    [{ story: forged, index: 3 }, 409],
+    // A stale progress cursor is already invalid library data.
+    [{ story: { ...walked, chapterIndex: 0 }, index: 2 }, 400],
+    // A gap: the requested chapter is not the next one.
+    [{ story: walked, index: 3 }, 409],
     [{ story: { ...initial, readOnly: true }, index: 0 }, 403],
     [{ story: initial, index: 6 }, 400],
     [{ story: initial, index: '0' }, 400],
@@ -597,8 +605,9 @@ test('season continuation: outline window and template beat scale with position'
   assert.deepEqual(context.worldBible.outline, ['OUTLINE_7', 'OUTLINE_8'])
   // Beat index scales: chapter 8 of 24 plays the second of six season beats.
   assert.ok(context.genreBeat.includes('在小圈子里初露锋芒'))
-  // The decision schedule carries the previous, current and next gates.
-  assert.deepEqual(context.decisionSchedule.map((entry) => entry.chapter), [4, 8, 10])
+  // No decision schedule or pending decision travels any more.
+  assert.equal(context.decisionSchedule, undefined)
+  assert.equal(context.currentDecision, undefined)
   assert.equal(context.beatPlan.structure.mode, 'season')
 })
 

@@ -142,34 +142,51 @@ function validateChapter(chapter, prefix, index, merged, errors) {
     if (chapter[field] !== undefined) validateStringArray(chapter[field], `${prefix}.${field}`, errors)
   }
 
-  // Decision chapters repeat on the six-chapter rhythm in every length mode.
-  const expectedIds = index % 6 === 1
-    ? (merged ? ['join', 'guard'] : ['open', 'wait'])
-    : index % 6 === 3 ? (merged ? ['bridge', 'separate'] : ['cross', 'return']) : null
-  if (!expectedIds) {
-    if (chapter.choice != null) errors.push(`${prefix}.choice is not available for this chapter`)
-    return
+  // Choices retired with the intervention batch: a chapter minted now
+  // carries choice: null at EVERY position, and nothing is required. A
+  // pre-retirement chapter may still carry its choice object — inert
+  // historical data — so a present choice is shape-checked (a record with
+  // a prompt and two well-formed options) but never matched against an
+  // era's option ids and never treated as a gate.
+  if (chapter.choice != null) {
+    if (!isRecord(chapter.choice)) {
+      errors.push(`${prefix}.choice must be an object`)
+      return
+    }
+    if (!isNonEmptyString(chapter.choice.prompt)) errors.push(`${prefix}.choice.prompt must be a non-empty string`)
+    const options = chapter.choice.options
+    if (!Array.isArray(options) || options.length !== 2) {
+      errors.push(`${prefix}.choice.options must contain both branches`)
+      return
+    }
+    const ids = new Set()
+    for (let optionIndex = 0; optionIndex < options.length; optionIndex += 1) {
+      const option = options[optionIndex]
+      const optionPrefix = `${prefix}.choice.options[${optionIndex}]`
+      if (!isRecord(option)) errors.push(`${optionPrefix} must be an object`)
+      else {
+        if (!isNonEmptyString(option.id) || ids.has(option.id)) errors.push(`${optionPrefix}.id is invalid or duplicated`)
+        ids.add(option.id)
+        if (!isNonEmptyString(option.label)) errors.push(`${optionPrefix}.label must be a non-empty string`)
+        validateOptionalFields(option, optionPrefix, ['detail', 'consequence'], 'string', errors)
+      }
+    }
   }
-  if (!isRecord(chapter.choice)) {
-    errors.push(`${prefix}.choice must be an object at a decision chapter`)
-    return
-  }
-  if (!isNonEmptyString(chapter.choice.prompt)) errors.push(`${prefix}.choice.prompt must be a non-empty string`)
-  const options = chapter.choice.options
-  if (!Array.isArray(options) || options.length !== expectedIds.length) {
-    errors.push(`${prefix}.choice.options must contain both branches`)
-    return
-  }
-  const ids = new Set()
-  for (let optionIndex = 0; optionIndex < options.length; optionIndex += 1) {
-    const option = options[optionIndex]
-    const optionPrefix = `${prefix}.choice.options[${optionIndex}]`
-    if (!isRecord(option)) errors.push(`${optionPrefix} must be an object`)
+  // 介入印记： the interventions that landed in this chapter, stamped at
+  // generation time. Only the owner's copy carries them; snapshots omit
+  // the field entirely.
+  if (chapter.interventions !== undefined) {
+    if (!Array.isArray(chapter.interventions)) errors.push(`${prefix}.interventions must be an array`)
     else {
-      if (!expectedIds.includes(option.id) || ids.has(option.id)) errors.push(`${optionPrefix}.id is invalid or duplicated`)
-      ids.add(option.id)
-      if (!isNonEmptyString(option.label)) errors.push(`${optionPrefix}.label must be a non-empty string`)
-      validateOptionalFields(option, optionPrefix, ['detail', 'consequence'], 'string', errors)
+      for (let entryIndex = 0; entryIndex < chapter.interventions.length; entryIndex += 1) {
+        const entry = chapter.interventions[entryIndex]
+        const entryPrefix = `${prefix}.interventions[${entryIndex}]`
+        if (!isRecord(entry)) errors.push(`${entryPrefix} must be an object`)
+        else {
+          if (!isNonEmptyString(entry.text)) errors.push(`${entryPrefix}.text must be a non-empty string`)
+          validateOptionalFields(entry, entryPrefix, ['kind'], 'string', errors)
+        }
+      }
     }
   }
 }
@@ -213,6 +230,25 @@ function validateStory(story, prefix) {
       const chapterIndex = Number(chapter)
       if (!Number.isInteger(chapterIndex) || String(chapterIndex) !== chapter || chapterIndex < 0 || chapterIndex >= total || !isNonEmptyString(choice)) {
         errors.push(`${prefix}.choices contains an invalid entry`)
+      }
+    }
+  }
+  // 介入队列： the reader's queued/applied interventions. Absent on every
+  // pre-intervention save; when present it is a flat list of small records
+  // whose targetIndex names the one chapter each nudge may touch.
+  if (story.interventions !== undefined) {
+    if (!Array.isArray(story.interventions)) errors.push(`${prefix}.interventions must be an array`)
+    else {
+      for (let entryIndex = 0; entryIndex < story.interventions.length; entryIndex += 1) {
+        const entry = story.interventions[entryIndex]
+        const entryPrefix = `${prefix}.interventions[${entryIndex}]`
+        if (!isRecord(entry)) { errors.push(`${entryPrefix} must be an object`); continue }
+        if (!isNonEmptyString(entry.id)) errors.push(`${entryPrefix}.id must be a non-empty string`)
+        if (!Number.isInteger(entry.targetIndex) || entry.targetIndex < 0) errors.push(`${entryPrefix}.targetIndex must be a non-negative integer`)
+        if (!isNonEmptyString(entry.text)) errors.push(`${entryPrefix}.text must be a non-empty string`)
+        if (!['text', 'chip', 'random'].includes(entry.kind)) errors.push(`${entryPrefix}.kind is invalid`)
+        if (!['queued', 'applied'].includes(entry.status)) errors.push(`${entryPrefix}.status is invalid`)
+        validateOptionalFields(entry, entryPrefix, ['chipId', 'createdAt'], 'string', errors)
       }
     }
   }

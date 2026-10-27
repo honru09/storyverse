@@ -1,5 +1,5 @@
-import { acceptChapter, chapterKey, outlineLengthFor, totalChaptersFor } from './story-engine.js'
-import { readerIndexFor, selectedChoice } from './reading-flow.js'
+import { acceptChapter, chapterKey, outlineLengthFor, replaceChapter, totalChaptersFor } from './story-engine.js'
+import { readerIndexFor } from './reading-flow.js'
 import { emptyLibrary, validateLibrary } from './persistence.js'
 
 export function mergeSourceContext(story) {
@@ -24,7 +24,6 @@ export function mergeSourceContext(story) {
       endingAnchor: text(story.worldBible.endingAnchor, 1000),
       outline: story.worldBible.outline.slice(0, outlineLengthFor(story)).map((value) => text(value, 400)),
     },
-    choices: { ...story.choices },
     // A merged source can be a finished season or long line; the hand-off
     // carries its most recent summaries rather than the whole book.
     summaries: story.chapters.slice(-12).map((chapter) => ({ chapter: chapter.index + 1, summary: text(chapter.summary, 600) })),
@@ -35,8 +34,8 @@ export function nextGenerationIndex(story, position = readerIndexFor(story)) {
   if (!story || story.readOnly || story.engine !== 'gemini') return null
   const index = story.chapters.length
   if (index >= totalChaptersFor(story) || index >= position + 2) return null
-  const previous = story.chapters[index - 1]
-  if (previous?.choice && !selectedChoice(story, index - 1)) return null
+  // No decision gate remains: the next chapter is prepared unconditionally,
+  // still exactly one chapter ahead of the reader.
   return index
 }
 
@@ -68,7 +67,7 @@ export async function generationStatus({ fetchImpl = globalThis.fetch, signal } 
   }
 }
 
-export async function requestChapter(story, index, { fetchImpl = globalThis.fetch, signal, getAccessToken, onAuthRequired } = {}) {
+async function sendGenerateRequest(story, payload, { fetchImpl = globalThis.fetch, signal, getAccessToken, onAuthRequired } = {}) {
   const timeout = AbortSignal.timeout(65000)
   const headers = { 'Content-Type': 'application/json' }
   if (getAccessToken) {
@@ -83,7 +82,7 @@ export async function requestChapter(story, index, { fetchImpl = globalThis.fetc
   try {
     response = await fetchImpl('/api/generate', {
       method: 'POST', headers,
-      body: JSON.stringify({ story, index }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.any([timeout, ...(signal ? [signal] : [])]),
     })
   } catch (error) {
@@ -102,8 +101,39 @@ export async function requestChapter(story, index, { fetchImpl = globalThis.fetc
     const messages = { 429: '请求较多，请稍后再试。', 503: '在线创作暂不可用，已保存的章节仍可阅读。请稍后再试。', 504: '这一章等待较久，进度已保留，请重试。' }
     throw new Error(messages[response.status] || '这一章暂时没能接上，进度已保留，请重试。')
   }
+  return result
+}
+
+export async function requestChapter(story, index, options = {}) {
+  const result = await sendGenerateRequest(story, { story, index }, options)
   if (result?.chapter?.index !== index || result?.key !== chapterKey(story, index) || acceptGeneratedChapter(story, result) === story) {
-    throw new Error('章节与当前选择不匹配，请重试。')
+    throw new Error('章节与当前进度不匹配，请重试。')
+  }
+  return result
+}
+
+// Apply a revision result to the current story: the pre-generated target
+// chapter is swapped for its regenerated version and its interventions
+// flip to applied. Anything else about the story — earlier chapters, the
+// reading position, bookmarks — is untouched by construction.
+export function acceptRevisedChapter(story, result) {
+  const index = result?.chapter?.index
+  if (!Number.isInteger(index) || index < 0 || index >= totalChaptersFor(story)) throw new Error('章节格式不完整，请重试。')
+  if (result.key !== chapterKey(story, index)) return story
+  const next = replaceChapter(story, result.chapter, result.key)
+  if (next === story) return story
+  const checked = validateLibrary({ ...emptyLibrary(), stories: [next], activeStoryId: next.id })
+  if (checked.length) throw new Error('章节格式不完整，请重试。')
+  return next
+}
+
+// The intervention revision pass: same endpoint, same quota accounting as
+// a normal generation — the server regenerates the already-prepared next
+// chapter with the queued interventions woven in.
+export async function requestChapterRevision(story, index, options = {}) {
+  const result = await sendGenerateRequest(story, { story, index, mode: 'revise' }, options)
+  if (result?.chapter?.index !== index || result?.key !== chapterKey(story, index) || acceptRevisedChapter(story, result) === story) {
+    throw new Error('重写结果与当前进度不匹配，请重试。')
   }
   return result
 }
