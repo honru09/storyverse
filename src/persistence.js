@@ -232,6 +232,12 @@ function validateChapter(chapter, prefix, index, merged, errors) {
       }
     }
   }
+  // 备用通道标记： a chapter the fallback channel wrote carries
+  // degraded: true so the reader can be told in the open (RELIABILITY.md).
+  // Absent on every chapter the primary channel wrote.
+  if (chapter.degraded !== undefined && typeof chapter.degraded !== 'boolean') {
+    errors.push(`${prefix}.degraded must be a boolean`)
+  }
 }
 
 function validateStory(story, prefix) {

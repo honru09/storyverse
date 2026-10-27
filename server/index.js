@@ -205,9 +205,11 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
     // reader's bearer token and rendered through object URLs (an <img>
     // cannot send an Authorization header).
     response.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self'${authScripts}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'${authConnections}; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'${authFrames}`)
+    let requestPath = ''
     try {
       allowedRequest(request, server, env, request.method === 'POST')
       const pathname = new URL(request.url, 'http://localhost').pathname
+      requestPath = pathname
       if ((pathname === '/api/health' || pathname === '/healthz') && request.method === 'GET') return sendJson(response, 200, { ok: true })
       if (pathname === '/api/status' && request.method === 'GET') {
         if (!generationEnabled) return sendJson(response, 200, GENERATION_PAUSED)
@@ -261,7 +263,11 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         const result = await generator.generate(body)
         // Usage ledger: identity, model, story/chapter ids and token counts
         // only — never prose. Best effort: a logging failure must not fail
-        // the chapter.
+        // the chapter. A cache hit returns a generation that was already
+        // metered when it was produced, so it is flagged in the log and
+        // NOT recorded a second time; a degraded result (written by the
+        // fallback channel) is a real generation and meters normally,
+        // with the flag keeping the fallback count auditable.
         try {
           process.stdout.write(`${JSON.stringify({
             type: 'generation-usage',
@@ -271,9 +277,11 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             chapter: body.index + 1,
             genreTemplateId: result?.genreTemplateId ?? null,
             usage: result?.usage ?? 'unknown',
+            cached: Boolean(result?.cached),
+            degraded: Boolean(result?.degraded),
           })}\n`)
         } catch { /* ledger is best-effort */ }
-        if (identity) await auth.recordUsage(identity.uid, result?.usage ?? 'unknown')
+        if (identity && !result?.cached) await auth.recordUsage(identity.uid, result?.usage ?? 'unknown')
         return sendJson(response, 200, result)
       }
       if (pathname === '/api/cover' && request.method === 'POST') {
@@ -616,12 +624,29 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
       if (request.method !== 'GET' && request.method !== 'HEAD') throw new ApiError(405, '此操作不支持。')
       await serveStatic(request, response, pathname, distDir)
     } catch (error) {
+      // A non-ApiError reaching this catch on the generate route is an
+      // unclassified server fault (the cold-start 502 class): the client
+      // still gets the plain generic copy, but the full stack lands in
+      // the server log so the fault is diagnosable after the fact.
+      if (requestPath === '/api/generate' && !(error instanceof ApiError)) {
+        try {
+          process.stderr.write(`${JSON.stringify({
+            type: 'generation-route-error',
+            message: String(error?.message || error),
+            stack: String(error?.stack || ''),
+          })}\n`)
+        } catch { /* logging is best-effort */ }
+      }
       const payload = { error: error instanceof ApiError ? error.message : '服务暂时无法完成请求，请稍后重试。' }
       if (error instanceof ApiError && error.code) payload.code = error.code
       sendJson(response, error instanceof ApiError ? error.status : 502, payload)
     }
   })
-  server.requestTimeout = 70_000
+  // Generation is allowed a 270s total budget server-side (RELIABILITY.md)
+  // and Cloud Run gives the request 300s; the socket must not cut either
+  // short — the old 70s requestTimeout was a second, hidden deadline that
+  // killed slow-evening chapters after the generator's own cap was raised.
+  server.requestTimeout = 300_000
   server.headersTimeout = 15_000
   server.keepAliveTimeout = 5_000
   return server

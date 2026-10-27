@@ -29,6 +29,21 @@ export class ApiError extends Error {
   }
 }
 
+// Transient upstream failures (rate limits, upstream 5xx, transport
+// errors, our own deadline) are marked retryable: the resilience loop in
+// generate() retries exactly these, with jittered backoff, inside one
+// total time budget. Everything else — configuration errors (503),
+// malformed or refused model output (502 from validateOutput / blocked
+// or non-STOP finishes) — is deterministic and surfaces immediately:
+// retrying it would only delay the same answer. Failed attempts are
+// never billed by the provider (verified against the account usage
+// readouts during the cold-start batch), so a bounded retry is free.
+const retryableError = (status, message, code) => {
+  const error = new ApiError(status, message, code)
+  error.retryable = true
+  return error
+}
+
 const textSchema = (description) => ({ type: 'string', description })
 const arraySchema = (minItems, maxItems, description) => ({ type: 'array', items: textSchema(description), minItems, maxItems })
 
@@ -559,7 +574,22 @@ export function createGeminiGenerator({
   fetchImpl = globalThis.fetch,
   vertexGenerate = defaultVertexGenerate,
   genreTemplates,
-  timeoutMs = 60_000,
+  // Per-attempt deadline. A slow-evening chapter measurably takes 75s+;
+  // the old 60s cap cut our own requests before the provider could answer
+  // (the production 504s). One attempt may now run 150s, and the whole
+  // call — retries and fallback included — is bounded by totalBudgetMs,
+  // which stays under the Cloud Run 300s request ceiling.
+  timeoutMs = 150_000,
+  totalBudgetMs = 270_000,
+  maxRetries = 2,
+  retryBaseMs = 1_200,
+  // Fallback channel (RELIABILITY.md): same provider, second location
+  // (Vertex) or second model (developer API). Undefined derives from the
+  // environment with a built-in default; null disables it outright.
+  fallbackLocation,
+  fallbackModel,
+  sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms) }),
+  random = Math.random,
   maxConcurrent = 2,
   maxRequestsPerMinute = 12,
   cacheSize = 32,
@@ -579,6 +609,29 @@ export function createGeminiGenerator({
   const templates = genreTemplatesEnabled(env)
     ? (genreTemplates !== undefined ? genreTemplates : loadGenreTemplates())
     : null
+  // The fallback channel is attempted exactly once, only after the
+  // primary channel's retries are exhausted on a transient failure, and
+  // its result is always marked degraded (never silent). For Vertex the
+  // safest in-provider switch is a second location for the same model:
+  // a 'global' primary falls back to 'us-central1' unless the deployment
+  // names its own. For the developer API it is a second model id from
+  // the environment; without one there is no fallback.
+  const fallbackChannel = (() => {
+    if (backend === 'vertex') {
+      const derived = typeof env.GOOGLE_CLOUD_FALLBACK_LOCATION === 'string' && env.GOOGLE_CLOUD_FALLBACK_LOCATION.trim()
+        ? env.GOOGLE_CLOUD_FALLBACK_LOCATION.trim()
+        : (location === 'global' ? 'us-central1' : null)
+      const candidate = fallbackLocation !== undefined ? fallbackLocation : derived
+      return typeof candidate === 'string' && candidate !== location && /^[a-z0-9-]{1,63}$/i.test(candidate)
+        ? { location: candidate, model }
+        : null
+    }
+    const derived = typeof env.GEMINI_FALLBACK_MODEL === 'string' ? env.GEMINI_FALLBACK_MODEL.trim() : ''
+    const candidate = fallbackModel !== undefined ? fallbackModel : derived
+    return typeof candidate === 'string' && candidate !== '' && candidate !== model && /^[a-zA-Z0-9._-]{1,100}$/.test(candidate)
+      ? { location, model: candidate }
+      : null
+  })()
   const cache = new Map()
   const inFlight = new Map()
   let starts = []
@@ -604,14 +657,14 @@ export function createGeminiGenerator({
     return chapter
   }
 
-  async function requestChapter(prepared, input) {
+  async function requestChapter(prepared, input, channel) {
     const controller = new AbortController()
     let timeout
     const deadline = new Promise((_, reject) => {
       timeout = setTimeout(() => {
         controller.abort()
-        reject(new ApiError(504, '这一章等待太久，请稍后重试。'))
-      }, timeoutMs)
+        reject(retryableError(504, '这一章等待太久，请稍后重试。'))
+      }, channel.timeoutMs)
     })
     const execute = async () => {
       const schema = responseSchema(prepared.index === 0, outlineLengthFor(prepared.story))
@@ -620,7 +673,7 @@ export function createGeminiGenerator({
         let payload
         try {
           payload = await vertexGenerate({
-            project, location, model, signal: controller.signal,
+            project, location: channel.location, model: channel.model, signal: controller.signal,
             contents: [{ role: 'user', parts: [{ text: input }] }],
             config: {
               abortSignal: controller.signal,
@@ -633,7 +686,7 @@ export function createGeminiGenerator({
           })
         } catch (error) {
           const status = Number(error?.status || error?.code)
-          if (status === 429 || status === 8) throw new ApiError(429, 'Gemini 当前请求较多或额度不足，请稍后重试。')
+          if (status === 429 || status === 8) throw retryableError(429, 'Gemini 当前请求较多或额度不足，请稍后重试。')
           if ([400, 401, 403, 404, 7, 16].includes(status)) throw new ApiError(503, 'Vertex AI 暂时不可用，请检查项目、模型与服务账号权限。')
           throw error
         }
@@ -651,7 +704,7 @@ export function createGeminiGenerator({
           ...(prepared.genreTemplateId ? { genreTemplateId: prepared.genreTemplateId } : {}),
         }
       }
-      const response = await fetchImpl(`${ENDPOINT}${encodeURIComponent(model)}:generateContent`, {
+      const response = await fetchImpl(`${ENDPOINT}${encodeURIComponent(channel.model)}:generateContent`, {
         method: 'POST', signal: controller.signal,
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
         body: JSON.stringify({
@@ -666,9 +719,9 @@ export function createGeminiGenerator({
       if (!response.ok) {
         // Upstream bodies may contain prompts or credential details. Never relay them.
         await response.body?.cancel?.()
-        if (response.status === 429) throw new ApiError(429, 'Gemini 当前请求较多或额度不足，请稍后重试。')
+        if (response.status === 429) throw retryableError(429, 'Gemini 当前请求较多或额度不足，请稍后重试。')
         if ([400, 401, 403, 404].includes(response.status)) throw new ApiError(503, 'Gemini 暂时不可用，请检查服务端模型与密钥配置。')
-        throw new ApiError(502, 'Gemini 暂时没有响应，请稍后重试。')
+        throw retryableError(502, 'Gemini 暂时没有响应，请稍后重试。')
       }
       let payload
       try { payload = JSON.parse(await readResponse(response)) } catch (error) {
@@ -695,7 +748,17 @@ export function createGeminiGenerator({
     }
     try { return await Promise.race([execute(), deadline]) } catch (error) {
       if (error instanceof ApiError) throw error
-      throw new ApiError(502, '连接 Gemini 失败，请检查网络后重试。')
+      // An unclassified upstream/transport failure: keep the full stack in
+      // the server log (the cold-start 502 wall was undebuggable while
+      // this wrap swallowed it), then surface the usual plain copy.
+      try {
+        process.stderr.write(`${JSON.stringify({
+          type: 'generation-upstream-error',
+          message: String(error?.message || error),
+          stack: String(error?.stack || ''),
+        })}\n`)
+      } catch { /* logging is best-effort */ }
+      throw retryableError(502, '连接 Gemini 失败，请检查网络后重试。')
     } finally { clearTimeout(timeout) }
   }
 
@@ -713,14 +776,58 @@ export function createGeminiGenerator({
       const hash = createHash('sha256').update(`${backend}|${project}|${location}|${model}|${prepared.key}|${stylePresetOf(prepared.story).id}|${input}`).digest('hex')
       const timestamp = now()
       for (const [id, item] of cache) if (item.expires <= timestamp) cache.delete(id)
-      if (cache.has(hash)) return clone(cache.get(hash).result)
-      if (inFlight.has(hash)) return clone(await inFlight.get(hash))
+      // A cache hit (or joining the identical in-flight call) returns the
+      // SAME generation: the provider was paid once, so the result is
+      // flagged — non-enumerably, so it never reaches the wire — and the
+      // HTTP layer skips the second usage-ledger entry (RELIABILITY.md;
+      // the cold-start ledger counted one chapter twice this way).
+      const markCached = (result) => {
+        Object.defineProperty(result, 'cached', { value: true, configurable: true })
+        return result
+      }
+      if (cache.has(hash)) return markCached(clone(cache.get(hash).result))
+      if (inFlight.has(hash)) return markCached(clone(await inFlight.get(hash)))
       starts = starts.filter((started) => started > timestamp - 60_000)
       if (inFlight.size >= maxConcurrent || starts.length >= maxRequestsPerMinute) {
         throw new ApiError(429, '正在续写其他章节，请稍后再试。')
       }
       starts.push(timestamp)
-      const pending = requestChapter(prepared, input).then((result) => {
+      // Resilience loop: transient failures retry with jittered
+      // exponential backoff inside ONE in-flight entry (concurrent
+      // identical requests still join this single sequence, never a
+      // parallel one), and one fallback-channel attempt runs when the
+      // primary is exhausted — its chapter is stamped degraded so the
+      // reader can be told, in the open, that a backup channel wrote it.
+      const runWithResilience = async () => {
+        const startedAt = now()
+        const remaining = () => totalBudgetMs - (now() - startedAt)
+        const attemptTimeout = () => Math.max(1_000, Math.min(timeoutMs, remaining()))
+        let lastError
+        for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+          if (attempt > 0) {
+            if (remaining() <= 5_000) break
+            const delay = retryBaseMs * 2 ** (attempt - 1) * (0.7 + random() * 0.6)
+            await sleep(Math.min(delay, Math.max(0, remaining() - 5_000)))
+            if (remaining() <= 5_000) break
+          }
+          try {
+            return await requestChapter(prepared, input, { location, model, timeoutMs: attemptTimeout() })
+          } catch (error) {
+            lastError = error
+            if (!error?.retryable) throw error
+          }
+        }
+        if (fallbackChannel && lastError?.retryable && remaining() > 10_000) {
+          try {
+            const result = await requestChapter(prepared, input, { ...fallbackChannel, timeoutMs: attemptTimeout() })
+            result.degraded = true
+            result.chapter = { ...result.chapter, degraded: true }
+            return result
+          } catch { /* the primary error below is the honest one to surface */ }
+        }
+        throw lastError
+      }
+      const pending = runWithResilience().then((result) => {
         if (cacheSize > 0) {
           cache.set(hash, { result, expires: now() + cacheTtlMs })
           while (cache.size > cacheSize) cache.delete(cache.keys().next().value)

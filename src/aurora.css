@@ -26,16 +26,28 @@
 /* ---- Skeleton & generation screen ---- */
 .skeleton-line{border-radius:8px;background:linear-gradient(100deg,rgba(148,178,255,.10) 40%,rgba(190,230,255,.22) 50%,rgba(148,178,255,.10) 60%);background-size:200% 100%;animation:shimmer-run var(--dur-shimmer) linear infinite}
 @keyframes shimmer-run{from{background-position:120% 0}to{background-position:-80% 0}}
-.generation-overlay{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:24px;background:rgba(4,8,20,.66);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:page-in var(--dur-sheet) var(--ease-out) both}
+/* Waiting overlays are pinned to the VISUAL viewport: 100dvh sizing,
+   safe centering (an overflowing card aligns to the start and stays
+   reachable by scrolling the overlay itself), safe-area padding and
+   contained overscroll. The pre-fix pair used plain inset:0 + center,
+   which on a phone could open with the card's top off-screen
+   (RELIABILITY.md). Both overlays also render through a body portal,
+   so no transformed ancestor can re-base their fixed positioning. */
+.generation-overlay{position:fixed;inset:0;height:100dvh;max-height:100dvh;z-index:60;display:grid;place-items:safe center;overflow-y:auto;overscroll-behavior:contain;padding:max(24px,env(safe-area-inset-top)) max(24px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(24px,env(safe-area-inset-left));background:rgba(4,8,20,.66);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:page-in var(--dur-sheet) var(--ease-out) both}
 .generation-card{width:min(100%,430px);padding:30px 26px 26px;border:1px solid var(--line);border-radius:var(--radius-sheet);background:rgba(10,20,48,.88);box-shadow:var(--shadow-raised);text-align:center}
-.generation-orb{width:64px;height:64px;margin:0 auto 20px;border-radius:50%;background:radial-gradient(circle at 35% 35%,rgba(110,231,255,.85),rgba(167,139,250,.55) 55%,rgba(240,166,255,.25));filter:blur(.4px);animation:orb-pulse 2s ease-in-out infinite}
+.generation-orb{position:relative;width:64px;height:64px;margin:0 auto 20px;border-radius:50%;background:radial-gradient(circle at 35% 35%,rgba(110,231,255,.85),rgba(167,139,250,.55) 55%,rgba(240,166,255,.25));filter:blur(.4px);animation:orb-pulse 2s ease-in-out infinite}
+.generation-halo{position:absolute;inset:-14px;border-radius:50%;border:1px solid rgba(110,231,255,.45);animation:halo-breathe 2.6s ease-in-out infinite}
+@keyframes halo-breathe{0%,100%{transform:scale(.82);opacity:.25}50%{transform:scale(1.08);opacity:.8}}
 @keyframes orb-pulse{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.14);opacity:1}}
 .generation-card h2{margin:0 0 8px;font-size:21px;font-weight:800}
 .generation-step{min-height:26px;margin:0;color:var(--violet);font-size:15px;font-weight:650;animation:page-in var(--dur-state) var(--ease-out) both}
 .generation-note{margin:10px 0 0;color:var(--dim);font-size:13px;line-height:1.75}
-.generation-flow{height:5px;margin:22px 0 6px;border-radius:99px;background:var(--glass-2);overflow:hidden}
-.generation-flow i{display:block;height:100%;width:38%;border-radius:99px;background:linear-gradient(90deg,transparent,var(--cyan),var(--violet),transparent);animation:flow-run 1.5s linear infinite}
-@keyframes flow-run{from{transform:translateX(-110%)}to{transform:translateX(290%)}}
+.generation-stages{display:flex;justify-content:center;gap:8px;margin:16px 0 12px;padding:0;list-style:none}
+.generation-stages li{padding:6px 12px;border:1px solid var(--line);border-radius:999px;color:var(--dim);font-size:13px;font-weight:650;transition:opacity var(--dur-state) var(--ease-out),color var(--dur-state) var(--ease-out),border-color var(--dur-state) var(--ease-out)}
+.generation-stages li.active{color:#06122b;background:linear-gradient(120deg,var(--cyan),var(--violet));border-color:transparent}
+.generation-stages li.done{color:var(--mint);border-color:rgba(125,255,206,.45)}
+.generation-progress{height:5px;border-radius:99px;background:var(--glass-2);overflow:hidden}
+.generation-progress i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--cyan),var(--violet));transition:width .3s linear}
 .generation-skeleton{display:grid;gap:10px;margin-top:20px;text-align:left}
 .generation-skeleton .skeleton-line{height:13px}
 .generation-skeleton .skeleton-line.w60{width:60%}.generation-skeleton .skeleton-line.w85{width:85%}.generation-skeleton .skeleton-line.w45{width:45%}
@@ -43,7 +55,9 @@
 
 /* ---- Intervention sequence （介入）: the worldline stirs and reweaves ----
    Transform/opacity only, so the global motion policy freezes it cleanly. */
-.intervention-overlay{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:24px;background:rgba(4,8,20,.66);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:page-in var(--dur-sheet) var(--ease-out) both}
+.intervention-overlay{position:fixed;inset:0;height:100dvh;max-height:100dvh;z-index:60;display:grid;place-items:safe center;overflow-y:auto;overscroll-behavior:contain;padding:max(24px,env(safe-area-inset-top)) max(24px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(24px,env(safe-area-inset-left));background:rgba(4,8,20,.66);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:page-in var(--dur-sheet) var(--ease-out) both}
+.intervention-progress{height:5px;margin-top:16px;border-radius:99px;background:rgba(148,178,255,.16);overflow:hidden}
+.intervention-progress i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--cyan),var(--violet));transition:width var(--dur-state) var(--ease-out)}
 .intervention-card{width:min(100%,430px);padding:30px 26px 26px;border:1px solid rgba(168,196,255,.35);border-radius:var(--radius-sheet);background:rgba(8,16,38,.96);box-shadow:var(--shadow-raised);text-align:center;color:#eaf2ff}
 .intervention-card h2{margin:0 0 14px;font-size:21px;font-weight:800;color:#f2f7ff}
 .intervention-weave{width:150px;height:90px;margin:0 auto 16px;display:block;overflow:visible}

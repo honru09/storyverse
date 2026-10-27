@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 const STAGES = ["扰动世界线", "重写下一章", "落定"];
 const STAGE_NOTES = [
@@ -51,7 +52,11 @@ export default function InterventionOverlay({
     }, 700);
     return () => window.clearTimeout(timer);
   }, [settled, stage, onDone]);
-  return (
+  // The bar follows the stage sequence: each stage fills its share as
+  // it completes, and the last stage only reaches 100% once the work has
+  // actually settled — presentation, never a percentage claim.
+  const progress = ((stage + (settled ? 1 : 0.45)) / stages.length) * 100;
+  return createPortal(
     <div className="intervention-overlay" role="alertdialog" aria-modal="false" aria-label={ariaLabel}>
       <div className="intervention-card">
         <svg className="intervention-weave" viewBox="0 0 120 72" aria-hidden="true">
@@ -77,7 +82,9 @@ export default function InterventionOverlay({
         <p className="intervention-stage-note" role="status">
           {notes[stage]}
         </p>
+        <div className="intervention-progress" aria-hidden="true"><i style={{ width: `${progress}%` }} /></div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

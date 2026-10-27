@@ -68,7 +68,11 @@ export async function generationStatus({ fetchImpl = globalThis.fetch, signal } 
 }
 
 async function sendGenerateRequest(story, payload, { fetchImpl = globalThis.fetch, signal, getAccessToken, onAuthRequired } = {}) {
-  const timeout = AbortSignal.timeout(65000)
+  // The server now works inside a 270s total budget (retries + fallback,
+  // RELIABILITY.md) under the platform's 300s ceiling; the old 65s client
+  // cap aborted slow-evening chapters the server was about to deliver.
+  // The wait is carried by the staged progress screen, not by this cap.
+  const timeout = AbortSignal.timeout(290_000)
   const headers = { 'Content-Type': 'application/json' }
   if (getAccessToken) {
     // Either sign-in channel can supply the bearer token. A guest simply

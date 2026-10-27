@@ -3762,6 +3762,9 @@ function Reader({
               <p className="frontier-note">
                 这是最新章节，它的下一章还没有生成——现在还能亲手调度这一章。下一章一旦写下，这一章就此定稿。
               </p>
+              {chapter.degraded && (
+                <p className="frontier-degraded">本章由备用通道生成</p>
+              )}
               {rerollConfirm ? (
                 <div className="frontier-buttons">
                   <Button variant="secondary" onClick={submitReroll}>

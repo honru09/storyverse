@@ -267,15 +267,23 @@ test('concurrency and sliding-window limits reject extra paid requests', async (
   await assert.rejects(byMinute.generate({ story: story(), index: 0 }), (error) => error.status === 429)
 })
 
-test('upstream failures are sanitized and never retried automatically', async () => {
-  for (const [status, expected] of [[400, 503], [401, 503], [403, 503], [404, 503], [429, 429], [500, 502]]) {
+test('upstream failures are sanitized; transient classes retry, configuration errors do not', async () => {
+  // Policy change (RELIABILITY.md): this test used to pin "never retried
+  // automatically", from when a failed attempt might have been a paid
+  // request. The cold-start batch verified against the account's own
+  // usage readouts that failed attempts are never charged, and the retry
+  // mandate followed — so upstream 429 / 5xx now retry inside the budget
+  // (1 initial + 2 retries = 3 calls), while configuration-class
+  // failures (400/401/403/404 → 503) still surface after exactly one
+  // call. Sanitisation is unchanged.
+  for (const [status, expected, expectedCalls] of [[400, 503, 1], [401, 503, 1], [403, 503, 1], [404, 503, 1], [429, 429, 3], [500, 502, 3]]) {
     let calls = 0
-    const generator = createGeminiGenerator({ env, fetchImpl: async () => {
+    const generator = createGeminiGenerator({ env, sleep: async () => {}, fetchImpl: async () => {
       calls += 1
       return new Response(`SECRET ${env.GEMINI_API_KEY}`, { status })
     } })
     await assert.rejects(generator.generate({ story: story(), index: 0 }), (error) => error.status === expected && !error.message.includes('SECRET') && !error.message.includes(env.GEMINI_API_KEY))
-    assert.equal(calls, 1)
+    assert.equal(calls, expectedCalls)
   }
 })
 
@@ -300,17 +308,20 @@ test('blocked, truncated, malformed and schema-invalid output never becomes a ch
   }
 })
 
-test('timeout aborts transport and reports retryable error without a second paid request', async () => {
+test('timeout aborts transport and retries inside the budget before reporting 504', async () => {
+  // Companion to the policy change above: a deadline is a transient
+  // failure, so the budget buys two more attempts (each with its own
+  // aborted transport) before the 504 surfaces — still sanitised.
   let calls = 0
   let signal
-  const generator = createGeminiGenerator({ env, timeoutMs: 15, fetchImpl: async (_url, options) => {
+  const generator = createGeminiGenerator({ env, timeoutMs: 15, sleep: async () => {}, fetchImpl: async (_url, options) => {
     calls += 1
     signal = options.signal
     return new Promise((_, reject) => options.signal.addEventListener('abort', () => reject(new Error('SECRET timeout details')), { once: true }))
   } })
   await assert.rejects(generator.generate({ story: story(), index: 0 }), (error) => error.status === 504 && !error.message.includes('SECRET'))
   assert.equal(signal.aborted, true)
-  assert.equal(calls, 1)
+  assert.equal(calls, 3)
 })
 
 const responseWithUsage = (value, usageMetadata) => new Response(JSON.stringify({
