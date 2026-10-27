@@ -721,6 +721,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .plaza-chip-x{color:var(--dim);font-size:12px}
 .plaza-meta{display:flex;align-items:center;gap:9px;margin-top:10px;color:var(--dim);font-size:12.5px}
 .plaza-badge{padding:2px 8px;border-radius:6px;background:rgba(125,232,195,.14);color:#7de8c3;font-size:11px;font-weight:700}
+.plaza-badge.is-official{background:rgba(246,178,62,.18);color:#f6b23e}
 .plaza-card-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
 .plaza-detail-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .plaza-detail-cover{position:relative;margin-top:16px;border-radius:var(--radius-card);overflow:hidden;aspect-ratio:16/9;background:#0a1430}

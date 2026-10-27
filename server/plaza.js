@@ -5,6 +5,7 @@ import { plazaSnapshot } from '../src/story-engine.js'
 import { PLAZA_REPORT_THRESHOLD, plazaGateFor } from '../src/plaza.js'
 import { emptyLibrary, validateLibrary } from '../src/persistence.js'
 import { avatarAppearanceText } from '../src/avatar.js'
+import { usernameUid } from './username-auth.js'
 import { createPlazaStore } from './plaza-store.js'
 import { createAvatarStore } from './avatar-store.js'
 import { createCoverStore } from './cover-store.js'
@@ -31,6 +32,17 @@ import { createSocialStore, pictureSourceFor } from './social-store.js'
  */
 const clip = (value, length) => typeof value === 'string' ? value.trim().slice(0, length) : ''
 
+// The designated official accounts: lines published from here are the
+// site's own showcase samples, labelled 官方示例 everywhere they render.
+// The flag is DERIVED from the author's uid at read time — it is never
+// read from a request body or a client-supplied record field, so no
+// client input can claim it. The usernames are server-owned constants
+// (the registration in COLDSTART.md claims the first that is free; the
+// fallback name stays official so the sample survives either way).
+export const OFFICIAL_USERNAMES = ['storyweave', 'storyweave_official']
+export const isOfficialUid = (uid) => typeof uid === 'string'
+  && OFFICIAL_USERNAMES.some((name) => uid === usernameUid(name))
+
 function authorNameFor(identity) {
   // A public author name is never an email address: an identity whose
   // only "name" is its email (email/password or email-code accounts
@@ -46,6 +58,10 @@ function summaryOf(record) {
     id: record.id,
     title: record.title,
     authorName: record.authorName,
+    // Official-sample flag, derived from the server-side author uid —
+    // see OFFICIAL_USERNAMES above. Rides every summary surface (feed,
+    // detail, author profiles) because they all pass through here.
+    official: isOfficialUid(record.authorUid),
     avatar: record.avatar,
     genreId: record.genreId,
     genreTemplateId: record.genreTemplateId,

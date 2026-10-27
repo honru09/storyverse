@@ -4126,7 +4126,7 @@ function StoreRanking({ books, onOpenBook }) {
   );
 }
 
-function Store({ onNavigate, onOpenBook, onOpenOwn, publications }) {
+function Store({ onNavigate, onOpenBook, onOpenOwn, publications, officialSample }) {
   const [filter, setFilter] = useState("全部");
   const filters = ["全部", "奇幻", "修仙", "赛博", "都市", "合流章"];
   const published = (publications || []).filter((item) => item.snapshot?.chapters?.length).map((item) => {
@@ -4144,11 +4144,18 @@ function Store({ onNavigate, onOpenBook, onOpenOwn, publications }) {
       sourceLabel: "本机分享",
     };
   });
+  // Sample copies: with an official sample line on the plaza, the
+  // sample IS that line — real generated chapters, read-only. Without
+  // one, the built-in demo books stay but are labelled honestly as
+  // placeholders （试读占位）: their scaffold text must never pose as a
+  // finished chapter (PERSONA-QA F-21).
   const books = [
-    ...COMMUNITY_BOOKS.map((book) => ({
-      ...storeBookMeta(book),
-      sourceLabel: "示例故事",
-    })),
+    ...(officialSample
+      ? [{ ...storeBookMeta(officialSample), sourceLabel: "官方示例" }]
+      : COMMUNITY_BOOKS.map((book) => ({
+          ...storeBookMeta(book),
+          sourceLabel: "试读占位",
+        }))),
     ...published,
   ];
   const visibleBooks =
@@ -4166,7 +4173,7 @@ function Store({ onNavigate, onOpenBook, onOpenOwn, publications }) {
           分享 <Icon name="send" size={17} />
         </button>
       </header>
-      <p className="page-caption">示例故事与本机分享</p>
+      <p className="page-caption">{officialSample ? "官方示例与本机分享" : "试读占位与本机分享"}</p>
 
       <div className="store-toolbar">
         <div className="store-filters" role="group" aria-label="小说分类">
@@ -4293,6 +4300,7 @@ function PlazaCard({ publication, own, onOpen, onRead, onEnter, onOpenProfile })
           <span className="plaza-chip">{templateName}</span>
         </div>
         <div className="plaza-meta">
+          {publication.official && <span className="plaza-badge is-official">官方示例</span>}
           <span className="plaza-badge">{plazaLineStatusFor(publication) === "serializing" ? "连载中" : "已完结"}</span>
           <span>{plazaLengthLabel(publication)}</span>
         </div>
@@ -4352,6 +4360,17 @@ function PlazaFeed({ account, activeStory, onNavigate, onOpenStory, onOpenDetail
         </div>
         <Button onClick={() => onNavigate("plaza-publish")}>发布 <Icon name="arrow" size={15} /></Button>
       </section>
+
+      {feed?.some((item) => item.official) && (
+        <button type="button" className="plaza-mine-row" onClick={() => onOpenDetail(feed.find((item) => item.official))}>
+          <Icon name="book" size={20} />
+          <span>
+            <strong>先看看一条走完的线长什么样</strong>
+            <small>官方示例线 · 完整一季，可以直接读原作</small>
+          </span>
+          <Icon name="chevron" size={16} />
+        </button>
+      )}
 
       <button type="button" className="plaza-mine-row" onClick={() => onNavigate("home")}>
         <Icon name="book" size={20} />
@@ -4490,6 +4509,7 @@ function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter,
         <div className="plaza-detail-cover-copy">
           <h1>《{detail.title}》</h1>
           <p>{detail.worldName} × {templateName} · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"}</p>
+          {detail.official && <span className="plaza-badge is-official">官方示例 · 织界官方走完的完整故事线</span>}
         </div>
       </section>
 
@@ -4830,7 +4850,7 @@ function ProfileLineRow({ publication, onOpen }) {
       <span className="profile-line-art"><ProfileCoverArt publication={publication} /></span>
       <span className="profile-line-copy">
         <strong>{publication.title}</strong>
-        <small>{publication.worldName || genre.world} × {templateName} · {plazaLengthLabel(publication)}</small>
+        <small>{publication.worldName || genre.world} × {templateName} · {plazaLengthLabel(publication)}{publication.official && <> · <span className="plaza-badge is-official">官方示例</span></>}</small>
         <small>{formatProfileDate(publication.publishedAt)}发布</small>
       </span>
       <Icon name="chevron" size={16} />
@@ -5239,6 +5259,32 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
     </>
   );
 }
+function OfficialDemoEntry({ onNavigate }) {
+  // The publish gate explains the order (avatar first, then a finished
+  // line) — this entry shows a newcomer what the destination looks like
+  // before they walk it. It renders ONLY when an official sample line
+  // actually exists on the plaza; otherwise it stays absent entirely.
+  const [official, setOfficial] = useState(null);
+  useEffect(() => {
+    let live = true;
+    fetchPlazaFeed()
+      .then(({ publications }) => { if (live) setOfficial(publications.find((item) => item.official) || null); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+  if (!official) return null;
+  return (
+    <section className="plaza-panel plaza-demo-entry">
+      <div className="plaza-panel-heading">
+        <h2>先看看一条走完的线长什么样</h2>
+        <span className="plaza-badge is-official">官方示例</span>
+      </div>
+      <p className="plaza-note">《{official.title}》——织界官方的化身走完的完整故事线。读原作线不消耗你的生成额度，也能带自己的化身进去重演。</p>
+      <Button variant="secondary" onClick={() => onNavigate("plaza-detail", { id: official.id })}>去看示例线 <Icon name="arrow" size={15} /></Button>
+    </section>
+  );
+}
+
 function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onToast }) {
   const [selectedId, setSelectedId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -5273,6 +5319,8 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
         <h1>发布到广场</h1>
       </header>
       <p className="page-caption">把一条故事线放上广场：走完的线整条发布；无限连载的线连载中就能发布，之后的新章会自己跟上。发布后，其他人能读你的原作线，也能带自己的化身进入这个世界重演一条新线。</p>
+
+      <OfficialDemoEntry onNavigate={onNavigate} />
 
       {!account.user ? (
         <div className="plaza-empty" role="status">
@@ -6109,8 +6157,34 @@ function App() {
       null,
     [library],
   );
+  // The bookstore's sample copy: when an official sample line exists on
+  // the plaza, its real chapters ARE the sample (read-only). Resolved
+  // once here so both the store shelf and the shared-reader route can
+  // find the same story object.
+  const [officialSample, setOfficialSample] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchPlazaFeed()
+      .then(async ({ publications }) => {
+        const official = publications.find((item) => item.official);
+        if (!official || cancelled) return;
+        const detail = await fetchPlazaDetail({ id: official.id });
+        if (cancelled || !detail) return;
+        const story = plazaReaderStory(detail);
+        if (story) {
+          setOfficialSample({
+            ...story,
+            status: plazaLineStatusFor(detail) === "serializing" ? "ongoing" : "complete",
+          });
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const readerExternal = route.shared
-    ? COMMUNITY_BOOKS.find((book) => book.id === route.id) || library.publications.find((item) => item.id === route.id)?.snapshot
+    ? COMMUNITY_BOOKS.find((book) => book.id === route.id)
+      || (officialSample && officialSample.id === route.id ? officialSample : null)
+      || library.publications.find((item) => item.id === route.id)?.snapshot
     : null;
   const [plazaLines, setPlazaLines] = useState({});
   const readerStory = route.shared
@@ -6551,6 +6625,7 @@ function App() {
         onOpenBook={openCommunityBook}
         onOpenOwn={openOwnForShare}
         publications={library.publications}
+        officialSample={officialSample}
       />
     );
   else if (view === "merge")

@@ -197,6 +197,39 @@ test('publish → feed → detail round-trip, with the private marker scrubbed e
   assert.equal(portrait.headers.get('content-type'), 'image/jpeg')
 })
 
+test('official flag: derived from the author uid, never claimable through client input', async (t) => {
+  const { base } = await startPlazaServer(t)
+  // The designated official account (server-owned username constant).
+  const officialToken = await register(base, 'storyweave')
+  const officialAvatar = await makeAvatar(base, officialToken, '沈知遥')
+  const officialResponse = await publish(base, officialToken, completedLine(officialAvatar.id, { title: '官方示例线' }))
+  assert.equal(officialResponse.status, 200)
+  const { publication: officialPublication } = await officialResponse.json()
+  assert.equal(officialPublication.official, true, 'publish response flags the official line')
+
+  // A normal author whose story body tries to claim the flag every way
+  // a client could smuggle it in: the flag must stay false everywhere.
+  const token = await register(base, 'plaza_author_fan')
+  const avatar = await makeAvatar(base, token)
+  const claiming = completedLine(avatar.id, { title: '冒充官方的线' })
+  claiming.official = true
+  claiming.config.official = true
+  const response = await publish(base, token, claiming)
+  assert.equal(response.status, 200)
+  const { publication } = await response.json()
+  assert.equal(publication.official, false, 'publish response ignores client-claimed official flags')
+
+  const feed = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  const byId = new Map(feed.map((item) => [item.id, item]))
+  assert.equal(byId.get(officialPublication.id)?.official, true, 'feed flags the official line')
+  assert.equal(byId.get(publication.id)?.official, false, 'feed leaves normal lines unflagged')
+
+  const detail = (await (await fetch(`${base}/api/plaza/${officialPublication.id}`)).json()).publication
+  assert.equal(detail.official, true, 'detail flags the official line')
+  const normalDetail = (await (await fetch(`${base}/api/plaza/${publication.id}`)).json()).publication
+  assert.equal(normalDetail.official, false, 'detail leaves normal lines unflagged')
+})
+
 test('a story’s own generated cover rides the feed/detail summaries and is served under the publication id', async (t) => {
   const { base, coverStore } = await startPlazaServer(t)
   const token = await register(base, 'plaza_author_cover')
