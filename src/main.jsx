@@ -55,6 +55,7 @@ import {
   fetchPlazaFeed,
   plazaGateFor,
   plazaLengthLabel,
+  plazaLineStatusFor,
   plazaMine,
   plazaMineForget,
   plazaMineIds,
@@ -118,30 +119,39 @@ import {
   COMMUNITY_BOOKS,
   CUSTOM_GENRE,
   CUSTOM_GENRE_ID,
+  CUSTOM_LENGTH_MAX,
+  CUSTOM_LENGTH_MIN,
   CUSTOM_WORLD_NAME_MAX,
   CUSTOM_WORLD_SETTING_MAX,
   DEFAULT_DRAFT,
   FRIEND_BOOK,
   GENRES,
+  GENRE_SHELVES,
   GENRE_TEMPLATES,
   ORIGIN_IDENTITIES,
   START_POINT_NAME_MAX,
   abilityCandidatesFor,
+  abilityGroupsFor,
   buildChapter,
   chapterForReading,
   chooseBranch,
   createMergedStory,
   createStory,
+  finishEndlessLine,
   genreTemplateById,
+  isManuallyFinished,
   localIdentityTitle,
   originIdentityById,
   originSummaryFor,
   isStoryComplete,
   publicSnapshot,
   resolveStartPoint,
+  shelfById,
+  shelfForTemplate,
   startNextSeason,
   storyLengthModeOf,
   totalChaptersFor,
+  validTargetChapters,
   spawnPointsForIdentity,
   startPointByName,
 } from "./story-engine";
@@ -325,28 +335,42 @@ const toWorld = (genre) => ({
   label: `${genre.label} · 世界线`,
 });
 const worlds = GENRES.map(toWorld);
-// The start flow leads with the craft (genre template); the wall order is a
-// curated shelf, not the engine list order: flagship fantasy first as the
-// large brick, then the remaining crafts in reading-habit order.
-const TEMPLATE_WALL_ORDER = [
-  "xuanhuan",
-  "xianxia",
-  "gaowu",
-  "romance-ancient",
-  "scifi",
-  "wuxianliu",
-  "guize-guatan",
-  "horror",
-  "lishi",
-  "romance-modern",
-  "suspense-supernatural",
-  "campus",
-  "urban",
-  "zhihu-short",
-];
-const templateWall = TEMPLATE_WALL_ORDER
+// The start flow's flat template list: every writing template exactly
+// once, in shelf order (the two-level taxonomy in GENRE_SHELVES is the
+// navigation; this list is the pool the defaults and rolls draw from).
+// Flagship fantasy first, so the wall's default and first brick agree.
+const templateWall = GENRE_SHELVES
+  .flatMap((shelf) => shelf.templateIds)
   .map((id) => GENRE_TEMPLATES.find((template) => template.id === id))
   .filter(Boolean);
+
+// The legible one-line statement of a length choice, shared by the forge
+// summary, the side preview and the picker heading: 全24章 / 全37章 /
+// 无限连载 — a custom line states its own reader-chosen total.
+const lengthLabelFor = (source) => {
+  const mode = storyLengthModeOf(source);
+  if (mode === "endless") return "无限连载";
+  if (mode === "custom") return `自定义 · 全 ${validTargetChapters(source?.config?.targetChapters ?? source?.targetChapters) ?? 24} 章`;
+  if (mode === "long") return "长线 · 全 100 章";
+  if (mode === "season") return "一季 · 全 24 章";
+  return "短季 · 全 6 章";
+};
+
+// A story map drawn against an unbounded total (a running endless line)
+// shows the chapters that exist plus the one being written, never ∞ nodes.
+const mapTotalFor = (total, generated = 0, current = 0) =>
+  Number.isFinite(total) ? total : Math.max(generated + 1, current + 1, 1);
+
+// The two-segment genre label （家族 · 模板） used by the forge summary and
+// the side preview. A template whose full name already carries its family
+// （言情 · 古言） stands as-is; every other template reads shelf-first, the
+// same shape as the identity row's 概念 · 本地称谓.
+const twoSegmentTemplateName = (template) => {
+  if (!template) return "";
+  if (template.fullName.includes(" · ")) return template.fullName;
+  const shelf = shelfForTemplate(template.id);
+  return shelf ? `${shelf.name} · ${template.name}` : template.fullName;
+};
 
 function seedStory(story) {
   return { ...prepareReadingWindow(story, 0), readerIndex: 0 };
@@ -505,6 +529,11 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
   const currentChapter = activeStory
     ? Math.min(activeTotal, readerIndexFor(activeStory) + 1)
     : 1;
+  // A running endless line has no denominator: its position reads as a
+  // serialising count, and its map shows the chapters that exist.
+  const activeSerializing = activeStory
+    ? storyLengthModeOf(activeStory) === "endless" && !isManuallyFinished(activeStory)
+    : false;
   const otherStories = stories.filter((story) => story.id !== activeStory?.id);
 
   return (
@@ -533,7 +562,7 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
             {activeStory ? (
               <>
                 <span>{genre.label} · {activeStory.kind === "merged" ? "双主角" : displayName(activeStory)}</span>
-                <span className="resume-position">第 {currentChapter} / {activeTotal} 章</span>
+                <span className="resume-position">{activeSerializing ? `连载中 · 第 ${currentChapter} 章` : `第 ${currentChapter} / ${activeTotal} 章`}</span>
               </>
             ) : (
               "选一个世界。让故事，因你不同。"
@@ -542,10 +571,10 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
           {activeStory && (
             <div className="hero-starmap">
               <StoryMapMini
-                total={activeTotal}
+                total={mapTotalFor(activeTotal, activeStory.chapters?.length || 0, readerIndexFor(activeStory))}
                 generated={activeStory.chapters?.length || 0}
                 current={readerIndexFor(activeStory)}
-                state={generationState({ total: activeTotal, generated: activeStory.chapters?.length || 0, current: readerIndexFor(activeStory), engine: activeStory.engine, complete: activeStory.status === "complete" || isStoryComplete(activeStory) })}
+                state={generationState({ total: mapTotalFor(activeTotal, activeStory.chapters?.length || 0, readerIndexFor(activeStory)), generated: activeStory.chapters?.length || 0, current: readerIndexFor(activeStory), engine: activeStory.engine, complete: activeStory.status === "complete" || isStoryComplete(activeStory) })}
               />
             </div>
           )}
@@ -1001,13 +1030,14 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
                 const genre = genreById[row.genreId] || GENRES[0];
                 const total = story ? totalChaptersFor(story) : row.chapters;
                 const complete = story ? isStoryComplete(story) : false;
+                const serializing = story ? storyLengthModeOf(story) === "endless" && !isManuallyFinished(story) : false;
                 return (
                   <button type="button" key={row.storyId} className="avatar-journey" onClick={() => onOpenStory(row.storyId)}>
                     <span className="avatar-journey-main">
                       <b>{row.title}</b>
                       <small>{genre.world} · {row.kind === "merged" ? "合流" : (genreTemplateById(row.genreTemplateId)?.name || genre.label)}</small>
                     </span>
-                    <span className="avatar-journey-progress">{complete ? `已完结 · 全 ${total} 章` : `第 ${row.chapters} / ${total} 章`}</span>
+                    <span className="avatar-journey-progress">{complete ? `已完结 · 全 ${total} 章` : serializing ? `连载中 · 已更 ${row.chapters} 章` : `第 ${row.chapters} / ${total} 章`}</span>
                     <Icon name="chevron" size={15} />
                   </button>
                 );
@@ -1025,11 +1055,9 @@ function Stepper({ step, setStep }) {
   const steps = [
     { id: 1, label: "题材" },
     { id: 2, label: "世界" },
-    { id: 3, label: "身份" },
-    { id: 4, label: "出生点" },
-    { id: 5, label: "主角" },
-    { id: 6, label: "能力" },
-    { id: 7, label: "开局" },
+    { id: 3, label: "出身" },
+    { id: 4, label: "主角" },
+    { id: 5, label: "开局" },
   ];
   return (
     <nav className="stepper" aria-label="创作步骤">
@@ -1050,7 +1078,7 @@ function Stepper({ step, setStep }) {
   );
 }
 
-function TemplateBrick({ template, selected, featured, index = 0, onSelect }) {
+function TemplateBrick({ template, selected, featured, defaulted = false, index = 0, onSelect }) {
   return (
     <AnimatedContent className={`template-brick-wrap ${featured ? "featured" : ""}`} distance={8} delay={Math.min(index, 7) * 0.06}>
       <button
@@ -1068,13 +1096,13 @@ function TemplateBrick({ template, selected, featured, index = 0, onSelect }) {
         </span>
         <span className="template-brick-copy">
           <strong>{template.fullName}</strong>
-          <small>{template.blurb}</small>
         </span>
-        {selected && (
+        {selected && !defaulted && (
           <span className="selected-mark">
             <Icon name="check" size={13} />
           </span>
         )}
+        {selected && defaulted && <span className="default-badge">默认</span>}
       </button>
     </AnimatedContent>
   );
@@ -1136,9 +1164,9 @@ function PreviewPanel({ world, template, draft, ability, tone, spawn, onJump }) 
         </div>
       </div>
       <dl className="preview-facts">
-        {factRow("题材", template ? template.fullName : "完全自由", isCustom ? 2 : 1, "修改题材")}
+        {factRow("题材", template ? twoSegmentTemplateName(template) : "完全自由", isCustom ? 2 : 1, "修改题材")}
         {factRow("世界", world.name, 2, "修改世界")}
-        <div><dt>篇幅</dt><dd>{draft.storyLengthMode === "long" ? "长线 · 100 章" : draft.storyLengthMode === "season" ? "一季 · 24 章" : "短季 · 6 章"}</dd></div>
+        <div><dt>篇幅</dt><dd>{lengthLabelFor({ config: draft })}</dd></div>
         <div><dt>身份</dt><dd>{origin ? (origin.localTitle !== origin.name ? `${origin.name} · ${origin.localTitle}` : origin.name) : (draft.origin || "未定")}</dd></div>
         <div><dt>出生点</dt><dd>{spawn ? spawn.name : "由设定决定"}</dd></div>
         {draft.genreId === CUSTOM_GENRE.id && (
@@ -1176,16 +1204,45 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
   const [step, setStep] = useState(
     clampForgeStep(initialDraft?.step),
   );
+  // 「默认即选中」 governance: a value the system filled in silently (the
+  // first template, the default trait/style/length) is NOT shown as a
+  // deliberate pick. A restored draft's stored values were all confirmed
+  // on its own summary screen in their session, so they count as picked;
+  // a fresh draft's untouched defaults render with a 「默认」 tag until
+  // the reader actually taps a choice (or the summary restates them).
+  const wasRestored = initialDraft?.restoredDraft === true;
+  const [pickedTemplate, setPickedTemplate] = useState(wasRestored);
+  const [pickedTrait, setPickedTrait] = useState(wasRestored);
+  const [pickedTone, setPickedTone] = useState(wasRestored);
+  const [pickedLength, setPickedLength] = useState(wasRestored);
+  // Step one's open shelf (two-level taxonomy): starts on the shelf of a
+  // restored pick with siblings, so a resumed draft lands on its own L2
+  // screen with the pick lit; otherwise the L1 shelf screen.
+  const [shelfId, setShelfId] = useState(() => {
+    const shelf = shelfForTemplate(initialDraft?.genreTemplateId || "");
+    return shelf && shelf.templateIds.length > 1 ? shelf.id : null;
+  });
+  // The landing path of the last cross-shelf template roll, shown verbatim
+  // （悬疑惊悚 · 规则怪谈） so a random pick never hides where it landed.
+  const [rolledPath, setRolledPath] = useState(null);
   const [draft, setDraft] = useState(() => {
     const base = { ...DEFAULT_DRAFT, ...(initialDraft || {}) };
     // The world marker must always be a real boolean inside the flow: the
     // restore funnel (legacyDraftToDraft) supplies it for saved drafts;
     // anything else is a fresh draft whose world is still unchosen.
     if (typeof base.worldChosen !== "boolean") base.worldChosen = false;
-    // Creation only offers season / long: anything else (including the
-    // engine's legacy 'short' default baked into restored drafts) lands on
-    // the season default. An explicit long pick survives a restore.
-    if (base.storyLengthMode !== "long") base.storyLengthMode = "season";
+    // 篇幅自由化： the selectable lengths are season (default) / long /
+    // custom (own total) / endless. Anything else (including the engine's
+    // legacy 'short' baked into restored drafts) lands on the season
+    // default. A custom draft always carries a valid target inside the
+    // flow — the reader's own when there is one, a mid-range starter
+    // otherwise; the engine re-validates at creation regardless.
+    if (!["season", "long", "custom", "endless"].includes(base.storyLengthMode)) {
+      base.storyLengthMode = "season";
+    }
+    base.targetChapters = base.storyLengthMode === "custom"
+      ? validTargetChapters(base.targetChapters) ?? 36
+      : null;
     // Step one always has a category selected: a restored pick wins,
     // otherwise the wall's first brick. The category is NEVER derived from
     // the world (and the world never from the category): the two picks are
@@ -1254,6 +1311,19 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
     genreTemplateId: draft.genreTemplateId,
     custom: isCustom,
   });
+  // The same list grouped by origin, for the titled groups on the merged
+  // protagonist-and-ability step: 招牌能力 (template) vs 本事 (world), the
+  // god-mode generic pool as its own group.
+  const abilityGroups = abilityGroupsFor({
+    genreId: draft.genreId,
+    genreTemplateId: draft.genreTemplateId,
+    custom: isCustom,
+  });
+  const abilityGroupTitle = (kind) => kind === "signature"
+    ? `${template?.name || "所选写法"} · 招牌能力`
+    : kind === "world"
+      ? `${world.name} · 这个世界的本事`
+      : "通用能力";
   const lastGenreId = useRef(draft.genreId);
   useEffect(() => {
     if (lastGenreId.current === draft.genreId) return;
@@ -1284,22 +1354,52 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
   };
   // The random card's roll, shared with next(): draw any identity other
   // than the current one and land it (the spawn choice resets with it, so
-  // the spawn step opens on the rolled identity's cell default).
+  // the spawn section opens on the rolled identity's cell default).
   const rollIdentity = () => {
     const pool = ORIGIN_IDENTITIES.filter((item) => item.id !== identity?.id);
     const rolledIdentity = pool[Math.floor(Math.random() * pool.length)] || ORIGIN_IDENTITIES[0];
     if (rolledIdentity) selectIdentity(rolledIdentity.id);
   };
+  // 出身随机 (the merged origin roll on the combined 出身 step): identity
+  // and birthpoint are one decision cluster, so one roll draws both — an
+  // identity, then a point inside its cell in the current world. God mode
+  // has no point list: the roll lands the identity alone.
+  const rollOrigin = () => {
+    const pool = ORIGIN_IDENTITIES.filter((item) => item.id !== identity?.id);
+    const rolledIdentity = pool[Math.floor(Math.random() * pool.length)] || ORIGIN_IDENTITIES[0];
+    if (!rolledIdentity) return;
+    if (isCustom) {
+      set({ originIdentityId: rolledIdentity.id, startPointName: "", startPointHook: "" });
+      return;
+    }
+    const points = spawnPointsForIdentity(spawnGenre, rolledIdentity.id);
+    const point = points.length ? points[Math.floor(Math.random() * points.length)] : null;
+    set({
+      originIdentityId: rolledIdentity.id,
+      startPointName: point ? point.name : "",
+      startPointHook: point ? point.hook : "",
+    });
+  };
   // 题材与世界彻底解耦：题材屏只写分类，世界屏只写世界，两边互不跟随。
   // Picking a category touches the category field and nothing else — never
-  // the world, never the world marker.
+  // the world, never the world marker. It also counts as a deliberate pick
+  // (the 「默认」 tag comes off) and clears any stale roll path.
   const selectTemplate = (item) => {
+    setPickedTemplate(true);
+    setRolledPath(null);
     set({ genreTemplateId: item.id });
   };
+  // The template roll draws across ALL shelves' templates and lands on
+  // the rolled template's own L2 screen, its full path stated out loud.
   const rollTemplate = () => {
     const pool = templateWall.filter((item) => item.id !== template?.id);
     const rolledTemplate = pool[Math.floor(Math.random() * pool.length)] || templateWall[0];
-    if (rolledTemplate) selectTemplate(rolledTemplate);
+    if (!rolledTemplate) return;
+    const shelf = shelfForTemplate(rolledTemplate.id);
+    setPickedTemplate(true);
+    setRolledPath({ shelf: shelf?.name || "", template: rolledTemplate });
+    set({ genreTemplateId: rolledTemplate.id });
+    setShelfId(shelf && shelf.templateIds.length > 1 ? shelf.id : null);
   };
   // Picking a world touches the world field and lands the world marker —
   // never the category. The marker is what separates a deliberate world
@@ -1324,20 +1424,29 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
   };
   const enterGodMode = () => {
     // Remember the world the user had chosen before going god: god mode's
-    // spawn step may borrow that world's spawn points (crossed with the
+    // 出身 step may borrow that world's spawn points (crossed with the
     // identity). Entering without a chosen world stashes nothing.
+    // The step-one template pick is NOT touched: it carries into the god
+    // form as its 写法 (and back out again on exit) — entering god mode
+    // must never silently wipe a decision the reader already made.
     const borrow = draft.genreId !== CUSTOM_GENRE.id
       ? (worldChosen ? draft.genreId : "")
       : (draft.godBorrowWorldId || "");
-    set({ genreId: CUSTOM_GENRE.id, genreTemplateId: "", godBorrowWorldId: borrow });
+    set({ genreId: CUSTOM_GENRE.id, godBorrowWorldId: borrow });
   };
   const exitGodMode = () => {
     // Back to the world the user came from when there is one; a craft
     // picked as 写法 in god mode stays picked — it never implied a world.
+    // Only a "completely free" craft needs the step-one invariant restored
+    // (a category is always selected outside god mode): the wall's first.
     const backTo = GENRES.some((genre) => genre.id === draft.godBorrowWorldId)
       ? draft.godBorrowWorldId
       : DEFAULT_DRAFT.genreId;
-    set({ genreId: backTo, ...(draft.godBorrowWorldId ? { worldChosen: true } : {}) });
+    set({
+      genreId: backTo,
+      ...(draft.godBorrowWorldId ? { worldChosen: true } : {}),
+      ...(draft.genreTemplateId ? {} : { genreTemplateId: templateWall[0]?.id || "" }),
+    });
   };
   const appendFragment = (fragment) => {    const current = (draft.customWorldSetting || "").trim();
     const needsStop = current && !"。！？".includes(current.slice(-1));
@@ -1362,6 +1471,10 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
       startPointName: point ? point.name : "",
       startPointHook: point ? point.hook : "",
     });
+    setPickedTemplate(true);
+    setRolledPath(null);
+    const comboShelf = shelfForTemplate(nextTemplate.id);
+    setShelfId(comboShelf && comboShelf.templateIds.length > 1 ? comboShelf.id : null);
     setRolled({ template: nextTemplate, world: stageGenre.world, identity: nextIdentity, point });
   };
   // A pick only counts while it belongs to the current candidate list (or
@@ -1386,19 +1499,22 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
     // is not a choice, and silently keeping it would re-couple the world
     // to whatever the draft happened to start with.
     if (step === 2 && !isCustom && !worldChosen) rollWorld();
-    // Leaving the identity step with nothing picked must not fall through
-    // to the spawn step's whole-world fallback list — that would resurrect
-    // the old "pick a proper noun before knowing the world" problem through
-    // the back door. Roll an identity instead, exactly like the random
-    // card; a draft that already carries one is never re-rolled, and the
-    // pick can still be changed by going back a step.
-    if (step === 3 && !identity) rollIdentity();
-    // Leaving the ability step with nothing picked rolls from the current
-    // (world × template) list and lands it — the same rule as the world
-    // and identity steps. There is no default ability to fall back to.
-    if (step === 6 && !abilityPick) rollAbility();
+    // Merged 出身 step: leaving with no identity must not fall through to
+    // the spawn section's whole-world fallback list — that would resurrect
+    // the old "pick a proper noun before knowing the world" problem
+    // through the back door. Roll an identity instead, exactly like the
+    // random card — and STAY on this step, so the rolled identity's spawn
+    // points expand in place for the reader to see (and optionally
+    // change) before the next 继续 accepts the default point. A draft
+    // that already carries an identity is never re-rolled.
+    if (step === 3 && !identity) { rollIdentity(); return; }
+    // Leaving the merged protagonist step with no ability picked rolls
+    // from the current (world × template) list and lands it — the same
+    // rule as the world and identity sections. There is no default
+    // ability to fall back to.
+    if (step === 4 && !abilityPick) rollAbility();
     setError("");
-    setStep((value) => Math.min(7, value + 1));
+    setStep((value) => Math.min(5, value + 1));
   };
   const back = () => setStep((value) => Math.max(1, value - 1));
   useSceneMotion(
@@ -1414,6 +1530,10 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
       abilityId: abilityPick?.id || "",
       toneId,
       step,
+      // The five-step flow stamps its drafts so the restore funnel can
+      // tell current step numbers from seven/six-step ones (see
+      // migratedDraftStep) instead of folding them a second time.
+      flowVersion: 5,
     });
   }, [draft, abilityName, abilityPick?.id, tone.name, toneId, step, onDraftChange]);
   useEffect(() => {
@@ -1444,17 +1564,48 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
     finally { if (operation.current === controller) { operation.current = null; setBusy(false); } }
   };
   const spawnName = spawn?.name || world.location;
+  // The opening line is composed from the actual configuration — the
+  // chosen birthpoint's own opening circumstance, verbatim — never a
+  // hardcoded sample: a sci-fi-flavoured sentence must not leak into a
+  // cultivation world just because it was written first.
   const previewText = isCustom && (draft.customWorldSetting || "").trim()
     ? `${draft.name || "未命名旅人"}会在${world.name}醒来——${(draft.customWorldSetting || "").trim().slice(0, 56)}`
     : draft.immersive && draft.hometown
       ? `来自${draft.hometown}的${draft.role || "旅人"}，会在${spawnName}听见第一声回响。`
-      : `${draft.name || "未命名旅人"}会在${spawnName}收到一条无法解释的信号。`;
+      : spawn?.hook
+        ? `${draft.name || "未命名旅人"}，${spawn.hook}`
+        : `${draft.name || "未命名旅人"}会在${spawnName}醒来。`;
+  const openShelf = shelfById(shelfId);
+  // The custom-length input keeps its own text while typing (so a reader
+  // can clear the field on the way to a new number); the draft only ever
+  // receives a committed, in-range integer.
+  const [customLengthText, setCustomLengthText] = useState("");
+  useEffect(() => {
+    setCustomLengthText(String(validTargetChapters(draft.targetChapters) ?? 36));
+  }, [draft.targetChapters]);
+  const commitCustomLength = (raw) => {
+    const parsed = Number.parseInt(raw, 10);
+    const next = Number.isInteger(parsed)
+      ? Math.min(CUSTOM_LENGTH_MAX, Math.max(CUSTOM_LENGTH_MIN, parsed))
+      : (validTargetChapters(draft.targetChapters) ?? 36);
+    setPickedLength(true);
+    set({ storyLengthMode: "custom", targetChapters: next });
+    setCustomLengthText(String(next));
+  };
+  const pickLengthMode = (nextMode) => {
+    setPickedLength(true);
+    setRolledPath(null);
+    if (nextMode === "custom") {
+      set({ storyLengthMode: "custom", targetChapters: validTargetChapters(draft.targetChapters) ?? 36 });
+    } else {
+      set({ storyLengthMode: nextMode });
+    }
+  };
   return (
     <div ref={forgeRef} className="page page-forge page-enter" data-step={step}>
       <div className="forge-progress">
         <h1 className="sr-only">新故事</h1>
         <Stepper step={step} setStep={(value) => { if (!busy) setStep(value); }} />
-        <span className="step-count" aria-label={`第 ${step} 步，共 7 步`}>{step} / 7</span>
       </div>
       <div className="forge-layout">
         <main className="forge-main">
@@ -1463,36 +1614,10 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
               <div className="forge-section-heading">
                 <div>
                   <h2 tabIndex={-1}>想写哪种故事？</h2>
+                  <p className="step-intro">先挑一个大类，再选具体的写法。题材只是分类——故事发生在哪个世界，下一步由你自己选。</p>
                 </div>
               </div>
-              <div className="template-wall" role="group" aria-label="题材">
-                {templateWall.map((item, index) => (
-                  <TemplateBrick
-                    key={item.id}
-                    template={item}
-                    index={index}
-                    featured={index === 0}
-                    selected={template?.id === item.id}
-                    onSelect={selectTemplate}
-                  />
-                ))}
-                <AnimatedContent className="template-brick-wrap" distance={8} delay={0.42}>
-                  <button type="button" className="template-brick template-brick-random" onClick={rollTemplate}>
-                    <span
-                      className="template-brick-visual template-brick-visual--craft"
-                      style={{ background: "linear-gradient(150deg, rgba(110, 231, 255, 0.28), rgba(10, 20, 48, 0.25) 62%)" }}
-                      aria-hidden="true"
-                    >
-                      <span className="template-brick-symbol" style={{ color: "var(--cyan)" }}>掷</span>
-                    </span>
-                    <span className="template-brick-copy">
-                      <strong>随机</strong>
-                      <small>从十四种题材里抽一个——分类交给命运。</small>
-                    </span>
-                  </button>
-                </AnimatedContent>
-              </div>
-              <div className="random-combo-row">
+              <div className="random-combo-row random-combo-row--top">
                 <p>{rolled
                   ? <>已配好：<b>{rolled.template.fullName} · {rolled.world}</b>，以「{rolled.identity.name}」的身份{rolled.point ? <>，从「{rolled.point.name}」醒来</> : null}。不满意就再掷一次。</>
                   : <>没想好？<b>随机组合</b>一次配好题材、世界、身份和出生点。</>}</p>
@@ -1500,9 +1625,67 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                   {rolled ? "再掷一次" : "随机组合"}
                 </Button>
               </div>
-              <p className="world-selection-note" aria-live="polite">{template
-                ? `${template.blurb} 题材只是分类——故事发生在哪个世界，下一步由你自己选。`
-                : `不绑任何题材模板，写法完全自由。世界在下一步由你决定。`}</p>
+              {openShelf ? (
+                <>
+                  <button type="button" className="shelf-back" onClick={() => setShelfId(null)}>
+                    <Icon name="chevron" size={15} className="rotate-180" />
+                    换个家族
+                  </button>
+                  <div className="template-wall" role="group" aria-label={`${openShelf.name}的题材`}>
+                    {openShelf.templateIds.map((id, index) => {
+                      const item = genreTemplateById(id);
+                      if (!item) return null;
+                      return (
+                        <TemplateBrick
+                          key={item.id}
+                          template={item}
+                          index={index}
+                          featured={item.id === "xuanhuan"}
+                          selected={template?.id === item.id}
+                          defaulted={!pickedTemplate && template?.id === item.id}
+                          onSelect={selectTemplate}
+                        />
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <div className="shelf-grid" role="group" aria-label="题材分类">
+                  {GENRE_SHELVES.map((shelf, index) => {
+                    const only = shelf.templateIds.length === 1 ? genreTemplateById(shelf.templateIds[0]) : null;
+                    const holdsPick = template ? shelf.templateIds.includes(template.id) : false;
+                    return (
+                      <AnimatedContent key={shelf.id} className="shelf-brick-wrap" distance={8} delay={Math.min(index, 7) * 0.05}>
+                        <button
+                          type="button"
+                          className={`shelf-brick ${holdsPick ? "selected" : ""}`}
+                          aria-pressed={only ? holdsPick : undefined}
+                          aria-label={only ? shelf.name : `${shelf.name}，${shelf.templateIds.length} 种写法`}
+                          onClick={() => (only ? selectTemplate(only) : setShelfId(shelf.id))}
+                        >
+                          <strong>{shelf.name}</strong>
+                          {holdsPick && !pickedTemplate
+                            ? <span className="default-badge">默认</span>
+                            : holdsPick
+                              ? <span className="selected-mark"><Icon name="check" size={13} /></span>
+                              : !only && <span className="shelf-brick-count">{shelf.templateIds.length} 种写法</span>}
+                        </button>
+                      </AnimatedContent>
+                    );
+                  })}
+                  <AnimatedContent className="shelf-brick-wrap" distance={8} delay={0.45}>
+                    <button type="button" className="shelf-brick shelf-brick-random" onClick={rollTemplate}>
+                      <strong>随机题材</strong>
+                      <span className="shelf-brick-count">掷一次，落在哪算哪</span>
+                    </button>
+                  </AnimatedContent>
+                </div>
+              )}
+              <p className="world-selection-note" aria-live="polite">{rolledPath
+                ? <>命运指到了：<b>{rolledPath.shelf} · {rolledPath.template.name}</b>。不喜欢就再掷一次，或自己挑。</>
+                : template
+                  ? <>已选：<b>{twoSegmentTemplateName(template)}</b>{pickedTemplate ? "" : "（默认）"}。{template.blurb}。</>
+                  : "不绑任何题材模板，写法完全自由。世界在下一步由你决定。"}</p>
             </>
           )}
           {step === 2 && (
@@ -1512,6 +1695,13 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                   <h2 tabIndex={-1}>{isCustom ? "这个世界，由你写。" : "故事发生在哪个世界？"}</h2>
                 </div>
               </div>
+              <p className="world-selection-note" aria-live="polite">{isCustom
+                ? template
+                  ? `${template.blurb} 世界由你亲手写——${world.name}。`
+                  : `不绑任何题材模板，写法完全由你的设定决定。世界是${world.name}。`
+                : worldChosen
+                  ? `世界是${world.name}——${world.subtitle}。题材和世界互相独立：换世界不会动你选好的题材。`
+                  : `选一个现成的世界，或亲手写一个。不选也行：点「继续」会替你掷一个——掷世界不会动题材。`}</p>
               {isCustom ? (
                 <div className="god-form">
                   <button type="button" className="god-back" onClick={exitGodMode}>
@@ -1561,7 +1751,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                         type="button"
                         className={`stage-chip ${!template ? "selected" : ""}`}
                         aria-pressed={!template}
-                        onClick={() => set({ genreTemplateId: "" })}
+                        onClick={() => { setPickedTemplate(true); set({ genreTemplateId: "" }); }}
                       >
                         完全自由
                       </button>
@@ -1571,27 +1761,19 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                           key={item.id}
                           className={`stage-chip ${template?.id === item.id ? "selected" : ""}`}
                           aria-pressed={template?.id === item.id}
-                          onClick={() => set({ genreTemplateId: item.id })}
+                          onClick={() => { setPickedTemplate(true); set({ genreTemplateId: item.id }); }}
                         >
                           {item.name}
                         </button>
                       ))}
                     </div>
-                    <p className="field-hint">选一个题材，借它的结构与文风来写你的世界；选「完全自由」，写法不设限。</p>
+                    <p className="field-hint">这就是第一步选定的题材，带到这里作「写法」——改这里或改第一步，效果一样。选一个题材，借它的结构与文风来写你的世界；选「完全自由」，写法不设限。</p>
                   </div>
                   {error && <p className="god-error" role="alert">{error}</p>}
                 </div>
               ) : (
                 <>
                   <div className="world-grid" role="group" aria-label="世界">
-                    {worlds.map((item) => (
-                      <WorldCard
-                        key={item.id}
-                        world={item}
-                        selected={draft.worldChosen && draft.genreId === item.id}
-                        onSelect={selectStage}
-                      />
-                    ))}
                     <button type="button" className="world-card world-card-god" onClick={enterGodMode}>
                       <span className="world-card-cover world-card-cover--symbol" aria-hidden="true">
                         <span className="world-card-symbol">{CUSTOM_GENRE.symbol}</span>
@@ -1613,17 +1795,18 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                         <small>从六个世界里抽一个，抽中哪个就去哪个世界。</small>
                       </span>
                     </button>
+                    {worlds.map((item) => (
+                      <WorldCard
+                        key={item.id}
+                        world={item}
+                        selected={draft.worldChosen && draft.genreId === item.id}
+                        onSelect={selectStage}
+                      />
+                    ))}
                   </div>
                   <p className="god-ip-note">请勿直接使用他人作品或 IP 的设定——换上你自己的世界，故事才真正属于你。</p>
                 </>
               )}
-              <p className="world-selection-note" aria-live="polite">{isCustom
-                ? template
-                  ? `${template.blurb} 世界由你亲手写——${world.name}。`
-                  : `不绑任何题材模板，写法完全由你的设定决定。世界是${world.name}。`
-                : worldChosen
-                  ? `世界是${world.name}——${world.subtitle}。题材和世界互相独立：换世界不会动你选好的题材。`
-                  : `还没选也行：点「继续」会替你掷一个世界。题材和世界互相独立，掷世界不会动题材。`}</p>
             </>
           )}
           {step === 3 && (
@@ -1631,11 +1814,13 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
               <div className="forge-section-heading">
                 <div>
                   <h2 tabIndex={-1}>你以什么身份醒来？</h2>
+                  <p className="step-intro">身份决定你在这个世界里是谁；选好身份，它能落脚的出生点就在下面同一屏展开——出生点只决定第一幕从哪里睁开眼。{identity && !isCustom ? <>在{world.name}，人们会称你为「{localIdentityTitle(spawnGenre, identity.id)}」。</> : null}</p>
                 </div>
               </div>
               <div className="spawn-grid" role="group" aria-label="身份">
                 {ORIGIN_IDENTITIES.map((item) => {
                   const localTitle = localIdentityTitle(spawnGenre, item.id);
+                  const showLocal = !isCustom && localTitle !== item.name;
                   const active = identity?.id === item.id;
                   return (
                     <button
@@ -1646,117 +1831,106 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                       onClick={() => selectIdentity(item.id)}
                     >
                       <span className="spawn-card-head">
-                        <b>{item.name}</b>
-                        <em>{item.situation}</em>
+                        <b>{showLocal ? localTitle : item.name}</b>
                         {active && <Icon name="check" size={14} />}
                       </span>
+                      {showLocal && <span className="spawn-card-concept">{item.name}</span>}
                       <small>{item.description}</small>
-                      {!isCustom && localTitle !== item.name && (
-                        <span className="spawn-card-local">在{world.name}：{localTitle}</span>
-                      )}
                     </button>
                   );
                 })}
                 <button
                   type="button"
                   className="spawn-card spawn-random"
-                  onClick={rollIdentity}
+                  onClick={rollOrigin}
                 >
                   <span className="spawn-card-head">
-                    <b>随机</b>
+                    <b>随机出身</b>
                     <em>交给命运</em>
                   </span>
-                  <small>点一下，从十种身份里抽一个——出身不由你选的，才像人生。</small>
+                  <small>身份与出生点一起掷——出身不由你选的，才像人生。</small>
                 </button>
               </div>
-              <p className="field-hint">先定身份，再选出生点：身份决定你在这个世界里是谁，出生点只是你睁开眼的那一处地方。{identity && !isCustom ? <>在{world.name}，人们会称你为「{localIdentityTitle(spawnGenre, identity.id)}」。</> : null}</p>
+              {identity && (
+                <div className="spawn-section">
+                  <div className="forge-section-heading mini">
+                    <div>
+                      <h3>从哪里醒来？</h3>
+                    </div>
+                  </div>
+                  {isCustom ? (
+                    <div className="spawn-form">
+                      <label className="field-label">
+                        出生点（选填）
+                        <input
+                          maxLength={START_POINT_NAME_MAX}
+                          autoComplete="off"
+                          value={draft.startPointName || ""}
+                          onChange={(event) => set({ startPointName: event.target.value, startPointHook: "" })}
+                          placeholder="例如：醒来的地方——一张草席、一间值班室、一段舰桥"
+                        />
+                      </label>
+                      <p className="field-hint">留空也行：出生点由你的背景设定决定。写一个小而具体的地方——主角睁开眼时，就在那里。</p>
+                      {borrowPoints.length > 0 ? (
+                        <div className="form-block">
+                          <span className="field-label">也可以借用「{borrowGenre.world}」的出生点</span>
+                          <div className="stage-chips" role="group" aria-label="可借用的出生点">
+                            {borrowPoints.map((point) => (
+                              <button
+                                type="button"
+                                key={point.name}
+                                className={`stage-chip ${draft.startPointName === point.name ? "selected" : ""}`}
+                                aria-pressed={draft.startPointName === point.name}
+                                onClick={() => set({ startPointName: point.name, startPointHook: point.hook })}
+                              >
+                                {point.name}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="field-hint">来自你选过的世界「{borrowGenre.world}」里，这个身份能落脚的地方；点一下填进来，也可以再改。</p>
+                        </div>
+                      ) : (
+                        <p className="field-hint">想借用预设世界的出生点？先在上一步的世界里选过一个预设世界（再回到创世神模式），这里就能借它这个身份能落脚的地方。</p>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="spawn-grid" role="group" aria-label="出生点">
+                        {spawnPoints.map((point, pointIndex) => {
+                          const deliberate = draft.startPointName === point.name;
+                          const isDefault = !draft.startPointName && pointIndex === 0;
+                          return (
+                            <button
+                              type="button"
+                              key={point.name}
+                              className={`spawn-card ${deliberate ? "active" : ""}`}
+                              aria-pressed={deliberate}
+                              onClick={() => set({ startPointName: point.name, startPointHook: point.hook })}
+                            >
+                              <span className="spawn-card-head">
+                                <b>{point.name}</b>
+                                {deliberate
+                                  ? <Icon name="check" size={14} />
+                                  : isDefault ? <span className="default-badge">默认</span> : null}
+                              </span>
+                              <small>{point.hook}</small>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="field-hint">这里只列「{identity.name}」在{world.name}能落脚的地方。不点也行——就从标着「默认」的「{spawnPoints[0]?.name}」开始。</p>
+                    </>
+                  )}
+                </div>
+              )}
             </>
           )}
           {step === 4 && (
             <>
               <div className="forge-section-heading">
                 <div>
-                  <h2 tabIndex={-1}>故事从哪里醒来？</h2>
-                </div>
-              </div>
-              {isCustom ? (
-                <div className="spawn-form">
-                  <label className="field-label">
-                    出生点（选填）
-                    <input
-                      maxLength={START_POINT_NAME_MAX}
-                      autoComplete="off"
-                      value={draft.startPointName || ""}
-                      onChange={(event) => set({ startPointName: event.target.value, startPointHook: "" })}
-                      placeholder="破庙里醒来的那张草席"
-                    />
-                  </label>
-                  <p className="field-hint">留空也行：出生点由你的背景设定决定。写一个小而具体的地方——主角睁开眼时，就在那里。</p>
-                  {borrowPoints.length > 0 && (
-                    <div className="form-block">
-                      <span className="field-label">也可以借用「{borrowGenre.world}」的出生点</span>
-                      <div className="stage-chips" role="group" aria-label="可借用的出生点">
-                        {borrowPoints.map((point) => (
-                          <button
-                            type="button"
-                            key={point.name}
-                            className={`stage-chip ${draft.startPointName === point.name ? "selected" : ""}`}
-                            aria-pressed={draft.startPointName === point.name}
-                            onClick={() => set({ startPointName: point.name, startPointHook: point.hook })}
-                          >
-                            {point.name}
-                          </button>
-                        ))}
-                      </div>
-                      <p className="field-hint">来自你选过的世界「{borrowGenre.world}」里，这个身份能落脚的地方；点一下填进来，也可以再改。</p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <>
-                  <div className="spawn-grid" role="group" aria-label="出生点">
-                    {spawnPoints.map((point) => (
-                      <button
-                        type="button"
-                        key={point.name}
-                        className={`spawn-card ${spawn?.name === point.name ? "active" : ""}`}
-                        aria-pressed={spawn?.name === point.name}
-                        onClick={() => set({ startPointName: point.name, startPointHook: point.hook })}
-                      >
-                        <span className="spawn-card-head">
-                          <b>{point.name}</b>
-                          <em>{point.situation}</em>
-                          {spawn?.name === point.name && <Icon name="check" size={14} />}
-                        </span>
-                        <small>{point.hook}</small>
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      className="spawn-card spawn-random"
-                      onClick={() => {
-                        const pool = spawnPoints.filter((point) => point.name !== spawn?.name);
-                        const pick = pool[Math.floor(Math.random() * pool.length)] || spawnPoints[0];
-                        if (pick) set({ startPointName: pick.name, startPointHook: pick.hook });
-                      }}
-                    >
-                      <span className="spawn-card-head">
-                        <b>随机</b>
-                        <em>交给命运</em>
-                      </span>
-                      <small>点一下，从{world.name}的出生点里抽一个，抽中哪个就从哪里醒来。</small>
-                    </button>
-                  </div>
-                  <p className="field-hint">出生点只决定第一幕：主角在哪里醒来、睁开眼先撞见什么。之后的故事不会被它框住。{identity ? <>这里只列「{identity.name}」在{world.name}能落脚的地方。</> : null}不选也行——默认从「{spawnPoints[0]?.name}」开始。</p>
-                </>
-              )}
-            </>
-          )}
-          {step === 5 && (
-            <>
-              <div className="forge-section-heading">
-                <div>
                   <h2 tabIndex={-1}>你是怎样的主角？</h2>
+                  <p className="step-intro">这一屏定主角和他的本事：名字、性格、要不要揉进你的人生经历，再从下面的分组里挑一项能力。</p>
                 </div>
               </div>
               {avatar && draft.avatarId !== avatar.id && (
@@ -1802,13 +1976,6 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                   </button>
                 </div>
               )}
-              {!avatar && !draft.avatarId && avatarLoaded && (
-                <button type="button" className="avatar-bring avatar-bring-empty" onClick={onOpenAvatar}>
-                  <Icon name="users" size={17} />
-                  <span>还没有化身？先创建一位——之后每本书都能带 TA 进去。</span>
-                  <Icon name="chevron" size={15} />
-                </button>
-              )}
               <div className="protagonist-form">
                 <label className="field-label">
                   主角昵称（选填）
@@ -1821,20 +1988,20 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                   />
                 </label>
                 <div className="form-block">
-                  <span className="field-label">性格</span>
+                  <span className="field-label">性格{pickedTrait ? "" : "（默认）"}</span>
                   <div className="chip-grid">
                     {traits.map((trait) => (
                       <button
                         type="button"
                         key={trait}
-                        className={`choice-chip ${draft.trait === trait ? "active" : ""}`}
+                        className={`choice-chip ${draft.trait === trait && pickedTrait ? "active" : ""}`}
                         aria-pressed={draft.trait === trait}
-                        onClick={() => set({ trait })}
+                        onClick={() => { setPickedTrait(true); set({ trait }); }}
                       >
                         {trait}
-                        {draft.trait === trait && (
-                          <Icon name="check" size={13} />
-                        )}
+                        {draft.trait === trait && (pickedTrait
+                          ? <Icon name="check" size={13} />
+                          : <span className="default-badge">默认</span>)}
                       </button>
                     ))}
                   </div>
@@ -1843,7 +2010,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                   <div className="life-import-heading">
                     <div>
                       <b>带入人生经历</b>
-                      <small>选填，让主角更像你</small>
+                      <small>你现实里的底子，会揉进主角的来历里</small>
                     </div>
                     <button
                       type="button"
@@ -1858,7 +2025,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                   </div>
                   {draft.immersive && (
                     <div className="life-fields">
-                      <p className="field-hint">建议用昵称或虚构内容。选择 Gemini 时，设定会发送给模型服务。</p>
+                      <p className="field-hint">这是你现实里的底子，会揉进主角的来历里——和前面选的虚构身份并不冲突。建议用昵称或虚构内容。选择 Gemini 时，设定会发送给模型服务。</p>
                       <label className="field-label">
                         成长的地方（选填）
                         <input
@@ -1918,36 +2085,39 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                   )}
                 </div>
               </div>
-            </>
-          )}
-          {step === 6 && (
-            <>
-              <div className="forge-section-heading">
+              <div className="forge-section-heading mini ability-heading">
                 <div>
-                  <h2 tabIndex={-1}>想拥有什么能力？</h2>
+                  <h3>想拥有什么能力？</h3>
                   <p className="field-hint">{isCustom
-                    ? "创世神世界没有现成的能力池：候选来自你选的写法，或写一个自己的。不选直接继续，会从候选里随机落定一个。"
-                    : "候选随世界与题材而变：先是所选题材的招牌能力，再是这个世界的本事。不选直接继续，会从候选里随机落定一个。"}</p>
+                    ? "创世神世界没有现成的能力池：候选来自你选的写法（或通用池），也可以写一个自己的。不选直接继续，会从候选里随机落定一个。"
+                    : "候选分两组：上面是所选题材的招牌能力，下面是这个世界的本事。不选直接继续，会从候选里随机落定一个。"}</p>
                 </div>
               </div>
-              <div className="ability-list">
-                {abilityCandidates.map((item) => (
-                  <button
-                    type="button"
-                    key={item.id}
-                    className={`ability-card ${abilityId === item.id ? "active" : ""}`}
-                    aria-pressed={abilityId === item.id}
-                    onClick={() => { setAbilityId(item.id); setCustomAbility(""); }}
-                  >
-                    <span>
-                      <b>{item.name}</b>
-                      <small>{item.desc}</small>
-                    </span>
-                    <span className="ability-radio">
-                      {abilityId === item.id && <i />}
-                    </span>
-                  </button>
-                ))}
+              {abilityGroups.map((group) => (
+                <div key={group.kind} className="ability-group">
+                  <h4 className="ability-group-title">{abilityGroupTitle(group.kind)}</h4>
+                  <div className="ability-list">
+                    {group.items.map((item) => (
+                      <button
+                        type="button"
+                        key={item.id}
+                        className={`ability-card ${abilityId === item.id ? "active" : ""}`}
+                        aria-pressed={abilityId === item.id}
+                        onClick={() => { setAbilityId(item.id); setCustomAbility(""); }}
+                      >
+                        <span>
+                          <b>{item.name}</b>
+                          <small>{item.desc}</small>
+                        </span>
+                        <span className="ability-radio">
+                          {abilityId === item.id && <i />}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div className="ability-list ability-list-tail">
                 <button
                   type="button"
                   className="ability-card ability-card-random"
@@ -1976,7 +2146,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
               <div className="tone-block">
                 <div className="forge-section-heading mini">
                   <div>
-                    <h3>故事风格</h3>
+                    <h3>故事风格{pickedTone ? "" : "（默认）"}</h3>
                   </div>
                 </div>
                 <div className="tone-grid">
@@ -1984,70 +2154,120 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                     <button
                       type="button"
                       key={item.id}
-                      className={`tone-card tone-${item.id} ${toneId === item.id ? "active" : ""}`}
+                      className={`tone-card tone-${item.id} ${toneId === item.id && pickedTone ? "active" : ""}`}
                       aria-pressed={toneId === item.id}
-                      onClick={() => setToneId(item.id)}
+                      onClick={() => { setPickedTone(true); setToneId(item.id); }}
                     >
                       <b>{item.name}</b>
+                      <small>{item.desc}</small>
+                      {toneId === item.id && !pickedTone && <span className="default-badge">默认</span>}
                     </button>
                   ))}
                 </div>
               </div>
+              {!avatar && !draft.avatarId && avatarLoaded && (
+                <p className="avatar-create-line">
+                  还没有化身？
+                  <button type="button" className="small-link" onClick={onOpenAvatar}>先创建一位</button>
+                  ——之后每本书都能带 TA 进去，这本书也可以回来带上。
+                </p>
+              )}
             </>
           )}
-          {step === 7 && (
+          {step === 5 && (
             <>
               <div className="forge-section-heading">
                 <div>
-                  <h2 tabIndex={-1}>故事从这里开始。</h2>
+                  <h2 tabIndex={-1}>确认你的故事</h2>
                 </div>
               </div>
-              <div className="opening-preview">
-                <div className="opening-art"><WorldArtwork genreId={world.id} eager /></div>
+              <div className="opening-preview opening-preview--summary">
+                <div className="opening-art opening-art--slim"><WorldArtwork genreId={world.id} eager /></div>
                 <h3>{world.name}</h3>
                 <p>{previewText}</p>
-                <div className="opening-starmap">
-                  <StoryMapMini total={totalChaptersFor({ config: draft })} generated={0} current={0} state={null} />
+              </div>
+              <div className="opening-details" aria-label="确认故事设定">
+                {isCustom ? (
+                  <button disabled={busy} onClick={() => setStep(2)} aria-label="修改创世设定"><span>创世</span><b>{template ? template.fullName : "完全自由"} · {world.name}</b><Icon name="chevron" size={15} /></button>
+                ) : (
+                  <>
+                    <button disabled={busy} onClick={() => setStep(1)} aria-label="修改题材"><span>题材</span><b>{template ? twoSegmentTemplateName(template) : "完全自由"}{template && !pickedTemplate ? "（默认）" : ""}</b><Icon name="chevron" size={15} /></button>
+                    <button disabled={busy} onClick={() => setStep(2)} aria-label="修改世界"><span>世界</span><b>{world.name}</b><Icon name="chevron" size={15} /></button>
+                  </>
+                )}
+                <button disabled={busy} onClick={() => setStep(3)} aria-label="修改出身"><span>身份</span><b>{identity ? (localIdentityTitle(spawnGenre, identity.id) !== identity.name ? `${identity.name} · ${localIdentityTitle(spawnGenre, identity.id)}` : identity.name) : (draft.origin || "未定")}</b><Icon name="chevron" size={15} /></button>
+                <button disabled={busy} onClick={() => setStep(3)} aria-label="修改出生点"><span>出生点</span><b>{spawn ? spawn.name : "由设定决定"}{!isCustom && spawn && !draft.startPointName ? "（默认）" : ""}</b><Icon name="chevron" size={15} /></button>
+                <button disabled={busy} onClick={() => setStep(4)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "未命名旅人"} · {draft.trait}{pickedTrait ? "" : "（默认）"}</b><Icon name="chevron" size={15} /></button>
+                {draft.immersive && (
+                  <button disabled={busy} onClick={() => setStep(4)} aria-label="修改人生经历"><span>人生经历</span><b>已带入</b><Icon name="chevron" size={15} /></button>
+                )}
+                <button disabled={busy} onClick={() => setStep(4)} aria-label="修改能力"><span>能力</span><b>{abilityName || "未定"}</b><Icon name="chevron" size={15} /></button>
+                <button disabled={busy} onClick={() => setStep(4)} aria-label="修改故事风格"><span>风格</span><b>{tone.name}{pickedTone ? "" : "（默认）"}</b><Icon name="chevron" size={15} /></button>
+              </div>
+              <div className="opening-starmap">
+                <StoryMapMini total={mapTotalFor(totalChaptersFor({ config: draft }), 0, 0)} generated={0} current={0} state={null} />
+              </div>
+              <div className="length-picker" role="group" aria-label="篇幅">
+                <span className="field-label">篇幅 · {lengthLabelFor({ config: draft })}{pickedLength ? "" : "（默认）"}</span>
+                <div className="stage-chips">
+                  <button
+                    type="button"
+                    className={`stage-chip ${draft.storyLengthMode === "season" ? "selected" : ""}`}
+                    aria-pressed={draft.storyLengthMode === "season"}
+                    onClick={() => pickLengthMode("season")}
+                  >
+                    一季 · 24 章
+                  </button>
+                  <button
+                    type="button"
+                    className={`stage-chip ${draft.storyLengthMode === "long" ? "selected" : ""}`}
+                    aria-pressed={draft.storyLengthMode === "long"}
+                    onClick={() => pickLengthMode("long")}
+                  >
+                    长线 · 100 章
+                  </button>
+                  <button
+                    type="button"
+                    className={`stage-chip ${draft.storyLengthMode === "custom" ? "selected" : ""}`}
+                    aria-pressed={draft.storyLengthMode === "custom"}
+                    onClick={() => pickLengthMode("custom")}
+                  >
+                    自定义
+                  </button>
+                  <button
+                    type="button"
+                    className={`stage-chip ${draft.storyLengthMode === "endless" ? "selected" : ""}`}
+                    aria-pressed={draft.storyLengthMode === "endless"}
+                    onClick={() => pickLengthMode("endless")}
+                  >
+                    无限连载
+                  </button>
                 </div>
-                <div className="length-picker" role="group" aria-label="篇幅">
-                  <span className="field-label">篇幅</span>
-                  <div className="stage-chips">
-                    <button
-                      type="button"
-                      className={`stage-chip ${draft.storyLengthMode !== "long" ? "selected" : ""}`}
-                      aria-pressed={draft.storyLengthMode !== "long"}
-                      onClick={() => set({ storyLengthMode: "season" })}
-                    >
-                      一季 · 24 章
-                    </button>
-                    <button
-                      type="button"
-                      className={`stage-chip ${draft.storyLengthMode === "long" ? "selected" : ""}`}
-                      aria-pressed={draft.storyLengthMode === "long"}
-                      onClick={() => set({ storyLengthMode: "long" })}
-                    >
-                      长线 · 100 章
-                    </button>
+                {draft.storyLengthMode === "custom" && (
+                  <div className="length-custom">
+                    <button type="button" aria-label="减少章数" onClick={() => commitCustomLength(String((validTargetChapters(draft.targetChapters) ?? 36) - 1))}>−</button>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={CUSTOM_LENGTH_MIN}
+                      max={CUSTOM_LENGTH_MAX}
+                      aria-label="自定义章数"
+                      value={customLengthText}
+                      onChange={(event) => setCustomLengthText(event.target.value)}
+                      onBlur={() => commitCustomLength(customLengthText)}
+                      onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+                    />
+                    <span>章</span>
+                    <button type="button" aria-label="增加章数" onClick={() => commitCustomLength(String((validTargetChapters(draft.targetChapters) ?? 36) + 1))}>+</button>
                   </div>
-                  <p className="field-hint">{draft.storyLengthMode === "long"
-                    ? "一百章长线：分 4 弧推进，每弧末尾有大节点，适合慢慢养一个世界。"
-                    : "二十四章一季：分 4 幕，幕末小升格、季终大升格；读完一季可以开启下一季。"}</p>
-                </div>
-                <div className="opening-details" aria-label="确认故事设定">
-                  {isCustom ? (
-                    <button disabled={busy} onClick={() => setStep(2)} aria-label="修改创世设定"><span>创世</span><b>{template ? template.fullName : "完全自由"} · {world.name}</b><Icon name="chevron" size={15} /></button>
-                  ) : (
-                    <>
-                      <button disabled={busy} onClick={() => setStep(1)} aria-label="修改题材"><span>题材</span><b>{template ? template.fullName : "完全自由"}</b><Icon name="chevron" size={15} /></button>
-                      <button disabled={busy} onClick={() => setStep(2)} aria-label="修改世界"><span>世界</span><b>{world.name}</b><Icon name="chevron" size={15} /></button>
-                    </>
-                  )}
-                  <button disabled={busy} onClick={() => setStep(3)} aria-label="修改身份"><span>身份</span><b>{identity ? (localIdentityTitle(spawnGenre, identity.id) !== identity.name ? `${identity.name} · ${localIdentityTitle(spawnGenre, identity.id)}` : identity.name) : (draft.origin || "未定")}</b><Icon name="chevron" size={15} /></button>
-                  <button disabled={busy} onClick={() => setStep(4)} aria-label="修改出生点"><span>出生点</span><b>{spawn ? spawn.name : "由设定决定"}</b><Icon name="chevron" size={15} /></button>
-                  <button disabled={busy} onClick={() => setStep(5)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "未命名旅人"}</b><Icon name="chevron" size={15} /></button>
-                  <button disabled={busy} onClick={() => setStep(6)} aria-label="修改能力与风格"><span>能力</span><b>{(abilityName || "未定")} · {tone.name}</b><Icon name="chevron" size={15} /></button>
-                  <div className="opening-detail-static"><span>篇幅</span><b>{draft.storyLengthMode === "long" ? "长线 · 100 章" : "一季 · 24 章"}</b></div>
-                </div>
+                )}
+                <p className="field-hint">{draft.storyLengthMode === "long"
+                  ? "一百章长线：分 4 弧推进，每弧末尾有大节点，适合慢慢养一个世界。"
+                  : draft.storyLengthMode === "custom"
+                    ? `${CUSTOM_LENGTH_MIN}–${CUSTOM_LENGTH_MAX} 章自己定：分 4 幕推进，幕末小升格，末章大升格收尾。`
+                    : draft.storyLengthMode === "endless"
+                      ? "没有终点：每 12 章一个小升格，写到你亲手完结为止。连载中也能发布到广场，新章会自己跟上。"
+                      : "二十四章一季：分 4 幕，幕末小升格、季终大升格；读完一季可以开启下一季。"}</p>
               </div>
               <GenerationMode provider={provider} value={engine} onChange={setMode} disabled={busy} />
             </>
@@ -2061,7 +2281,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                 </button>
               )}
               <div className="forge-actions-right">
-                {step < 7 ? (
+                {step < 5 ? (
                   <Button icon="arrow" onClick={next}>
                     继续
                   </Button>
@@ -2076,15 +2296,17 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
           <div className="generation-feedback" role="status" aria-live="polite">{busy ? "第一章准备好后，即可开始阅读。" : error}</div>
           {busy && <GenerationOverlay kind="story" onCancel={() => { operation.current?.abort(); operation.current = null; setBusy(false); }} />}
         </main>
-        <PreviewPanel
-          world={world}
-          template={template}
-          draft={draft}
-          ability={abilityPick}
-          tone={tone}
-          spawn={spawn}
-          onJump={(value) => { if (!busy) setStep(value); }}
-        />
+        {step !== 5 && (
+          <PreviewPanel
+            world={world}
+            template={template}
+            draft={draft}
+            ability={abilityPick}
+            tone={tone}
+            spawn={spawn}
+            onJump={(value) => { if (!busy) setStep(value); }}
+          />
+        )}
       </div>
     </div>
   );
@@ -2188,7 +2410,9 @@ function ReadingDialog({ title, children, onClose }) {
 }
 
 function ChapterDirectory({ story, index, readOnly, onSelect, onClose }) {
-  const total = totalChaptersFor(story);
+  // A running endless line has no total to enumerate: list the chapters
+  // that exist plus the one being written, never an unbounded range.
+  const total = mapTotalFor(totalChaptersFor(story), story.chapters?.length || 0, index);
   const last = lastAccessibleIndex(story, readOnly);
   const listRef = useRef(null);
   // A season runs 24 chapters and a long book 100, at 56px a row: opening
@@ -2295,6 +2519,7 @@ function Reader({
   const [shareOpen, setShareOpen] = useState(false);
   const [coverOpen, setCoverOpen] = useState(false);
   const [directoryOpen, setDirectoryOpen] = useState(false);
+  const [finishConfirm, setFinishConfirm] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -2442,9 +2667,17 @@ function Reader({
   const ready = selected || !chapter.choice;
   const total = totalChaptersFor(story);
   const lengthMode = storyLengthModeOf(story);
+  // A running endless line: no denominator anywhere — the position reads
+  // as a serialising count, progress is measured against what exists,
+  // and the map shows the chapters written plus the one being written.
+  const serializing = lengthMode === "endless" && !isManuallyFinished(story);
+  const displayTotal = mapTotalFor(total, story.chapters?.length || 0, index);
   const nextAvailable = index < lastAccessibleIndex(story, readOnly);
-  const isFinal = index >= total - 1;
-  const progress = `${Math.round(((index + 1) / total) * 100)}%`;
+  const isFinal = index >= total - 1
+    || (lengthMode === "endless" && isManuallyFinished(story) && index >= (story.chapters?.length || 1) - 1);
+  const progress = Number.isFinite(total)
+    ? `${Math.round(((index + 1) / total) * 100)}%`
+    : `${Math.round(((index + 1) / Math.max(story.chapters?.length || 0, index + 1)) * 100)}%`;
   const update = (nextStory, nextIndex = index) =>
     onUpdateStory?.(moveReadingPosition(nextStory, nextIndex));
   const applyChoice = (choiceId) => {
@@ -2530,9 +2763,9 @@ function Reader({
             role="progressbar"
             aria-label="阅读进度"
             aria-valuemin={0}
-            aria-valuemax={total}
+            aria-valuemax={displayTotal}
             aria-valuenow={index + 1}
-            aria-valuetext={`第 ${index + 1} 章，共 ${total} 章`}
+            aria-valuetext={serializing ? `第 ${index + 1} 章，连载中` : `第 ${index + 1} 章，共 ${total} 章`}
           >
             <i style={{ width: progress }} />
           </div>
@@ -2681,15 +2914,37 @@ function Reader({
           <div className="reader-starmap">
             <div className="reader-starmap-head">
               <b>剧情星图</b>
-              <span>第 {index + 1} / {total} 章</span>
+              <span>{serializing ? `连载中 · 第 ${index + 1} 章` : `第 ${index + 1} / ${total} 章`}</span>
             </div>
             <StoryMapMini
-              total={total}
+              total={displayTotal}
               generated={story.chapters?.length || 0}
               current={index}
-              state={readOnly ? null : generationState({ total, generated: story.chapters?.length || 0, current: index, engine: story.engine, preparing, complete: story.status === "complete" || isStoryComplete(story) })}
+              state={readOnly ? null : generationState({ total: displayTotal, generated: story.chapters?.length || 0, current: index, engine: story.engine, preparing, complete: story.status === "complete" || isStoryComplete(story) })}
             />
           </div>
+          {!readOnly && lengthMode === "endless" && !isManuallyFinished(story) && (
+            <div className="reader-endless-actions">
+              {finishConfirm ? (
+                <>
+                  <p>在第 {story.chapters?.length || 0} 章这里收尾？收尾后这条线就完结了，广场上的连载标记也会跟着转成完结。</p>
+                  <div className="reader-endless-confirm">
+                    <Button
+                      variant="secondary"
+                      onClick={() => { update(finishEndlessLine(story)); setFinishConfirm(false); }}
+                    >
+                      确认完结
+                    </Button>
+                    <button type="button" className="reader-directory-button" onClick={() => setFinishConfirm(false)}>再想想</button>
+                  </div>
+                </>
+              ) : (
+                <button type="button" className="reader-directory-button" onClick={() => setFinishConfirm(true)}>
+                  完结这条线
+                </button>
+              )}
+            </div>
+          )}
           {!isFinal && (!readOnly || nextAvailable) && (
             <div className="sw-next-action">              <Button
                 icon="arrow"
@@ -2710,7 +2965,9 @@ function Reader({
                     ? "这一季，读完了。"
                     : lengthMode === "long"
                       ? "这部长线，读完了。"
-                      : "这一卷，读完了。"
+                      : lengthMode === "endless"
+                        ? "这条无限长线，在这里收尾了。"
+                        : "这一卷，读完了。"
                   : "已读完分享章节"}
               </h2>
               {isFinal && !readOnly && lengthMode === "season" ? (
@@ -3129,7 +3386,7 @@ function PlazaCard({ publication, own, onOpen, onRead, onEnter, onOpenProfile })
           <span className="plaza-chip">{templateName}</span>
         </div>
         <div className="plaza-meta">
-          <span className="plaza-badge">已完结</span>
+          <span className="plaza-badge">{plazaLineStatusFor(publication) === "serializing" ? "连载中" : "已完结"}</span>
           <span>{plazaLengthLabel(publication)}</span>
         </div>
         <div className="plaza-card-actions">
@@ -3165,6 +3422,9 @@ function PlazaFeed({ account, activeStory, onNavigate, onOpenStory, onOpenDetail
   }, [retry]);
   const activeTotal = activeStory ? totalChaptersFor(activeStory) : 0;
   const activeChapter = activeStory ? Math.min(activeTotal, readerIndexFor(activeStory) + 1) : 0;
+  const activeSerializing = activeStory
+    ? storyLengthModeOf(activeStory) === "endless" && !isManuallyFinished(activeStory)
+    : false;
   return (
     <div className="page page-plaza page-enter">
       <header className="plaza-heading">
@@ -3180,8 +3440,8 @@ function PlazaFeed({ account, activeStory, onNavigate, onOpenStory, onOpenDetail
 
       <section className="plaza-publish-card">
         <div>
-          <strong>把你走完的故事线放到广场</strong>
-          <p>发布后，别人能读你的原作线，也能带自己的化身进入这个世界。</p>
+          <strong>把你的故事线放到广场</strong>
+          <p>走完的故事线可以发布；无限连载的线连载中就能放上来，新章会自己跟上。</p>
         </div>
         <Button onClick={() => onNavigate("plaza-publish")}>发布 <Icon name="arrow" size={15} /></Button>
       </section>
@@ -3190,14 +3450,14 @@ function PlazaFeed({ account, activeStory, onNavigate, onOpenStory, onOpenDetail
         <Icon name="book" size={20} />
         <span>
           <strong>我的世界</strong>
-          <small>{activeStory ? `正在读《${activeStory.title}》 · 第 ${activeChapter} / ${activeTotal} 章` : "你的书架、化身与草稿都在这里"}</small>
+          <small>{activeStory ? `正在读《${activeStory.title}》 · ${activeSerializing ? `连载中 · 第 ${activeChapter} 章` : `第 ${activeChapter} / ${activeTotal} 章`}` : "你的书架、化身与草稿都在这里"}</small>
         </span>
         <Icon name="chevron" size={16} />
       </button>
 
       <div className="plaza-feed-heading">
         <h2>最新发布</h2>
-        <span>只收已完结的故事线</span>
+        <span>完结的故事线，与连载中的无限长线</span>
       </div>
 
       {error && (
@@ -3322,7 +3582,7 @@ function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter,
         <span className="plaza-cover-shade" aria-hidden="true" />
         <div className="plaza-detail-cover-copy">
           <h1>《{detail.title}》</h1>
-          <p>{detail.worldName} × {templateName} · {plazaLengthLabel(detail)} · 已完结</p>
+          <p>{detail.worldName} × {templateName} · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"}</p>
         </div>
       </section>
 
@@ -3595,7 +3855,9 @@ function ProfileBoardCollage({ board }) {
     // "第 1 季 · 已完结") instead of wrapping mid-phrase.
     const lengthParts = plazaLengthLabel(publication).split(" · ");
     const lengthLead = lengthParts.length > 1 ? lengthParts[lengthParts.length - 1] : lengthParts[0];
-    const lengthNote = lengthParts.length > 1 ? `${lengthParts.slice(0, -1).join(" · ")} · 已完结` : "已完结";
+    const lengthNote = plazaLineStatusFor(publication) === "serializing"
+      ? "连载中"
+      : lengthParts.length > 1 ? `${lengthParts.slice(0, -1).join(" · ")} · 已完结` : "已完结";
     return (
       <span className="profile-board-collage is-single" aria-hidden="true">
         <span className="profile-board-main">
@@ -4103,7 +4365,7 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
       <header className="plaza-heading">
         <h1>发布到广场</h1>
       </header>
-      <p className="page-caption">把一条走完的故事线放上广场。发布后，其他人能读你的原作线，也能带自己的化身进入这个世界重演一条新线。</p>
+      <p className="page-caption">把一条故事线放上广场：走完的线整条发布；无限连载的线连载中就能发布，之后的新章会自己跟上。发布后，其他人能读你的原作线，也能带自己的化身进入这个世界重演一条新线。</p>
 
       {!account.user ? (
         <div className="plaza-empty" role="status">
@@ -4122,7 +4384,7 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
           <h2 className="plaza-section-title">选择要发布的故事线</h2>
           {rows.length === 0 && (
             <div className="plaza-empty" role="status">
-              <p>你还没有故事线。先用化身走完一季，再来发布。</p>
+              <p>你还没有故事线。先用化身走一季，或开一条无限连载，再来发布。</p>
               <Button variant="secondary" icon="arrow" onClick={() => onNavigate("forge")}>去造世</Button>
             </div>
           )}
@@ -4144,7 +4406,9 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
                     <strong>《{story.title}》</strong>
                     <span>
                       {gate.publishable
-                        ? <><span className="plaza-badge">已完结</span> {plazaLengthLabel(story)}{published ? " · 已在广场上，再次发布会更新" : ""}</>
+                        ? gate.lineStatus === "serializing"
+                          ? <><span className="plaza-badge">连载中</span> {plazaLengthLabel(story)} · 发布后新章自动跟上{published ? " · 已在广场上" : ""}</>
+                          : <><span className="plaza-badge">已完结</span> {plazaLengthLabel(story)}{published ? " · 已在广场上，再次发布会更新" : ""}</>
                         : <>{story.kind === "merged" ? "合流故事" : "连载中"} · {gate.reason}</>}
                     </span>
                   </span>
@@ -4158,7 +4422,7 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
             <h2>将发布的内容</h2>
             <ul className="plaza-checklist">
               <li><Icon name="check" size={15} /><span><strong>世界设定（脱敏版）</strong><small>私有设定与未公开分支不会发布</small></span></li>
-              <li><Icon name="check" size={15} /><span><strong>原作线全文</strong><small>你化身走完的全部章节与当时的选择</small></span></li>
+              <li><Icon name="check" size={15} /><span><strong>原作线全文</strong><small>你化身走过的全部章节与当时的选择（连载中的线随新章更新）</small></span></li>
               <li><Icon name="check" size={15} /><span><strong>可进入的世界模板</strong><small>主线节拍骨架，供他人带化身重演</small></span></li>
             </ul>
           </section>
@@ -4662,16 +4926,31 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
 }
 
 const clampForgeStep = (value) =>
-  Math.min(7, Math.max(1, Math.floor(Number(value) || 1)));
+  Math.min(5, Math.max(1, Math.floor(Number(value) || 1)));
 
-// Draft step numbers are only comparable within one flow shape. Drafts saved
-// by the six-step flow predate the world screen and carry no worldChosen
-// marker: their step 1 stays 1 and steps 2..6 shift one forward (identity
-// was 2, becomes 3, and so on). Marked drafts are already seven-step.
+// Draft step numbers are only comparable within one flow shape. Three
+// shapes exist in the wild:
+// - six-step drafts (pre-world-screen): no worldChosen marker; their
+//   step 1 stays 1 and steps 2..6 shift one forward into seven-step
+//   numbering (identity was 2, becomes 3, and so on);
+// - seven-step drafts (worldChosen marker present): 题材/世界/身份/出生点/
+//   主角/能力/开局；
+// - the current five-step flow: 题材/世界/出身（身份+出生点）/主角（主角+
+//   能力）/开局. Seven-step numbers fold in via SEVEN_TO_FIVE — 身份 and
+//   出生点 both land on 出身 (3), 主角 and 能力 both on 主角 (4).
+const SEVEN_TO_FIVE_STEP = { 1: 1, 2: 2, 3: 3, 4: 3, 5: 4, 6: 4, 7: 5 };
 const migratedDraftStep = (source) => {
-  const step = clampForgeStep(source?.step);
-  if (typeof source?.worldChosen === "boolean") return step;
-  return step <= 1 ? 1 : Math.min(7, step + 1);
+  // Drafts saved by the five-step flow itself carry its version stamp:
+  // their step numbers are already current and must pass through
+  // untouched (folding them again would walk a resumed draft backwards).
+  if (Number(source?.flowVersion) >= 5) {
+    return Math.min(5, Math.max(1, Math.floor(Number(source?.step) || 1)));
+  }
+  const raw = Math.min(7, Math.max(1, Math.floor(Number(source?.step) || 1)));
+  const sevenStep = typeof source?.worldChosen === "boolean"
+    ? raw
+    : raw <= 1 ? 1 : Math.min(7, raw + 1);
+  return SEVEN_TO_FIVE_STEP[sevenStep] || 1;
 };
 
 function legacyDraftToDraft(library) {
@@ -4712,6 +4991,10 @@ function legacyDraftToDraft(library) {
       typeof source.worldChosen === "boolean"
         ? source.worldChosen
         : hasSavedDraft,
+    // Whether a saved draft existed at all: the forge uses it to tell
+    // values a previous session confirmed on its summary screen (counted
+    // as deliberate picks) from a fresh draft's silent defaults.
+    restoredDraft: hasSavedDraft,
     step: migratedDraftStep(source),
   };
 }
@@ -4939,9 +5222,35 @@ function App() {
     if (next !== "reader") setShareRequest(false);
     scrollToTop();
   };
+  // Living publications follow their line (user order 2026-10-27): when a
+  // published endless line gains a chapter — or is manually finished —
+  // the plaza copy refreshes in the background. Best-effort and silent:
+  // the server gate re-checks everything, and a failed sync just leaves
+  // the previous snapshot standing until the next chapter lands.
+  const plazaSyncSignatures = useRef(new Map());
+  const syncLivingPublication = useCallback((story) => {
+    if (!story || storyLengthModeOf(story) !== "endless") return;
+    if (!plazaMine()[story.id]) return;
+    const signature = `${story.chapters?.length || 0}:${isManuallyFinished(story) ? "finished" : "running"}`;
+    if (plazaSyncSignatures.current.get(story.id) === signature) return;
+    plazaSyncSignatures.current.set(story.id, signature);
+    void (async () => {
+      try {
+        const token = await authClient.getAccessToken();
+        if (!token) return;
+        const { publication } = await publishToPlaza({ story, getAccessToken: () => authClient.getAccessToken() });
+        if (publication?.id) plazaMineRemember(story.id, publication.id);
+      } catch {
+        plazaSyncSignatures.current.delete(story.id);
+      }
+    })();
+  }, [authClient]);
   const commitStory = useCallback(
-    (story) => setLibrary((current) => libraryWithStory(current, story)),
-    [setLibrary],
+    (story) => {
+      setLibrary((current) => libraryWithStory(current, story));
+      syncLivingPublication(story);
+    },
+    [setLibrary, syncLivingPublication],
   );
   const saveDraft = useCallback(
     (draft) => setLibrary((current) => ({ ...current, draft })),
@@ -4952,6 +5261,8 @@ function App() {
     if (!source || nextGenerationIndex(source) !== index) return;
     const result = await requestChapter(source, index, { signal, getAccessToken: () => authClient.getAccessToken() });
     if (signal.aborted) return;
+    const candidate = acceptGeneratedChapter(source, result);
+    if (candidate !== source) syncLivingPublication(candidate);
     setLibrary((current) => {
       const latest = current.stories.find((book) => book.id === id);
       if (!latest) return current;
@@ -4959,7 +5270,7 @@ function App() {
       if (next === latest) return current;
       return { ...current, stories: current.stories.map((book) => book.id === id ? next : book) };
     });
-  }, [store, setLibrary]);
+  }, [store, setLibrary, syncLivingPublication]);
   // Cover painting runs beside reading, never inside it: the story is
   // marked pending, the request resolves whenever the server finishes,
   // and only the cover state is written back — chapters and position are
@@ -5021,6 +5332,7 @@ function App() {
           genreId: payload.genreId,
           genreTemplateId: payload.genreTemplateId,
           storyLengthMode: payload.storyLengthMode,
+          targetChapters: payload.targetChapters,
           originIdentityId: payload.originIdentityId,
           customWorldName: payload.customWorldName,
           customWorldSetting: payload.customWorldSetting,

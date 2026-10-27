@@ -11,14 +11,16 @@ import { createCoverStore } from './cover-store.js'
 import { createSocialStore, pictureSourceFor } from './social-store.js'
 
 /**
- * The plaza service: publication of finished avatar lines, the public
- * feed and detail, and the minimal moderation loop (report → auto-hide,
- * author withdraw).
+ * The plaza service: publication of avatar lines (finished lines whole,
+ * endless lines as living publications while still serialising), the
+ * public feed and detail, and the minimal moderation loop (report →
+ * auto-hide, author withdraw).
  *
  * Trust boundaries:
  * - The publish endpoint re-checks everything the client claims: the
  *   story must validate as a library story, pass the shared publish gate
- *   (avatar line, season/long, finished), belong to the caller's CURRENT
+ *   (avatar line; season/long/custom finished, or endless at ≥1 chapter),
+ *   belong to the caller's CURRENT
  *   avatar (the avatar snapshot is read from the caller's own server-side
  *   profile, never from the request body), and pass the setting-guard
  *   red-line scan over the world setting and every chapter.
@@ -52,9 +54,13 @@ function summaryOf(record) {
     seasonNumber: record.seasonNumber,
     chapterCount: record.chapterCount,
     totalChapters: record.totalChapters,
+    // Living-publication state: a still-running endless line serialises
+    // (its chapter count is the live one); everything else is finished.
+    // Older records predate the field and read as finished.
+    lineStatus: record.lineStatus === 'serializing' ? 'serializing' : 'finished',
     premise: clip(record.snapshot?.worldBible?.premise, 120),
     publishedAt: record.publishedAt,
-    completedAt: record.completedAt || record.publishedAt,
+    completedAt: record.lineStatus === 'serializing' ? null : (record.completedAt || record.publishedAt),
     // The story's own generated cover, resolved live by the identity
     // pass below (null until one exists — surfaces then fall back to
     // the shared world artwork, exactly as before covers existed).
@@ -271,6 +277,11 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           seasonNumber: snapshot.seasonNumber,
           chapterCount: snapshot.chapters.length,
           totalChapters: snapshot.totalChapters,
+          // The snapshot's own publication state: 'serializing' while an
+          // endless line still runs — re-publishes (the client's live
+          // sync) keep the snapshot and count current, and the record
+          // flips to 'finished' when the line is finished by hand.
+          lineStatus: gate.lineStatus,
           avatar: {
             name: profile.name,
             appearance: avatarAppearanceText(profile.appearance),
@@ -280,11 +291,16 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           status: 'published',
           reporters: existing?.reporters || [],
           createdAt: existing?.createdAt || timestamp,
-          // The line's finish line: the story's own last-accept stamp
-          // (acceptChapter maintains updatedAt), falling back to the
-          // publish instant for stories that carry none.
-          completedAt: existing?.completedAt
-            || (typeof story.updatedAt === 'string' && !Number.isNaN(Date.parse(story.updatedAt)) ? story.updatedAt : timestamp),
+          // The line's finish line: for a finished line, the story's own
+          // last-accept stamp (acceptChapter maintains updatedAt), falling
+          // back to the publish instant for stories that carry none. A
+          // still-serialising endless line has no finish line yet — the
+          // field stays empty until the sync that carries its manual
+          // finish arrives.
+          completedAt: gate.lineStatus === 'serializing'
+            ? null
+            : existing?.completedAt
+              || (typeof story.updatedAt === 'string' && !Number.isNaN(Date.parse(story.updatedAt)) ? story.updatedAt : timestamp),
           publishedAt: timestamp,
           updatedAt: timestamp,
         }

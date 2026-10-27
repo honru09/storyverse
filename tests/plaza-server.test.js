@@ -15,6 +15,7 @@ import {
   chooseBranch,
   createMergedStory,
   createStory,
+  finishEndlessLine,
 } from '../src/story-engine.js'
 
 function tinyPng() {
@@ -280,7 +281,7 @@ test('publish rejects gated stories, another avatar’s line and red-line conten
   const short = { ...walkLocal(createStory({ genreId: 'mist', avatarId: avatar.id }), 6), engine: 'gemini' }
   const shortResponse = await publish(base, token, short)
   assert.equal(shortResponse.status, 400)
-  assert.match((await shortResponse.json()).error, /一季或长线/)
+  assert.match((await shortResponse.json()).error, /一季、长线、自定义篇幅或无限连载/)
 
   const merged = {
     ...walkLocal(createMergedStory(
@@ -357,4 +358,70 @@ test('three distinct reporters hide a publication; the author can withdraw and r
   assert.equal(republished.status, 200)
   assert.equal((await republished.json()).publication.id, secondPublication.id)
   assert.equal((await (await fetch(`${base}/api/plaza`)).json()).publications.length, 1)
+})
+
+test('a running endless line publishes as a living publication and flips to finished by hand', async (t) => {
+  const { base } = await startPlazaServer(t)
+  const token = await register(base, 'plaza_endless_a')
+  const avatar = await makeAvatar(base, token)
+
+  const endlessStory = (chapters) => ({
+    ...walkLocal(createStory({
+      genreId: 'mist',
+      genreTemplateId: 'xuanhuan',
+      storyLengthMode: 'endless',
+      name: '沈砚',
+      avatarId: avatar.id,
+      avatarAppearance: '银灰长发，左颊一颗泪痣',
+      ability: '听见潮汐',
+    }), chapters),
+    engine: 'gemini',
+  })
+
+  // Zero chapters: nothing to read yet, rejected like any gated line.
+  const emptyResponse = await publish(base, token, endlessStory(0))
+  assert.equal(emptyResponse.status, 400)
+  assert.match((await emptyResponse.json()).error, /第一章/)
+
+  // Three chapters in, still running: published as a LIVING publication.
+  const running = endlessStory(3)
+  const first = await publish(base, token, running)
+  assert.equal(first.status, 200)
+  const { publication } = await first.json()
+  assert.equal(publication.lineStatus, 'serializing')
+  assert.equal(publication.chapterCount, 3)
+  assert.equal(publication.totalChapters, 3)
+  assert.equal(publication.completedAt, null)
+
+  const feed = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  assert.equal(feed.length, 1)
+  assert.equal(feed[0].lineStatus, 'serializing')
+
+  // The line grows; a re-publish (the live sync) updates the same record:
+  // content and count follow the line, still serialising.
+  const bigger = endlessStory(6)
+  const second = await publish(base, token, { ...bigger, id: running.id })
+  assert.equal(second.status, 200)
+  const { publication: updated } = await second.json()
+  assert.equal(updated.id, publication.id)
+  assert.equal(updated.lineStatus, 'serializing')
+  assert.equal(updated.chapterCount, 6)
+  const detail = (await (await fetch(`${base}/api/plaza/${publication.id}`)).json()).publication
+  assert.equal(detail.snapshot.chapters.length, 6)
+  assert.equal(detail.lineStatus, 'serializing')
+
+  // Entry from the running publication works: its enter template carries
+  // the endless mode, so an entrant's new line is endless too.
+  assert.equal(detail.enterTemplate.config.storyLengthMode, 'endless')
+
+  // Manual finish: the next sync flips the publication to finished at the
+  // final count, with a real completion stamp.
+  const finishedStory = { ...finishEndlessLine({ ...bigger, id: running.id }), engine: 'gemini' }
+  const third = await publish(base, token, finishedStory)
+  assert.equal(third.status, 200)
+  const { publication: finished } = await third.json()
+  assert.equal(finished.id, publication.id)
+  assert.equal(finished.lineStatus, 'finished')
+  assert.equal(finished.chapterCount, 6)
+  assert.ok(finished.completedAt)
 })

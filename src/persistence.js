@@ -5,19 +5,27 @@ const CURRENT_VERSION = 2
 export const MAX_BACKUP_BYTES = 5 * 1024 * 1024
 
 // A story's chapter total derives from its length mode (mirrors the
-// engine's STORY_LENGTH_MODES so this storage layer stays dependency-free):
-// short 6 / season 24 / long 100; merged stories and pre-mode saves are 6.
+// engine's length resolution so this storage layer stays dependency-free):
+// short 6 / season 24 / long 100 / custom = the story's own stored target
+// (10–999) / endless = unbounded, capped here at the largest supported
+// chapter count; merged stories and pre-mode saves are 6.
 // The cursor points to the next accepted chapter and stays at total-1 once
 // the final chapter exists.
 const LENGTH_TOTALS = { short: 6, season: 24, long: 100 }
-const MAX_SUPPORTED_CHAPTERS = 100
+const MAX_SUPPORTED_CHAPTERS = 999
 const totalForStory = (story) => {
   if (story?.kind === 'merged') return 6
-  return LENGTH_TOTALS[story?.config?.storyLengthMode] || 6
+  const mode = story?.config?.storyLengthMode
+  if (mode === 'custom') {
+    const target = story?.config?.targetChapters
+    return Number.isInteger(target) && target >= 10 && target <= 999 ? target : 24
+  }
+  if (mode === 'endless') return MAX_SUPPORTED_CHAPTERS
+  return LENGTH_TOTALS[mode] || 6
 }
 const CONFIG_TEXT_FIELDS = [
   'genreId', 'genreTemplateId', 'storyLengthMode', 'originIdentityId', 'customWorldName', 'customWorldSetting', 'startPointName', 'startPointHook', 'avatarId', 'avatarAppearance', 'sourcePublicationId', 'name', 'trait', 'origin', 'ability', 'tone', 'hometown',
-  'school', 'company', 'role', 'friend', 'destination', 'protagonist', 'appearance',
+  'school', 'company', 'role', 'friend', 'destination', 'protagonist', 'appearance', 'finishedAt',
 ]
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -66,7 +74,7 @@ function validateStringArray(value, prefix, errors, { nonEmpty = false } = {}) {
   }
 }
 
-function validateConfig(config, prefix, errors, merged = false) {
+function validateConfig(config, prefix, errors, merged = false, forStory = false) {
   if (!isRecord(config)) {
     errors.push(`${prefix} must be an object`)
     return
@@ -74,8 +82,22 @@ function validateConfig(config, prefix, errors, merged = false) {
   validateOptionalFields(config, prefix, CONFIG_TEXT_FIELDS, 'string', errors)
   validateOptionalFields(config, prefix, ['immersive', 'worldChosen'], 'boolean', errors)
   validateOptionalFields(config, prefix, ['seasonNumber'], 'number', errors)
-  if (config.storyLengthMode !== undefined && !['short', 'season', 'long'].includes(config.storyLengthMode)) {
+  if (config.storyLengthMode !== undefined && !['short', 'season', 'long', 'custom', 'endless'].includes(config.storyLengthMode)) {
     errors.push(`${prefix}.storyLengthMode is invalid`)
+  }
+  // 篇幅自由化: a stored custom target must be an integer in range — an
+  // out-of-range value (e.g. 5) is a rejected config, not a short custom
+  // line. Null means "not chosen yet" and is only tolerated on drafts.
+  if (config.targetChapters !== undefined && config.targetChapters !== null) {
+    if (!Number.isInteger(config.targetChapters) || config.targetChapters < 10 || config.targetChapters > 999) {
+      errors.push(`${prefix}.targetChapters must be an integer from 10 to 999`)
+    }
+  }
+  if (forStory && config.storyLengthMode === 'custom' && !Number.isInteger(config.targetChapters)) {
+    errors.push(`${prefix}.targetChapters is required for a custom-length story`)
+  }
+  if (forStory && config.storyLengthMode === 'endless' && config.targetChapters != null) {
+    errors.push(`${prefix}.targetChapters must be empty for an endless story`)
   }
   if (config.step !== undefined && (!Number.isInteger(config.step) || config.step < 1 || config.step > 7)) {
     errors.push(`${prefix}.step must be an integer from 1 to 7`)
@@ -159,7 +181,7 @@ function validateStory(story, prefix) {
   if (!isNonEmptyString(story.id)) errors.push(`${prefix}.id must be a non-empty string`)
   if (!isNonEmptyString(story.title)) errors.push(`${prefix}.title must be a non-empty string`)
   if (!isNonEmptyString(story.genreId)) errors.push(`${prefix}.genreId must be a non-empty string`)
-  validateConfig(story.config, `${prefix}.config`, errors, story.kind === 'merged')
+  validateConfig(story.config, `${prefix}.config`, errors, story.kind === 'merged', true)
   if (!isRecord(story.worldBible)) errors.push(`${prefix}.worldBible must be an object`)
   else {
     validateOptionalFields(story.worldBible, `${prefix}.worldBible`, ['premise', 'endingAnchor'], 'string', errors)

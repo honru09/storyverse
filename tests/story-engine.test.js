@@ -23,7 +23,10 @@ import {
   createMergedStory,
   createStory,
   defaultStartPoint,
+  finishEndlessLine,
   genreTemplateById,
+  isManuallyFinished,
+  validTargetChapters,
   localIdentityTitle,
   originIdentityById,
   originSpawnCell,
@@ -508,9 +511,9 @@ test('createStory without a template choice carries no top-level template id', (
   assert.equal(story.config.genreTemplateId, '')
 })
 
-test('genre templates are pure categories: fourteen of them, none bound to a world', () => {
+test('genre templates are pure categories: fifteen of them, none bound to a world', () => {
   assert.equal(GENRES.length, 6)
-  assert.equal(GENRE_TEMPLATES.length, 14)
+  assert.equal(GENRE_TEMPLATES.length, 15)
   for (const template of GENRE_TEMPLATES) {
     // Decoupled by product rule: a template carries no world reference at
     // all — only its own brick decoration (symbol/colour).
@@ -923,6 +926,106 @@ test('scenes past chapter six vary by act and never replay the base table', () =
   // A long-line chapter 25 opens its second arc with a fresh scene as well.
   const long = createStory({ genreId: 'cultivation', storyLengthMode: 'long' })
   assert.notEqual(buildChapter(long, 24).paragraphs[0], buildChapter(long, 0).paragraphs[0])
+})
+
+test('custom length: the season structure generalised to a reader-chosen total (10 and 37)', () => {
+  const ten = createStory({ genreId: 'mist', storyLengthMode: 'custom', targetChapters: 10 })
+  assert.equal(totalChaptersFor(ten), 10)
+  assert.equal(storyLengthModeOf(ten), 'custom')
+  assert.equal(ten.config.targetChapters, 10)
+  // Quarter boundaries for 10: acts end at chapters 3, 5, 8 and the finale.
+  for (const index of [2, 4, 7]) {
+    const structure = structureFor(ten, index)
+    assert.equal(structure.isUnitEnd, true, `chapter ${index + 1}`)
+    assert.equal(structure.upgradeKind, '小升格', `chapter ${index + 1}`)
+  }
+  const finale = structureFor(ten, 9)
+  assert.equal(finale.isFinale, true)
+  assert.equal(finale.upgradeKind, '终章大升格')
+  assert.equal(structureFor(ten, 3).unitIndex, 1)
+  assert.equal(ten.worldBible.outline.length, 10)
+
+  const thirtySeven = createStory({ genreId: 'cultivation', storyLengthMode: 'custom', targetChapters: 37 })
+  assert.equal(totalChaptersFor(thirtySeven), 37)
+  // Quarter boundaries for 37: acts end at chapters 10, 19, 28 and the finale.
+  for (const index of [9, 18, 27]) {
+    assert.equal(structureFor(thirtySeven, index).upgradeKind, '小升格', `chapter ${index + 1}`)
+  }
+  assert.equal(structureFor(thirtySeven, 36).upgradeKind, '终章大升格')
+  assert.equal(structureFor(thirtySeven, 10).unitIndex, 1)
+  assert.equal(structureFor(thirtySeven, 36).unitIndex, 3)
+  // The beat plan speaks the custom total, and the outline compresses.
+  const plan = storyBeatPlan(thirtySeven, 36)
+  assert.match(plan.prerequisites.join(''), /自定义篇幅共 37 章/)
+  assert.match(plan.prerequisites.join(''), /终章大升格点/)
+  assert.equal(plan.structure.totalChapters, 37)
+  assert.equal(thirtySeven.worldBible.outline.length, 20)
+  // A custom line completes exactly at its own total.
+  const walked = walkLocal(createStory({ genreId: 'mist', storyLengthMode: 'custom', targetChapters: 10, name: '遥' }), 10)
+  assert.equal(isStoryComplete(walked), true)
+})
+
+test('custom length config validation: out-of-range targets are rejected, endless carries none', () => {
+  assert.equal(validTargetChapters(10), 10)
+  assert.equal(validTargetChapters(999), 999)
+  assert.equal(validTargetChapters(9), null)
+  assert.equal(validTargetChapters(1000), null)
+  assert.equal(validTargetChapters(24.5), null)
+  // A custom mode without a valid target never survives normalisation:
+  // the config falls back to the season default instead of storing a
+  // broken custom length.
+  const rejected = createStory({ genreId: 'mist', storyLengthMode: 'custom', targetChapters: 5 })
+  assert.equal(rejected.config.storyLengthMode, 'season')
+  assert.equal(rejected.config.targetChapters, null)
+  assert.equal(totalChaptersFor(rejected), 24)
+  const noTarget = createStory({ genreId: 'mist', storyLengthMode: 'custom' })
+  assert.equal(noTarget.config.storyLengthMode, 'season')
+  // Endless: any stray target is dropped.
+  const endless = createStory({ genreId: 'mist', storyLengthMode: 'endless', targetChapters: 50 })
+  assert.equal(endless.config.storyLengthMode, 'endless')
+  assert.equal(endless.config.targetChapters, null)
+})
+
+test('endless length: rolling 12-chapter arcs, no finale ever, manual finish freezes the line', () => {
+  const endless = createStory({ genreId: 'mist', storyLengthMode: 'endless', name: '遥' })
+  assert.equal(totalChaptersFor(endless), Infinity)
+  assert.equal(isStoryComplete(endless), false)
+  // Chapter 12 closes the first arc with a small upgrade; chapter 13 opens arc two.
+  const arcEnd = structureFor(endless, 11)
+  assert.equal(arcEnd.isUnitEnd, true)
+  assert.equal(arcEnd.upgradeKind, '小升格')
+  assert.equal(arcEnd.isFinale, false)
+  // Chapter 25 (index 24): the arc roll — third arc, first position, no finale.
+  const chapter25 = structureFor(endless, 24)
+  assert.equal(chapter25.unitIndex, 2)
+  assert.equal(chapter25.positionInUnit, 0)
+  assert.equal(chapter25.isFinale, false)
+  assert.equal(chapter25.total, Infinity)
+  const plan25 = storyBeatPlan(endless, 24)
+  assert.match(plan25.prerequisites.join(''), /无限连载/)
+  assert.match(plan25.prerequisites.join(''), /第 3 弧/)
+  assert.equal(plan25.structure.totalChapters, null, 'the beat plan reports no total for an endless line')
+  // No chapter index is ever out of range, and the line never completes itself.
+  const walked = walkLocal(createStory({ genreId: 'mist', storyLengthMode: 'endless', name: '遥' }), 30)
+  assert.equal(walked.chapters.length, 30)
+  assert.equal(isStoryComplete(walked), false)
+  assert.equal(buildChapter(walked, 30).index, 30)
+  // The world bible outlines two rolling arcs and never promises an ending.
+  assert.equal(endless.worldBible.outline.length, 24)
+  assert.equal(endless.worldBible.outline.some((line) => line.includes('终局会回答')), false)
+  assert.match(endless.worldBible.endingAnchor, /没有预设的终点/)
+  // Manual finish: total freezes at the reached count, status flips, and
+  // no further chapter can be accepted.
+  const finished = finishEndlessLine(walked)
+  assert.equal(isManuallyFinished(finished), true)
+  assert.equal(finished.status, 'complete')
+  assert.equal(totalChaptersFor(finished), 30)
+  assert.equal(isStoryComplete(finished), true)
+  assert.throws(() => buildChapter(finished, 30), RangeError)
+  // Finishing twice (or finishing a finite line) changes nothing.
+  assert.equal(finishEndlessLine(finished), finished)
+  const season = createStory({ genreId: 'mist', storyLengthMode: 'season' })
+  assert.equal(finishEndlessLine(season), season)
 })
 
 test('a full season walks locally to completion and rolls into the next season', () => {

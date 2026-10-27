@@ -104,7 +104,8 @@ async function runJourney(browser, width) {
   const label = `${width}px`;
   let originalId;
   try {
-    await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+    // The plaza is the front door; this journey starts from the home page.
+    await page.goto(`${targetUrl}#/home`, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: '开启第一本书', exact: true }).waitFor();
     await noOverflow(page, 'first visit');
     await page.getByRole('button', { name: '开启第一本书', exact: true }).click();
@@ -115,8 +116,10 @@ async function runJourney(browser, width) {
     await noOverflow(page, 'world selection');
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByRole('heading', { name: '你以什么身份醒来？' }).waitFor();
+    // The merged 出身 step: the first 继续 rolls an identity and stays, so
+    // its spawn points expand in place; the second accepts the default.
     await page.getByRole('button', { name: '继续', exact: true }).click();
-    await page.getByRole('heading', { name: '故事从哪里醒来？' }).waitFor();
+    await page.getByRole('heading', { name: '从哪里醒来？' }).waitFor();
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByLabel('主角昵称（选填）').fill(privateNames[0]);
     await page.getByRole('switch', { name: '带入人生经历（选填）' }).click();
@@ -125,7 +128,7 @@ async function runJourney(browser, width) {
     await page.getByLabel('工作过的地方（选填）').fill(privateNames[3]);
     await page.getByLabel('重要的人（昵称，选填）').fill(privateNames[4]);
     await noOverflow(page, 'character form');
-    await page.getByRole('button', { name: '继续', exact: true }).click();
+    // Abilities share this screen now: the groups are already here.
     await page.getByRole('heading', { name: '想拥有什么能力？' }).waitFor();
     await noOverflow(page, 'ability selection');
 
@@ -134,7 +137,7 @@ async function runJourney(browser, width) {
       await page.getByRole('heading', { name: '想拥有什么能力？' }).waitFor({ timeout: 4000 });
       const saved = await library(page);
       assert.equal(saved.draft.name, privateNames[0]);
-      assert.equal(saved.draft.step, 6);
+      assert.equal(saved.draft.step, 4);
     });
     // Keep testing independent features if an older build restores the home page.
     if (!(await page.getByRole('heading', { name: '想拥有什么能力？' }).count())) {
@@ -142,7 +145,7 @@ async function runJourney(browser, width) {
       await page.getByRole('heading', { name: '想拥有什么能力？' }).waitFor();
     }
     await page.getByRole('button', { name: '继续', exact: true }).click();
-    await page.getByRole('heading', { name: '故事从这里开始。' }).waitFor();
+    await page.getByRole('heading', { name: '确认你的故事' }).waitFor();
     await noOverflow(page, 'confirmation');
     await page.getByRole('button', { name: '进入第一章', exact: true }).click();
     await currentChapter(page, 1);
@@ -257,13 +260,14 @@ async function runJourney(browser, width) {
     await page.getByRole('button', { name: '返回书城', exact: true }).click();
     await navigation(page, '造世');
     await page.getByRole('heading', { name: '想写哪种故事？' }).waitFor();
+    // Two-level taxonomy: 修仙 lives on the 玄幻修真 family's L2 wall.
+    await page.getByRole('button', { name: /玄幻修真/ }).click();
     await page.locator('.template-wall').getByRole('button', { name: /修仙/ }).click();
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByLabel('主角昵称（选填）').fill('测试剑客星河');
-    await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByRole('button', { name: '进入第一章', exact: true }).click();
     await currentChapter(page, 1);

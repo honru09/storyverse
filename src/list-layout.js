@@ -31,11 +31,13 @@ export const statusBadgeFor = (story) => {
   return seasonLabel(story) ?? "连载中";
 };
 
-// One-line progress text built from generated/total chapters only.
+// One-line progress text built from generated/total chapters only. A
+// running endless line has no total: it reports its live count instead.
 export const progressLabelFor = (story) => {
   const total = totalChaptersFor(story);
   const generated = generatedCount(story);
-  if (storyComplete(story)) return `全 ${total} 章`;
+  if (storyComplete(story)) return `全 ${Number.isFinite(total) ? total : generated} 章`;
+  if (!Number.isFinite(total)) return `连载中 · 已更 ${generated} 章`;
   if (generated > 0) return `第 ${generated} / ${total} 章`;
   return `共 ${total} 章`;
 };

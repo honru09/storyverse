@@ -7,6 +7,9 @@ export function mergeSourceContext(story) {
   return {
     genreId: text(story.genreId, 80),
     storyLengthMode: text(story.config?.storyLengthMode, 20),
+    // A custom-length source's own total, so the merge context clips its
+    // outline and summaries against the right bound.
+    targetChapters: Number.isInteger(story.config?.targetChapters) ? story.config.targetChapters : null,
     // The avatar each side brought into the merge, if any: the id records
     // whose journey this becomes, the appearance line lets the merged
     // telling keep painting the same person.

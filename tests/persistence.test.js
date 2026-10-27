@@ -390,3 +390,40 @@ test('season and long stories validate at their mode-sized chapter counts', () =
   bogus.config = { ...bogus.config, storyLengthMode: 'huge' }
   assert.ok(validateLibrary({ ...emptyLibrary(), stories: [bogus] }).some((error) => error.includes('storyLengthMode')))
 })
+
+test('custom and endless length configs validate against their own totals', () => {
+  const walk = (story, count) => {
+    let current = story
+    for (let index = 0; index < count; index += 1) {
+      const chapter = buildChapter(current, index)
+      current = acceptChapter(current, chapter, chapterKey(current, index))
+      if (chapter.choice && index < count - 1) {
+        current = chooseBranch(current, index, chapter.choice.options[0].id)
+      }
+    }
+    return current
+  }
+  // A finished custom line validates and round-trips with its target.
+  const custom = walk(createStory({ genreId: 'mist', storyLengthMode: 'custom', targetChapters: 10, name: '自' }), 10)
+  assert.deepEqual(validateLibrary({ ...emptyLibrary(), stories: [custom] }), [])
+  const roundTrip = importLibrary(exportLibrary({ ...emptyLibrary(), stories: [custom], activeStoryId: custom.id }))
+  assert.equal(roundTrip.stories[0].config.targetChapters, 10)
+  // An over-long custom line (11 chapters against a 10 target) is corrupt.
+  // (Hand-assembled: the engine itself refuses to build an 11th chapter.)
+  const base = walk(createStory({ genreId: 'mist', storyLengthMode: 'custom', targetChapters: 10, name: '自' }), 10)
+  const extra = { ...base.chapters[8], id: `${base.id}:chapter:10:r0`, index: 10 }
+  const over = { ...base, chapters: [...base.chapters, extra], chapterIndex: 9 }
+  assert.ok(validateLibrary({ ...emptyLibrary(), stories: [over] }).length > 0)
+  // A custom story whose target is below the minimum is rejected outright.
+  const tooSmall = createStory({ genreId: 'mist' })
+  tooSmall.config = { ...tooSmall.config, storyLengthMode: 'custom', targetChapters: 5 }
+  assert.ok(validateLibrary({ ...emptyLibrary(), stories: [tooSmall] })
+    .some((error) => error.includes('targetChapters')))
+  // An endless line validates at any reached count and must carry no target.
+  const endless = walk(createStory({ genreId: 'mist', storyLengthMode: 'endless', name: '无' }), 13)
+  assert.deepEqual(validateLibrary({ ...emptyLibrary(), stories: [endless] }), [])
+  const endlessTarget = createStory({ genreId: 'mist' })
+  endlessTarget.config = { ...endlessTarget.config, storyLengthMode: 'endless', targetChapters: 50 }
+  assert.ok(validateLibrary({ ...emptyLibrary(), stories: [endlessTarget] })
+    .some((error) => error.includes('targetChapters')))
+})

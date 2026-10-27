@@ -8,10 +8,10 @@ import { GENRE_TEMPLATES } from '../src/story-engine.js'
 // conventions every template (old and new) must keep.
 const knowledge = JSON.parse(readFileSync(new URL('../knowledge/genres.json', import.meta.url), 'utf8'))
 const byId = Object.fromEntries(knowledge.genres.map((genre) => [genre.id, genre]))
-const NEW_IDS = ['gaowu', 'campus', 'horror', 'guize-guatan', 'wuxianliu', 'lishi']
+const NEW_IDS = ['gaowu', 'campus', 'horror', 'guize-guatan', 'wuxianliu', 'lishi', 'er-ren']
 
 test('knowledge base holds exactly the fourteen engine templates, in sync', () => {
-  assert.equal(knowledge.genres.length, 14)
+  assert.equal(knowledge.genres.length, 15)
   assert.deepEqual(
     knowledge.genres.map((genre) => genre.id).sort(),
     GENRE_TEMPLATES.map((template) => template.id).sort(),

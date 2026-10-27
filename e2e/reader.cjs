@@ -32,7 +32,10 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
         // the shelf, one tap away through the plaza's slim row.
         await page.locator('button').filter({ hasText: '你的书架、化身与草稿都在这里' }).click();
         await page.getByRole('button', { name: '开启第一本书', exact: true }).click();
-        for (let i = 0; i < 6; i++) await page.getByRole('button', { name: '继续', exact: true }).click();
+        // Five steps now: 题材 → 世界 → 出身 (the first 继续 there rolls an
+        // identity and stays so its spawn points expand; the second
+        // accepts) → 主角与能力 → 开局.
+        for (let i = 0; i < 5; i++) await page.getByRole('button', { name: '继续', exact: true }).click();
         await page.getByRole('button', { name: '预设体验', exact: true }).click();
         await page.getByRole('button', { name: '进入第一章', exact: true }).click();
         await page.locator('[data-reading-paragraph]').first().waitFor();

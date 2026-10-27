@@ -8,6 +8,7 @@ import {
   chooseBranch,
   createMergedStory,
   createStory,
+  finishEndlessLine,
   plazaSnapshot,
 } from '../src/story-engine.js'
 import {
@@ -70,7 +71,7 @@ test('plaza gate rejects unfinished, avatar-less, short and merged lines', () =>
     genreId: 'mist', storyLengthMode: 'short', avatarId: AVATAR_ID,
   }), 6)
   assert.equal(plazaGateFor(short).publishable, false)
-  assert.match(plazaGateFor(short).reason, /一季或长线/)
+  assert.match(plazaGateFor(short).reason, /一季、长线、自定义篇幅或无限连载/)
 
   const merged = walkLocal(createMergedStory(
     createStory({ genreId: 'mist', avatarId: AVATAR_ID }),
@@ -131,7 +132,7 @@ test('enter draft seeds a new line from the publication template', () => {
   assert.equal(draft.originIdentityId, 'heir')
   assert.equal(draft.startPointName, '外门柴房')
   assert.equal(draft.ability, '读心一瞥')
-  assert.equal(draft.step, 6)
+  assert.equal(draft.step, 4)
 
   const seeded = createStory(draft)
   assert.equal(seeded.config.sourcePublicationId, 'pub-test-1')
@@ -159,6 +160,93 @@ test('plaza reader story renders the published line read-only', () => {
   assert.equal(reader.config.sourcePublicationId, '')
   assert.equal(plazaReaderStory(null), null)
   assert.equal(plazaReaderStory({ id: 'x' }), null)
+})
+
+const endlessLine = (chapters, overrides = {}) => walkLocal(createStory({
+  genreId: 'mist',
+  genreTemplateId: 'xuanhuan',
+  storyLengthMode: 'endless',
+  name: '阿遥',
+  avatarId: AVATAR_ID,
+  ability: '听见潮汐',
+  ...overrides,
+}), chapters)
+
+test('plaza gate accepts a running endless line as a living publication (user order 2026-10-27 17:16)', () => {
+  // One chapter is enough: the gate rejects nothing on endless grounds.
+  const oneChapter = endlessLine(1)
+  assert.equal(plazaGateFor(oneChapter).publishable, true)
+  assert.equal(plazaGateFor(oneChapter).lineStatus, 'serializing')
+
+  const grown = endlessLine(13)
+  const gate = plazaGateFor(grown)
+  assert.equal(gate.publishable, true)
+  assert.equal(gate.lineStatus, 'serializing')
+  assert.equal(plazaLengthLabel(grown), '连载中 · 已更 13 章')
+
+  // A zero-chapter endless line has nothing to read: rejected.
+  const empty = endlessLine(0)
+  assert.equal(plazaGateFor(empty).publishable, false)
+  assert.match(plazaGateFor(empty).reason, /第一章/)
+
+  // Manual finish flips the same line to a finished publication.
+  const finished = finishEndlessLine(grown)
+  const finishedGate = plazaGateFor(finished)
+  assert.equal(finishedGate.publishable, true)
+  assert.equal(finishedGate.lineStatus, 'finished')
+  assert.equal(plazaLengthLabel(finished), '全 13 章')
+})
+
+test('plaza snapshot of a running endless line carries its living status and count', () => {
+  const snapshot = plazaSnapshot(endlessLine(5), { avatarName: '阿遥' })
+  assert.equal(snapshot.storyLengthMode, 'endless')
+  assert.equal(snapshot.lineStatus, 'serializing')
+  assert.equal(snapshot.totalChapters, 5)
+  assert.equal(snapshot.chapters.length, 5)
+  // The snapshot config must not mark an entrant's fresh line as finished.
+  assert.equal(snapshot.config.finishedAt, '')
+
+  const finishedSnapshot = plazaSnapshot(finishEndlessLine(endlessLine(7)), { avatarName: '阿遥' })
+  assert.equal(finishedSnapshot.lineStatus, 'finished')
+  assert.equal(finishedSnapshot.totalChapters, 7)
+})
+
+test('entering a running endless publication seeds a running endless line', () => {
+  const snapshot = plazaSnapshot(endlessLine(4), { avatarName: '阿遥' })
+  const detail = {
+    id: 'pub-endless-1',
+    title: '连载中的线',
+    genreId: snapshot.genreId,
+    genreTemplateId: snapshot.genreTemplateId,
+    storyLengthMode: snapshot.storyLengthMode,
+    worldName: snapshot.worldName,
+    snapshot,
+    enterTemplate: snapshot.enterTemplate,
+  }
+  const entrantAvatar = {
+    id: 'avatar-entrant-2',
+    name: '后来者',
+    appearance: { hairColor: 'black', hairStyle: 'long-wavy', outfit: 'coat', shoes: 'boots', face: 'mole-cheek' },
+  }
+  const draft = enterDraftFor(detail, { avatar: entrantAvatar, ability: '读心余光' })
+  assert.equal(draft.storyLengthMode, 'endless')
+  assert.equal(draft.targetChapters, null)
+  const seeded = createStory(draft)
+  assert.equal(seeded.config.storyLengthMode, 'endless')
+  assert.equal(seeded.config.finishedAt, '')
+  assert.equal(seeded.config.sourcePublicationId, 'pub-endless-1')
+})
+
+test('plaza gate and labels cover custom-length lines', () => {
+  const custom = (chapters) => walkLocal(createStory({
+    genreId: 'mist', genreTemplateId: 'xuanhuan', storyLengthMode: 'custom', targetChapters: 10,
+    avatarId: AVATAR_ID, ability: '听见潮汐',
+  }), chapters)
+  assert.equal(plazaGateFor(custom(4)).publishable, false)
+  assert.match(plazaGateFor(custom(4)).reason, /还没走完/)
+  const done = custom(10)
+  assert.equal(plazaGateFor(done).publishable, true)
+  assert.equal(plazaLengthLabel(done), '全 10 章')
 })
 
 test('own-publication mapping round-trips through storage', () => {

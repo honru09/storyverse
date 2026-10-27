@@ -15,7 +15,14 @@ import { CHAPTER_COUNT } from "../reading-flow.js";
  */
 
 export function chapterStates({ total = CHAPTER_COUNT, generated = 0, current = 0 }) {
-  return Array.from({ length: total }, (_, index) => {
+  // An unbounded total (a running endless line) must never reach the
+  // array constructor: fall back to the chapters that exist plus the one
+  // being written. Call sites pass a display total via mapTotalFor; this
+  // is the belt under those braces.
+  const safeTotal = Number.isFinite(total) && total > 0
+    ? Math.floor(total)
+    : Math.max(generated + 1, current + 1, 1);
+  return Array.from({ length: safeTotal }, (_, index) => {
     if (index === current) return "current";
     if (index < current && index < generated) return "done";
     if (index < generated) return "ready";
@@ -62,14 +69,15 @@ export default function StoryMap({
   const states = chapterStates({ total, generated, current });
   // Long structures stay legible: nodes pack tighter and only unit ends
   // (plus the first and current chapters) carry labels.
-  const width = Math.max(300, total * (total <= 12 ? 64 : 30));
+  const count = states.length;
+  const width = Math.max(300, count * (count <= 12 ? 64 : 30));
   const height = variant === "mini" ? 44 : 92;
   const cy = height / 2;
-  const points = states.map((_, index) => nodePoint(index, total, width, height));
+  const points = states.map((_, index) => nodePoint(index, count, width, height));
   const path = points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
   const litUntil = Math.max(0, Math.min(generated - 1, current));
   const litPath = points.slice(0, litUntil + 1).map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
-  const label = `共 ${total} 章，已读到第 ${current + 1} 章`;
+  const label = `共 ${count} 章，已读到第 ${current + 1} 章`;
   return (
     <svg
       className={`storymap ${className}`}
@@ -99,7 +107,7 @@ export default function StoryMap({
             {clickable && <circle className="storymap-hit" cx={point.x} cy={point.y} r="17" />}
             {state === "current" && <circle className="storymap-pulse" cx={point.x} cy={point.y} r={radius + 3} />}
             <circle className={`storymap-node ${state}`} cx={point.x} cy={point.y} r={radius} />
-            {variant !== "mini" && (total <= 24 || index === 0 || index === current || (index + 1) % (total > 24 ? 25 : 6) === 0) && (
+            {variant !== "mini" && (count <= 24 || index === 0 || index === current || (index + 1) % (count > 24 ? 25 : 6) === 0) && (
               <text className={`storymap-label ${state === "current" ? "current" : ""}`} x={point.x} y={cy + (point.y >= cy ? 30 : -22)}>
                 第{index + 1}章
               </text>

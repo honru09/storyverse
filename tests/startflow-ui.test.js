@@ -2,136 +2,208 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-import { GENRES, GENRE_TEMPLATES } from '../src/story-engine.js'
+import { GENRES, GENRE_TEMPLATES, GENRE_SHELVES } from '../src/story-engine.js'
 
 const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
 const artwork = readFileSync(new URL('../src/components/WorldArtwork.jsx', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 
-test('start flow step one is only a template brick wall: no world picking on the category screen', () => {
-  assert.match(main, /想写哪种故事？/)
-  assert.match(main, /className="template-wall"/)
-  // The world picker left step one entirely: no stage chips, no picker
-  // label, no god entry — the category screen carries no world at all.
-  assert.doesNotMatch(main, /stage-picker/)
-  assert.doesNotMatch(main, /选择世界/)
-  assert.doesNotMatch(main, /故事舞台|预设舞台/)
+// --- The 5-step shape (STARTFLOW FIX, 2026-10-27) -----------------------
+
+test('start flow runs five steps: 题材 世界 出身 主角 开局， and no step-count text', () => {
+  for (const label of ['题材', '世界', '出身', '主角', '开局']) {
+    assert.match(main, new RegExp(`label: "${label}"`))
+  }
+  assert.doesNotMatch(main, /label: "身份"/)
+  assert.doesNotMatch(main, /label: "出生点"/)
+  assert.doesNotMatch(main, /label: "能力"/)
+  assert.doesNotMatch(main, /共 7 步/)
+  assert.doesNotMatch(main, /className="step-count"/)
 })
 
-test('start flow step two is a dedicated world screen: cover cards, god card, random card', () => {
+test('step one is a two-level shelf: L1 families first, explanations live in the step intro', () => {
+  assert.match(main, /先挑一个大类，再选具体的写法/)
+  assert.match(main, /className="step-intro"/)
+  assert.match(main, /className="shelf-grid"/)
+  // Single-member families go straight through; multi-member families
+  // open their L2 wall, which carries the in-step way back.
+  assert.match(main, /shelf\.templateIds\.length === 1/)
+  assert.match(main, /换个家族/)
+  // Random rolls across every L2 and shows its landing path.
+  assert.match(main, /命运指到了/)
+  assert.match(main, /rolledPath/)
+})
+
+test('the shelf taxonomy covers every genre template exactly once', () => {
+  const ids = GENRE_SHELVES.flatMap((shelf) => shelf.templateIds)
+  assert.deepEqual([...ids].sort(), GENRE_TEMPLATES.map((template) => template.id).sort())
+  assert.equal(new Set(ids).size, ids.length)
+})
+
+test('template bricks carry names only: no blurb printed on the brick', () => {
+  const brick = main.match(/function TemplateBrick\([\s\S]*?\n\}/)
+  assert.ok(brick, 'TemplateBrick exists')
+  assert.doesNotMatch(brick[0], /blurb/)
+  assert.match(brick[0], /template-brick-symbol/)
+})
+
+test('step two is a dedicated world screen: cover cards, god card first, random card', () => {
   assert.match(main, /故事发生在哪个世界？/)
   assert.match(main, /className="world-grid"/)
   assert.match(main, /function WorldCard/)
   assert.match(main, /world-card-god/)
   assert.match(main, /world-card-random/)
-  // Leaving the world step with nothing picked rolls a world and lands it —
-  // the same rule the identity step already had; a chosen world is never
-  // re-rolled.
+  // The decision explanation sits above the cards, before the choice.
+  const noteAt = main.indexOf('className="world-selection-note"')
+  const gridAt = main.indexOf('className="world-grid"')
+  assert.ok(noteAt > 0 && gridAt > noteAt, 'world note precedes the grid')
+  // Leaving the world step with nothing picked rolls a world and lands it.
   assert.match(main, /const rollWorld = \(\) =>/)
   assert.match(main, /if \(step === 2 && !isCustom && !worldChosen\) rollWorld\(\)/)
   // The setting guard moved with the god form to the world step.
   assert.match(main, /if \(step === 2 && isCustom\)/)
 })
 
-test('start flow runs seven steps with a step-count-independent stepper', () => {
-  for (const label of ['题材', '世界', '身份', '出生点', '主角', '能力', '开局']) {
-    assert.match(main, new RegExp(`label: "${label}"`))
-  }
-  assert.match(main, /共 7 步/)
-})
-
-test('draft compatibility: the world marker and the six-to-seven step migration', () => {
-  // New drafts record whether a world was deliberately chosen.
-  assert.match(main, /worldChosen:/)
-  assert.match(main, /typeof source\.worldChosen === "boolean"/)
-  // Legacy drafts (no marker) keep their world and shift steps 2..6 by one.
-  assert.match(main, /const migratedDraftStep = \(source\) =>/)
-  assert.match(main, /step <= 1 \? 1 : Math\.min\(7, step \+ 1\)/)
-  assert.match(main, /step: migratedDraftStep\(source\)/)
-})
-
-test('start flow step three picks an origin identity that frames the spawn step', () => {
+test('step three merges identity and spawn point on one screen', () => {
   assert.match(main, /你以什么身份醒来？/)
   assert.match(main, /ORIGIN_IDENTITIES/)
   assert.match(main, /originIdentityId/)
   assert.match(main, /spawnPointsForIdentity/)
+  // The identity card leads with the local title of this world.
   assert.match(main, /localIdentityTitle/)
-  // Creation forwards the picked identity alongside the spawn point.
-  assert.match(main, /originIdentityId: payload\.originIdentityId/)
-  // The confirmation step links back to the identity step.
-  assert.match(main, /aria-label="修改身份"/)
-  // The random card and the step exit share one roll.
-  assert.match(main, /const rollIdentity = \(\) =>/)
-  assert.match(main, /onClick=\{rollIdentity\}/)
-  // Leaving the identity step with nothing picked rolls and lands an
-  // identity instead of falling through to the whole-world spawn list; an
-  // identity already on the draft is never re-rolled.
-  assert.match(main, /if \(step === 3 && !identity\) rollIdentity\(\)/)
-})
-
-test('start flow step four picks a spawn point for the chosen world', () => {
-  assert.match(main, /故事从哪里醒来？/)
+  assert.match(main, /spawn-card-concept/)
+  // Picking an identity expands its spawn points in place, same screen.
+  assert.match(main, /从哪里醒来？/)
   assert.match(main, /className="spawn-grid"/)
   assert.match(main, /resolveStartPoint/)
   assert.match(main, /startPointName: payload\.startPointName/)
   assert.match(main, /startPointHook: payload\.startPointHook/)
+  // One 出身随机 roll covers identity + its spawn point together.
+  assert.match(main, /const rollOrigin = \(\) =>/)
+  assert.match(main, /onClick=\{rollOrigin\}/)
+  assert.match(main, /const rollIdentity = \(\) =>/)
+  // Leaving the merged step with no identity rolls one and stays, so the
+  // spawn section expands in place instead of being skipped past.
+  assert.match(main, /if \(step === 3 && !identity\) \{\s*rollIdentity\(\);\s*return;/)
   // God mode gets the free-form spawn field plus a borrow block whose
-  // source is the world the user had chosen before going god, crossed with
-  // the picked identity — never a world lent by a craft template.
+  // source is the world the user had chosen before going god, crossed
+  // with the picked identity — never a world lent by a craft template.
   assert.match(main, /出生点（选填）/)
   assert.match(main, /godBorrowWorldId/)
   assert.match(main, /spawnPointsForIdentity\(borrowGenre, identity\.id\)/)
   assert.match(main, /borrowPoints\.length > 0/)
   assert.doesNotMatch(main, /boundSpawnPoints/)
-  // The confirmation step links back to the spawn step.
+  // The summary links back to the merged step for both halves.
+  assert.match(main, /aria-label="修改出身"/)
   assert.match(main, /aria-label="修改出生点"/)
 })
 
-test('the brick wall covers every genre template exactly once', () => {
-  const orderBlock = main.match(/const TEMPLATE_WALL_ORDER = \[([\s\S]*?)\];/)
-  assert.ok(orderBlock, 'wall order constant exists')
-  const ids = [...orderBlock[1].matchAll(/"([a-z-]+)"/g)].map((match) => match[1])
-  assert.deepEqual([...ids].sort(), GENRE_TEMPLATES.map((template) => template.id).sort())
+test('step four merges protagonist and abilities: grouped pools, style descriptions on screen', () => {
+  assert.match(main, /你是怎样的主角？/)
+  assert.match(main, /想拥有什么能力？/)
+  assert.match(main, /abilityGroupsFor/)
+  assert.match(main, /ability-group-title/)
+  assert.match(main, /自定义能力（选填）/)
+  assert.match(main, /随机能力/)
+  assert.match(main, /const rollAbility = \(\) =>/)
+  // Leaving the step unpicked rolls from the current list and lands it.
+  assert.match(main, /if \(step === 4 && !abilityPick\) rollAbility\(\)/)
+  // 故事风格 renders the description that ships in its data — no blind picks.
+  assert.match(main, /\{item\.desc\}/)
+  // No preset ability is restored by default.
+  assert.doesNotMatch(main, /"tide"/)
 })
 
-test('template and world picks are decoupled: each selection moves only its own axis', () => {
-  // Clicking a brick sets the category and nothing else — the source must
-  // not touch the world field or the world marker on that path. Picking a
-  // world sets the world and lands its marker, nothing else. The random
-  // combo is the only place that rolls all four axes, each independently.
+test('default-state governance: system defaults are badged, deliberate picks get the check', () => {
+  assert.match(main, /default-badge/)
+  assert.match(main, /pickedTemplate/)
+  assert.match(main, /pickedTrait/)
+  assert.match(main, /pickedTone/)
+  assert.match(main, /pickedLength/)
+  // A restored draft counts as the reader's own choices, not defaults.
+  assert.match(main, /restoredDraft/)
+})
+
+test('step five is summary-first: summary and length sit above the fold, 篇幅 appears once', () => {
+  assert.match(main, /确认你的故事/)
+  assert.match(main, /opening-preview--summary/)
+  const summaryAt = main.indexOf('opening-preview--summary')
+  const detailsAt = main.indexOf('opening-details')
+  const lengthAt = main.indexOf('length-picker')
+  const modeAt = main.indexOf('<GenerationMode')
+  assert.ok(summaryAt > 0 && detailsAt > summaryAt, 'summary block precedes the detail rows')
+  assert.ok(lengthAt > detailsAt, 'length picker follows the summary')
+  assert.ok(modeAt > lengthAt, 'generation mode follows the length picker')
+  // The duplicated static 篇幅 row is gone from the step itself; the
+  // picker is the only 篇幅 control on the page, and the side preview
+  // panel steps aside on this step so nothing renders twice.
+  const stepFive = main.slice(main.indexOf('step === 5 &&'), main.indexOf('className="length-picker"'))
+  assert.doesNotMatch(stepFive, /篇幅/)
+  assert.match(main, /step !== 5 && \(\s*<PreviewPanel/)
+  // The preview sentence is built from the actual spawn hook, never the
+  // old hardcoded sci-fi sample.
+  assert.match(main, /spawn\?\.hook/)
+  assert.doesNotMatch(main, /无法解释的信号/)
+  // The summary genre line is two-segment: family · template.
+  assert.match(main, /twoSegmentTemplateName/)
+})
+
+test('the length picker offers presets, a custom count and endless serialising', () => {
+  assert.match(main, /一季 · 24 章/)
+  assert.match(main, /长线 · 100 章/)
+  assert.match(main, /pickLengthMode\("custom"\)/)
+  assert.match(main, /pickLengthMode\("endless"\)/)
+  assert.match(main, /无限连载/)
+  assert.match(main, /commitCustomLength/)
+  assert.match(main, /CUSTOM_LENGTH_MIN/)
+  assert.match(main, /storyLengthMode: payload\.storyLengthMode/)
+  assert.match(main, /targetChapters: payload\.targetChapters/)
+  assert.match(main, /"custom", "endless"\]\.includes\(base\.storyLengthMode\)/)
+})
+
+test('reader carries the endless surfaces: serialising position and the manual finish action', () => {
+  assert.match(main, /连载中 · 第 \$\{index \+ 1\} 章/)
+  assert.match(main, /完结这条线/)
+  assert.match(main, /finishEndlessLine/)
+  assert.match(main, /mapTotalFor/)
+})
+
+test('draft compatibility: world marker kept, seven-step drafts fold into five', () => {
+  assert.match(main, /worldChosen:/)
+  assert.match(main, /typeof source\.worldChosen === "boolean"/)
+  assert.match(main, /const SEVEN_TO_FIVE_STEP = \{ 1: 1, 2: 2, 3: 3, 4: 3, 5: 4, 6: 4, 7: 5 \}/)
+  assert.match(main, /const migratedDraftStep = \(source\) =>/)
+  assert.match(main, /step: migratedDraftStep\(source\)/)
+  // Five-step drafts stamp their version so the fold stays idempotent.
+  assert.match(main, /flowVersion: 5/)
+  assert.match(main, /Number\(source\?\.flowVersion\) >= 5/)
+})
+
+test('template and world picks stay decoupled: each selection moves only its own axis', () => {
   assert.match(main, /set\(\{ genreTemplateId: item\.id \}\)/)
   assert.match(main, /const selectStage = \(genreId\) => \{\s*set\(\{ genreId, worldChosen: true \}\);/)
   assert.match(main, /const rollCombo = \(\) =>/)
-  assert.match(main, /worldChosen: true,\s*originIdentityId: nextIdentity\.id/)
   assert.doesNotMatch(main, /recommendedTemplateFor/)
   assert.doesNotMatch(main, /templateTouched/)
   assert.doesNotMatch(main, /item\.worldId/)
-  assert.doesNotMatch(main, /世界 · /)
 })
 
-test('confirmation and preview rows jump back to category and world independently', () => {
+test('confirmation rows jump back to their own steps independently', () => {
   assert.match(main, /aria-label="修改题材"/)
   assert.match(main, /aria-label="修改世界"/)
   assert.match(main, /onJump/)
   assert.doesNotMatch(main, /修改题材与世界/)
 })
 
-test('the opening step offers the two length modes and defaults to a season', () => {
-  assert.match(main, /一季 · 24 章/)
-  assert.match(main, /长线 · 100 章/)
-  assert.match(main, /storyLengthMode: payload\.storyLengthMode/)
-  assert.match(main, /storyLengthMode: "season"/)
-})
-
 test('every world has shipping artwork wired into WorldArtwork', () => {
   for (const genre of GENRES) assert.ok(artwork.includes(`"${genre.id}"`), genre.id)
   assert.match(styles, /\.template-wall\{/)
   assert.match(styles, /\.template-brick\.selected/)
-  assert.match(styles, /\.stage-chip\.selected/)
+  assert.match(styles, /\.shelf-brick/)
+  assert.match(styles, /\.step-intro/)
 })
 
 test('god mode: entry, form and wiring live in the world forge step', () => {
-  const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
   // Entry is a card on the world screen, not buried in a later step.
   assert.ok(main.includes('创世神模式') && main.includes('世界由你亲手写'))
   assert.ok(main.includes('world-card-god') && main.includes('enterGodMode') && main.includes('exitGodMode'))
@@ -144,8 +216,17 @@ test('god mode: entry, form and wiring live in the world forge step', () => {
   assert.ok(main.includes('customWorldSetting: payload.customWorldSetting'))
 })
 
+test('god mode no longer wipes the step-one genre: entry preserves it, exit restores it', () => {
+  const entry = main.match(/const enterGodMode = \(\) => \{([\s\S]*?)\};/)
+  assert.ok(entry, 'enterGodMode exists')
+  assert.doesNotMatch(entry[1], /genreTemplateId/)
+  // The in-godmode craft chips are framed as the same step-one choice
+  // carried over, not a second decision.
+  assert.match(main, /这就是第一步选定的题材/)
+  assert.match(main, /setPickedTemplate\(true\)/)
+})
+
 test('god mode: the hard-line setting check gates the world step and creation', () => {
-  const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
   assert.ok(main.includes('findSettingViolation(draft.customWorldSetting)'))
   assert.ok(main.includes('findSettingViolation(payload.customWorldSetting)'))
   const guard = readFileSync(new URL('../src/setting-guard.js', import.meta.url), 'utf8')
@@ -157,16 +238,4 @@ test('protagonist step has no origin picker: the identity step is the only origi
   assert.doesNotMatch(main, /origin-grid/)
   assert.doesNotMatch(main, /draft\.origin === origin/)
   assert.doesNotMatch(main, /<dt>出身<\/dt>/)
-})
-
-test('ability step composes its list from world and template, with custom text and a roll', () => {
-  assert.match(main, /const abilityCandidates = abilityCandidatesFor\(/)
-  assert.match(main, /abilityCandidates\.map/)
-  assert.match(main, /自定义能力（选填）/)
-  assert.match(main, /随机能力/)
-  assert.match(main, /const rollAbility = \(\) =>/)
-  // Leaving the step unpicked rolls from the current list and lands it.
-  assert.match(main, /if \(step === 6 && !abilityPick\) rollAbility\(\)/)
-  // No preset ability is restored by default.
-  assert.doesNotMatch(main, /"tide"/)
 })

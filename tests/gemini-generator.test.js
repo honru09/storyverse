@@ -68,6 +68,32 @@ test('Vertex AI uses workload identity without requiring or exposing an API key'
   assert.doesNotMatch(JSON.stringify(options), /api.?key/i)
 })
 
+test('chapter length target rides in the system instruction and the response schema (F-16)', async () => {
+  // PERSONA-QA F-16: chapters read short against web-novel norms. The
+  // per-chapter target is 1500–2000 Chinese characters, stated in the
+  // generation instructions exactly where the sibling parameters live —
+  // the system prompt sentence and the paragraphs schema description —
+  // and both backends send both. Asserted on the stubbed request, so no
+  // real generation is spent measuring it.
+  const current = story()
+  let options
+  const generator = createGeminiGenerator({
+    env: {
+      GENAI_BACKEND: 'vertex',
+      GOOGLE_CLOUD_PROJECT: 'storyweave-fixture',
+      GOOGLE_CLOUD_LOCATION: 'global',
+    },
+    vertexGenerate: async (request) => {
+      options = request
+      return { text: JSON.stringify(output(true)), finishReason: 'STOP' }
+    },
+  })
+  await generator.generate({ story: current, index: 0 })
+  assert.match(options.config.systemInstruction, /每章 1500–2000 字/)
+  assert.doesNotMatch(options.config.systemInstruction, /800–1800/)
+  assert.match(JSON.stringify(options.config.responseJsonSchema), /全章 1500–2000 字/)
+})
+
 test('opening uses documented REST JSON schema and returns preserved chapter protocol plus world bible', async () => {
   const current = story()
   const original = structuredClone(current)

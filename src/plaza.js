@@ -1,4 +1,4 @@
-// The plaza （广场）: finished avatar lines, published for other readers to
+// The plaza （广场）: avatar lines, published for other readers to
 // read as written or to re-enter with their own avatar. This module is the
 // shared vocabulary — the publish gate, display helpers and the shape of
 // an "enter" draft — plus the client-side API. The server imports the pure
@@ -7,8 +7,12 @@
 //
 // Product rules that live here and nowhere else:
 // - A publishable line is a solo story an avatar actually walked (config
-//   carries avatarId), in season or long mode, and finished. Short lines
-//   and merged lines never publish.
+//   carries avatarId). Finite lines (season / long / custom) publish once
+//   finished. An ENDLESS line publishes while still running — as a living
+//   publication marked 连载中 whose content follows the line as new
+//   chapters land, flipping to 完结 when the owner finishes it by hand —
+//   but never at zero chapters. Short lines and merged lines never
+//   publish.
 // - Entering a line never touches the original: it seeds a brand-new local
 //   story from the publication's sanitized world template, with the
 //   entrant's own avatar as protagonist, and records where it came from
@@ -20,6 +24,7 @@ import {
   CUSTOM_GENRE_ID,
   GENRES,
   genreTemplateById,
+  isManuallyFinished,
   isStoryComplete,
   storyLengthModeOf,
   totalChaptersFor,
@@ -32,19 +37,34 @@ const genreByWorldId = (id) => GENRES.find((genre) => genre.id === id) || null
 
 /** The publish gate, identical on the publish screen and the server. */
 export function plazaGateFor(story) {
-  if (!story || typeof story !== 'object') return { publishable: false, reason: '故事不存在。' }
-  if (story.kind === 'merged') return { publishable: false, reason: '合流故事不能发布到广场。' }
+  if (!story || typeof story !== 'object') return { publishable: false, reason: '故事不存在。', lineStatus: 'finished' }
+  if (story.kind === 'merged') return { publishable: false, reason: '合流故事不能发布到广场。', lineStatus: 'finished' }
   if (typeof story.config?.avatarId !== 'string' || !story.config.avatarId) {
-    return { publishable: false, reason: '只有用化身走完的故事线才能发布。' }
+    return { publishable: false, reason: '只有用化身走完的故事线才能发布。', lineStatus: 'finished' }
   }
   const mode = storyLengthModeOf(story)
-  if (mode !== 'season' && mode !== 'long') {
-    return { publishable: false, reason: '只有一季或长线走完的故事线才能发布。' }
+  if (mode === 'endless') {
+    // The one gate an endless line can fail (besides avatar/merged):
+    // nothing to read yet. Any reached chapter count publishes, running
+    // or hand-finished.
+    const chapters = Array.isArray(story.chapters) ? story.chapters.length : 0
+    if (chapters < 1) {
+      return { publishable: false, reason: '至少走完第一章，才能把连载中的线放到广场。', lineStatus: 'serializing' }
+    }
+    return { publishable: true, reason: '', lineStatus: isManuallyFinished(story) ? 'finished' : 'serializing' }
+  }
+  if (mode !== 'season' && mode !== 'long' && mode !== 'custom') {
+    return { publishable: false, reason: '只有一季、长线、自定义篇幅或无限连载的故事线才能发布。', lineStatus: 'finished' }
   }
   if (!isStoryComplete(story)) {
-    return { publishable: false, reason: mode === 'season' ? '这一季还没走完，完结后才能发布。' : '这条长线还没走完，完结后才能发布。' }
+    const reason = mode === 'season'
+      ? '这一季还没走完，完结后才能发布。'
+      : mode === 'long'
+        ? '这条长线还没走完，完结后才能发布。'
+        : '这条线还没走完，完结后才能发布。'
+    return { publishable: false, reason, lineStatus: 'finished' }
   }
-  return { publishable: true, reason: '' }
+  return { publishable: true, reason: '', lineStatus: 'finished' }
 }
 
 /** The world's display name for a story or a publication-shaped object. */
@@ -65,9 +85,26 @@ export function plazaTemplateNameFor(source) {
   return genreTemplateById(id)?.name || ''
 }
 
-/** 「第 1 季 · 全 24 章」/「长线 · 全 100 章」— real fields only. */
+/** The line's publication status: a running endless line serialises; everything else is finished. */
+export function plazaLineStatusFor(source) {
+  if (source?.lineStatus === 'serializing' || source?.lineStatus === 'finished') return source.lineStatus
+  return storyLengthModeOf(source) === 'endless' && !isManuallyFinished(source) ? 'serializing' : 'finished'
+}
+
+/**
+ * The length line for a story or publication: 「第 1 季 · 全 24 章」/
+ * 「长线 · 全 100 章」/「全 37 章」 for finished lines — real fields only —
+ * and 「连载中 · 已更 N 章」 for a living endless publication, where N is
+ * the count it has actually reached.
+ */
 export function plazaLengthLabel(source) {
   const mode = source?.storyLengthMode || storyLengthModeOf(source)
+  if (mode === 'endless') {
+    const reached = Number.isInteger(source?.chapterCount)
+      ? source.chapterCount
+      : Array.isArray(source?.chapters) ? source.chapters.length : 0
+    return plazaLineStatusFor(source) === 'serializing' ? `连载中 · 已更 ${reached} 章` : `全 ${reached} 章`
+  }
   const total = Number.isInteger(source?.totalChapters) ? source.totalChapters : totalChaptersFor(source)
   if (mode === 'long') return `长线 · 全 ${total} 章`
   if (mode === 'season') {
@@ -92,6 +129,7 @@ export function enterDraftFor(detail, { avatar, identityId = '', startPointName 
     genreId: template.genreId || detail?.genreId || 'mist',
     genreTemplateId: template.genreTemplateId || detail?.genreTemplateId || '',
     storyLengthMode: template.storyLengthMode || detail?.storyLengthMode || 'season',
+    targetChapters: Number.isInteger(template.targetChapters) ? template.targetChapters : null,
     seasonNumber: Number.isInteger(template.seasonNumber) ? template.seasonNumber : 1,
     customWorldName: template.customWorldName || '',
     customWorldSetting: template.customWorldSetting || '',
@@ -106,7 +144,10 @@ export function enterDraftFor(detail, { avatar, identityId = '', startPointName 
     ability: ability || '',
     tone: '诗性冒险',
     sourcePublicationId: detail?.id || '',
-    step: 6,
+    // Bookkeeping only: the entrant's story is created directly from this
+    // draft (no forge pass), the step just records how far the equivalent
+    // start flow had been walked — protagonist and ability confirmed.
+    step: 4,
   }
 }
 
@@ -237,7 +278,7 @@ export async function fetchPlazaDetail({ id, fetchImpl = globalThis.fetch } = {}
   return result?.publication ?? null
 }
 
-/** Publish one of my finished avatar lines. The server re-checks everything. */
+/** Publish one of my avatar lines (finished, or a living endless publication). The server re-checks everything. */
 export async function publishToPlaza({ story, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
   const headers = { 'Content-Type': 'application/json', ...(await plazaHeaders(getAccessToken)) }
   const response = await fetchImpl('/api/plaza/publish', {

@@ -121,7 +121,9 @@ async function runOnboarding(browser, width) {
       assert.equal(config.storage, 'local');
     });
 
-    await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+    // The plaza is the front door now; this suite exercises the home
+    // page, so it enters through the explicit home route.
+    await page.goto(`${targetUrl}#/home`, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: '开启第一本书', exact: true }).waitFor();
     const accountTrigger = page.getByRole('button', { name: '登录 / 注册', exact: true });
     const initialRaw = await readRawLibrary(page);
@@ -163,7 +165,7 @@ async function runOnboarding(browser, width) {
       await noOverflow(page, 'guest creation');
     });
 
-    await step('legacy six-step draft migrates into the seven-step flow', async () => {
+    await step('legacy six-step draft migrates into the five-step flow', async () => {
       const legacyContext = await browser.newContext({
         viewport: { width, height: 844 },
         isMobile: true,
@@ -196,16 +198,17 @@ async function runOnboarding(browser, width) {
             },
           },
         });
-        await legacyPage.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+        await legacyPage.goto(`${targetUrl}#/home`, { waitUntil: 'domcontentloaded' });
         const resume = legacyPage.getByRole('button', { name: /继续上次设定/ });
         await resume.waitFor();
-        assert.match(await resume.innerText(), /第 6 步/, 'the home banner shows the migrated step number');
+        assert.match(await resume.innerText(), /第 4 步/, 'the home banner shows the migrated step number');
         await resume.click();
-        // Old step 5 （能力） is step 6 once the world screen exists.
+        // Old step 5 （能力） folds through the seven-step shape (6) into
+        // step 4 of the five-step flow, where 主角 and 能力 share a screen.
         await legacyPage.getByRole('heading', { name: '想拥有什么能力？', exact: true }).waitFor();
         await legacyPage.waitForFunction(key => {
           const library = JSON.parse(localStorage.getItem(key));
-          return library?.draft?.worldChosen === true && library?.draft?.step === 6;
+          return library?.draft?.worldChosen === true && library?.draft?.step === 4;
         }, storageKey);
         const migrated = JSON.parse(await legacyPage.evaluate(key => localStorage.getItem(key), storageKey));
         assert.equal(migrated.draft.genreId, 'mist', 'the legacy world is kept as chosen, never re-picked');
@@ -217,18 +220,18 @@ async function runOnboarding(browser, width) {
     });
 
     await step('creation draft survives leaving, returning and reloading', async () => {
-      // Step one is only the category now; the world lives on its own screen.
+      // Step one opens on the family shelves; the default template's
+      // family is already open. Continuing keeps the default pick.
       await page.getByRole('button', { name: '继续', exact: true }).click();
       await page.getByRole('heading', { name: '故事发生在哪个世界？', exact: true }).waitFor();
       await page.locator('.world-grid').getByRole('button', { name: /沉潮港/ }).click();
       await page.getByRole('button', { name: '继续', exact: true }).click();
-      // Step three: the identity concept frames which spawn points exist.
+      // Step three merges identity and spawn point: skipping the identity
+      // pick rolls one and lands it, and its spawn points expand on the
+      // same screen — the whole-world spawn list never reopens.
       await page.getByRole('heading', { name: '你以什么身份醒来？', exact: true }).waitFor();
-      // Skipping the pick must not reopen the whole-world spawn list:
-      // leaving the step rolls an identity, lands it on the draft, and the
-      // spawn step then only lists that identity's points in this world.
       await page.getByRole('button', { name: '继续', exact: true }).click();
-      await page.getByRole('heading', { name: '故事从哪里醒来？', exact: true }).waitFor();
+      await page.getByRole('heading', { name: '从哪里醒来？', exact: true }).waitFor();
       await page.waitForFunction(key => {
         const library = JSON.parse(localStorage.getItem(key));
         return Boolean(library?.draft?.originIdentityId);
@@ -237,67 +240,69 @@ async function runOnboarding(browser, width) {
       assert.ok(['heir', 'official', 'mystery', 'commoner', 'underclass', 'fallen', 'hermit', 'outsider', 'exile', 'merchant']
         .includes(rolledDraft.draft.originIdentityId), 'an unpicked identity is rolled and stored on the draft');
       assert.ok((await page.locator('.field-hint').filter({ hasText: '这里只列' }).count()) >= 1,
-        'the spawn step declares itself scoped to the rolled identity');
-      const rolledPointCount = await page.locator('.spawn-grid .spawn-card:not(.spawn-random)').count();
+        'the spawn section declares itself scoped to the rolled identity');
+      const rolledPointCount = await page.locator('.spawn-section .spawn-card:not(.spawn-random)').count();
       assert.ok(rolledPointCount >= 1 && rolledPointCount <= 3,
-        `the spawn step lists only the rolled identity cell (saw ${rolledPointCount} points)`);
-      await page.getByRole('button', { name: '上一步', exact: true }).click();
-      await page.getByRole('heading', { name: '你以什么身份醒来？', exact: true }).waitFor();
-      assert.equal(await page.locator('.spawn-grid .spawn-card[aria-pressed="true"]').count(), 1,
-        'going back shows the rolled identity as the landed pick');
-      await page.locator('.spawn-grid').getByRole('button', { name: /身世成谜/ }).click();
+        `the spawn section lists only the rolled identity cell (saw ${rolledPointCount} points)`);
+      assert.equal(await page.locator('.spawn-grid').first().locator('.spawn-card[aria-pressed="true"]').count(), 1,
+        'the rolled identity shows as the landed pick on the same screen');
+      await page.locator('.spawn-grid').first().getByRole('button', { name: /身世成谜/ }).click();
+      await page.locator('.spawn-section').getByRole('button', { name: /灯塔守夜屋/ }).click();
       await page.getByRole('button', { name: '继续', exact: true }).click();
-      // Step four: the spawn point belongs to the identity in this world.
-      await page.getByRole('heading', { name: '故事从哪里醒来？', exact: true }).waitFor();
-      await page.locator('.spawn-grid').getByRole('button', { name: /灯塔守夜屋/ }).click();
-      await page.getByRole('button', { name: '继续', exact: true }).click();
+      // Step four holds the protagonist form and the ability groups on
+      // one screen.
+      await page.getByRole('heading', { name: '你是怎样的主角？', exact: true }).waitFor();
       await page.getByLabel('主角昵称（选填）').fill(testName);
       await page.getByRole('switch', { name: '带入人生经历（选填）' }).click();
       await page.getByLabel('成长的地方（选填）').fill('回归海岸镇');
-      await page.getByRole('button', { name: '继续', exact: true }).click();
       await page.getByRole('heading', { name: '想拥有什么能力？', exact: true }).waitFor();
-      // The ability list belongs to this (world × template) pair: the mist
-      // world was picked on the world screen and 玄幻 is the flow's default
-      // template, so its signature abilities lead, the mist pool follows,
-      // and no other world's abilities appear.
-      const abilityList = page.locator('.ability-list');
-      assert.match(await abilityList.locator('.ability-card').first().innerText(), /气运加身/,
+      // The ability groups belong to this (world × template) pair: the
+      // mist world was picked on the world screen and 玄幻 is the flow's
+      // default template, so its signature group leads, the mist pool
+      // follows as its own group, and no other world's abilities appear.
+      assert.ok((await page.locator('.ability-group-title').filter({ hasText: '招牌能力' }).count()) >= 1,
+        'the signature group carries a visible header');
+      assert.ok((await page.locator('.ability-group-title').filter({ hasText: '这个世界的本事' }).count()) >= 1,
+        'the world pool carries a visible header');
+      assert.match(await page.locator('.ability-card').first().innerText(), /气运加身/,
         'the pinned template signature leads the list');
-      await abilityList.getByRole('button', { name: /吞噬进化/ }).waitFor();
-      await abilityList.getByRole('button', { name: /雾里认路/ }).waitFor();
-      assert.equal(await abilityList.getByRole('button', { name: /借火一瞬/ }).count(), 0,
+      await page.getByRole('button', { name: /吞噬进化/ }).waitFor();
+      await page.getByRole('button', { name: /雾里认路/ }).waitFor();
+      assert.equal(await page.getByRole('button', { name: /借火一瞬/ }).count(), 0,
         'another world pool stays out of the list');
-      assert.equal(await abilityList.getByRole('button', { name: /察言观色/ }).count(), 0);
-      await abilityList.getByRole('button', { name: /听见潮汐/ }).click();
-      assert.equal(await abilityList.getByRole('button', { name: /听见潮汐/ }).getAttribute('aria-pressed'), 'true');
-      await page.getByRole('navigation', { name: '移动端主导航' }).getByRole('button', { name: '世界', exact: true }).click();
+      assert.equal(await page.getByRole('button', { name: /察言观色/ }).count(), 0);
+      await page.getByRole('button', { name: /听见潮汐/ }).click();
+      assert.equal(await page.getByRole('button', { name: /听见潮汐/ }).getAttribute('aria-pressed'), 'true');
+      await page.goto(`${targetUrl}#/home`, { waitUntil: 'domcontentloaded' });
       const resume = page.getByRole('button', { name: /继续上次设定/ });
       await resume.waitFor();
       const saved = await readLibrary(page);
       assert.equal(saved.draft.name, testName);
       assert.equal(saved.draft.hometown, '回归海岸镇');
-      assert.equal(saved.draft.step, 6);
+      assert.equal(saved.draft.step, 4);
       assert.equal(saved.draft.worldChosen, true);
       assert.equal(saved.draft.originIdentityId, 'mystery');
       assert.equal(saved.draft.startPointName, '灯塔守夜屋');
       assert.equal(saved.draft.ability, '听见潮汐');
       assert.equal(saved.stories.length, 0);
       await resume.click();
-      await page.getByRole('heading', { name: '想拥有什么能力？', exact: true }).waitFor();
-      await page.getByRole('navigation', { name: '创作步骤' }).getByRole('button', { name: '第 5 步：主角', exact: true }).click();
+      await page.getByRole('heading', { name: '你是怎样的主角？', exact: true }).waitFor();
       assert.equal(await page.getByLabel('主角昵称（选填）').inputValue(), testName);
       assert.equal(await page.getByLabel('成长的地方（选填）').inputValue(), '回归海岸镇');
       assert.equal(await page.getByRole('switch', { name: '带入人生经历（选填）' }).getAttribute('aria-checked'), 'true');
       await page.getByRole('button', { name: '继续', exact: true }).click();
+      await page.getByRole('heading', { name: '确认你的故事', exact: true }).waitFor();
+      const savedAtFive = await readLibrary(page);
+      assert.equal(savedAtFive.draft.step, 5);
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.getByRole('heading', { name: '想拥有什么能力？', exact: true }).waitFor();
-      assert.deepEqual((await readLibrary(page)).draft, saved.draft);
+      await page.getByRole('heading', { name: '确认你的故事', exact: true }).waitFor();
+      assert.deepEqual((await readLibrary(page)).draft, savedAtFive.draft);
       await noOverflow(page, 'restored draft');
     });
 
     await step('guest creates a local preset story without paid generation', async () => {
-      await page.getByRole('button', { name: '继续', exact: true }).click();
-      await page.getByRole('heading', { name: '故事从这里开始。', exact: true }).waitFor();
+      // The draft step left us on the summary-first opening step already.
+      await page.getByRole('heading', { name: '确认你的故事', exact: true }).waitFor();
       const localMode = page.getByRole('group', { name: '故事方式' }).getByRole('button', { name: '预设体验', exact: true });
       await localMode.click();
       assert.equal(await localMode.getAttribute('aria-pressed'), 'true');

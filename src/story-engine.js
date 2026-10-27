@@ -490,6 +490,10 @@ export const TEMPLATE_SIGNATURE_ABILITIES = {
     { id: 'sig-zhihu-short-1', name: '反转直觉', desc: '一件事的走向，你总能提前一步猜到拐点' },
     { id: 'sig-zhihu-short-2', name: '一句翻盘', desc: '在最关键的场合，你总能说出扭转局势的那句话' },
   ],
+  'er-ren': [
+    { id: 'sig-er-ren-1', name: '恶名远播', desc: '你的名字先你三天到达下一座城，守门人听见就手抖' },
+    { id: 'sig-er-ren-2', name: '掠夺直觉', desc: '一眼看穿一处地方最值钱、又最守不住的东西是什么' },
+  ],
 }
 
 export const GENERIC_ABILITY_POOL = [
@@ -521,36 +525,90 @@ export const abilityCandidatesFor = ({ genreId, genreTemplateId, custom = false 
   })
 }
 
+// The same candidates, grouped for display: the forge's ability section
+// renders one titled group per origin so the reader can see which pool a
+// power comes from (template signatures vs the world's own pool; the
+// god-mode generic pool is its own group). Order and de-duplication match
+// abilityCandidatesFor exactly.
+export const abilityGroupsFor = ({ genreId, genreTemplateId, custom = false } = {}) => {
+  const signatures = TEMPLATE_SIGNATURE_ABILITIES[genreTemplateId] || []
+  if (custom) {
+    return signatures.length
+      ? [{ kind: 'signature', items: [...signatures] }]
+      : [{ kind: 'generic', items: [...GENERIC_ABILITY_POOL] }]
+  }
+  const pool = WORLD_ABILITY_POOLS[genreId] || []
+  const seen = new Set(signatures.map((item) => item.name))
+  const worldItems = pool.filter((item) => !seen.has(item.name))
+  const groups = []
+  if (signatures.length) groups.push({ kind: 'signature', items: [...signatures] })
+  if (worldItems.length) groups.push({ kind: 'world', items: worldItems })
+  return groups
+}
+
 /*
- * Story types are the fourteen knowledge-base templates (knowledge/
+ * Story types are the fifteen knowledge-base templates (knowledge/
  * genres.json). The ids here must stay identical to that file — a test locks
  * them together. A template is a pure category: it governs ONLY the writing
  * craft (reader promise, pleasures, beats) via genreTemplateId. It is NOT
  * bound to any world — the world comes solely from the reader's own stage
  * pick (config.genreId, or a god-mode custom world), and any template can be
  * told in any world. `symbol`/`color` are the brick's own decoration, never
- * a world's artwork.
+ * a world's artwork. Symbols follow one system: a single bold character
+ * taken from the template's own name (∞ is the lone glyph exception — it IS
+ * the infinite-flow mark), rendered at one size and weight on every brick,
+ * so no brick's mark can wash out against its tinted gradient the way the
+ * old abstract glyphs did.
  */
 export const GENRE_TEMPLATES = [
-  { id: 'xuanhuan', name: '玄幻', fullName: '玄幻', blurb: '一路打上去，揭开世界的真相', symbol: '◒', color: '#38bdf8' },
-  { id: 'xianxia', name: '修仙', fullName: '修仙', blurb: '改命登天，代价先行', symbol: '✦', color: '#fbbf24' },
+  { id: 'xuanhuan', name: '玄幻', fullName: '玄幻', blurb: '一路打上去，揭开世界的真相', symbol: '玄', color: '#38bdf8' },
+  { id: 'xianxia', name: '修仙', fullName: '修仙', blurb: '改命登天，代价先行', symbol: '仙', color: '#fbbf24' },
   { id: 'gaowu', name: '高武', fullName: '高武', blurb: '气血与排名全城可见，从榜尾打进榜单', symbol: '武', color: '#fb923c' },
-  { id: 'romance-ancient', name: '古言', fullName: '言情 · 古言', blurb: '宫斗、宅斗与礼法之下的步步为营', symbol: '❖', color: '#fb7185' },
-  { id: 'scifi', name: '科幻', fullName: '科幻 · 星际/末世', blurb: '从最底层活起，逐层升维', symbol: '◎', color: '#34d399' },
+  { id: 'romance-ancient', name: '古言', fullName: '言情 · 古言', blurb: '宫斗、宅斗与礼法之下的步步为营', symbol: '古', color: '#fb7185' },
+  { id: 'scifi', name: '科幻', fullName: '科幻 · 星际/末世', blurb: '从最底层活起，逐层升维', symbol: '科', color: '#34d399' },
   { id: 'wuxianliu', name: '无限流', fullName: '无限流', blurb: '副本里生死真价，结算时点数到账', symbol: '∞', color: '#22d3ee' },
   { id: 'guize-guatan', name: '规则怪谈', fullName: '规则怪谈', blurb: '规则条条要命，靠读字走出活路', symbol: '规', color: '#f472b6' },
   { id: 'horror', name: '恐怖', fullName: '恐怖', blurb: '把厉鬼算成资产，在复苏前结账', symbol: '烛', color: '#94a3b8' },
   { id: 'lishi', name: '历史', fullName: '历史', blurb: '低位入局，用事功改掉已知的败局', symbol: '史', color: '#eab308' },
-  { id: 'romance-modern', name: '现言', fullName: '言情 · 现言', blurb: '成年人的重逢、心动与迟到的真话', symbol: '✧', color: '#f0a6ff' },
-  { id: 'suspense-supernatural', name: '灵异悬疑', fullName: '灵异悬疑', blurb: '每查一步，寒意就具体一分', symbol: '☾', color: '#818cf8' },
+  { id: 'romance-modern', name: '现言', fullName: '言情 · 现言', blurb: '成年人的重逢、心动与迟到的真话', symbol: '现', color: '#f0a6ff' },
+  { id: 'suspense-supernatural', name: '灵异悬疑', fullName: '灵异悬疑', blurb: '每查一步，寒意就具体一分', symbol: '灵', color: '#818cf8' },
   { id: 'campus', name: '校园', fullName: '校园', blurb: '一张成绩榜，管着整个青春', symbol: '铃', color: '#4ade80' },
-  { id: 'urban', name: '都市', fullName: '都市', blurb: '小人物在城市规则里翻盘', symbol: '▣', color: '#a78bfa' },
-  { id: 'zhihu-short', name: '知乎短篇', fullName: '知乎风短篇', blurb: '第一人称，三分钟一个反转', symbol: '✎', color: '#facc15' },
+  { id: 'urban', name: '都市', fullName: '都市', blurb: '小人物在城市规则里翻盘', symbol: '都', color: '#a78bfa' },
+  { id: 'zhihu-short', name: '知乎短篇', fullName: '知乎风短篇', blurb: '第一人称，三分钟一个反转', symbol: '知', color: '#facc15' },
+  { id: 'er-ren', name: '恶人', fullName: '恶人', blurb: '这一回，你来当那个恶人', symbol: '恶', color: '#f87171' },
 ]
 
 const GENRE_TEMPLATE_BY_ID = Object.fromEntries(GENRE_TEMPLATES.map((template) => [template.id, template]))
 
 export const genreTemplateById = (id) => GENRE_TEMPLATE_BY_ID[id] || null
+
+/*
+ * 题材两级分类 (two-level taxonomy): the start flow's first screen is a set
+ * of L1 "shelves" (families a reader browses by), each holding L2 writing
+ * templates. The engine only ever pins the L2 template id — a shelf is pure
+ * navigation, so picking through a shelf changes no generation semantics
+ * and existing stories need no migration (their template id maps back to
+ * its shelf by lookup). Most shelves group by genre family; 短篇 groups by
+ * form and 反派主角 by protagonist archetype — a bookshop's mixed-axis
+ * shelving, named as-is. Single-member shelves tap straight through to
+ * their only template in the UI.
+ */
+export const GENRE_SHELVES = [
+  { id: 'xuanzhen', name: '玄幻修真', templateIds: ['xuanhuan', 'xianxia', 'gaowu'] },
+  { id: 'yanqing', name: '言情', templateIds: ['romance-ancient', 'romance-modern'] },
+  { id: 'dushi', name: '都市现实', templateIds: ['urban', 'campus'] },
+  { id: 'lishi', name: '历史', templateIds: ['lishi'] },
+  { id: 'kehuan', name: '科幻', templateIds: ['scifi'] },
+  { id: 'xuanyi', name: '悬疑惊悚', templateIds: ['horror', 'guize-guatan', 'suspense-supernatural'] },
+  { id: 'fuben', name: '副本竞技', templateIds: ['wuxianliu'] },
+  { id: 'duanpian', name: '短篇', templateIds: ['zhihu-short'] },
+  { id: 'fanpai', name: '反派主角', templateIds: ['er-ren'] },
+]
+
+export const shelfForTemplate = (templateId) =>
+  GENRE_SHELVES.find((shelf) => shelf.templateIds.includes(templateId)) || null
+
+export const shelfById = (shelfId) => GENRE_SHELVES.find((shelf) => shelf.id === shelfId) || null
 
 export const DEFAULT_DRAFT = {
   genreId: 'mist',
@@ -561,6 +619,11 @@ export const DEFAULT_DRAFT = {
   // pre-world-screen drafts, which carry no marker at all.
   worldChosen: false,
   storyLengthMode: 'short',
+  // 篇幅自由化 fields: the reader-chosen chapter total for 'custom' mode
+  // (10–999; null elsewhere — 'endless' has no target by definition) and the
+  // manual-finish timestamp for an 'endless' line ('' while it still runs).
+  targetChapters: null,
+  finishedAt: '',
   seasonNumber: 1,
   originIdentityId: '',
   customWorldName: '',
@@ -600,63 +663,171 @@ export const DEFAULT_DRAFT = {
  *   may open the next season (seasonNumber + 1, stakes raised).
  * - 'long'   100 chapters = 4 arcs × 25; arc ends are the big nodes and the
  *   outline compresses to 20 macro entries instead of one per chapter.
+ * - 'custom' a reader-chosen total (CUSTOM_LENGTH_MIN–MAX chapters): the
+ *   season's structure generalised — 4 acts scaled proportionally to the
+ *   total, small upgrade points at the three interior act boundaries and
+ *   the big finale upgrade on the last chapter.
+ * - 'endless' no total at all: rolling mini-arcs of ENDLESS_ARC_CHAPTERS
+ *   chapters, a small upgrade point closing each arc, never a finale node
+ *   and never auto-complete. The line ends only when its owner finishes it
+ *   by hand (config.finishedAt), which freezes the total at the chapter
+ *   count reached. While it runs it is already publishable to the plaza as
+ *   a living, still-serialising publication.
  * Decision chapters repeat on the same six-chapter rhythm in every mode:
  * position 1 of each six-block is a first-type decision, position 3 a
  * second-type one, so the pre-generation gate ("previous choice decided")
  * works identically at any length.
  */
+export const CUSTOM_LENGTH_MIN = 10
+export const CUSTOM_LENGTH_MAX = 999
+export const ENDLESS_ARC_CHAPTERS = 12
+
 export const STORY_LENGTH_MODES = {
   short: { id: 'short', total: 6, label: '短季', unitLabel: '卷', unitSize: 6 },
   season: { id: 'season', total: 24, label: '一季', unitLabel: '幕', unitSize: 6 },
   long: { id: 'long', total: 100, label: '长线', unitLabel: '弧', unitSize: 25 },
+  custom: { id: 'custom', total: null, label: '自定义', unitLabel: '幕', unitSize: null },
+  endless: { id: 'endless', total: null, label: '无限连载', unitLabel: '弧', unitSize: ENDLESS_ARC_CHAPTERS },
 }
+
+// A custom total is only meaningful as an integer inside the sanctioned
+// range; anything else is not a custom length at all.
+export const validTargetChapters = (value) =>
+  Number.isInteger(value) && value >= CUSTOM_LENGTH_MIN && value <= CUSTOM_LENGTH_MAX ? value : null
+
+const configOf = (source) =>
+  source && typeof source === 'object'
+    ? (source.config && typeof source.config === 'object' ? source.config : source)
+    : {}
 
 export const storyLengthModeOf = (source) => {
   if (!source || typeof source !== 'object') return 'short'
   if (source.kind === 'merged') return 'short'
-  const config = source.config && typeof source.config === 'object' ? source.config : source
-  const mode = config?.storyLengthMode
+  const mode = configOf(source)?.storyLengthMode
   return STORY_LENGTH_MODES[mode] ? mode : 'short'
 }
 
-export const totalChaptersFor = (source) => STORY_LENGTH_MODES[storyLengthModeOf(source)].total
+// An endless line its owner has finished by hand: the finish timestamp is
+// the only "ended" signal an unbounded line ever gets.
+export const isManuallyFinished = (source) =>
+  storyLengthModeOf(source) === 'endless' && Boolean(configOf(source)?.finishedAt)
+
+// The resolved length facts for a source. `total` is Infinity for a running
+// endless line (every `index < total` check then simply passes), and the
+// reached chapter count once the line has been finished by hand. A custom
+// mode without a valid stored target falls back to the season total —
+// normalizeDraft refuses to create such a config, so the fallback only
+// ever covers hand-built fixtures.
+const lengthSpecFor = (source) => {
+  const mode = storyLengthModeOf(source)
+  const config = configOf(source)
+  if (mode === 'custom') {
+    return { mode, total: validTargetChapters(config.targetChapters) ?? 24, unitCount: 4, unitLabel: '幕', endless: false }
+  }
+  if (mode === 'endless') {
+    const finished = isManuallyFinished(source)
+    const reached = Array.isArray(source?.chapters) ? source.chapters.length : 0
+    return {
+      mode,
+      total: finished && reached > 0 ? reached : Infinity,
+      unitCount: null,
+      unitLabel: '弧',
+      endless: true,
+      finished,
+    }
+  }
+  const spec = STORY_LENGTH_MODES[mode]
+  return { mode, total: spec.total, unitCount: spec.total / spec.unitSize, unitLabel: spec.unitLabel, endless: false }
+}
+
+export const totalChaptersFor = (source) => lengthSpecFor(source).total
 
 export const isStoryComplete = (story) =>
   Boolean(story) && Array.isArray(story.chapters) && story.chapters.length >= totalChaptersFor(story)
 
-// The world bible outline is one entry per chapter, except on the long
-// line where 100 entries would drown the prompt: 20 macro entries there.
+// Finish an endless line by hand: the total freezes at the chapters the
+// line actually reached, the status flips to complete, and the line
+// becomes publishable as a finished line. Any other mode is returned
+// untouched (finite lines finish themselves).
+export const finishEndlessLine = (story) => {
+  if (!story || typeof story !== 'object' || storyLengthModeOf(story) !== 'endless') return story
+  if (isManuallyFinished(story)) return story
+  const timestamp = now()
+  return {
+    ...story,
+    status: 'complete',
+    updatedAt: timestamp,
+    config: { ...story.config, finishedAt: timestamp },
+  }
+}
+
+// The world bible outline is one entry per chapter, except where that
+// would drown the prompt: totals above 24 compress to 20 macro entries,
+// and an endless line outlines two rolling arcs ahead (24 entries) rather
+// than pretending to know an ending.
 export const outlineLengthFor = (source) => {
-  const total = totalChaptersFor(source)
-  return total === 100 ? 20 : total
+  const spec = lengthSpecFor(source)
+  if (spec.endless) return ENDLESS_ARC_CHAPTERS * 2
+  return spec.total > 24 ? 20 : spec.total
 }
 
 export const outlineIndexFor = (index, source) => {
-  const total = totalChaptersFor(source)
+  const spec = lengthSpecFor(source)
   const length = outlineLengthFor(source)
-  return Math.max(0, Math.min(length - 1, Math.floor(index * length / total)))
+  if (spec.endless) return ((index % length) + length) % length
+  return Math.max(0, Math.min(length - 1, Math.floor(index * length / spec.total)))
 }
 
 export const decisionTypeAt = (index) =>
   index % 6 === 1 ? 'first' : index % 6 === 3 ? 'second' : null
 
 // Where a chapter sits in its length structure: which act/arc, which of the
-// six beat positions it plays, and whether it is an upgrade point.
+// six beat positions it plays, and whether it is an upgrade point. Finite
+// modes share one generalised shape — `unitCount` equal acts spanning the
+// total, boundaries at the proportional quarter points (for 6/24/100 these
+// reproduce the historical unit boundaries exactly) — while a running
+// endless line rolls fixed-size arcs with no finale, ever.
 export const structureFor = (source, index) => {
-  const mode = storyLengthModeOf(source)
-  const spec = STORY_LENGTH_MODES[mode]
-  const total = spec.total
-  const unitSize = spec.unitSize
-  const unitIndex = Math.floor(index / unitSize)
-  const positionInUnit = index - unitIndex * unitSize
-  const beatPosition = Math.min(5, Math.floor(positionInUnit * 6 / unitSize))
-  const isUnitEnd = positionInUnit === unitSize - 1
+  const spec = lengthSpecFor(source)
+  const { mode, total } = spec
+  // An endless line's history is arcs all the way down — even after a
+  // manual finish, no chapter retroactively becomes a "finale": the line
+  // was stopped, not concluded. (Completeness is isStoryComplete's job.)
+  if (spec.endless) {
+    const unitSize = ENDLESS_ARC_CHAPTERS
+    const unitIndex = Math.floor(index / unitSize)
+    const positionInUnit = index - unitIndex * unitSize
+    const beatPosition = Math.min(5, Math.floor(positionInUnit * 6 / unitSize))
+    const isUnitEnd = positionInUnit === unitSize - 1
+    return {
+      mode,
+      total,
+      unitSize,
+      unitCount: null,
+      unitIndex,
+      unitLabel: spec.unitLabel,
+      positionInUnit,
+      beatPosition,
+      isUnitEnd,
+      isFinale: false,
+      isUpgradePoint: isUnitEnd,
+      upgradeKind: isUnitEnd ? '小升格' : null,
+    }
+  }
+  const unitCount = spec.unitCount
+  const unitIndex = Math.min(unitCount - 1, Math.floor(index * unitCount / total))
+  const unitStart = Math.ceil(unitIndex * total / unitCount)
+  const unitEnd = Math.ceil((unitIndex + 1) * total / unitCount) - 1
+  const positionInUnit = index - unitStart
+  const unitSpan = unitEnd - unitStart + 1
+  const beatPosition = Math.min(5, Math.floor(positionInUnit * 6 / unitSpan))
+  const isUnitEnd = index === unitEnd
   const isFinale = index === total - 1
   return {
     mode,
     total,
-    unitSize,
-    unitCount: total / unitSize,
+    unitSize: unitSpan,
+    unitCount,
     unitIndex,
     unitLabel: spec.unitLabel,
     positionInUnit,
@@ -665,7 +836,7 @@ export const structureFor = (source, index) => {
     isFinale,
     isUpgradePoint: isUnitEnd,
     upgradeKind: isFinale
-      ? (mode === 'season' ? '季终大升格' : mode === 'long' ? '长线终局结算' : '本卷收束')
+      ? (mode === 'season' ? '季终大升格' : mode === 'long' ? '长线终局结算' : mode === 'custom' ? '终章大升格' : '本卷收束')
       : isUnitEnd
         ? (mode === 'long' ? '弧末大节点' : '小升格')
         : null,
@@ -763,13 +934,21 @@ const normalizeDraft = (draft = {}) => {
   const input = draft && typeof draft === 'object' ? draft : {}
   const genreId = GENRE_BY_ID[input.genreId] ? input.genreId : DEFAULT_DRAFT.genreId
   const immersive = Boolean(input.immersive)
+  // 篇幅自由化 validation: a 'custom' length without a valid in-range
+  // target is rejected back to the season default rather than stored as a
+  // broken config, and an 'endless' line never carries a target at all.
+  const requestedMode = STORY_LENGTH_MODES[input.storyLengthMode] ? input.storyLengthMode : 'short'
+  const targetChapters = validTargetChapters(input.targetChapters)
+  const storyLengthMode = requestedMode === 'custom' && targetChapters === null ? 'season' : requestedMode
   // The UI may retain these optional details in its draft after the switch is
   // turned off. A newly created story must not inherit them without opt-in.
   const lifeDetail = (field) => immersive ? cleanText(input[field], DEFAULT_DRAFT[field]) : ''
   return {
     genreId,
     genreTemplateId: genreTemplateById(input.genreTemplateId)?.id || '',
-    storyLengthMode: STORY_LENGTH_MODES[input.storyLengthMode] ? input.storyLengthMode : 'short',
+    storyLengthMode,
+    targetChapters: storyLengthMode === 'custom' ? targetChapters : null,
+    finishedAt: cleanBounded(input.finishedAt, 40),
     seasonNumber: Number.isInteger(input.seasonNumber) && input.seasonNumber >= 1 && input.seasonNumber <= 99
       ? input.seasonNumber
       : 1,
@@ -846,10 +1025,18 @@ const outlineFor = (genre, config) => {
   const identity = displayIdentity(config, genre)
   const destination = cleanText(config.destination, '') || genre.location
   const spawn = resolveStartPoint(genre, config)
+  const mode = storyLengthModeOf({ config })
   const total = totalChaptersFor({ config })
-  const length = total === 100 ? 20 : total
-  const unitCount = total === 100 ? 4 : total / 6
-  const unitLabel = total === 100 ? '弧' : '幕'
+  // An endless line has no total to outline: two rolling arcs (24 entries),
+  // and its closing beat is an arc-close, never a finale — the line is
+  // written to continue. Finite totals above 24 compress to 20 entries.
+  const endless = mode === 'endless'
+  const length = endless ? ENDLESS_ARC_CHAPTERS * 2 : total > 24 ? 20 : total
+  const unitCount = endless ? 2 : total === 100 ? 4 : total === 6 ? 1 : 4
+  const unitLabel = endless || total === 100 ? '弧' : '幕'
+  const arcClose = genre.id === CUSTOM_GENRE_ID
+    ? `这一弧的账在${worldNameOf(genre, config)}结清，${name}望向更深的地方——下一弧的门已经开了一条缝。`
+    : `这一弧的账在${genre.world}结清，${name}望向更深的地方——下一弧的门已经开了一条缝。`
   const beats = genre.id === CUSTOM_GENRE_ID
     ? [
       spawn
@@ -859,7 +1046,7 @@ const outlineFor = (genre, config) => {
       `一次选择让同行者与${name}站到同一条路上，也留下新的代价。`,
       `旧秩序要求${name}交出能力，真正的对手从设定深处显形。`,
       `${name}必须在回到原点与改写规则之间作出最后准备。`,
-      `终局会回答：这个由创世者亲手写下的世界，最终会变成什么样子。`,
+      endless ? arcClose : `终局会回答：这个由创世者亲手写下的世界，最终会变成什么样子。`,
     ]
     : [
       `${name}以${identity}的身份在${spawn?.name || genre.location}醒来，收到一个无法解释的信号。`,
@@ -867,7 +1054,7 @@ const outlineFor = (genre, config) => {
       `一次选择让同行者与${name}站到同一条路上，也留下新的代价。`,
       `旧秩序要求${name}交出能力，真正的敌人从记忆里显形。`,
       `${name}必须在回到原点与打开边界之间作出最后准备。`,
-      `终局会回答：谁有权替这个世界记住未来。`,
+      endless ? arcClose : `终局会回答：谁有权替这个世界记住未来。`,
     ]
   const seen = new Array(6).fill(0)
   return Array.from({ length }, (_, entry) => {
@@ -875,7 +1062,8 @@ const outlineFor = (genre, config) => {
     const unit = Math.min(unitCount - 1, Math.floor(entry * unitCount / length))
     const occurrence = seen[beat]
     seen[beat] += 1
-    const lead = unitCount > 1 && unit > 0 && entry % (length / unitCount) === 0 ? `第${unit + 1}${unitLabel}——` : ''
+    const unitStarts = entry > 0 && Math.floor(entry * unitCount / length) > Math.floor((entry - 1) * unitCount / length)
+    const lead = unitCount > 1 && unit > 0 && unitStarts ? `第${unit + 1}${unitLabel}——` : ''
     const suffix = occurrence > 0 ? OUTLINE_STAGE_SUFFIXES[Math.min(occurrence, OUTLINE_STAGE_SUFFIXES.length - 1)] : ''
     return `${lead}${beats[beat]}${suffix}`
   })
@@ -905,7 +1093,9 @@ const worldBibleFor = (genre, config) => {
         '能力有边界；每一次越界都会改变关系或世界稳定度。',
         ...seasonRules,
       ],
-      endingAnchor: `${name}必须决定${world}的未来走向，以及谁有资格改写它的规则。`,
+      endingAnchor: storyLengthModeOf({ config }) === 'endless'
+        ? `${name}的路没有预设的终点：每十二章结清一弧的账，再向更深的地方走一弧，直到讲述者亲手停笔。`
+        : `${name}必须决定${world}的未来走向，以及谁有资格改写它的规则。`,
       outline: outlineFor(genre, config),
     }
   }
@@ -918,7 +1108,9 @@ const worldBibleFor = (genre, config) => {
       '能力有边界；每一次越界都会改变关系或世界稳定度。',
       ...seasonRules,
     ],
-    endingAnchor: `${name}必须决定把记忆交给谁，以及是否让世界继续保持原样。`,
+    endingAnchor: storyLengthModeOf({ config }) === 'endless'
+      ? `${name}的路没有预设的终点：每十二章结清一弧的账，再向更深的地方走一弧，直到讲述者亲手停笔。`
+      : `${name}必须决定把记忆交给谁，以及是否让世界继续保持原样。`,
     outline: outlineFor(genre, config),
   }
 }
@@ -1405,7 +1597,11 @@ export function storyBeatPlan(story, index) {
     ? `结构：一季 24 章，第 ${structure.unitIndex + 1} 幕（共 4 幕），幕内第 ${structure.positionInUnit + 1} 章；${structure.isFinale ? '本章是季终大升格点：收束全季、结算全部代价并打开下一季的门' : structure.isUnitEnd ? '本章是本幕的小升格点：标尺当场跳一格，本幕代价在此结算' : '每幕第 6 章为小升格点，第 24 章为季终大升格'}`
     : structure.mode === 'long'
       ? `结构：长线 100 章，第 ${structure.unitIndex + 1} 弧（共 4 弧），弧内第 ${structure.positionInUnit + 1} 章；${structure.isFinale ? '本章是长线终局：全线收束并结算' : structure.isUnitEnd ? '本章是弧末大节点：完成本弧结算与升格，以弧过渡进入下一弧' : '每弧第 25 章为弧末大节点'}`
-      : `结构：短季 6 章，本章为第 ${index + 1} 章${structure.isFinale ? '，本卷在此收束并结算代价' : ''}`
+      : structure.mode === 'custom'
+        ? `结构：自定义篇幅共 ${structure.total} 章，第 ${structure.unitIndex + 1} 幕（共 4 幕），幕内第 ${structure.positionInUnit + 1} 章；${structure.isFinale ? '本章是终章大升格点：收束全线、结算全部代价' : structure.isUnitEnd ? '本章是本幕的小升格点：标尺当场跳一格，本幕代价在此结算' : '每幕末章为小升格点，末章为终章大升格'}`
+        : structure.mode === 'endless'
+          ? `结构：无限连载（没有预设终章），第 ${structure.unitIndex + 1} 弧（每 ${ENDLESS_ARC_CHAPTERS} 章一弧），弧内第 ${structure.positionInUnit + 1} 章；${structure.isUnitEnd ? '本章是本弧的小升格点：标尺当场跳一格，本弧代价在此结算，并自然打开下一弧' : '不要收束全线、不要写结局，只在本弧内推进；每弧末章为小升格点'}`
+          : `结构：短季 6 章，本章为第 ${index + 1} 章${structure.isFinale ? '，本卷在此收束并结算代价' : ''}`
 
   const prerequisites = [
     isCustom
@@ -1449,7 +1645,7 @@ export function storyBeatPlan(story, index) {
     consequenceGround(secondLatest, `承接此前选择后的局势变化`),
     structure.mode === 'long'
       ? `完成本弧结算：标尺跳格、代价清账，并以弧过渡打开下一弧`
-      : `完成本幕结算：标尺跳一格、代价清账，并为下一幕留下明确钩子`,
+      : `完成本${structure.unitLabel}结算：标尺跳一格、代价清账，并为下一${structure.unitLabel}留下明确钩子`,
   ]
   const mustGroundByPosition = [
     [
@@ -1506,7 +1702,11 @@ export function storyBeatPlan(story, index) {
     act: structure.mode === 'short'
       ? ACT_LABELS[index]
       : `第 ${structure.unitIndex + 1} ${structure.unitLabel} · 第 ${structure.positionInUnit + 1} 章（全${structure.mode === 'season' ? '季' : '线'}第 ${index + 1} 章）`,
-    dramaticQuestion: structure.isFinale ? dramaticQuestions[5] : dramaticQuestions[structure.beatPosition],
+    dramaticQuestion: structure.isFinale
+      ? dramaticQuestions[5]
+      : structure.mode === 'endless' && structure.beatPosition === 5
+        ? '结清这一弧的账：标尺跳格、代价清账，并打开下一弧的门。'
+        : dramaticQuestions[structure.beatPosition],
     prerequisites,
     mustGround: structure.isFinale ? mustGroundFinale : mustGroundByPosition[structure.beatPosition],
     unlockedConsequences,
@@ -1514,7 +1714,9 @@ export function storyBeatPlan(story, index) {
     paragraphShape,
     structure: {
       mode: structure.mode,
-      totalChapters: structure.total,
+      // A running endless line has no total; the beat plan says so
+      // explicitly (null) instead of leaking Infinity into JSON payloads.
+      totalChapters: Number.isFinite(structure.total) ? structure.total : null,
       unitIndex: structure.unitIndex,
       unitCount: structure.unitCount,
       unitLabel: structure.unitLabel,
@@ -1755,6 +1957,9 @@ const redactedSnapshotConfig = (config, name) => ({
   // Where an entered line came from is the entrant's own bookkeeping; a
   // snapshot never points back at another reader's publication.
   sourcePublicationId: '',
+  // The manual-finish mark is the owner's own state: an entrant into this
+  // world starts a fresh, still-running line, never a pre-finished one.
+  finishedAt: '',
 })
 
 export function createMergedStory(a, b, options = {}) {
@@ -1984,8 +2189,15 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
   validateStory(story)
   if (story.kind === 'merged') throw new TypeError('合流故事不能发布到广场')
   const genre = genreFor(story.genreId || story.config.genreId)
-  const total = totalChaptersFor(story)
   const mode = storyLengthModeOf(story)
+  // The payload's chapter total is always a real count: a finite line's
+  // design total, or — for an endless line, running or finished — the
+  // chapters it has actually reached (its living count).
+  const total = Number.isFinite(totalChaptersFor(story)) ? totalChaptersFor(story) : story.chapters.length
+  // A running endless line publishes as a LIVING publication: serialising,
+  // its content following the line as new chapters land. Everything else
+  // on the plaza is a finished line.
+  const lineStatus = mode === 'endless' && !isManuallyFinished(story) ? 'serializing' : 'finished'
   const displayName = cleanBounded(avatarName, 40) || '匿名旅者'
   const safeConfig = { ...redactedSnapshotConfig(story.config, displayName), name: displayName }
   const genreTemplateId = genreTemplateById(story.genreTemplateId)?.id
@@ -2054,6 +2266,7 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
     storyLengthMode: mode,
     seasonNumber: Number.isInteger(safeConfig.seasonNumber) ? safeConfig.seasonNumber : 1,
     totalChapters: total,
+    lineStatus,
     ...(story.engine === 'gemini' ? { engine: 'gemini' } : {}),
     config: safeConfig,
     worldBible,
@@ -2065,6 +2278,7 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
         genreId: genre.id,
         genreTemplateId,
         storyLengthMode: mode,
+        targetChapters: safeConfig.targetChapters ?? null,
         seasonNumber: Number.isInteger(safeConfig.seasonNumber) ? safeConfig.seasonNumber : 1,
         customWorldName: safeConfig.customWorldName || '',
         customWorldSetting: safeConfig.customWorldSetting || '',
