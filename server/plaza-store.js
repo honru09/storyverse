@@ -21,6 +21,7 @@ export function createMemoryPlazaStore() {
     kind: 'memory',
     async getPublication(id) { return publications.get(plazaKeyFor(id)) ?? null },
     async putPublication(record) { publications.set(plazaKeyFor(record.id), { ...record }) },
+    async deletePublication(id) { publications.delete(plazaKeyFor(id)) },
     async listPublications() { return [...publications.values()].map((record) => ({ ...record })) },
   }
 }
@@ -36,6 +37,9 @@ export function createFirestorePlazaStore(loadDb) {
     },
     async putPublication(record) {
       await (await db()).collection('plaza_publications').doc(plazaKeyFor(record.id)).set({ ...record })
+    },
+    async deletePublication(id) {
+      await (await db()).collection('plaza_publications').doc(plazaKeyFor(id)).delete()
     },
     async listPublications() {
       const snapshot = await (await db()).collection('plaza_publications').get()

@@ -453,6 +453,17 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           return sendJson(response, 200, await library.putStory(identity, storyId, await readPlazaJson(request)))
         }
         if (!part && request.method === 'DELETE') {
+          // Deleting a book deletes the whole book: its plaza publication
+          // (if the line was published) and its generated cover go first,
+          // then the library copy is removed and the tombstone written as
+          // the commit point other devices sync from. Every step is
+          // idempotent and owner-scoped, so a retry after any failure
+          // converges; if a cascade step fails the request fails before
+          // the tombstone, and the book stays on the caller's shelf.
+          // Lines derived from this one (entered or fused copies) are
+          // independent stories and are never cascaded into.
+          await plaza.removeForStory(identity, storyId)
+          await cover.remove(identity, storyId)
           return sendJson(response, 200, await library.remove(identity, storyId))
         }
         if (part === 'head' && request.method === 'PUT') {

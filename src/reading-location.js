@@ -42,6 +42,24 @@ export function estimateReadingMetrics(paragraphs = []) {
   return { charCount, readingMinutes, paragraphCount: validParagraphs.length };
 }
 
+/**
+ * A deleted book takes its reading positions and bookmarks with it.
+ * Locations are keyed `private|public:<storyId>:…`; bookmarks carry the
+ * story id outright (and the same key shape). Pure — the caller
+ * persists the result; other books' entries pass through untouched.
+ */
+export function readingStateWithoutStory(state, storyId) {
+  if (!record(state) || typeof storyId !== 'string' || !storyId) return state;
+  const owns = key => typeof key === 'string' &&
+    (key.startsWith(`private:${storyId}:`) || key.startsWith(`public:${storyId}:`));
+  return {
+    ...state,
+    locations: (Array.isArray(state.locations) ? state.locations : []).filter(entry => !owns(entry?.key)),
+    bookmarks: (Array.isArray(state.bookmarks) ? state.bookmarks : [])
+      .filter(entry => entry?.storyId !== storyId && !owns(entry?.key)),
+  };
+}
+
 export function createReadingLocationStore({ storage } = {}) {
   if (storage === undefined) { try { storage = globalThis.localStorage; } catch { /* Unavailable storage is recoverable. */ } }
   let locations = [];

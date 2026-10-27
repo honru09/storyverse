@@ -152,6 +152,8 @@ button:disabled{cursor:not-allowed}
 .button-secondary{background:var(--glass);color:var(--ink);border-color:var(--line)}
 .button-ghost{background:transparent;color:var(--cyan)}
 .button-ghost:active:not(:disabled){background:var(--glass)}
+.button-danger{background:var(--danger);color:#fff;border-color:transparent}
+.button-danger:active:not(:disabled){filter:brightness(.92)}
 .small-link,.back-link,.back-button,.mini-reset{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:7px 4px;border:0;background:none;color:var(--cyan);font-size:14px;font-weight:600}
 .back-button{color:var(--dim)}
 .mini-reset{min-height:36px;padding-block:4px;font-size:13px}
@@ -500,6 +502,13 @@ select{appearance:auto}
 .wood-book-fuse{position:absolute;right:2px;bottom:8px;z-index:4;padding:4px 9px;border:1px solid rgba(125,232,195,.45);border-radius:999px;background:rgba(6,14,28,.82);color:#7de8c3;font-size:11px;font-weight:700;line-height:1.4;cursor:pointer;opacity:0;transition:opacity var(--dur-state) var(--ease-out)}
 .wood-book-cell:hover .wood-book-fuse,.wood-book-cell:focus-within .wood-book-fuse{opacity:1}
 @media (hover:none){.wood-book-fuse{opacity:.92}}
+.wood-book-delete{position:absolute;left:2px;bottom:8px;z-index:4;padding:4px 9px;border:1px solid rgba(255,143,143,.5);border-radius:999px;background:rgba(24,6,10,.82);color:#ff9d9d;font-size:11px;font-weight:700;line-height:1.4;cursor:pointer;opacity:0;transition:opacity var(--dur-state) var(--ease-out)}
+.wood-book-cell:hover .wood-book-delete,.wood-book-cell:focus-within .wood-book-delete{opacity:1}
+@media (hover:none){.wood-book-delete{opacity:.92}}
+.delete-book-copy{display:grid;gap:10px;margin-bottom:16px}
+.delete-book-copy p{margin:0;font-size:14px;line-height:1.75;color:var(--ink)}
+.delete-book-copy strong{color:var(--danger)}
+.settings-danger h3{color:var(--danger)}
 .plaza-badge.is-fused{background:rgba(103,232,249,.14);color:#67e8f9}
 .settings-fusion-line{margin:0 0 8px;font-size:13.5px;line-height:1.7}
 .merge-stage{display:grid;grid-template-columns:minmax(0,1fr) 28px minmax(0,1fr);align-items:start;gap:8px;margin-top:26px}

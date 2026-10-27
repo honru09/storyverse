@@ -247,5 +247,18 @@ export function createCoverService({ env = process.env, store, imageGenerate, tr
       if (!record?.image) return { status: 'none', version: 0 }
       return { status: 'ready', version: record.version || 1, updatedAt: record.updatedAt || null }
     },
+    /**
+     * Book deletion cascade: the generated cover is an attachment of the
+     * book, so deleting the book removes it too. Works whenever a store
+     * exists (independent of whether generation is configured) and is
+     * idempotent — no record is already the desired end state.
+     */
+    async remove(identity, storyId) {
+      if (!backend || !STORY_ID_PATTERN.test(String(storyId || ''))) return { removed: false }
+      const existing = await backend.getCover(identity.uid, storyId)
+      if (!existing) return { removed: false }
+      await backend.deleteCover(identity.uid, storyId)
+      return { removed: true }
+    },
   }
 }

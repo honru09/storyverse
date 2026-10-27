@@ -24,6 +24,7 @@ export function createMemoryCoverStore() {
     kind: 'memory',
     async getCover(uid, storyId) { return covers.get(coverKeyFor(uid, storyId)) ?? null },
     async putCover(uid, storyId, record) { covers.set(coverKeyFor(uid, storyId), { ...record }) },
+    async deleteCover(uid, storyId) { covers.delete(coverKeyFor(uid, storyId)) },
     async getDailyCount(uid, day) { return daily.get(`${uid}_${day}`)?.count ?? 0 },
     async incrementDaily(uid, day) {
       const key = `${uid}_${day}`
@@ -45,6 +46,9 @@ export function createFirestoreCoverStore(loadDb) {
     },
     async putCover(uid, storyId, record) {
       await (await db()).collection('story_covers').doc(coverKeyFor(uid, storyId)).set({ ...record })
+    },
+    async deleteCover(uid, storyId) {
+      await (await db()).collection('story_covers').doc(coverKeyFor(uid, storyId)).delete()
     },
     async getDailyCount(uid, day) {
       const snapshot = await (await db()).collection('cover_daily').doc(`${uid}_${day}`).get()

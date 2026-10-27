@@ -378,6 +378,26 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
       })
     },
 
+    /**
+     * Book deletion cascade: when the author deletes the source book
+     * itself, its publication goes with it — the record is removed
+     * outright (not merely withdrawn), so the line leaves the feed,
+     * detail pages and profile shelves in one step. Lines other readers
+     * derived from it (entered or fused copies) are independent stories
+     * with their own records and are never touched. Idempotent: a book
+     * with no publication, or a repeat call, reports removed:false.
+     * Owner-only by construction — the lookup matches the caller's uid.
+     */
+    async removeForStory(identity, sourceStoryId) {
+      if (!backend) return { removed: false, id: null }
+      return serialise(`publish:${identity.uid}`, async () => {
+        const record = await findOwnPublication(identity.uid, sourceStoryId)
+        if (!record) return { removed: false, id: null }
+        await backend.deletePublication(record.id)
+        return { removed: true, id: record.id }
+      })
+    },
+
     async withdraw(identity, id) {
       if (!backend) throw NOT_FOUND()
       return serialise(`publication:${id}`, async () => {

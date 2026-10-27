@@ -18,7 +18,7 @@ import { installRipple } from "./motion/ripple.js";
 import AnimatedContent from "./components/react-bits/AnimatedContent.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import { createLibraryStore } from "./library-store.js";
-import { createCloudSync } from "./cloud-library.js";
+import { createCloudSync, deleteCloudStory } from "./cloud-library.js";
 import { parseRoute, routeHash } from "./navigation.js";
 import { applyShellTheme, readShellTheme, storeShellTheme } from "./theme.js";
 import {
@@ -102,7 +102,7 @@ import AccountPanel from "./components/AccountPanel.jsx";
 import { createAuthClient } from "./auth/client.js";
 import ReadingPreferences from "./components/ReadingPreferences.jsx";
 import { createReadingPreferencesStore, getReaderAppearance } from "./reading-preferences.js";
-import { chapterLocationKey, READING_LOCATION_KEY } from "./reading-location.js";
+import { chapterLocationKey, READING_LOCATION_KEY, readingStateWithoutStory } from "./reading-location.js";
 import { useReaderExperience } from "./useReaderExperience.js";
 import ReadingTools from "./components/ReadingTools.jsx";
 import "./reader-experience.css";
@@ -617,7 +617,7 @@ function MobileBottomNav({ view, onNavigate, onOpenProfile, faceSrc, facePortrai
   );
 }
 
-function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, onOpenAccount, authClient, avatar, onOpenAvatar, syncNote, onOpenHelp }) {
+function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, draft, account, onOpenAccount, authClient, avatar, onOpenAvatar, syncNote, onOpenHelp }) {
   const genre = genreOf(activeStory);
   const activeTotal = activeStory ? totalChaptersFor(activeStory) : 6;
   const currentChapter = activeStory
@@ -734,6 +734,7 @@ function Home({ onNavigate, onOpenStory, activeStory, stories, draft, account, o
           activeStoryId={activeStory?.id}
           onOpenStory={onOpenStory}
           onFuseStory={(storyId) => onNavigate("merge", { storyId })}
+          onDeleteStory={onDeleteStory}
           authClient={authClient}
           authSignal={account.status}
         />
@@ -785,7 +786,40 @@ function useShelfCapacity() {
   return capacity;
 }
 
-function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, authClient, authSignal = '' }) {
+/**
+ * The one confirmation for deleting a book (DELETE-BOOK batch). Reached
+ * from the shelf cell and from the book's own 设定集； both paths land
+ * here so the consequences read identically: chapters, reading progress
+ * and bookmarks go together, a plaza publication of the line is taken
+ * down with it, and lines derived from this one are independent books
+ * that stay untouched. The confirm button names the book — never a
+ * bare 「确定」.
+ */
+function DeleteBookDialog({ story, busy = false, error = "", onCancel, onConfirm }) {
+  if (!story) return null;
+  return (
+    <ReadingDialog title="删除这本书" onClose={busy ? () => {} : onCancel}>
+      <div className="delete-book-copy">
+        <p>
+          《{story.title}》的全部章节、阅读进度和书签都会一并删除，<strong>删掉后无法恢复</strong>。
+        </p>
+        <p>如果这条线已经发布到广场，广场上的发布会同步下架。</p>
+        <p>由这条线合流、或带化身进入生成的其他书，是独立的故事，不受影响。</p>
+      </div>
+      {error && <p className="god-error" role="alert">{error}</p>}
+      <div className="reading-dialog-actions">
+        <Button variant="danger" disabled={busy} onClick={() => void onConfirm()}>
+          {busy ? "正在删除…" : `删除《${story.title}》`}
+        </Button>
+        <Button variant="ghost" disabled={busy} onClick={onCancel}>
+          不删了
+        </Button>
+      </div>
+    </ReadingDialog>
+  );
+}
+
+function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onDeleteStory, authClient, authSignal = '' }) {
   const otherStories = stories.filter((story) => story.id !== activeStoryId);
   const capacity = useShelfCapacity();
   const [pulledId, setPulledId] = useState(null);
@@ -915,6 +949,16 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, aut
                         onClick={() => onFuseStory(story.id)}
                       >
                         合流
+                      </button>
+                    )}
+                    {!story.readOnly && onDeleteStory && (
+                      <button
+                        type="button"
+                        className="wood-book-delete"
+                        aria-label={`删除《${story.title}》`}
+                        onClick={() => onDeleteStory(story)}
+                      >
+                        删除
                       </button>
                     )}
                   </div>
@@ -3221,7 +3265,7 @@ function ProseEditor({ chapter, onClose, onSave }) {
 // generated after the edit; chapters that already exist never change.
 // The lorebook shown here is the owner's private material (imported or
 // hand-written): it appears in no public snapshot, ever.
-function StorySettingsBook({ story, onClose, onSave, onFuse }) {
+function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete }) {
   const [premise, setPremise] = useState(story.worldBible?.premise || "");
   const [rules, setRules] = useState(() => [...(story.worldBible?.rules || [])]);
   const [endingAnchor, setEndingAnchor] = useState(story.worldBible?.endingAnchor || "");
@@ -3429,6 +3473,17 @@ function StorySettingsBook({ story, onClose, onSave, onFuse }) {
           ))}
         </div>
       )}
+      {onDelete && (
+        <div className="settings-section settings-danger">
+          <h3>删除这本书</h3>
+          <p className="field-hint">
+            全部章节、阅读进度和书签一并删除，删掉后无法恢复；如果这条线已发布到广场，会同步下架。
+          </p>
+          <Button variant="danger" onClick={onDelete}>
+            删除这本书
+          </Button>
+        </div>
+      )}
       <div className="reading-dialog-actions">
         <Button onClick={save}>保存设定集</Button>
         <Button variant="ghost" onClick={onClose}>
@@ -3455,6 +3510,7 @@ function Reader({
   onReviseChapter,
   onRerollChapter,
   onStartNextSeason,
+  onDeleteStory,
   authClient,
   onRerollCover,
   authSignal = "",
@@ -4194,6 +4250,7 @@ function Reader({
           onClose={() => setSettingsOpen(false)}
           onSave={saveSettings}
           onFuse={() => { setSettingsOpen(false); onNavigate("merge", { storyId: story.id }); }}
+          onDelete={onDeleteStory ? () => { setSettingsOpen(false); onDeleteStory(story); } : undefined}
         />
       )}
       {proseOpen && !readOnly && chapter && (
@@ -6635,6 +6692,9 @@ function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [shareRequest, setShareRequest] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const [toast, setToast] = useState("");
   const [provider, setProvider] = useState({ configured: false });
   const opening = useRef(null);
@@ -7108,6 +7168,65 @@ function App() {
       setToast("这一季还没有读完，暂时不能开启下一季。");
     }
   };
+  /**
+   * Delete one of the reader's own books (DELETE-BOOK batch). While
+   * signed in, the server delete runs first — it removes the cloud
+   * copy, writes the tombstone other devices sync from, and cascades
+   * to the line's plaza publication and generated cover — and only a
+   * successful delete removes the book locally, so a failure leaves
+   * the shelf exactly as it was and says why in plain words. Signed
+   * out (or for a never-synced demo fixture) the book only ever lived
+   * in this browser, so the removal is local. Reading positions and
+   * bookmarks keyed to the book go with it; derived lines (entered or
+   * fused copies) are separate stories and stay.
+   */
+  const confirmDeleteBook = async () => {
+    const target = deleteTarget;
+    if (!target || deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError("");
+    try {
+      if (account.user && !target.isDemo) {
+        await deleteCloudStory({ storyId: target.id, getAccessToken: () => authClient.getAccessToken() });
+      }
+    } catch (failure) {
+      // 'library-unavailable' means the server keeps no account copy at
+      // all — there is nothing server-side to clean, so the local
+      // removal below is the whole delete. Anything else (offline,
+      // expired session, server error) keeps the book and says why.
+      if (failure?.code !== "library-unavailable") {
+        setDeleteError(failure?.message || "删除没能完成，这本书还留在书架上，请稍后再试。");
+        setDeleteBusy(false);
+        return;
+      }
+    }
+    try {
+      const raw = window.localStorage.getItem(READING_LOCATION_KEY);
+      if (raw) {
+        const pruned = readingStateWithoutStory(JSON.parse(raw), target.id);
+        window.localStorage.setItem(READING_LOCATION_KEY, JSON.stringify(pruned));
+      }
+    } catch { /* positions are a courtesy; the book itself is already gone */ }
+    setLibrary((current) => {
+      const stories = current.stories.filter((story) => story.id !== target.id);
+      return {
+        ...current,
+        stories,
+        activeStoryId: current.activeStoryId === target.id ? (stories[0]?.id ?? null) : current.activeStoryId,
+      };
+    });
+    setDeleteBusy(false);
+    setDeleteTarget(null);
+    if (view === "reader" && pageRoute.id === target.id && !pageRoute.shared && !pageRoute.plaza) {
+      navigate("home");
+    }
+    setToast(`《${target.title}》已删除。`);
+  };
+  const requestDeleteBook = (story) => {
+    if (!story || story.readOnly) return;
+    setDeleteError("");
+    setDeleteTarget(story);
+  };
   const openOwnReader = (storyId = activeStory?.id, options = {}) => {
     setShareRequest(Boolean(options.share));
     if (storyId)
@@ -7226,6 +7345,7 @@ function App() {
         onStartNextSeason={startNextSeasonFor}
         onToggleBookmark={commitStory}
         onPublish={publish}
+        onDeleteStory={requestDeleteBook}
         openShare={shareRequest}
         onShareOpened={() => setShareRequest(false)}
         unsaved={unsaved}
@@ -7340,6 +7460,7 @@ function App() {
       <Home
         onNavigate={navigate}
         onOpenStory={openOwnReader}
+        onDeleteStory={requestDeleteBook}
         activeStory={activeStory}
         stories={library.stories}
         draft={library.draft}
@@ -7405,6 +7526,15 @@ function App() {
         navigate("home");
         setToast("书架已恢复。");
       }} />}
+      {deleteTarget && (
+        <DeleteBookDialog
+          story={deleteTarget}
+          busy={deleteBusy}
+          error={deleteError}
+          onCancel={() => { setDeleteTarget(null); setDeleteError(""); }}
+          onConfirm={confirmDeleteBook}
+        />
+      )}
       {toast && (
         <div className="sw-toast" role="status" aria-live="polite">
           <Icon name="check" size={15} />
