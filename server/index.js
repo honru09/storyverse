@@ -10,6 +10,8 @@ import { createIdentityStore } from './identity-store.js'
 import { createCoverService } from './cover.js'
 import { createAvatarService } from './avatar.js'
 import { createPlazaService } from './plaza.js'
+import { createPlazaFeedService } from './plaza-feed.js'
+import { createPlazaFeedStore } from './plaza-feed-store.js'
 import { createSocialService } from './social.js'
 import { createLibraryService } from './library.js'
 
@@ -185,7 +187,7 @@ async function serveStatic(request, response, pathname, distDir) {
   response.end(request.method === 'HEAD' ? undefined : bytes)
 }
 
-export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth, cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza = createPlazaService({ env }), social, library = createLibraryService({ env }), distDir = DEFAULT_DIST } = {}) {
+export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth, cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza = createPlazaService({ env }), plazaFeed, social, library = createLibraryService({ env }), distDir = DEFAULT_DIST } = {}) {
   // Default services share ONE identity store: the accounts the auth
   // channels register must be the accounts the social service can see
   // (profile existence is account-based, ACCOUNT-POLISH §5). Firestore
@@ -194,6 +196,12 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
   // silently hide every account from the profile endpoint. Callers
   // that inject their own auth/social wire their own stores, as the
   // test fixtures do.
+  // The plaza feed store is shared the same way (BOOKSTORE-PLAZA):
+  // the feed service writes posts/likes/comments into it, and the
+  // social service derives the message centre's like/comment items
+  // from those very records — two Maps in memory mode would silently
+  // break the notification chain.
+  const sharedFeedStore = createPlazaFeedStore({ env })
   if (auth === undefined || social === undefined) {
     const identityStore = createIdentityStore({ env })
     auth ??= createAuthService({
@@ -201,8 +209,9 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
       emailCode: createEmailCodeService({ env, store: identityStore }),
       usernameAuth: createUsernameAuthService({ env, store: identityStore }),
     })
-    social ??= createSocialService({ env, identityStore })
+    social ??= createSocialService({ env, identityStore, feedStore: sharedFeedStore })
   }
+  plazaFeed ??= createPlazaFeedService({ env, store: sharedFeedStore, books: plaza })
   // Account events for the message centre's 系统 category
   // (NOTIFY-SETTINGS §36): recorded at the route, at the moment the
   // account action succeeds — a password reset, a recovery-email
@@ -527,12 +536,44 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         }
       }
       if (pathname === '/api/plaza' && request.method === 'GET') {
-        const publications = await plaza.feed()
+        // The plaza is the social timeline now (BOOKSTORE-PLAZA):
+        // posts, newest first, cursor-paginated. A valid credential
+        // only adds the viewer's own like state; the stream itself is
+        // public. (The book catalogue that used to answer here moved
+        // to /api/store.)
+        let viewer = null
+        if (request.headers.authorization) {
+          try { viewer = await auth.identity(request.headers.authorization) } catch { viewer = null }
+        }
+        const params = new URL(request.url, 'http://localhost').searchParams
+        const feedResult = await plazaFeed.feed({
+          viewer,
+          cursor: params.get('cursor') || '',
+          limit: Number(params.get('limit')) || 20,
+        })
         // Presence rides along with the feed so the header count is never
         // staler than the list itself; a presence failure never sinks the feed.
         let onlineCount = 0
         try { onlineCount = await social.onlineCount() } catch { /* count is decorative */ }
-        return sendJson(response, 200, { publications, onlineCount })
+        return sendJson(response, 200, { ...feedResult, onlineCount })
+      }
+      if (pathname === '/api/store' && request.method === 'GET') {
+        // The bookstore catalogue (BOOKSTORE-PLAZA): published books,
+        // family-shelf filter, plain search, honest rankings. The
+        // 热门 ranking joins the feed's real per-book engagement.
+        const params = new URL(request.url, 'http://localhost').searchParams
+        let engagement = null
+        try {
+          if (typeof plazaFeed.engagementByBook === 'function') engagement = await plazaFeed.engagementByBook()
+        } catch { /* share counts alone still rank honestly */ }
+        const result = await plaza.books({
+          shelfId: params.get('shelf') || '',
+          sort: params.get('sort') || 'latest',
+          q: params.get('q') || '',
+          limit: Number(params.get('limit')) || 50,
+          engagement,
+        })
+        return sendJson(response, 200, result)
       }
       if (pathname === '/api/me/notifications' && request.method === 'GET') {
         // The message centre is the caller's own: every category is
@@ -755,6 +796,163 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             throw error
           }
           return sendJson(response, 200, await social.cancelFriendRequest(identity, uid))
+        }
+      }
+      if (pathname === '/api/store/publish' && request.method === 'POST') {
+        // Shelving a book in the bookstore (BOOKSTORE-PLAZA): the same
+        // publish the plaza always ran — gate, red-line scan, snapshot
+        // — under its new name. The legacy /api/plaza/publish route
+        // below keeps answering for older clients.
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再上架到书城。', 'auth-required')
+          throw error
+        }
+        const book = await plaza.publish(identity, await readPlazaJson(request))
+        return sendJson(response, 200, { book })
+      }
+      const storeMatch = pathname.match(/^\/api\/store\/([^/]+)(?:\/(report|withdraw|portrait|cover))?$/)
+      if (storeMatch) {
+        const id = decodeURIComponent(storeMatch[1])
+        const action = storeMatch[2]
+        if (!action && request.method === 'GET') {
+          return sendJson(response, 200, { book: await plaza.detail(id) })
+        }
+        if (action === 'cover' && request.method === 'GET') {
+          const image = await plaza.cover(id)
+          if (!image) throw new ApiError(404, '这本书还没有专属封面。')
+          if (!response.destroyed && !response.writableEnded) {
+            response.writeHead(200, {
+              'Content-Type': image.contentType,
+              'Content-Length': image.buffer.length,
+              'Cache-Control': 'public, max-age=300',
+            })
+            response.end(image.buffer)
+          }
+          return
+        }
+        if (action === 'portrait' && request.method === 'GET') {
+          const image = await plaza.portrait(id)
+          if (!image) throw new ApiError(404, '这本书还没有立绘。')
+          if (!response.destroyed && !response.writableEnded) {
+            response.writeHead(200, {
+              'Content-Type': image.contentType,
+              'Content-Length': image.buffer.length,
+              'Cache-Control': 'public, max-age=300',
+            })
+            response.end(image.buffer)
+          }
+          return
+        }
+        if ((action === 'report' || action === 'withdraw') && request.method === 'POST') {
+          let identity
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) {
+              throw new ApiError(401, action === 'report' ? '请先登录，再举报。' : '请先登录，再下架。', 'auth-required')
+            }
+            throw error
+          }
+          const result = action === 'report' ? await plaza.report(identity, id) : await plaza.withdraw(identity, id)
+          return sendJson(response, 200, result)
+        }
+      }
+      if (pathname === '/api/plaza/posts' && request.method === 'POST') {
+        // Posting to the plaza (BOOKSTORE-PLAZA): free text, or a
+        // share of a shelved book. The feed service validates the
+        // book's state and scans the words before anything is stored.
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再发帖。', 'auth-required')
+          throw error
+        }
+        const post = await plazaFeed.createPost(identity, await readAuthJson(request))
+        return sendJson(response, 200, { post })
+      }
+      const plazaPostMatch = pathname.match(/^\/api\/plaza\/posts\/([^/]+)(?:\/(like|report))?$/)
+      if (plazaPostMatch) {
+        const id = decodeURIComponent(plazaPostMatch[1])
+        const action = plazaPostMatch[2]
+        if (!action && request.method === 'GET') {
+          let viewer = null
+          if (request.headers.authorization) {
+            try { viewer = await auth.identity(request.headers.authorization) } catch { viewer = null }
+          }
+          return sendJson(response, 200, { post: await plazaFeed.postDetail({ viewer, id }) })
+        }
+        if (!action && request.method === 'DELETE') {
+          let identity
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再删帖。', 'auth-required')
+            throw error
+          }
+          return sendJson(response, 200, await plazaFeed.deletePost(identity, id))
+        }
+        if ((action === 'like' || action === 'report') && request.method === 'POST') {
+          let identity
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) {
+              throw new ApiError(401, action === 'like' ? '请先登录，再点赞。' : '请先登录，再举报。', 'auth-required')
+            }
+            throw error
+          }
+          const result = action === 'like'
+            ? await plazaFeed.toggleLike(identity, id)
+            : await plazaFeed.reportPost(identity, id)
+          return sendJson(response, 200, result)
+        }
+      }
+      const plazaCommentsMatch = pathname.match(/^\/api\/plaza\/posts\/([^/]+)\/comments(?:\/([^/]+)(?:\/(report))?)?$/)
+      if (plazaCommentsMatch) {
+        const id = decodeURIComponent(plazaCommentsMatch[1])
+        const commentId = plazaCommentsMatch[2] ? decodeURIComponent(plazaCommentsMatch[2]) : ''
+        const action = plazaCommentsMatch[3]
+        if (!commentId && request.method === 'GET') {
+          const params = new URL(request.url, 'http://localhost').searchParams
+          return sendJson(response, 200, await plazaFeed.listComments(id, {
+            cursor: params.get('cursor') || '',
+            limit: Number(params.get('limit')) || 50,
+          }))
+        }
+        if (!commentId && request.method === 'POST') {
+          let identity
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再评论。', 'auth-required')
+            throw error
+          }
+          const comment = await plazaFeed.createComment(identity, id, await readAuthJson(request))
+          return sendJson(response, 200, { comment })
+        }
+        if (commentId && !action && request.method === 'DELETE') {
+          let identity
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再删评论。', 'auth-required')
+            throw error
+          }
+          return sendJson(response, 200, await plazaFeed.deleteComment(identity, id, commentId))
+        }
+        if (commentId && action === 'report' && request.method === 'POST') {
+          let identity
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再举报。', 'auth-required')
+            throw error
+          }
+          return sendJson(response, 200, await plazaFeed.reportComment(identity, id, commentId))
         }
       }
       if (pathname === '/api/plaza/publish' && request.method === 'POST') {

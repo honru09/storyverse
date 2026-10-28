@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { ApiError, sanitizeSettingText } from './gemini.js'
 import { findSettingViolation } from '../src/setting-guard.js'
-import { plazaSnapshot, redactedTitleFor } from '../src/story-engine.js'
-import { PLAZA_REPORT_THRESHOLD, plazaGateFor, plazaTemplateNameFor, plazaWorldIntroFor, snapshotSourceViolation, WORLD_INTRO_VERSION } from '../src/plaza.js'
+import { plazaSnapshot, redactedTitleFor, shelfForTemplate } from '../src/story-engine.js'
+import { cleanBookTitle, PLAZA_REPORT_THRESHOLD, plazaGateFor, plazaTemplateNameFor, plazaWorldIntroFor, snapshotSourceViolation, WORLD_INTRO_VERSION } from '../src/plaza.js'
 import { emptyLibrary, validateLibrary } from '../src/persistence.js'
 import { avatarAppearanceText } from '../src/avatar.js'
 import { usernameUid } from './username-auth.js'
@@ -16,10 +16,14 @@ import { createSocialStore, pictureSourceFor } from './social-store.js'
 import { publicHandle } from './social.js'
 
 /**
- * The plaza service: publication of avatar lines (finished lines whole,
- * endless lines as living publications while still serialising), the
- * public feed and detail, and the minimal moderation loop (report →
- * auto-hide, author withdraw).
+ * The bookstore service (the plaza service, renamed by BOOKSTORE-PLAZA:
+ * publishing a line now means shelving it in the bookstore — the
+ * formal catalogue): publication of avatar lines (finished lines
+ * whole, endless lines as living publications while still
+ * serialising), the catalogue list and book detail, and the minimal
+ * moderation loop (report → auto-hide, author withdraw). The social
+ * timeline that used to BE the plaza lives in plaza-feed.js; the two
+ * services meet at bookCardFor / adjustShareCount.
  *
  * Trust boundaries:
  * - The publish endpoint re-checks everything the client claims: the
@@ -73,7 +77,18 @@ function summaryOf(record) {
     avatar: record.avatar,
     genreId: record.genreId,
     genreTemplateId: record.genreTemplateId,
+    // The L1 family shelf this book files under in the bookstore
+    // (BOOKSTORE-PLAZA): derived from the template, never stored, so
+    // the taxonomy can be re-shelved without touching records.
+    shelfId: shelfForTemplate(record.genreTemplateId)?.id || '',
     worldName: record.worldName,
+    // Real counters only (BOOKSTORE-PLAZA): how many plaza posts share
+    // this book, maintained by the feed service as posts come and go;
+    // the rating pair is the next batch's reserved seat — present in
+    // the shape from the start, honestly zero until real ratings exist.
+    shareCount: Math.max(0, record.shareCount || 0),
+    ratingAverage: typeof record.ratingAverage === 'number' ? record.ratingAverage : 0,
+    ratingCount: Math.max(0, record.ratingCount || 0),
     // Fused-line provenance (FUSION2): a fused endless line publishes
     // like any endless line; the flag and the two source titles (already
     // redacted inside the snapshot) let every surface label it
@@ -281,6 +296,85 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         .map((record) => ({ ...summaryOf(record), authorUid: record.authorUid }))
     },
 
+    /**
+     * The bookstore catalogue (BOOKSTORE-PLAZA): published books only,
+     * optionally narrowed to one family shelf and/or a plain substring
+     * search over title, author and world. Rankings are honest by
+     * construction — 'latest' is shelving time, 'complete' is finish
+     * time over finished books only, and 'hot' is real engagement: the
+     * book's share count plus the likes its share posts earned (the
+     * caller supplies that map from the feed service; without it the
+     * share count alone ranks). Nothing is ever synthesised.
+     */
+    async books({ shelfId = '', sort = 'latest', q = '', limit = 50, engagement = null } = {}) {
+      if (!backend) return { books: [], total: 0 }
+      const all = await backend.listPublications()
+      const visible = all.filter((record) => record.status === 'published')
+      const enriched = await Promise.all(visible.map(withAuthorIdentity))
+      let books = enriched.map((record) => ({ ...summaryOf(record), authorUid: record.authorUid }))
+      if (shelfId) books = books.filter((book) => book.shelfId === shelfId)
+      const needle = typeof q === 'string' ? q.trim().toLowerCase() : ''
+      if (needle) {
+        books = books.filter((book) => [book.title, book.authorName, book.worldName]
+          .some((value) => String(value || '').toLowerCase().includes(needle)))
+      }
+      if (sort === 'complete') {
+        books = books
+          .filter((book) => book.lineStatus !== 'serializing')
+          .sort((a, b) => String(b.completedAt || b.publishedAt).localeCompare(String(a.completedAt || a.publishedAt)))
+      } else if (sort === 'hot') {
+        const heat = (book) => (book.shareCount || 0) + (engagement?.get(book.id) || 0)
+        books = books.sort((a, b) => heat(b) - heat(a)
+          || String(b.publishedAt).localeCompare(String(a.publishedAt)))
+      } else {
+        books = books.sort((a, b) => String(b.publishedAt).localeCompare(String(a.publishedAt)))
+      }
+      const total = books.length
+      const pageSize = Math.min(100, Math.max(1, Number.isInteger(limit) ? limit : 50))
+      return { books: books.slice(0, pageSize), total }
+    },
+
+    /**
+     * The card a plaza share post embeds for its book, resolved at
+     * read time: a live summary while the book is shelved; just the
+     * pure title and the state when it is not (withdrawn by its
+     * author, or hidden by reports) so the post can render its 已下架
+     * placeholder; null when the record itself is gone (the book was
+     * deleted), which the caller renders as the deleted placeholder
+     * under the title the post kept. Re-shelving the same book flips
+     * every historical post's card back to the live summary on its
+     * own — nothing here is cached into the post.
+     */
+    async bookCardFor(id) {
+      if (!backend) return null
+      const record = await backend.getPublication(id)
+      if (!record) return null
+      if (record.status !== 'published') {
+        return { status: record.status, id: record.id, title: record.title }
+      }
+      const enriched = await withAuthorIdentity(record)
+      return { status: 'published', book: { ...summaryOf(enriched), authorUid: record.authorUid } }
+    },
+
+    /**
+     * The share counter the feed service maintains as posts come and
+     * go. Any record state counts (a withdrawn book keeps the shares
+     * it had; they show again if it is re-shelved). Floors at zero;
+     * a missing record is a no-op, never an error — a post about a
+     * since-deleted book must not fail to be deleted itself.
+     */
+    async adjustShareCount(id, delta) {
+      if (!backend) return null
+      return serialise(`publication:${id}`, async () => {
+        const record = await backend.getPublication(id)
+        if (!record) return null
+        const shareCount = Math.max(0, (record.shareCount || 0) + delta)
+        if (shareCount === (record.shareCount || 0)) return shareCount
+        await backend.putPublication({ ...record, shareCount, updatedAt: now().toISOString() })
+        return shareCount
+      })
+    },
+
     async detail(id) {
       if (!backend) throw NOT_FOUND()
       const record = await backend.getPublication(id)
@@ -333,7 +427,17 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         // re-derived scaffold — stop loudly instead.
         const sourceViolation = snapshotSourceViolation(story)
         if (sourceViolation) throw new ApiError(400, sourceViolation)
-        const snapshot = scrubSnapshotSetting(plazaSnapshot(story, { avatarName: profile.name }))
+        const rawSnapshot = scrubSnapshotSetting(plazaSnapshot(story, { avatarName: profile.name }))
+        // The public book title is the PURE title (BOOKSTORE-PLAZA):
+        // a story title composed at creation time carries the avatar
+        // name as a ` · <name>` suffix inside the data itself, and a
+        // book is never shelved under its protagonist's name. The
+        // cleaned title replaces the snapshot's, so the record, the
+        // read copy and the baked world outline all agree.
+        const cleanTitle = cleanBookTitle(rawSnapshot.title, profile.name)
+        const snapshot = cleanTitle && cleanTitle !== rawSnapshot.title
+          ? { ...rawSnapshot, title: cleanTitle }
+          : rawSnapshot
         const timestamp = now().toISOString()
         const existing = await findOwnPublication(identity.uid, story.id)
         const record = {
@@ -342,6 +446,12 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           authorName: authorNameFor(identity) || '织界旅人',
           sourceStoryId: story.id,
           title: snapshot.title,
+          // Bookstore counters (BOOKSTORE-PLAZA): a re-publish keeps
+          // the counts the book already earned; a first shelving
+          // starts from honest zeros.
+          shareCount: Math.max(0, existing?.shareCount || 0),
+          ratingAverage: typeof existing?.ratingAverage === 'number' ? existing.ratingAverage : 0,
+          ratingCount: Math.max(0, existing?.ratingCount || 0),
           genreId: snapshot.genreId,
           genreTemplateId: snapshot.genreTemplateId,
           worldName: snapshot.worldName,

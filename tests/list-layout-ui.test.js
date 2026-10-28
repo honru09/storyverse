@@ -8,7 +8,7 @@ const design = readFileSync(new URL('../DESIGN.md', import.meta.url), 'utf8')
 
 const navBlock = main.slice(main.indexOf('function MobileBottomNav'), main.indexOf('function Home'))
 const shelfBlock = main.slice(main.indexOf('function LibrarySwitcher'), main.indexOf('function Stepper'))
-const storeBlock = main.slice(main.indexOf('function StoreRanking'), main.indexOf('function Merge'))
+const storeBlock = main.slice(main.indexOf('function StoreBookCard'), main.indexOf('function PlazaAvatarThumb'))
 
 test('bottom nav: four icon+label slots, the profile slot is a page tab (PROFILE-FIX §33)', () => {
   // The 2026-10-28 morning bar gave the last slot to 我的主页 as a face
@@ -80,26 +80,28 @@ test('shelf is a wooden bookcase: planks, standing books, ribbons, printed title
   assert.match(design, /豁免于本网格字阶/)
 })
 
-test('store ranking card: real tabs, gold only on rank one, no invented heat', () => {
-  assert.match(storeBlock, /className="rank-card"/)
-  assert.match(storeBlock, />\s*推荐榜\s*</)
-  assert.match(storeBlock, />\s*完本榜\s*</)
-  assert.match(storeBlock, /rankStoreBooks\(books, \{ completeOnly: true \}\)/)
-  assert.match(storeBlock, /rank-num \$\{index === 0 \? "gold" : ""\}/)
-  assert.match(storeBlock, /rankMetaFor\(book\)/)
-  assert.doesNotMatch(storeBlock, /热度|万人在读|评分/)
-  assert.match(css, /\.rank-num\.gold\{color:var\(--rank-gold\)\}/)
-  assert.match(css, /\.rank-tabs button\.active\{[^}]*font-size:var\(--type-rank-tab\)/)
-  assert.match(css, /\.rank-cover\{[^}]*flex:0 0 56px[^}]*aspect-ratio:3\/4/)
+test('store sorts ride the server: latest / hot / completed, heat is real engagement only (BOOKSTORE-PLAZA)', () => {
+  // The shelf is the server's catalogue now: family shelves, a title
+  // search and three sorts — 热门 counts real shares and post likes
+  // server-side; the client never ranks or invents heat locally.
+  assert.match(storeBlock, /fetchStoreBooks\(\{ shelfId: shelf, sort, q: debouncedQuery, limit: 60 \}\)/)
+  assert.match(storeBlock, /label: "最新上架"/)
+  assert.match(storeBlock, /label: "热门"/)
+  assert.match(storeBlock, /label: "完本"/)
+  assert.match(storeBlock, /GENRE_SHELVES/)
+  assert.match(storeBlock, /className="store-search"/)
+  assert.doesNotMatch(storeBlock, /万人在读|rankStoreBooks/)
+  assert.match(storeBlock, /book\.shareCount > 0/, 'the share count prints only when it is real')
 })
 
-test('store grid cards: badge on the cover, season/progress line, one meta line', () => {
-  assert.match(storeBlock, /<span className="cover-badge">\{book\.type\}<\/span>/)
-  assert.match(storeBlock, /className="book-cover-info"\>\{coverInfoFor\(book\.snapshot\)\}/)
-  assert.match(storeBlock, /className="book-card-cat"/)
-  assert.match(css, /\.book-card-copy\{[^}]*font-size:var\(--type-card-meta\)/)
-  assert.match(css, /\.book-card-cat\{[^}]*color:var\(--cyan\)/)
-  assert.match(css, /\.cover-badge\{[^}]*background:#fff[^}]*font-size:11px/)
+test('store grid cards: status on the cover, title only on the cover, byline below (BOOKSTORE-PLAZA)', () => {
+  assert.match(storeBlock, /className="store-card-status"/)
+  assert.match(storeBlock, /plaza-cover-title is-\$\{plazaTitleTierFor\(book\.title\)\}/)
+  assert.match(storeBlock, /className="store-book-intro"/)
+  assert.match(storeBlock, /className="plaza-byline"/)
+  assert.match(storeBlock, /plazaLengthLabel\(book\)/)
+  assert.match(css, /\.store-grid\{display:grid/)
+  assert.match(css, /\.store-card-status\{position:absolute/)
 })
 
 test('filter chips follow the chip spec: accent text on tint when active', () => {

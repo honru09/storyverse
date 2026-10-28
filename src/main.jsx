@@ -26,8 +26,6 @@ import {
   chunkShelves,
   coverInfoFor,
   coverTitleLayoutFor,
-  rankMetaFor,
-  rankStoreBooks,
   seasonLabel,
   shelfMetaFor,
   shelfTiltFor,
@@ -60,9 +58,16 @@ import {
   setMainAvatar,
 } from "./avatar.js";
 import {
+  createPlazaPost,
+  createPostComment,
+  deletePlazaPost,
+  deletePostComment,
   enterDraftFor,
   fetchPlazaDetail,
-  fetchPlazaFeed,
+  fetchPlazaPost,
+  fetchPlazaPosts,
+  fetchPostComments,
+  fetchStoreBooks,
   plazaCardIntroFor,
   plazaTitleTierFor,
   plazaGateFor,
@@ -79,7 +84,10 @@ import {
   plazaReaderStory,
   plazaTemplateNameFor,
   publishToPlaza,
+  reportPlazaPost,
+  reportPostComment,
   reportPublication,
+  togglePlazaPostLike,
   withdrawPublication,
 } from "./plaza.js";
 import {
@@ -398,6 +406,14 @@ const Icon = ({ name, size = 18, stroke = 1.8, className = "" }) => {
         <circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" />
         <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
         <circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" />
+      </>
+    ),
+    heart: (
+      <path d="M12 20.5C7 16.5 3 13.3 3 9.3 3 6.4 5.2 4.5 7.7 4.5c1.7 0 3.4 1 4.3 2.4.9-1.4 2.6-2.4 4.3-2.4 2.5 0 4.7 1.9 4.7 4.8 0 4-4 7.2-9 11.2Z" />
+    ),
+    chat: (
+      <>
+        <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.2 0-2.4-.25-3.4-.7L3 20l.7-5.6A8.5 8.5 0 1 1 21 11.5Z" />
       </>
     ),
     share: (
@@ -3437,10 +3453,20 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
                             ? " 想加你为好友"
                             : item.kind === "friend_accepted"
                               ? " 和你成为了好友"
-                              : " 与你有了新的互动"}
+                              : item.kind === "like"
+                                ? " 赞了你的帖子"
+                                : item.kind === "comment"
+                                  ? " 评论了你的帖子"
+                                  : " 与你有了新的互动"}
                       </span>
                       {item.kind === "friend_request" && item.message ? (
                         <span className="notify-row-body">「{item.message}」</span>
+                      ) : null}
+                      {item.kind === "comment" && item.target?.commentText ? (
+                        <span className="notify-row-body">「{item.target.commentText}」</span>
+                      ) : null}
+                      {item.kind === "like" && item.target?.excerpt ? (
+                        <span className="notify-row-body">帖子：{item.target.excerpt}</span>
                       ) : null}
                       {item.at && <small>{notifyTime(item.at)}</small>}
                     </span>
@@ -5156,189 +5182,188 @@ function Reader({
   );
 }
 
-function storeBookMeta(book) {
-  const genre = genreOf(book);
-  const merged = book.kind === "merged";
-  return {
-    id: book.id,
-    snapshot: book,
-    title: book.title,
-    author: book.author || "匿名探索者",
-    type: merged ? "合流章" : book.status === "complete" ? "已完结" : "连载中",
-    category: genre.label,
-    tone: genre.color,
-    symbol: genre.symbol,
-    note: synopsisOf(book) || genre.description,
-  };
-}
-
-function StoreRanking({ books, onOpenBook }) {
-  const [tab, setTab] = useState("recommend");
-  const recommended = rankStoreBooks(books).slice(0, 6);
-  const completed = rankStoreBooks(books, { completeOnly: true }).slice(0, 6);
-  if (recommended.length === 0) return null;
-  const hasCompleted = completed.length > 0;
-  const activeTab = tab === "complete" && hasCompleted ? "complete" : "recommend";
-  const entries = activeTab === "complete" ? completed : recommended;
+/**
+ * One bookstore card (BOOKSTORE-PLAZA): the book's own cover carries
+ * the title (single line, tiered — the card body never repeats it);
+ * the body is the byline, the book's real introduction, and the meta
+ * row. Nothing appears twice on one card (first rule).
+ */
+function StoreBookCard({ book, onOpen }) {
+  const genre = genreById[book.genreId] || GENRES[0];
+  const templateName = plazaTemplateNameFor(book) || genre.label;
+  const intro = plazaCardIntroFor(book);
+  const authorHandle = typeof book.authorHandle === "string" ? book.authorHandle.trim() : "";
+  const showHandle = Boolean(authorHandle)
+    && authorHandle.toLowerCase() !== String(book.authorName || "").toLowerCase();
+  const showWorld = book.worldName && !String(book.title || "").includes(book.worldName);
   return (
-    <section className="rank-card" aria-label="书城排行榜">
-      <div className="rank-tabs" role="group" aria-label="榜单切换">
-        <button
-          type="button"
-          className={activeTab === "recommend" ? "active" : ""}
-          aria-pressed={activeTab === "recommend"}
-          onClick={() => setTab("recommend")}
-        >
-          推荐榜
-        </button>
-        {hasCompleted && (
-          <button
-            type="button"
-            className={activeTab === "complete" ? "active" : ""}
-            aria-pressed={activeTab === "complete"}
-            onClick={() => setTab("complete")}
-          >
-            完本榜
-          </button>
-        )}
+    <article className="store-book-card">
+      <button
+        type="button"
+        className="plaza-card-cover"
+        onClick={() => onOpen(book)}
+        aria-label={`查看《${book.title}》详情`}
+      >
+        <PublicationArtwork publication={book} genreId={genre.id} />
+        <span className="plaza-cover-shade" aria-hidden="true" />
+        <span className={`plaza-cover-title is-${plazaTitleTierFor(book.title)}`}>《{book.title}》</span>
+        <span className="store-card-status">{plazaLineStatusFor(book) === "serializing" ? "连载中" : "已完结"}</span>
+      </button>
+      <div className="store-book-body">
+        <div className="plaza-byline">
+          <span className="plaza-byline-label">作者</span>
+          <span className="plaza-byline-name">{book.authorName}</span>
+          {showHandle && <span className="plaza-byline-handle">@{authorHandle}</span>}
+          {book.official && <span className="plaza-byline-official">官方</span>}
+        </div>
+        {intro && <p className="store-book-intro">{intro}</p>}
+        <div className="plaza-chips">
+          <span className="plaza-chip">{templateName}</span>
+          {showWorld && (
+            <>
+              <span className="plaza-chip-x" aria-hidden="true">·</span>
+              <span className="plaza-chip">{book.worldName}</span>
+            </>
+          )}
+        </div>
+        <div className="plaza-meta">
+          <span>{plazaLengthLabel(book)}</span>
+          {book.shareCount > 0 && <span>被分享 {book.shareCount} 次</span>}
+        </div>
       </div>
-      <ol className="rank-list">
-        {entries.map((book, index) => (
-          <li key={book.id}>
-            <button
-              type="button"
-              className="rank-row"
-              onClick={() => onOpenBook(book.snapshot)}
-            >
-              <span className={`rank-num ${index === 0 ? "gold" : ""}`}>{index + 1}</span>
-              <span className="rank-cover">
-                <WorldArtwork genreId={genreOf(book.snapshot).id} sources={coverSources(book.snapshot)} />
-              </span>
-              <span className="rank-copy">
-                <span className="rank-title">{book.title}</span>
-                <span className="rank-meta">
-                  <span className="rank-cat">{book.category}</span>
-                  <span className="rank-rest"> · {rankMetaFor(book)}</span>
-                </span>
-              </span>
-            </button>
-          </li>
-        ))}
-      </ol>
-    </section>
+    </article>
   );
 }
 
-function Store({ onNavigate, onOpenBook, onOpenOwn, publications, officialSample }) {
-  const [filter, setFilter] = useState("全部");
-  const filters = ["全部", "奇幻", "修仙", "赛博", "都市", "合流章"];
-  const published = (publications || []).filter((item) => item.snapshot?.chapters?.length).map((item) => {
-    const snapshot = item.snapshot || {};
-    const status =
-      snapshot.status ||
-      (snapshot.chapters?.length >= totalChaptersFor(snapshot) ? "complete" : "ongoing");
-    return {
-      ...storeBookMeta({
-        ...snapshot,
-        id: item.id,
-        author: "我 · 匿名分享",
-        status,
-      }),
-      sourceLabel: "本机分享",
-    };
-  });
-  // Sample copies: with an official sample line on the plaza, the
-  // sample IS that line — real generated chapters, read-only. Without
-  // one, the built-in demo books stay but are labelled honestly as
-  // placeholders （试读占位）: their scaffold text must never pose as a
-  // finished chapter (PERSONA-QA F-21).
-  const books = [
-    ...(officialSample
-      ? [{ ...storeBookMeta(officialSample), sourceLabel: "官方示例" }]
-      : COMMUNITY_BOOKS.map((book) => ({
-          ...storeBookMeta(book),
-          sourceLabel: "试读占位",
-        }))),
-    ...published,
-  ];
-  const visibleBooks =
-    filter === "全部"
-      ? books
-      : books.filter(
-          (book) => book.category === filter || book.type === filter,
-        );
+const STORE_SORTS = [
+  { id: "latest", label: "最新上架" },
+  { id: "hot", label: "热门" },
+  { id: "complete", label: "完本" },
+];
 
+/**
+ * The bookstore (BOOKSTORE-PLAZA): the site's formal catalogue,
+ * served by /api/store. Shelves are the L1 genre families; rankings
+ * are the server's honest sorts (shelving time / real engagement /
+ * finish time); search is a plain substring over title, author and
+ * world. Publishing a line shelves it here — the publish flow lives
+ * one tap away in the heading.
+ */
+function Store({ onNavigate, onOpenBook, onPublish }) {
+  const [shelf, setShelf] = useState("");
+  const [sort, setSort] = useState("latest");
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    let live = true;
+    setError("");
+    fetchStoreBooks({ shelfId: shelf, sort, q: debouncedQuery, limit: 60 })
+      .then((result) => { if (live) setData(result); })
+      .catch(() => { if (live) { setData({ books: [], total: 0 }); setError("书城暂时没能打开，请稍后再试。"); } });
+    return () => { live = false; };
+  }, [shelf, sort, debouncedQuery, retry]);
+
+  const books = data?.books || [];
+  const searching = debouncedQuery.length > 0;
   return (
     <div className="page page-store page-enter">
       <div className="store-ambient-wrap">
         <ParticleField density="faint" />
         <header className="store-heading">
           <h1>书城</h1>
-          <button className="small-link" onClick={onOpenOwn} aria-label="创建匿名分享">
-            分享 <Icon name="send" size={17} />
+          <button type="button" className="small-link" onClick={onPublish}>
+            上架我的故事 <Icon name="send" size={17} />
           </button>
         </header>
-        <p className="page-caption">{officialSample ? "官方示例与本机分享" : "试读占位与本机分享"}</p>
+        <p className="page-caption">正式书目——走完的故事线在这里上架，广场上分享的也是这里的书。</p>
+      </div>
+
+      <div className="store-search">
+        <Icon name="search" size={17} />
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜书名、作者或世界"
+          aria-label="搜索书城"
+        />
+        {query && (
+          <button type="button" className="store-search-clear" onClick={() => setQuery("")} aria-label="清除搜索">
+            <Icon name="x" size={15} />
+          </button>
+        )}
       </div>
 
       <div className="store-toolbar">
         <div className="store-filters" role="group" aria-label="小说分类">
-          {filters.map((item) => (
+          <button
+            type="button"
+            className={shelf === "" ? "active" : ""}
+            aria-pressed={shelf === ""}
+            onClick={() => setShelf("")}
+          >
+            全部
+          </button>
+          {GENRE_SHELVES.map((family) => (
             <button
               type="button"
-              key={item}
-              className={filter === item ? "active" : ""}
-              aria-pressed={filter === item}
-              onClick={() => setFilter(item)}
+              key={family.id}
+              className={shelf === family.id ? "active" : ""}
+              aria-pressed={shelf === family.id}
+              onClick={() => setShelf(family.id)}
             >
-              {item}
+              {family.name}
+            </button>
+          ))}
+        </div>
+        <div className="store-sorts" role="group" aria-label="书城排序">
+          {STORE_SORTS.map((entry) => (
+            <button
+              type="button"
+              key={entry.id}
+              className={sort === entry.id ? "active" : ""}
+              aria-pressed={sort === entry.id}
+              onClick={() => setSort(entry.id)}
+            >
+              {entry.label}
             </button>
           ))}
         </div>
       </div>
 
-      {filter === "全部" && (
-        <StoreRanking books={books} onOpenBook={onOpenBook} />
-      )}
-
-      {visibleBooks.length > 0 ? (
-        <div className="book-grid">
-          {visibleBooks.map((book) => (
-            <button
-              type="button"
-              key={book.id}
-              className={`book-card book-${book.tone}`}
-              onClick={() => onOpenBook(book.snapshot)}
-            >
-              <div className="book-cover">
-                <WorldArtwork genreId={genreOf(book.snapshot).id} sources={coverSources(book.snapshot)} />
-                <span className="cover-badge">{book.type}</span>
-                <div className="book-cover-copy">
-                  <b>{book.title}</b>
-                  <span className="book-cover-info">{coverInfoFor(book.snapshot)}</span>
-                </div>
-              </div>
-              <div className="book-card-copy">
-                <span className="book-card-cat">{book.category}</span>
-                <span className="book-card-rest">{book.author} · {book.sourceLabel}</span>
-              </div>
-            </button>
-          ))}
+      {error && (
+        <div className="plaza-empty" role="alert">
+          <p>{error}</p>
+          <Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>再试一次</Button>
         </div>
-      ) : (
+      )}
+      {data === null && !error && <p className="plaza-loading" role="status">正在打开书城…</p>}
+      {data !== null && !error && books.length === 0 && (
         <div className="store-empty" role="status">
           <img className="empty-art" src="/art/empty-store-512.webp" alt="" loading="lazy" />
-          <h3>暂无{filter}故事</h3>
-          <Button
-            variant="secondary"
-            icon="arrow"
-            onClick={() => onNavigate("forge")}
-          >
+          <h3>{searching ? `没有搜到「${debouncedQuery}」` : "这个分类还没有上架的书"}</h3>
+          <p>{searching ? "换个书名、作者名或世界名试试。" : "走完一条故事线，就能把它上架到书城。"}</p>
+          <Button variant="secondary" icon="arrow" onClick={() => onNavigate("forge")}>
             开一本新书
           </Button>
         </div>
       )}
-
+      {books.length > 0 && (
+        <div className="store-grid">
+          {books.map((book) => (
+            <StoreBookCard key={book.id} book={book} onOpen={onOpenBook} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -5398,113 +5423,6 @@ function PublicationArtwork({ publication, genreId, eager = false }) {
   return <WorldArtwork genreId={genreId} eager={eager} />;
 }
 
-function PlazaLeadPortrait({ publication, onOpenProfile, onFail }) {
-  const [failed, setFailed] = useState(false);
-  if (!publication.avatar?.hasPortrait || failed) return null;
-  return (
-    <button
-      type="button"
-      className="plaza-lead-portrait"
-      onClick={() => onOpenProfile?.(publication.authorUid)}
-      aria-label={`打开 ${publication.authorName} 的主页`}
-    >
-      <img
-        src={plazaPortraitPath(publication.id)}
-        alt=""
-        loading="lazy"
-        onError={() => { setFailed(true); onFail?.(); }}
-      />
-      <span className="plaza-lead-portrait-name">{publication.avatar?.name}</span>
-    </button>
-  );
-}
-
-function PlazaCard({ publication, own, lead = false, onOpen, onRead, onEnter, onOpenProfile }) {
-  const genre = genreById[publication.genreId] || GENRES[0];
-  const templateName = plazaTemplateNameFor(publication) || genre.label;
-  // The byline is the AUTHOR's place on the card (COVER-FIX): the
-  // author themselves — display name, @ID, official mark — never a
-  // second copy of the avatar's picture (the lead portrait column
-  // already carries the avatar, large) and never the avatar's name.
-  const authorHandle = typeof publication.authorHandle === "string" ? publication.authorHandle.trim() : "";
-  const showHandle = Boolean(authorHandle)
-    && authorHandle.toLowerCase() !== String(publication.authorName || "").toLowerCase();
-  const byline = (
-    <>
-      <span className="plaza-byline-label">作者</span>
-      <span className="plaza-byline-name">{publication.authorName}</span>
-      {showHandle && <span className="plaza-byline-handle">@{authorHandle}</span>}
-      {publication.official && <span className="plaza-byline-official">官方</span>}
-    </>
-  );
-  // Under the byline, the book's real introduction (lead cards only):
-  // the author's synopsis, else the world intro's thread — never the
-  // avatar's appearance attribute string (plazaCardIntroFor's rule).
-  const introLine = lead ? plazaCardIntroFor(publication) : "";
-  // The lead grid reserves its first column for the portrait; when
-  // the line's avatar has no portrait (or it fails to load) the grid
-  // must stand down, or the cover is squeezed into the empty column
-  // and the title wraps a character at a time (COVER-FIX, found by
-  // the fixture run — portrait-less lead card).
-  const [leadPortraitLost, setLeadPortraitLost] = useState(false);
-  const leadWithPortrait = lead && Boolean(publication.avatar?.hasPortrait) && !leadPortraitLost;
-  return (
-    <article className={`plaza-card ${leadWithPortrait ? "plaza-card-lead" : ""}`}>
-      {lead && (
-        <PlazaLeadPortrait
-          publication={publication}
-          onOpenProfile={onOpenProfile}
-          onFail={() => setLeadPortraitLost(true)}
-        />
-      )}
-      <button
-        type="button"
-        className="plaza-card-cover"
-        onClick={onOpen}
-        aria-label={`查看《${publication.title}》详情`}
-      >
-        <PublicationArtwork publication={publication} genreId={genre.id} />
-        <span className="plaza-cover-shade" aria-hidden="true" />
-        <span className={`plaza-cover-title is-${plazaTitleTierFor(publication.title)}`}>《{publication.title}》</span>
-      </button>
-      <div className="plaza-card-body">
-        <div className="plaza-byline">
-          {onOpenProfile && publication.authorUid ? (
-            <button
-              type="button"
-              className="plaza-byline-link"
-              onClick={() => onOpenProfile(publication.authorUid)}
-              aria-label={`打开 ${publication.authorName} 的主页`}
-            >
-              {byline}
-              <Icon name="chevron" size={14} className="plaza-byline-chevron" />
-            </button>
-          ) : (
-            <span className="plaza-byline-link is-static">{byline}</span>
-          )}
-          {own && <span className="plaza-own-chip">我发布的</span>}
-        </div>
-        {lead && introLine && <p className="plaza-lead-synopsis">{introLine}</p>}
-        <div className="plaza-chips">
-          <span className="plaza-chip">{publication.worldName}</span>
-          <span className="plaza-chip-x" aria-hidden="true">×</span>
-          <span className="plaza-chip">{templateName}</span>
-        </div>
-        <div className="plaza-meta">
-          {/* No 官方示例 badge here: the byline above already carries
-              the official mark — one signal per card (first rule). */}
-          <span className="plaza-badge">{plazaLineStatusFor(publication) === "serializing" ? "连载中" : "已完结"}</span>
-          <span>{plazaLengthLabel(publication)}</span>
-        </div>
-        <div className="plaza-card-actions">
-          <Button onClick={onRead}>读原作线</Button>
-          <Button variant="secondary" onClick={onEnter}>带化身进入</Button>
-        </div>
-      </div>
-    </article>
-  );
-}
-
 function plazaFeedTime(iso) {
   const stamp = typeof iso === "string" ? Date.parse(iso) : Number.NaN;
   if (Number.isNaN(stamp)) return "";
@@ -5515,17 +5433,507 @@ function plazaFeedTime(iso) {
   return `${new Date(stamp).getMonth() + 1}月${new Date(stamp).getDate()}日更新`;
 }
 
-function PlazaFeed({ account, authClient, activeStory, stories, onNavigate, onOpenStory, onOpenDetail, onReadLine, onEnter, onOpenProfile }) {
-  const [feed, setFeed] = useState(null);
+/** Relative time for a post or comment: 刚刚 / N分钟前 / N小时前 / 昨天 / N天前 / 日期. */
+function postTimeFor(iso) {
+  const stamp = typeof iso === "string" ? Date.parse(iso) : Number.NaN;
+  if (Number.isNaN(stamp)) return "";
+  const seconds = Math.floor((Date.now() - stamp) / 1000);
+  if (seconds < 60) return "刚刚";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}小时前`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "昨天";
+  if (days < 30) return `${days}天前`;
+  const date = new Date(stamp);
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+/** A person's resolved picture (post/comment author), with the default asset as the floor. */
+function PersonPicture({ picture, size = 40 }) {
+  const [src, setSrc] = useState(picture?.url || "/default-avatar.svg");
+  useEffect(() => { setSrc(picture?.url || "/default-avatar.svg"); }, [picture?.url]);
+  const portrait = picture?.kind === "avatar";
+  return (
+    <span
+      className={`plaza-avatar-frame ${portrait ? "is-portrait" : ""}`}
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
+      <img
+        className="plaza-avatar-img"
+        src={src}
+        alt=""
+        loading="lazy"
+        onError={() => { if (src !== "/default-avatar.svg") setSrc("/default-avatar.svg"); }}
+      />
+    </span>
+  );
+}
+
+/**
+ * The post editor (BOOKSTORE-PLAZA): two modes — free text, or share
+ * a book with your own words on it. Used by the plaza's composer bar
+ * (progressive disclosure: one line until tapped) and by the book
+ * detail's 分享到广场 action (pre-set to the book). The book list is
+ * the bookstore's own catalogue; the server re-checks everything.
+ */
+function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted, onCancel }) {
+  const [mode, setMode] = useState(initialBook ? "share" : "text");
+  const [content, setContent] = useState("");
+  const [book, setBook] = useState(initialBook);
+  const [books, setBooks] = useState(null);
+  const [bookQuery, setBookQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const length = [...content].length;
+  const overLimit = length > 500;
+
+  useEffect(() => {
+    if (mode !== "share" || books !== null) return undefined;
+    let live = true;
+    fetchStoreBooks({ limit: 60 })
+      .then((result) => { if (live) setBooks(result.books); })
+      .catch(() => { if (live) setBooks([]); });
+    return () => { live = false; };
+  }, [mode, books]);
+
+  const pickable = (books || []).filter((entry) => !bookQuery.trim()
+    || entry.title.includes(bookQuery.trim())
+    || String(entry.authorName || "").includes(bookQuery.trim()));
+
+  const submit = async () => {
+    if (busy || overLimit) return;
+    if (!content.trim()) { setError("先写点什么，再发出来吧。"); return; }
+    if (mode === "share" && !book) { setError("先选一本要分享的书。"); return; }
+    setBusy(true);
+    setError("");
+    try {
+      const post = await createPlazaPost({
+        type: mode === "share" ? "book_share" : "free_text",
+        content: content.trim(),
+        bookId: mode === "share" ? book.id : undefined,
+        getAccessToken: () => authClient.getAccessToken(),
+      });
+      onPosted?.(post);
+    } catch (failure) {
+      if (failure?.code === "auth-required") setError("登录状态过期了，重新登录后再发。");
+      else setError(failure?.message || "没能发出去，请稍后再试。");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="plaza-composer">
+      <div className="plaza-composer-tabs" role="group" aria-label="发帖类型">
+        <button
+          type="button"
+          className={mode === "text" ? "active" : ""}
+          aria-pressed={mode === "text"}
+          onClick={() => setMode("text")}
+        >
+          自由文字
+        </button>
+        <button
+          type="button"
+          className={mode === "share" ? "active" : ""}
+          aria-pressed={mode === "share"}
+          onClick={() => setMode("share")}
+        >
+          分享书籍
+        </button>
+      </div>
+      {mode === "share" && (
+        book ? (
+          <div className="plaza-composer-book">
+            <span className="plaza-composer-book-cover">
+              <PublicationArtwork publication={book} genreId={book.genreId} />
+            </span>
+            <span className="plaza-composer-book-copy">
+              <strong>《{book.title}》</strong>
+              <small>{book.authorName} · {plazaLengthLabel(book)}</small>
+            </span>
+            <button type="button" className="small-link" onClick={() => setBook(null)}>更换</button>
+          </div>
+        ) : (
+          <div className="plaza-composer-picker">
+            <div className="store-search plaza-composer-search">
+              <Icon name="search" size={16} />
+              <input
+                type="search"
+                value={bookQuery}
+                onChange={(event) => setBookQuery(event.target.value)}
+                placeholder="从书城选一本书"
+                aria-label="选择要分享的书"
+              />
+            </div>
+            {books === null ? (
+              <p className="plaza-note">正在打开书城…</p>
+            ) : pickable.length === 0 ? (
+              <p className="plaza-note">书城里还没有能分享的书。</p>
+            ) : (
+              <ul className="plaza-composer-booklist">
+                {pickable.slice(0, 12).map((entry) => (
+                  <li key={entry.id}>
+                    <button type="button" onClick={() => setBook(entry)}>
+                      <strong>《{entry.title}》</strong>
+                      <small>{entry.authorName} · {plazaLengthLabel(entry)}</small>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )
+      )}
+      <textarea
+        className="plaza-composer-input"
+        value={content}
+        onChange={(event) => setContent(event.target.value)}
+        placeholder={mode === "share" ? "说说为什么想分享这本书…" : "说点什么，或聊聊正在走的世界…"}
+        aria-label="帖子内容"
+        rows={4}
+        autoFocus
+      />
+      <div className="plaza-composer-foot">
+        <span className={`plaza-composer-count ${overLimit ? "is-over" : length >= 480 ? "is-near" : ""}`}>
+          {length} / 500
+        </span>
+        <span className="plaza-composer-actions">
+          {onCancel && <Button variant="ghost" disabled={busy} onClick={onCancel}>取消</Button>}
+          <Button disabled={busy || overLimit || !content.trim() || (mode === "share" && !book)} onClick={() => void submit()}>
+            {busy ? "正在发布…" : "发布到广场"}
+          </Button>
+        </span>
+      </div>
+      {error && <div className="sw-inline-alert" role="alert">{error}</div>}
+    </div>
+  );
+}
+
+/** The flat comment thread under a post: oldest first, one level, no nesting. */
+function PlazaCommentThread({ post, account, authClient, onOpenAccount, onCountChange }) {
+  const [comments, setComments] = useState(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const viewerUid = account.user?.uid || "";
+
+  useEffect(() => {
+    let live = true;
+    fetchPostComments({ postId: post.id })
+      .then((result) => { if (live) setComments(result.comments); })
+      .catch(() => { if (live) { setComments([]); setError("评论没能打开，请稍后再试。"); } });
+    return () => { live = false; };
+  }, [post.id]);
+
+  const send = async () => {
+    const text = draft.trim();
+    if (!text || busy) return;
+    if (!account.user) { onOpenAccount(); return; }
+    setBusy(true);
+    setError("");
+    try {
+      const comment = await createPostComment({
+        postId: post.id,
+        content: text,
+        getAccessToken: () => authClient.getAccessToken(),
+      });
+      setComments((current) => [...(current || []), comment]);
+      setDraft("");
+      onCountChange?.(1);
+    } catch (failure) {
+      if (failure?.code === "auth-required") onOpenAccount();
+      else setError(failure?.message || "评论没能发出去，请稍后再试。");
+    } finally { setBusy(false); }
+  };
+
+  const remove = async (comment) => {
+    try {
+      await deletePostComment({
+        postId: post.id,
+        commentId: comment.id,
+        getAccessToken: () => authClient.getAccessToken(),
+      });
+      setComments((current) => (current || []).filter((entry) => entry.id !== comment.id));
+      onCountChange?.(-1);
+    } catch { setError("这条评论没能删掉，请稍后再试。"); }
+  };
+
+  return (
+    <div className="plaza-thread">
+      {comments === null && <p className="plaza-note" role="status">正在打开评论…</p>}
+      {comments !== null && comments.length === 0 && (
+        <p className="plaza-thread-empty">暂无评论，来发表第一条看法吧。</p>
+      )}
+      {comments !== null && comments.length > 0 && (
+        <ul className="plaza-thread-list">
+          {comments.map((comment) => {
+            const canDelete = viewerUid && (comment.authorUid === viewerUid || post.authorUid === viewerUid);
+            return (
+              <li key={comment.id} className="plaza-thread-row">
+                <PersonPicture picture={comment.authorPicture} size={32} />
+                <div className="plaza-thread-copy">
+                  <div className="plaza-thread-head">
+                    <strong>{comment.authorName}</strong>
+                    {comment.official && <span className="plaza-byline-official">官方</span>}
+                    <small>{postTimeFor(comment.createdAt)}</small>
+                    {canDelete && (
+                      <button type="button" className="plaza-thread-delete" onClick={() => void remove(comment)}>
+                        删除
+                      </button>
+                    )}
+                  </div>
+                  <p>{comment.content}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {error && <p className="plaza-thread-error" role="alert">{error}</p>}
+      <div className="plaza-thread-composer">
+        <input
+          type="text"
+          value={draft}
+          maxLength={300}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void send(); } }}
+          placeholder={account.user ? "写下你的看法…" : "登录后参与评论"}
+          aria-label="写评论"
+        />
+        <Button
+          variant="secondary"
+          disabled={busy || !draft.trim()}
+          onClick={() => void send()}
+        >
+          发送
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** The book card embedded in a share post: live while shelved, an honest placeholder once not. */
+function PlazaPostBookCard({ book, onOpenDetail, onReadLine, onEnter }) {
+  if (!book) return null;
+  if (book.status !== "published") {
+    return (
+      <div className="plaza-post-book is-unavailable" aria-label="这本书已下架">
+        <span className="plaza-post-book-cover is-unavailable" aria-hidden="true">
+          <Icon name="lock" size={22} />
+        </span>
+        <span className="plaza-post-book-copy">
+          <strong>《{book.title || "这本书"}》</strong>
+          <small>{book.status === "deleted" ? "这本书已被作者删除。" : "该故事线已由作者下架或不可见。"}</small>
+        </span>
+      </div>
+    );
+  }
+  const genre = genreById[book.genreId] || GENRES[0];
+  const templateName = plazaTemplateNameFor(book) || genre.label;
+  const intro = plazaCardIntroFor(book);
+  return (
+    <div className="plaza-post-book">
+      <button
+        type="button"
+        className="plaza-post-book-main"
+        onClick={() => onOpenDetail(book)}
+        aria-label={`查看《${book.title}》详情`}
+      >
+        <span className="plaza-post-book-cover">
+          <PublicationArtwork publication={book} genreId={genre.id} />
+        </span>
+        <span className="plaza-post-book-copy">
+          <strong>《{book.title}》</strong>
+          {intro && <small className="plaza-post-book-intro">{intro}</small>}
+          <small>{book.authorName} · {templateName} · {plazaLengthLabel(book)}</small>
+        </span>
+        <Icon name="chevron" size={16} />
+      </button>
+      <div className="plaza-post-book-actions">
+        <button type="button" onClick={() => onReadLine(book)}>读原作线</button>
+        <button type="button" onClick={() => onEnter(book)}>带化身进入</button>
+      </div>
+    </div>
+  );
+}
+
+function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, onEnter, onOpenProfile, onOpenAccount, onToast, onDeleted }) {
+  const viewerUid = account.user?.uid || "";
+  const own = Boolean(viewerUid) && post.authorUid === viewerUid;
+  const [liked, setLiked] = useState(Boolean(post.viewerLiked));
+  const [likeCount, setLikeCount] = useState(post.likeCount || 0);
+  const [commentCount, setCommentCount] = useState(post.commentCount || 0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [threadOpen, setThreadOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const toggleLike = async () => {
+    if (!account.user) { onOpenAccount(); return; }
+    const wasLiked = liked;
+    setLiked(!wasLiked);
+    setLikeCount((count) => Math.max(0, count + (wasLiked ? -1 : 1)));
+    try {
+      const result = await togglePlazaPostLike({ id: post.id, getAccessToken: () => authClient.getAccessToken() });
+      setLiked(Boolean(result.liked));
+      setLikeCount(result.likeCount);
+    } catch (failure) {
+      setLiked(wasLiked);
+      setLikeCount(post.likeCount || 0);
+      if (failure?.code === "auth-required") onOpenAccount();
+    }
+  };
+
+  const report = async () => {
+    if (!account.user) { onOpenAccount(); return; }
+    setBusy(true);
+    try {
+      await reportPlazaPost({ id: post.id, getAccessToken: () => authClient.getAccessToken() });
+      setNote("已举报，谢谢。举报累计到三人，这条帖子会自动隐藏等待核查。");
+    } catch (failure) {
+      setNote(failure?.message || "举报没能送出，请稍后再试。");
+    } finally { setBusy(false); setMenuOpen(false); }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await deletePlazaPost({ id: post.id, getAccessToken: () => authClient.getAccessToken() });
+      onDeleted?.(post.id);
+      onToast?.("帖子已删除，书城里的书不受影响。");
+    } catch {
+      setNote("这条帖子没能删掉，请稍后再试。");
+      setBusy(false);
+      setConfirmingDelete(false);
+    }
+  };
+
+  const shareLink = async () => {
+    const url = `${window.location.origin}${window.location.pathname}#/plaza/post-${post.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      onToast?.("已复制帖子链接。");
+    } catch {
+      setNote(url);
+    }
+  };
+
+  return (
+    <article className="plaza-post" id={`plaza-post-${post.id}`}>
+      <header className="plaza-post-head">
+        <button
+          type="button"
+          className="plaza-post-person"
+          onClick={() => post.authorUid && onOpenProfile?.(post.authorUid)}
+          aria-label={`打开 ${post.authorName} 的主页`}
+        >
+          <PersonPicture picture={post.authorPicture} size={40} />
+          <span className="plaza-post-person-copy">
+            <span className="plaza-post-person-name">
+              <strong>{post.authorName}</strong>
+              {post.official && <span className="plaza-byline-official">官方</span>}
+            </span>
+            <small>
+              {post.authorHandle ? `@${post.authorHandle} · ` : ""}{postTimeFor(post.createdAt)}
+            </small>
+          </span>
+        </button>
+        <div className="plaza-post-menu-wrap">
+          <button
+            type="button"
+            className="plaza-post-menu-button"
+            aria-label="帖子操作"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <Icon name="dots" size={19} />
+          </button>
+          {menuOpen && (
+            <div className="plaza-post-menu" role="menu">
+              {own ? (
+                <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setConfirmingDelete(true); }}>
+                  删除该帖
+                </button>
+              ) : (
+                <button type="button" role="menuitem" disabled={busy} onClick={() => void report()}>
+                  举报该帖
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </header>
+      {confirmingDelete && (
+        <div className="plaza-post-confirm" role="alertdialog" aria-label="确认删除帖子">
+          <span>删掉这条帖子？它分享的书在书城里不受影响。</span>
+          <Button variant="secondary" disabled={busy} onClick={() => void remove()}>确认删除</Button>
+          <Button variant="ghost" disabled={busy} onClick={() => setConfirmingDelete(false)}>再想想</Button>
+        </div>
+      )}
+      <p className="plaza-post-content">{post.content}</p>
+      {post.type === "book_share" && (
+        <PlazaPostBookCard
+          book={post.book}
+          onOpenDetail={onOpenDetail}
+          onReadLine={onReadLine}
+          onEnter={onEnter}
+        />
+      )}
+      <footer className="plaza-post-actions">
+        <button
+          type="button"
+          className={`plaza-post-action ${liked ? "is-liked" : ""}`}
+          aria-pressed={liked}
+          aria-label={liked ? "取消点赞" : "点赞"}
+          onClick={() => void toggleLike()}
+        >
+          <Icon name="heart" size={18} />
+          <span>{likeCount > 0 ? likeCount : "赞"}</span>
+        </button>
+        <button
+          type="button"
+          className="plaza-post-action"
+          aria-expanded={threadOpen}
+          onClick={() => setThreadOpen((open) => !open)}
+        >
+          <Icon name="chat" size={18} />
+          <span>{commentCount > 0 ? commentCount : "评论"}</span>
+        </button>
+        <button type="button" className="plaza-post-action" onClick={() => void shareLink()}>
+          <Icon name="share" size={18} />
+          <span>分享链接</span>
+        </button>
+      </footer>
+      {note && <p className="plaza-inline-note" role="status">{note}</p>}
+      {threadOpen && (
+        <PlazaCommentThread
+          post={post}
+          account={account}
+          authClient={authClient}
+          onOpenAccount={onOpenAccount}
+          onCountChange={(delta) => setCommentCount((count) => Math.max(0, count + delta))}
+        />
+      )}
+    </article>
+  );
+}
+
+function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = "", onNavigate, onOpenStory, onOpenDetail, onReadLine, onEnter, onOpenProfile, onOpenAccount, onToast }) {
+  const [posts, setPosts] = useState(null);
+  const [nextCursor, setNextCursor] = useState(null);
   const [onlineCount, setOnlineCount] = useState(0);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [focusPost, setFocusPost] = useState(null);
   const [followingUids, setFollowingUids] = useState([]);
-  const mineIds = useMemo(() => plazaMineIds(), []);
   const viewerUid = account.user?.uid || "";
-  // F-22 (minimum viable): the viewer's own profile payload carries the
-  // uids they follow (self-only field); the updates strip below is the
-  // plaza feed filtered to those authors — no new endpoint, no fake data.
+  const getToken = useCallback(() => authClient?.getAccessToken(), [authClient]);
   useEffect(() => {
     if (!viewerUid || !authClient) { setFollowingUids([]); return undefined; }
     let live = true;
@@ -5534,40 +5942,74 @@ function PlazaFeed({ account, authClient, activeStory, stories, onNavigate, onOp
       .catch(() => {});
     return () => { live = false; };
   }, [viewerUid, authClient]);
+
+  const load = useCallback(async () => {
+    const result = await fetchPlazaPosts({ getAccessToken: getToken, limit: 20 });
+    setPosts(result.posts);
+    setNextCursor(result.nextCursor);
+    setOnlineCount(result.onlineCount);
+  }, [getToken]);
+
+  useEffect(() => {
+    let live = true;
+    setError("");
+    load().catch(() => { if (live) { setPosts([]); setError("广场暂时没能打开，请稍后再试。"); } });
+    // The presence count must not go stale while the plaza sits open:
+    // refetch on a slow tick (which also freshens the list itself).
+    const timer = window.setInterval(() => { void load().catch(() => {}); }, 60_000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [load, retry]);
+
+  // A post permalink (#/plaza/post-<id>) pins its post above the
+  // stream: the post itself, fetched on its own, so the link works
+  // even when the post has scrolled out of the first page.
+  useEffect(() => {
+    if (!focusPostId) { setFocusPost(null); return undefined; }
+    let live = true;
+    fetchPlazaPost({ id: focusPostId, getAccessToken: getToken })
+      .then((post) => { if (live) setFocusPost(post); })
+      .catch(() => { if (live) setFocusPost(null); });
+    return () => { live = false; };
+  }, [focusPostId, getToken]);
+
   const publishable = useMemo(
     () => (stories || []).some((story) => plazaGateFor(story).publishable),
     [stories],
   );
-  const followedUpdates = useMemo(() => {
-    if (!feed || followingUids.length === 0) return [];
+  const followedPosts = useMemo(() => {
+    if (!posts || followingUids.length === 0) return [];
     const followed = new Set(followingUids);
-    return feed
-      .filter((item) => item.authorUid && item.authorUid !== viewerUid && followed.has(item.authorUid))
-      .slice()
-      .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
+    return posts
+      .filter((post) => post.authorUid && post.authorUid !== viewerUid && followed.has(post.authorUid))
       .slice(0, 6);
-  }, [feed, followingUids, viewerUid]);
-  useEffect(() => {
-    let live = true;
-    setError("");
-    const load = () => fetchPlazaFeed()
-      .then(({ publications, onlineCount: count }) => {
-        if (!live) return;
-        setFeed(publications);
-        setOnlineCount(count);
-      })
-      .catch(() => { if (live) { setFeed([]); setError("广场暂时没能打开，请稍后再试。"); } });
-    void load();
-    // The presence count must not go stale while the plaza sits open:
-    // refetch on a slow tick (which also freshens the list itself).
-    const timer = window.setInterval(() => { void load(); }, 60_000);
-    return () => { live = false; window.clearInterval(timer); };
-  }, [retry]);
+  }, [posts, followingUids, viewerUid]);
+  const officialPost = useMemo(
+    () => (posts || []).find((post) => post.official && post.type === "book_share" && post.book?.status === "published"),
+    [posts],
+  );
+
+  const loadMore = async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const result = await fetchPlazaPosts({ getAccessToken: getToken, cursor: nextCursor, limit: 20 });
+      setPosts((current) => [...(current || []), ...result.posts]);
+      setNextCursor(result.nextCursor);
+    } catch { /* the button stays; a tap retries */ } finally { setLoadingMore(false); }
+  };
+
+  const handlePosted = (post) => {
+    setComposerOpen(false);
+    if (post) setPosts((current) => [post, ...(current || [])]);
+    onToast?.("已发布到广场。");
+  };
+
   const activeTotal = activeStory ? totalChaptersFor(activeStory) : 0;
   const activeChapter = activeStory ? Math.min(activeTotal, readerIndexFor(activeStory) + 1) : 0;
   const activeSerializing = activeStory
     ? storyLengthModeOf(activeStory) === "endless" && !isManuallyFinished(activeStory)
     : false;
+  const streamPosts = (posts || []).filter((post) => !focusPost || post.id !== focusPost.id);
   return (
     <div className="page page-plaza page-enter">
       <div className="plaza-ambient-wrap">
@@ -5586,7 +6028,7 @@ function PlazaFeed({ account, authClient, activeStory, stories, onNavigate, onOp
             carries one sentence worth remembering; the caption below it
             keeps its explaining job. */}
         <p className="plaza-value-line">这一次，<em>你是主角。</em></p>
-        <p className="page-caption">别人走完的世界，正等你走进去。</p>
+        <p className="page-caption">读完的世界、想说的话，都在这里流动。</p>
       </div>
 
       {activeStory && (
@@ -5603,34 +6045,55 @@ function PlazaFeed({ account, authClient, activeStory, stories, onNavigate, onOp
         </button>
       )}
 
-      {followedUpdates.length > 0 && (
+      {/* The composer (BOOKSTORE-PLAZA): progressive disclosure — one
+          quiet line until tapped, then the full editor. Signing in is
+          asked for at the tap, not before. */}
+      {composerOpen ? (
+        <PlazaComposerEditor
+          account={account}
+          authClient={authClient}
+          onPosted={handlePosted}
+          onCancel={() => setComposerOpen(false)}
+        />
+      ) : (
+        <button
+          type="button"
+          className="plaza-composer-bar"
+          onClick={() => (account.user ? setComposerOpen(true) : onOpenAccount())}
+        >
+          <span className="plaza-composer-bar-text">说点什么，或分享一本书…</span>
+          <Icon name="pencil" size={17} />
+        </button>
+      )}
+
+      {followedPosts.length > 0 && (
         <section className="plaza-following" aria-label="关注动态">
           <div className="plaza-feed-heading">
             <h2>关注动态</h2>
-            <span>你关注的作者最近更新的线</span>
+            <span>你关注的人最近在广场说了什么</span>
           </div>
           <div className="plaza-following-row">
-            {followedUpdates.map((publication) => (
+            {followedPosts.map((post) => (
               <button
                 type="button"
-                key={publication.id}
+                key={post.id}
                 className="plaza-following-card"
-                onClick={() => onOpenDetail(publication)}
+                onClick={() => document.getElementById(`plaza-post-${post.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
               >
                 <span className="plaza-following-head">
-                  <PlazaAvatarThumb publication={publication} />
-                  <span className="plaza-following-author">{publication.authorName}</span>
+                  <PersonPicture picture={post.authorPicture} size={28} />
+                  <span className="plaza-following-author">{post.authorName}</span>
                 </span>
-                <strong>《{publication.title}》</strong>
-                <small>{plazaLengthLabel(publication)} · {plazaFeedTime(publication.updatedAt)}</small>
+                <strong>{post.type === "book_share" && post.book?.title ? `分享了《${post.book.title}》` : post.content.slice(0, 42)}</strong>
+                <small>{postTimeFor(post.createdAt)}</small>
               </button>
             ))}
           </div>
         </section>
       )}
 
-      {feed?.some((item) => item.official) && (
-        <button type="button" className="plaza-mine-row" onClick={() => onOpenDetail(feed.find((item) => item.official))}>
+      {officialPost && (
+        <button type="button" className="plaza-mine-row" onClick={() => onOpenDetail(officialPost.book)}>
           <Icon name="book" size={20} />
           <span>
             <strong>先看看一条走完的线长什么样</strong>
@@ -5652,25 +6115,25 @@ function PlazaFeed({ account, authClient, activeStory, stories, onNavigate, onOp
       {publishable ? (
         <section className="plaza-publish-card">
           <div>
-            <strong>把你的故事线放到广场</strong>
-            <p>走完的故事线可以发布；无限连载的线连载中就能放上来，新章会自己跟上。</p>
+            <strong>把你的故事线上架到书城</strong>
+            <p>走完的故事线可以上架；无限连载的线连载中就能上架，新章会自己跟上。上架后也能分享到广场。</p>
           </div>
-          <Button onClick={() => onNavigate("plaza-publish")}>发布 <Icon name="arrow" size={15} /></Button>
+          <Button onClick={() => onNavigate("plaza-publish")}>上架 <Icon name="arrow" size={15} /></Button>
         </section>
       ) : (
         <button type="button" className="plaza-mine-row" onClick={() => onNavigate("plaza-publish")}>
           <Icon name="plus" size={20} />
           <span>
-            <strong>把你的故事线放到广场</strong>
-            <small>走完一季、长线，或连载中发布</small>
+            <strong>把你的故事线上架到书城</strong>
+            <small>走完一季、长线，或连载中上架</small>
           </span>
           <Icon name="chevron" size={16} />
         </button>
       )}
 
       <div className="plaza-feed-heading">
-        <h2>最新发布</h2>
-        <span>完结的故事线，与连载中的无限长线</span>
+        <h2>最新动态</h2>
+        <span>全站一条时间流，最新在前</span>
       </div>
 
       {error && (
@@ -5679,42 +6142,66 @@ function PlazaFeed({ account, authClient, activeStory, stories, onNavigate, onOp
           <Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>再试一次</Button>
         </div>
       )}
-      {feed === null && !error && <p className="plaza-loading" role="status">正在打开广场…</p>}
-      {feed !== null && feed.length === 0 && !error && (
+      {posts === null && !error && <p className="plaza-loading" role="status">正在打开广场…</p>}
+      {focusPost && (
+        <PlazaPostCard
+          key={`focus-${focusPost.id}`}
+          post={focusPost}
+          account={account}
+          authClient={authClient}
+          onOpenDetail={onOpenDetail}
+          onReadLine={onReadLine}
+          onEnter={onEnter}
+          onOpenProfile={onOpenProfile}
+          onOpenAccount={onOpenAccount}
+          onToast={onToast}
+          onDeleted={() => setFocusPost(null)}
+        />
+      )}
+      {posts !== null && posts.length === 0 && !focusPost && !error && (
         <div className="plaza-empty" role="status">
           <img className="empty-art" src="/art/empty-plaza-512.webp" alt="" loading="lazy" />
-          <h3>还没有人发布走完的故事线</h3>
-          <p>第一条线，往往是自己的。用化身走完一季，它就会出现在这里。</p>
-          <Button variant="secondary" icon="arrow" onClick={() => onNavigate("forge")}>去造世</Button>
+          <h3>广场还没有人发帖</h3>
+          <p>畅所欲言，或把你在书城读到的好书分享到广场，点亮第一条动态。</p>
+          <Button
+            variant="secondary"
+            icon="arrow"
+            onClick={() => (account.user ? setComposerOpen(true) : onOpenAccount())}
+          >
+            发一条动态
+          </Button>
         </div>
       )}
-      {feed !== null && feed.length > 0 && (
+      {posts !== null && streamPosts.length > 0 && (
         <div className="plaza-feed-list">
-          {feed.map((publication, index) => (
-            <PlazaCard
-              key={publication.id}
-              publication={publication}
-              lead={index === 0}
-              own={mineIds.has(publication.id)}
-              onOpen={() => onOpenDetail(publication)}
-              onRead={() => onReadLine(publication)}
-              onEnter={() => onEnter(publication)}
+          {streamPosts.map((post) => (
+            <PlazaPostCard
+              key={post.id}
+              post={post}
+              account={account}
+              authClient={authClient}
+              onOpenDetail={onOpenDetail}
+              onReadLine={onReadLine}
+              onEnter={onEnter}
               onOpenProfile={onOpenProfile}
+              onOpenAccount={onOpenAccount}
+              onToast={onToast}
+              onDeleted={(postId) => setPosts((current) => (current || []).filter((entry) => entry.id !== postId))}
             />
           ))}
+        </div>
+      )}
+      {nextCursor && (
+        <div className="plaza-more">
+          <Button variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>
+            {loadingMore ? "正在加载…" : "加载更多"}
+          </Button>
         </div>
       )}
     </div>
   );
 }
 
-/**
- * One of the plaza detail page's three ways in (ENTRY-OPTIONS): every
- * way in wears the same option card — icon, title, one plain-words line
- * saying what happens and whether it costs generation quota, chevron.
- * A card whose prerequisite is missing renders greyed but stays
- * tappable, so the tap lands on guidance instead of silence.
- */
 function PlazaEntryOption({ icon, title, note, muted = false, onClick }) {
   return (
     <button
@@ -5733,12 +6220,14 @@ function PlazaEntryOption({ icon, title, note, muted = false, onClick }) {
   );
 }
 
-function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onReadLine, onEnter, onOpenAccount, onToast, onOpenProfile }) {
+function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack, backLabel = "返回广场", onReadLine, onEnter, onOpenAccount, onToast, onOpenProfile }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const goBack = onBack || (() => onNavigate("plaza"));
   const own = useMemo(() => plazaMineIds().has(id), [id]);
   // The fusion card's honest state against the reader's own shelf —
   // the same resolution the merge page runs (fusion.js).
@@ -5761,12 +6250,12 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onRead
   if (error) {
     return (
       <div className="page page-plaza page-enter">
-        <button type="button" className="back-link" onClick={() => onNavigate("plaza")}>
-          <Icon name="chevron" size={15} className="rotate-180" /> 返回广场
+        <button type="button" className="back-link" onClick={goBack}>
+          <Icon name="chevron" size={15} className="rotate-180" /> {backLabel}
         </button>
         <div className="plaza-empty" role="alert">
           <h3>{error}</h3>
-          <Button variant="secondary" onClick={() => onNavigate("plaza")}>回到广场</Button>
+          <Button variant="secondary" onClick={goBack}>回去看看</Button>
         </div>
       </div>
     );
@@ -5774,8 +6263,8 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onRead
   if (!detail) {
     return (
       <div className="page page-plaza page-enter">
-        <button type="button" className="back-link" onClick={() => onNavigate("plaza")}>
-          <Icon name="chevron" size={15} className="rotate-180" /> 返回广场
+        <button type="button" className="back-link" onClick={goBack}>
+          <Icon name="chevron" size={15} className="rotate-180" /> {backLabel}
         </button>
         <p className="plaza-loading" role="status">正在打开这条故事线…</p>
       </div>
@@ -5806,18 +6295,27 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onRead
     try {
       await withdrawPublication({ id, getAccessToken: () => authClient.getAccessToken() });
       plazaMineForget(undefined, id);
-      onToast("已下架，广场上不再显示这条故事线。");
-      onNavigate("plaza");
+      onToast("已下架，书城里不再显示这本书。");
+      onNavigate("store");
     } catch {
       setNote("下架没能完成，请稍后再试。");
       setBusy(false);
     }
   };
+  const openShare = () => {
+    if (!account.user) { onOpenAccount(); return; }
+    setShareOpen(true);
+  };
+  const handleShared = (post) => {
+    setShareOpen(false);
+    onToast("已分享到广场。");
+    if (post?.id) onNavigate("plaza", { postId: post.id });
+  };
   return (
     <div className="page page-plaza page-enter">
       <div className="plaza-detail-top">
-        <button type="button" className="back-link" onClick={() => onNavigate("plaza")}>
-          <Icon name="chevron" size={15} className="rotate-180" /> 返回广场
+        <button type="button" className="back-link" onClick={goBack}>
+          <Icon name="chevron" size={15} className="rotate-180" /> {backLabel}
         </button>
         {onOpenProfile && detail.authorUid ? (
           <button type="button" className="plaza-author plaza-author-button" onClick={() => onOpenProfile(detail.authorUid)}>
@@ -5840,6 +6338,12 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onRead
           {detail.official && <span className="plaza-badge is-official">官方示例 · 织界官方走完的完整故事线</span>}
         </div>
       </section>
+
+      {/* Rating seat (BOOKSTORE-PLAZA): the star-rating batch mounts
+          here — average + count + the review list anchor. Reserved in
+          the layout now so that batch changes no geometry; it renders
+          nothing until real ratings exist. */}
+      <div className="plaza-rating-slot" data-rating-slot="" aria-hidden="true" />
 
       <section className="plaza-panel plaza-avatar-panel">
         {onOpenProfile && detail.authorUid ? (
@@ -5951,27 +6455,48 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onRead
               : onNavigate("merge", { publicationId: detail.id }))}
           />
         </div>
+        {/* Sharing is the plaza's door out of the detail (BOOKSTORE-
+            PLAZA): one tap opens the composer pre-set to this book;
+            the words are the reader's own. */}
+        <div className="plaza-share-row">
+          <Button variant="ghost" onClick={openShare}>
+            <Icon name="share" size={16} /> 分享到广场
+          </Button>
+          <span>把这本书推荐给广场上的其他人</span>
+        </div>
       </section>
+
+      {shareOpen && (
+        <ReadingDialog title="分享到广场" onClose={() => setShareOpen(false)}>
+          <PlazaComposerEditor
+            account={account}
+            authClient={authClient}
+            initialBook={detail}
+            onPosted={handleShared}
+            onCancel={() => setShareOpen(false)}
+          />
+        </ReadingDialog>
+      )}
 
       {note && <p className="plaza-inline-note" role="status">{note}</p>}
       {own ? (
         <div className="plaza-owner-row">
           {confirmingWithdraw ? (
             <>
-              <span>下架后广场不再显示，本地原作不受影响。</span>
+              <span>下架后书城不再显示这本书，广场上分享过它的帖子会显示已下架；本地原作不受影响。</span>
               <Button variant="secondary" disabled={busy} onClick={() => void withdraw()}>确认下架</Button>
               <Button variant="ghost" disabled={busy} onClick={() => setConfirmingWithdraw(false)}>再想想</Button>
             </>
           ) : (
             <>
-              <span>这是你发布的故事线。</span>
+              <span>这是你上架的书。</span>
               <Button variant="ghost" onClick={() => setConfirmingWithdraw(true)}>下架</Button>
             </>
           )}
         </div>
       ) : (
         <button type="button" className="plaza-report" disabled={busy} onClick={() => void report()}>
-          内容有问题？举报这条故事线
+          内容有问题？举报这本书
         </button>
       )}
     </div>
@@ -7708,12 +8233,12 @@ function OfficialDemoEntry({ onNavigate }) {
   // The publish gate explains the order (avatar first, then a finished
   // line) — this entry shows a newcomer what the destination looks like
   // before they walk it. It renders ONLY when an official sample line
-  // actually exists on the plaza; otherwise it stays absent entirely.
+  // actually exists in the bookstore; otherwise it stays absent entirely.
   const [official, setOfficial] = useState(null);
   useEffect(() => {
     let live = true;
-    fetchPlazaFeed()
-      .then(({ publications }) => { if (live) setOfficial(publications.find((item) => item.official) || null); })
+    fetchStoreBooks({ limit: 60 })
+      .then(({ books }) => { if (live) setOfficial(books.find((item) => item.official) || null); })
       .catch(() => {});
     return () => { live = false; };
   }, []);
@@ -7750,44 +8275,44 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
       // Publish landing is a burst moment (§37 G3) — the canvas is
       // body-level, so it survives the navigation to the plaza.
       burstParticles();
-      onToast("已发布到广场。");
-      onNavigate("plaza");
+      onToast("已上架到书城。");
+      onNavigate("store");
     } catch (failure) {
-      if (failure?.code === "auth-required") { onOpenAccount(); setError("请先登录，再发布。"); }
+      if (failure?.code === "auth-required") { onOpenAccount(); setError("请先登录，再上架。"); }
       else setError(failure?.message || "发布没能完成，请稍后再试。");
       setBusy(false);
     }
   };
   return (
     <div className="page page-plaza page-enter">
-      <button type="button" className="back-link" onClick={() => onNavigate("plaza")}>
+      <button type="button" className="back-link" onClick={() => onNavigate("store")}>
         <Icon name="chevron" size={15} className="rotate-180" /> 返回
       </button>
       <header className="plaza-heading">
-        <h1>发布到广场</h1>
+        <h1>上架到书城</h1>
       </header>
-      <p className="page-caption">把一条故事线放上广场：走完的线整条发布；无限连载的线连载中就能发布，之后的新章会自己跟上。发布后，其他人能读你的原作线，也能带自己的化身进入这个世界重演一条新线。</p>
+      <p className="page-caption">把一条故事线上架到书城：走完的线整条上架；无限连载的线连载中就能上架，之后的新章会自己跟上。上架后，其他人能在书城读你的原作线，也能带自己的化身进入这个世界重演一条新线，还能把这本书分享到广场。</p>
 
       <OfficialDemoEntry onNavigate={onNavigate} />
 
       {!account.user ? (
         <div className="plaza-empty" role="status">
-          <h3>先登录，再发布你的故事线</h3>
-          <p>发布会记在你的账号名下，别人举报时也由你下架处理。</p>
+          <h3>先登录，再上架你的故事线</h3>
+          <p>上架会记在你的账号名下，别人举报时也由你下架处理。</p>
           <Button onClick={onOpenAccount}>登录 / 注册</Button>
         </div>
       ) : avatarLoaded && !avatar ? (
         <div className="plaza-empty" role="status">
-          <h3>先有化身，才能发布它的故事线</h3>
-          <p>广场上的每条线，都是某个化身走完的旅程。</p>
+          <h3>先有化身，才能上架它的故事线</h3>
+          <p>书城里的每本书，都是某个化身走完的旅程。</p>
           <Button onClick={onOpenAvatar}>创建我的化身</Button>
         </div>
       ) : (
         <>
-          <h2 className="plaza-section-title">选择要发布的故事线</h2>
+          <h2 className="plaza-section-title">选择要上架的故事线</h2>
           {rows.length === 0 && (
             <div className="plaza-empty" role="status">
-              <p>你还没有故事线。先用化身走一季，或开一条无限连载，再来发布。</p>
+              <p>你还没有故事线。先用化身走一季，或开一条无限连载，再来上架。</p>
               <Button variant="secondary" icon="arrow" onClick={() => onNavigate("forge")}>去造世</Button>
             </div>
           )}
@@ -7810,8 +8335,8 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
                     <span>
                       {gate.publishable
                         ? gate.lineStatus === "serializing"
-                          ? <><span className="plaza-badge">连载中</span> {plazaLengthLabel(story)} · 发布后新章自动跟上{published ? " · 已在广场上" : ""}</>
-                          : <><span className="plaza-badge">已完结</span> {plazaLengthLabel(story)}{published ? " · 已在广场上，再次发布会更新" : ""}</>
+                          ? <><span className="plaza-badge">连载中</span> {plazaLengthLabel(story)} · 发布后新章自动跟上{published ? " · 已在书城上" : ""}</>
+                          : <><span className="plaza-badge">已完结</span> {plazaLengthLabel(story)}{published ? " · 已在书城上，再次上架会更新" : ""}</>
                         : <>{story.kind === "merged" ? "合流故事" : "连载中"} · {gate.reason}</>}
                     </span>
                   </span>
@@ -7822,9 +8347,9 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
           </div>
 
           <section className="plaza-panel">
-            <h2>将发布的内容</h2>
+            <h2>将上架的内容</h2>
             <ul className="plaza-checklist">
-              <li><Icon name="check" size={15} /><span><strong>世界设定（脱敏版）</strong><small>私有设定与未公开分支不会发布</small></span></li>
+              <li><Icon name="check" size={15} /><span><strong>世界设定（脱敏版）</strong><small>私有设定与未公开分支不会上架</small></span></li>
               <li><Icon name="check" size={15} /><span><strong>原作线全文</strong><small>你化身走过的全部章节与当时的选择（连载中的线随新章更新）</small></span></li>
               <li><Icon name="check" size={15} /><span><strong>可进入的世界模板</strong><small>主线节拍骨架，供他人带化身重演</small></span></li>
             </ul>
@@ -7835,18 +8360,18 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
               <h2>红线自动检查</h2>
               <span className="plaza-chip is-mint">发布时由服务端执行</span>
             </div>
-            <p className="plaza-note">已扫描的口径与造世相同：世界设定与全部章节都会过一遍，命中违规内容会被拒绝发布，不会留下半截记录。</p>
+            <p className="plaza-note">已扫描的口径与造世相同：世界设定与全部章节都会过一遍，命中违规内容会被拒绝上架，不会留下半截记录。</p>
           </section>
 
           <section className="plaza-panel">
             <h2>审核与下架</h2>
-            <p className="plaza-note">发布后进入广场公开列表。下架只影响广场展示，不影响你本地的原作存档，随时可以重新发布。</p>
+            <p className="plaza-note">上架后进入书城书目。下架只影响书城展示（广场上分享过它的帖子会显示已下架），不影响你本地的原作存档，随时可以重新上架。</p>
           </section>
 
           {error && <div className="sw-inline-alert" role="alert">{error}</div>}
           <div className="plaza-publish-actions">
-            <Button disabled={!selected || busy} onClick={() => void publish()}>{busy ? "正在发布…" : "发布到广场"}</Button>
-            <Button variant="ghost" disabled={busy} onClick={() => onNavigate("plaza")}>暂不发布</Button>
+            <Button disabled={!selected || busy} onClick={() => void publish()}>{busy ? "正在上架…" : "上架到书城"}</Button>
+            <Button variant="ghost" disabled={busy} onClick={() => onNavigate("store")}>暂不上架</Button>
           </div>
         </>
       )}
@@ -9011,8 +9536,8 @@ function App() {
     let cancelled = false;
     (async () => {
       try {
-        const { publications } = await fetchPlazaFeed();
-        const official = publications.find((item) => item.official);
+        const { books } = await fetchStoreBooks({ limit: 60 });
+        const official = books.find((item) => item.official);
         if (!official || cancelled) return;
         const detail = await fetchPlazaDetail({ id: official.id });
         if (cancelled || !detail) return;
@@ -9174,7 +9699,9 @@ function App() {
           shared: Boolean(options.shared),
           ...(options.plaza ? { plaza: true } : {}),
         }
-      : next === "plaza-detail" || next === "plaza-enter" || next === "profile"
+      : next === "plaza" && options.postId
+        ? { view: next, postId: options.postId }
+        : next === "plaza-detail" || next === "plaza-enter" || next === "profile"
         ? { view: next, id: options.id }
         : next === "merge"
           ? {
@@ -9209,8 +9736,8 @@ function App() {
       try {
         const token = await authClient.getAccessToken();
         if (!token) return;
-        const { publication } = await publishToPlaza({ story, getAccessToken: () => authClient.getAccessToken() });
-        if (publication?.id) plazaMineRemember(story.id, publication.id);
+        const publication = await publishToPlaza({ story, getAccessToken: () => authClient.getAccessToken() });
+        if (publication?.id) plazaMineRemember(undefined, story.id, publication);
       } catch {
         plazaSyncSignatures.current.delete(story.id);
       }
@@ -9483,17 +10010,6 @@ function App() {
       setLibrary((current) => ({ ...current, activeStoryId: id }));
     navigate("reader", { storyId: id });
   };
-  const openCommunityBook = (book) => {
-    setShareRequest(false);
-    navigate("reader", { storyId: book.id, shared: true });
-  };
-  const openOwnForShare = () => {
-    if (activeStory) openOwnReader(activeStory.id, { share: true });
-    else {
-      setToast("先造出第一本书，再发布到书城。");
-      navigate("forge");
-    }
-  };
   const publish = (story) => {
     try {
       const snapshot = publicSnapshot(story);
@@ -9522,7 +10038,14 @@ function App() {
   // the public snapshot; entering one seeds a brand-new local story of
   // the entrant's own, whose generation flows through /api/generate and
   // meters to the entrant.
-  const openPlazaDetail = (publication) => navigate("plaza-detail", { id: publication.id });
+  // Where the book detail was opened from decides its back target
+  // (BOOKSTORE-PLAZA): the shelf returns to the bookstore, the stream
+  // returns to the plaza.
+  const [detailOrigin, setDetailOrigin] = useState("plaza");
+  const openPlazaDetail = (publication, origin = "plaza") => {
+    setDetailOrigin(origin);
+    navigate("plaza-detail", { id: publication.id });
+  };
   const openProfile = (uid) => { if (uid) navigate("profile", { id: uid }); };
   const openPlazaLine = async (publication) => {
     let story = plazaLines[publication.id];
@@ -9628,10 +10151,8 @@ function App() {
     page = (
       <Store
         onNavigate={navigate}
-        onOpenBook={openCommunityBook}
-        onOpenOwn={openOwnForShare}
-        publications={library.publications}
-        officialSample={officialSample}
+        onOpenBook={(book) => openPlazaDetail(book, "store")}
+        onPublish={() => navigate("plaza-publish")}
       />
     );
   else if (view === "merge")
@@ -9673,12 +10194,15 @@ function App() {
         authClient={authClient}
         activeStory={activeStory}
         stories={library.stories}
+        focusPostId={pageRoute.postId || ""}
         onNavigate={navigate}
         onOpenStory={openOwnReader}
         onOpenDetail={openPlazaDetail}
         onReadLine={(publication) => void openPlazaLine(publication)}
         onEnter={(publication) => navigate("plaza-enter", { id: publication.id })}
         onOpenProfile={openProfile}
+        onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
+        onToast={setToast}
       />
     );
   else if (view === "plaza-detail")
@@ -9689,6 +10213,8 @@ function App() {
         authClient={authClient}
         stories={library.stories}
         onNavigate={navigate}
+        onBack={() => navigate(detailOrigin === "store" ? "store" : "plaza")}
+        backLabel={detailOrigin === "store" ? "返回书城" : "返回广场"}
         onReadLine={(detail) => void openPlazaLine(detail)}
         onEnter={(detail) => navigate("plaza-enter", { id: detail.id })}
         onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}

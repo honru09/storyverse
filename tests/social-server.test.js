@@ -179,9 +179,9 @@ test('profile payload: identity, avatar, counts, worlds, publications — and no
   assert.equal(missing.status, 404)
 
   // The plaza payloads now carry the author uid the profile links need.
-  const feed = (await (await fetch(`${base}/api/plaza`)).json())
-  assert.equal(feed.publications[0].authorUid, author.uid)
-  const detail = (await (await fetch(`${base}/api/plaza/${feed.publications[0].id}`)).json()).publication
+  const feed = (await (await fetch(`${base}/api/store`)).json())
+  assert.equal(feed.books[0].authorUid, author.uid)
+  const detail = (await (await fetch(`${base}/api/plaza/${feed.books[0].id}`)).json()).publication
   assert.equal(detail.authorUid, author.uid)
 })
 
@@ -354,7 +354,7 @@ test('presence: the 90-second window, counted on the service clock and in the pl
   at += PRESENCE_WINDOW_MS
   assert.equal(await service.onlineCount(), 0)
 
-  // HTTP level: heartbeats require login; the feed carries the count.
+  // HTTP level: heartbeats require login; the plaza stream carries the count.
   const { base } = await startSocialServer(t)
   const feedBefore = await (await fetch(`${base}/api/plaza`)).json()
   assert.equal(feedBefore.onlineCount, 0)

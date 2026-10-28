@@ -189,8 +189,8 @@ test('DELETE /api/library/stories/:id removes book, tombstone, publication and c
   const got = await fetch(`${base}/api/library/stories/${story.id}`, { headers: aliceAuth.headers })
   assert.equal(got.status, 404)
   assert.equal((await plazaStore.listPublications()).length, 0, 'the plaza publication is deleted with the book')
-  const feed = await (await fetch(`${base}/api/plaza`, { headers: { Origin: 'http://localhost:5173' } })).json()
-  assert.equal(feed.publications.length, 0, 'the line no longer appears in the plaza feed')
+  const feed = await (await fetch(`${base}/api/store`, { headers: { Origin: 'http://localhost:5173' } })).json()
+  assert.equal(feed.books.length, 0, 'the line no longer appears in the bookstore')
   assert.equal(await coverStore.getCover(aliceAuth.uid, story.id), null, 'the generated cover is deleted with the book')
 
   // Idempotent: deleting the same book again still succeeds.

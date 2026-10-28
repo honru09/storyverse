@@ -419,16 +419,16 @@ test('plaza feed resolves the author through the profile record (name + picture)
   // The author rebrands: custom name, and deliberately back to the default picture.
   await putProfile(base, author.token, { displayName: '夜行者', pictureKind: 'default' })
 
-  const feed = await (await fetch(`${base}/api/plaza`)).json()
-  assert.equal(feed.publications.length, 2)
-  const branded = feed.publications.find((publication) => publication.id === mine.id)
+  const feed = await (await fetch(`${base}/api/store`)).json()
+  assert.equal(feed.books.length, 2)
+  const branded = feed.books.find((publication) => publication.id === mine.id)
   assert.equal(branded.authorName, '夜行者', 'the feed shows the profile-record name, not the publish-time name')
   assert.equal(branded.avatar.pictureKind, 'default')
   assert.equal(branded.avatar.pictureUrl, '/default-avatar.svg')
   assert.equal(typeof branded.premise, 'string')
   assert.ok(branded.completedAt && !Number.isNaN(Date.parse(branded.completedAt)), 'the line carries a completion date')
 
-  const unbranded = feed.publications.find((publication) => publication.id !== mine.id)
+  const unbranded = feed.books.find((publication) => publication.id !== mine.id)
   assert.equal(unbranded.avatar.pictureKind, 'default', 'an author without portrait or upload shows the default asset')
   assert.equal(unbranded.avatar.pictureUrl, '/default-avatar.svg')
 
@@ -440,8 +440,8 @@ test('plaza feed resolves the author through the profile record (name + picture)
 
   // Flip the author to the portrait: feed and profile agree again.
   await putProfile(base, author.token, { pictureKind: 'avatar' })
-  const feedAfter = await (await fetch(`${base}/api/plaza`)).json()
-  const flipped = feedAfter.publications.find((publication) => publication.id === mine.id)
+  const feedAfter = await (await fetch(`${base}/api/store`)).json()
+  const flipped = feedAfter.books.find((publication) => publication.id === mine.id)
   assert.equal(flipped.avatar.pictureKind, 'avatar')
   assert.match(flipped.avatar.pictureUrl, /\/picture\?v=/)
 })

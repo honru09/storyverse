@@ -13,7 +13,7 @@ import {
   sendPresenceHeartbeat,
   userPortraitPath,
 } from '../src/users.js'
-import { fetchPlazaFeed } from '../src/plaza.js'
+import { fetchPlazaPosts, fetchStoreBooks } from '../src/plaza.js'
 import { parseRoute, routeHash } from '../src/navigation.js'
 
 const jsonResponse = (status, body) => ({
@@ -28,6 +28,11 @@ test('profile routes round-trip uids, including username-prefixed ones', () => {
   }
   assert.deepEqual(parseRoute('#/profile'), { view: 'plaza' })
   assert.deepEqual(parseRoute('#/profile/%'), { view: 'plaza' })
+  // Post permalinks pin the stream; book ids (pub-…) still open details.
+  assert.deepEqual(parseRoute('#/plaza/post-post-abc'), { view: 'plaza', postId: 'post-post-abc' })
+  assert.equal(routeHash({ view: 'plaza', postId: 'post-post-abc' }), '#/plaza/post-post-abc')
+  assert.deepEqual(parseRoute(routeHash({ view: 'plaza', postId: 'post-post-abc' })), { view: 'plaza', postId: 'post-post-abc' })
+  assert.deepEqual(parseRoute('#/plaza/pub-abc'), { view: 'plaza-detail', id: 'pub-abc' })
 })
 
 test('fetchUserProfile hits the profile route and sends the credential when one exists', async () => {
@@ -77,19 +82,26 @@ test('presence heartbeat stays silent without a credential and never throws', as
   }), false)
 })
 
-test('userPortraitPath is profile-scoped; the plaza feed now carries the online count', async () => {
+test('userPortraitPath is profile-scoped; the bookstore and the post stream are separate reads (BOOKSTORE-PLAZA)', async () => {
   assert.equal(userPortraitPath('username:a'), '/api/users/username%3Aa/portrait')
-  const feed = await fetchPlazaFeed({
+  const store = await fetchStoreBooks({
     fetchImpl: async (url) => {
-      assert.equal(url, '/api/plaza')
-      return jsonResponse(200, { publications: [{ id: 'pub-1' }], onlineCount: 2 })
+      assert.equal(url, '/api/store?limit=50')
+      return jsonResponse(200, { books: [{ id: 'pub-1' }], total: 1 })
     },
   })
-  assert.deepEqual(feed, { publications: [{ id: 'pub-1' }], onlineCount: 2 })
-  const legacy = await fetchPlazaFeed({
-    fetchImpl: async () => jsonResponse(200, { publications: [] }),
+  assert.deepEqual(store, { books: [{ id: 'pub-1' }], total: 1 })
+  const feed = await fetchPlazaPosts({
+    fetchImpl: async (url) => {
+      assert.equal(url, '/api/plaza?limit=20')
+      return jsonResponse(200, { posts: [{ id: 'post-1' }], nextCursor: null, onlineCount: 2 })
+    },
   })
-  assert.deepEqual(legacy, { publications: [], onlineCount: 0 }, 'an older payload still parses, count defaults to 0')
+  assert.deepEqual(feed, { posts: [{ id: 'post-1' }], nextCursor: null, onlineCount: 2 })
+  const legacy = await fetchPlazaPosts({
+    fetchImpl: async () => jsonResponse(200, { posts: [] }),
+  })
+  assert.deepEqual(legacy, { posts: [], nextCursor: null, onlineCount: 0 }, 'an older payload still parses, count defaults to 0')
 })
 
 test('profile editor calls: update, picture upload, handle check, report', async () => {

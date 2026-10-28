@@ -17,6 +17,7 @@ import {
   BOOK_TITLE_MAX,
 } from '../src/story-engine.js'
 import { loadLibrary, saveLibrary, validateLibrary } from '../src/persistence.js'
+import { cleanBookTitle } from '../src/plaza.js'
 import { createAvatarService } from '../server/avatar.js'
 import { createMemoryAvatarStore } from '../server/avatar-store.js'
 import { createLibraryService } from '../server/library.js'
@@ -253,11 +254,16 @@ test('a rename saved to the library is mirrored onto the plaza publication, with
   const publicationId = publication.id
   assert.ok(publicationId, 'publish returns the publication id')
 
+  // BOOKSTORE-PLAZA: the auto-composed birth title carries the exact
+  // 「 · 化身名」 suffix; shelving cleans it once, so the book opens on
+  // its pure title and the rename trace starts from that clean title.
+  const shelvedTitle = cleanBookTitle(birthTitle, '沈砚')
+  assert.notEqual(shelvedTitle, birthTitle, 'the birth title really carried the suffix')
   const feedTitle = async () => {
-    const feed = await (await fetch(`${base}/api/plaza`)).json()
-    return feed.publications.find((entry) => entry.id === publicationId)?.title
+    const feed = await (await fetch(`${base}/api/store`)).json()
+    return feed.books.find((entry) => entry.id === publicationId)?.title
   }
-  assert.equal(await feedTitle(), birthTitle, 'the feed opens on the birth title')
+  assert.equal(await feedTitle(), shelvedTitle, 'the bookstore opens on the cleaned title')
 
   const putStory = (bearer, story) => fetch(`${base}/api/library/stories/${story.id}`, {
     method: 'PUT', headers: auth(bearer), body: JSON.stringify({ story }),
@@ -276,7 +282,7 @@ test('a rename saved to the library is mirrored onto the plaza publication, with
   const [record] = await plazaStore.listPublications()
   assert.equal(record.title, '潮声之外')
   assert.equal(record.snapshot.title, '潮声之外', 'the stored snapshot title moves with the record')
-  assert.deepEqual(record.titleHistory.map((entry) => [entry.from, entry.to]), [[birthTitle, '潮声之外']])
+  assert.deepEqual(record.titleHistory.map((entry) => [entry.from, entry.to]), [[shelvedTitle, '潮声之外']])
   assert.ok(!JSON.stringify(detail).includes('titleHistory'), 'the trace never leaves the server')
 
   // An unrelated edit carrying the SAME title adds no trace entry.

@@ -16,6 +16,10 @@ export function parseRoute(hash = '') {
     let id = ''
     try { id = decodeURIComponent(value || '') } catch { return { view: 'plaza' } }
     if (!id) return { view: 'plaza' }
+    // A post permalink (#/plaza/post-<id>, BOOKSTORE-PLAZA) lands on the
+    // stream with that post pinned — book ids are pub-…, so the post-
+    // prefix can never shadow a book detail route.
+    if (path === 'plaza' && id.startsWith('post-')) return { view: 'plaza', postId: id }
     if (path === 'plaza') return { view: 'plaza-detail', id }
     if (path === 'plaza-enter') return { view: 'plaza-enter', id }
     return { view: 'reader', id, plaza: true }
@@ -50,6 +54,7 @@ export function routeHash(route) {
   if (route.view === 'reader' && route.id) {
     return `#/${route.plaza ? 'plaza-read' : route.shared ? 'shared' : 'reader'}/${encodeURIComponent(route.id)}`
   }
+  if (route.view === 'plaza' && route.postId) return `#/plaza/${encodeURIComponent(route.postId)}`
   if (route.view === 'plaza-detail' && route.id) return `#/plaza/${encodeURIComponent(route.id)}`
   if (route.view === 'profile' && route.id) return `#/profile/${encodeURIComponent(route.id)}`
   if (route.view === 'plaza-enter' && route.id) return `#/plaza-enter/${encodeURIComponent(route.id)}`

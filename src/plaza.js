@@ -39,6 +39,27 @@ import { avatarAppearanceText } from './avatar.js'
 
 export const PLAZA_REPORT_THRESHOLD = 3
 
+/**
+ * The pure book title (BOOKSTORE-PLAZA): a story's title is composed
+ * at creation time as 「世界/题材 · 主角名」 when the creator never
+ * typed a title of their own (story-engine's titleFor), so the avatar
+ * name rides INSIDE the stored title — it is data, not a display-time
+ * concatenation. A book's public title never carries that suffix: the
+ * publish path cleans the snapshot title with this, and the one-time
+ * migration cleans stored records with the same rule. Only the exact
+ * trailing ` · <avatar name>` is cut — a title the owner deliberately
+ * renamed keeps whatever it says.
+ */
+export function cleanBookTitle(title, avatarName) {
+  const text = typeof title === 'string' ? title.trim() : ''
+  const name = typeof avatarName === 'string' ? avatarName.trim() : ''
+  if (text && name && text.endsWith(` · ${name}`)) {
+    const cut = text.slice(0, text.length - name.length - 3).trim()
+    if (cut) return cut
+  }
+  return text
+}
+
 const genreByWorldId = (id) => GENRES.find((genre) => genre.id === id) || null
 
 /**
@@ -449,46 +470,172 @@ async function plazaJson(response) {
   return result
 }
 
-/** The public feed: visible publication summaries, newest first, plus the live presence count. */
-export async function fetchPlazaFeed({ fetchImpl = globalThis.fetch } = {}) {
-  const response = await fetchImpl('/api/plaza')
+/**
+ * The bookstore list (BOOKSTORE-PLAZA): publishing a line now means
+ * shelving it in the bookstore — the formal catalogue with family
+ * shelves, honest rankings and search. `sort` is 'latest' | 'hot' |
+ * 'complete', all computed from real fields server-side.
+ */
+export async function fetchStoreBooks({ shelfId = '', sort = 'latest', q = '', limit = 50, fetchImpl = globalThis.fetch } = {}) {
+  const params = new URLSearchParams()
+  if (shelfId) params.set('shelf', shelfId)
+  if (sort && sort !== 'latest') params.set('sort', sort)
+  if (q) params.set('q', q)
+  if (limit) params.set('limit', String(limit))
+  const query = params.toString()
+  const response = await fetchImpl(`/api/store${query ? `?${query}` : ''}`)
   const result = await plazaJson(response)
   return {
-    publications: Array.isArray(result?.publications) ? result.publications : [],
-    onlineCount: Number.isInteger(result?.onlineCount) ? result.onlineCount : 0,
+    books: Array.isArray(result?.books) ? result.books : [],
+    total: Number.isInteger(result?.total) ? result.total : 0,
   }
 }
 
-/** One publication's detail: summary + sanitized bible, beats, read copy and enter template. */
-export async function fetchPlazaDetail({ id, fetchImpl = globalThis.fetch } = {}) {
-  const response = await fetchImpl(`/api/plaza/${encodeURIComponent(id)}`)
+/** One book's detail: summary + sanitized bible, beats, read copy and enter template. */
+export async function fetchStoreDetail({ id, fetchImpl = globalThis.fetch } = {}) {
+  const response = await fetchImpl(`/api/store/${encodeURIComponent(id)}`)
   const result = await plazaJson(response)
-  return result?.publication ?? null
+  return result?.book ?? null
 }
 
-/** Publish one of my avatar lines (finished, or a living endless publication). The server re-checks everything. */
-export async function publishToPlaza({ story, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+/** Pre-BOOKSTORE-PLAZA name for the book detail fetch; same endpoint family. */
+export const fetchPlazaDetail = fetchStoreDetail
+
+/** Publish one of my avatar lines (finished, or a living endless publication) — onto the bookstore shelf. The server re-checks everything. */
+export async function publishToStore({ story, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
   const headers = { 'Content-Type': 'application/json', ...(await plazaHeaders(getAccessToken)) }
-  const response = await fetchImpl('/api/plaza/publish', {
+  const response = await fetchImpl('/api/store/publish', {
     method: 'POST', headers, body: JSON.stringify({ story }),
   })
   const result = await plazaJson(response)
-  return result?.publication ?? null
+  return result?.book ?? result?.publication ?? null
 }
 
-/** Report a publication. One report per reader; three readers auto-hide it. */
+/** Pre-BOOKSTORE-PLAZA name for the publish call; same endpoint family. */
+export const publishToPlaza = publishToStore
+
+/** Report a book. One report per reader; three readers auto-hide it. */
 export async function reportPublication({ id, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
   const headers = { 'Content-Type': 'application/json', ...(await plazaHeaders(getAccessToken)) }
-  const response = await fetchImpl(`/api/plaza/${encodeURIComponent(id)}/report`, {
+  const response = await fetchImpl(`/api/store/${encodeURIComponent(id)}/report`, {
     method: 'POST', headers, body: JSON.stringify({}),
   })
   return plazaJson(response)
 }
 
-/** Withdraw my own publication. The local original is never touched. */
+/** Withdraw my own book from the bookstore. The local original is never touched. */
 export async function withdrawPublication({ id, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
   const headers = { 'Content-Type': 'application/json', ...(await plazaHeaders(getAccessToken)) }
-  const response = await fetchImpl(`/api/plaza/${encodeURIComponent(id)}/withdraw`, {
+  const response = await fetchImpl(`/api/store/${encodeURIComponent(id)}/withdraw`, {
+    method: 'POST', headers, body: JSON.stringify({}),
+  })
+  return plazaJson(response)
+}
+
+// ---- Plaza posts (the social feed) --------------------------------------
+//
+// The plaza itself is now a social timeline: free-text posts and
+// book-share posts in one reverse-chronological stream. These calls
+// mirror the server contract in server/plaza-feed.js — likes and
+// comments included; deleting a post never touches the book it shared.
+
+/** The public post timeline, newest first, cursor-paginated. A token adds the viewer's own like state. */
+export async function fetchPlazaPosts({ getAccessToken, cursor = '', limit = 20, fetchImpl = globalThis.fetch } = {}) {
+  const params = new URLSearchParams()
+  if (cursor) params.set('cursor', cursor)
+  if (limit) params.set('limit', String(limit))
+  const query = params.toString()
+  const headers = await plazaHeaders(getAccessToken)
+  const response = await fetchImpl(`/api/plaza${query ? `?${query}` : ''}`, { headers })
+  const result = await plazaJson(response)
+  return {
+    posts: Array.isArray(result?.posts) ? result.posts : [],
+    nextCursor: typeof result?.nextCursor === 'string' ? result.nextCursor : null,
+    onlineCount: Number.isInteger(result?.onlineCount) ? result.onlineCount : 0,
+  }
+}
+
+/** One post on its own (permalink target): body, author, embedded book card, like state. */
+export async function fetchPlazaPost({ id, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = await plazaHeaders(getAccessToken)
+  const response = await fetchImpl(`/api/plaza/posts/${encodeURIComponent(id)}`, { headers })
+  const result = await plazaJson(response)
+  return result?.post ?? null
+}
+
+/** Post to the plaza: a free-text post, or a share of a bookstore book with my own words on it. */
+export async function createPlazaPost({ type, content, bookId, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await plazaHeaders(getAccessToken)) }
+  const response = await fetchImpl('/api/plaza/posts', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ type, content, ...(bookId ? { bookId } : {}) }),
+  })
+  const result = await plazaJson(response)
+  return result?.post ?? null
+}
+
+/** Delete my own post. The book it shared stays on the bookstore shelf. */
+export async function deletePlazaPost({ id, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { ...(await plazaHeaders(getAccessToken)) }
+  const response = await fetchImpl(`/api/plaza/posts/${encodeURIComponent(id)}`, { method: 'DELETE', headers })
+  return plazaJson(response)
+}
+
+/** Like / unlike toggle on a post. */
+export async function togglePlazaPostLike({ id, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await plazaHeaders(getAccessToken)) }
+  const response = await fetchImpl(`/api/plaza/posts/${encodeURIComponent(id)}/like`, {
+    method: 'POST', headers, body: JSON.stringify({}),
+  })
+  return plazaJson(response)
+}
+
+/** Report a post. One report per reader; three readers auto-hide it. */
+export async function reportPlazaPost({ id, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await plazaHeaders(getAccessToken)) }
+  const response = await fetchImpl(`/api/plaza/posts/${encodeURIComponent(id)}/report`, {
+    method: 'POST', headers, body: JSON.stringify({}),
+  })
+  return plazaJson(response)
+}
+
+/** A post's flat comment thread, oldest first. */
+export async function fetchPostComments({ postId, cursor = '', limit = 50, fetchImpl = globalThis.fetch } = {}) {
+  const params = new URLSearchParams()
+  if (cursor) params.set('cursor', cursor)
+  if (limit) params.set('limit', String(limit))
+  const query = params.toString()
+  const response = await fetchImpl(`/api/plaza/posts/${encodeURIComponent(postId)}/comments${query ? `?${query}` : ''}`)
+  const result = await plazaJson(response)
+  return {
+    comments: Array.isArray(result?.comments) ? result.comments : [],
+    nextCursor: typeof result?.nextCursor === 'string' ? result.nextCursor : null,
+    total: Number.isInteger(result?.total) ? result.total : 0,
+  }
+}
+
+/** Comment on a post (flat thread, ≤300 chars, red-line scanned server-side). */
+export async function createPostComment({ postId, content, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await plazaHeaders(getAccessToken)) }
+  const response = await fetchImpl(`/api/plaza/posts/${encodeURIComponent(postId)}/comments`, {
+    method: 'POST', headers, body: JSON.stringify({ content }),
+  })
+  const result = await plazaJson(response)
+  return result?.comment ?? null
+}
+
+/** Delete a comment — mine, or any comment under my own post. */
+export async function deletePostComment({ postId, commentId, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { ...(await plazaHeaders(getAccessToken)) }
+  const response = await fetchImpl(`/api/plaza/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`, { method: 'DELETE', headers })
+  return plazaJson(response)
+}
+
+/** Report a comment. One report per reader; three readers auto-hide it. */
+export async function reportPostComment({ postId, commentId, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await plazaHeaders(getAccessToken)) }
+  const response = await fetchImpl(`/api/plaza/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}/report`, {
     method: 'POST', headers, body: JSON.stringify({}),
   })
   return plazaJson(response)

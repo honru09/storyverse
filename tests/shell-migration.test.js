@@ -120,7 +120,7 @@ test('face-anchor cropping: small round slots zoom portraits to the face', () =>
   assert.match(css, /\.plaza-avatar-frame:not\(\.is-large\)\.is-portrait \.plaza-avatar-img\{transform:scale\(3\.4\);transform-origin:50% 11%\}/)
   assert.match(css, /\.nav-face-frame\.is-portrait \.nav-face-img\{transform:scale\(2\.05\)/)
   assert.match(css, /\.home-avatar-face-frame \.avatar-portrait-img\{[^}]*transform:scale\(2\.05\)/)
-  const thumbBlock = main.slice(main.indexOf('function PlazaAvatarThumb'), main.indexOf('function PlazaLeadPortrait'))
+  const thumbBlock = main.slice(main.indexOf('function PlazaAvatarThumb'), main.indexOf('function PublicationArtwork'))
   assert.match(thumbBlock, /pictureKind === "avatar"/)
   assert.match(thumbBlock, /plaza-avatar-frame/)
   // The full figure has exactly one home: the profile's avatar stage
@@ -156,15 +156,19 @@ test('identity zero-wait: skeleton holds the header geometry, identity skips the
   assert.doesNotMatch(headerBlock, /data-enter/)
 })
 
-test('plaza first screen: continue first, followed updates, folded publish card, lead card', () => {
+test('plaza first screen: continue first, followed posts, folded composer, publish card (BOOKSTORE-PLAZA)', () => {
+  // The stream replaced the book-grid lead surface: continue-reading
+  // still opens the page, the followed strip now carries followed
+  // authors' POSTS, and posting starts from one folded line.
   assert.match(feedBlock, /plaza-continue-card/)
-  assert.ok(feedBlock.indexOf('plaza-continue-card') < feedBlock.indexOf('plaza-feed-list'), 'continue precedes the feed')
-  assert.match(feedBlock, /followedUpdates/)
+  assert.ok(feedBlock.indexOf('plaza-continue-card') < feedBlock.indexOf('plaza-feed-heading'), 'continue precedes the stream')
+  assert.match(feedBlock, /followedPosts/)
   assert.match(feedBlock, /关注动态/)
   assert.match(feedBlock, /plazaGateFor\(story\)\.publishable/)
-  assert.match(feedBlock, /lead=\{index === 0\}/)
-  assert.match(main, /plaza-card-lead/)
-  assert.match(main, /PlazaLeadPortrait/)
+  assert.match(feedBlock, /plaza-composer-bar/)
+  assert.match(feedBlock, /说点什么，或分享一本书/)
+  assert.doesNotMatch(main, /PlazaLeadPortrait/)
+  assert.doesNotMatch(main, /plaza-card-lead/)
 })
 
 test('snapshot source guard: real prose without the engine mark is stopped, local lines pass', () => {

@@ -156,11 +156,11 @@ test('publish → feed → detail round-trip, with the private marker scrubbed e
   assert.equal(stored.length, 1)
   assert.equal(JSON.stringify(stored[0]).includes(MARKER), false, 'stored record carries no private marker')
 
-  const feedResponse = await fetch(`${base}/api/plaza`)
+  const feedResponse = await fetch(`${base}/api/store`)
   assert.equal(feedResponse.status, 200)
   const feedText = await feedResponse.text()
   assert.equal(feedText.includes(MARKER), false, 'feed carries no private marker')
-  const feed = JSON.parse(feedText).publications
+  const feed = JSON.parse(feedText).books
   assert.equal(feed.length, 1)
   assert.equal(feed[0].id, publication.id)
 
@@ -179,7 +179,7 @@ test('publish → feed → detail round-trip, with the private marker scrubbed e
   const second = completedLine(avatar.id, { title: '第二条线' })
   const secondResponse = await publish(base, token, second)
   assert.equal(secondResponse.status, 200)
-  const nextFeed = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  const nextFeed = (await (await fetch(`${base}/api/store`)).json()).books
   assert.equal(nextFeed.length, 2)
   assert.equal(nextFeed[0].title, '第二条线')
 
@@ -219,7 +219,7 @@ test('official flag: derived from the author uid, never claimable through client
   const { publication } = await response.json()
   assert.equal(publication.official, false, 'publish response ignores client-claimed official flags')
 
-  const feed = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  const feed = (await (await fetch(`${base}/api/store`)).json()).books
   const byId = new Map(feed.map((item) => [item.id, item]))
   assert.equal(byId.get(officialPublication.id)?.official, true, 'feed flags the official line')
   assert.equal(byId.get(publication.id)?.official, false, 'feed leaves normal lines unflagged')
@@ -239,7 +239,7 @@ test('a story’s own generated cover rides the feed/detail summaries and is ser
 
   // No cover painted yet: the summary carries null and the route 404s,
   // so surfaces keep the world-artwork fallback exactly as before.
-  const bareFeed = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  const bareFeed = (await (await fetch(`${base}/api/store`)).json()).books
   assert.equal(bareFeed[0].coverUrl, null)
   const missing = await fetch(`${base}/api/plaza/${publication.id}/cover`)
   assert.equal(missing.status, 404)
@@ -259,7 +259,7 @@ test('a story’s own generated cover rides the feed/detail summaries and is ser
   })
 
   const expectedUrl = `/api/plaza/${publication.id}/cover?v=1`
-  const feed = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  const feed = (await (await fetch(`${base}/api/store`)).json()).books
   assert.equal(feed[0].coverUrl, expectedUrl, 'feed summary carries the story’s own cover')
   const detail = (await (await fetch(`${base}/api/plaza/${publication.id}`)).json()).publication
   assert.equal(detail.coverUrl, expectedUrl, 'detail summary carries the story’s own cover')
@@ -280,7 +280,7 @@ test('a story’s own generated cover rides the feed/detail summaries and is ser
     model: 'fixture',
     updatedAt: new Date().toISOString(),
   })
-  const repainted = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  const repainted = (await (await fetch(`${base}/api/store`)).json()).books
   assert.equal(repainted[0].coverUrl, `/api/plaza/${publication.id}/cover?v=2`)
 })
 
@@ -333,7 +333,7 @@ test('publish rejects gated stories, another avatar’s line and red-line conten
   assert.match((await redLineResponse.json()).error, /未成年/)
 
   assert.equal((await plazaStore.listPublications()).length, 0, 'no rejected publish left a record behind')
-  const feed = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  const feed = (await (await fetch(`${base}/api/store`)).json()).books
   assert.deepEqual(feed, [])
 })
 
@@ -384,7 +384,7 @@ test('three distinct reporters hide a publication; the author can withdraw and r
   const selfReport = await report(authorToken)
   assert.equal(selfReport.status, 400)
 
-  const visible = async () => (await (await fetch(`${base}/api/plaza`)).json()).publications.length === 1
+  const visible = async () => (await (await fetch(`${base}/api/store`)).json()).books.length === 1
   const reporterB = await register(base, 'plaza_reader_b')
   const reporterC = await register(base, 'plaza_reader_c')
   const reporterD = await register(base, 'plaza_reader_d')
@@ -414,11 +414,11 @@ test('three distinct reporters hide a publication; the author can withdraw and r
     body: '{}',
   })
   assert.equal(withdrawn.status, 200)
-  assert.equal((await (await fetch(`${base}/api/plaza`)).json()).publications.length, 0)
+  assert.equal((await (await fetch(`${base}/api/store`)).json()).books.length, 0)
   const republished = await publish(base, authorToken, second)
   assert.equal(republished.status, 200)
   assert.equal((await republished.json()).publication.id, secondPublication.id)
-  assert.equal((await (await fetch(`${base}/api/plaza`)).json()).publications.length, 1)
+  assert.equal((await (await fetch(`${base}/api/store`)).json()).books.length, 1)
 })
 
 test('a running endless line publishes as a living publication and flips to finished by hand', async (t) => {
@@ -454,7 +454,7 @@ test('a running endless line publishes as a living publication and flips to fini
   assert.equal(publication.totalChapters, 3)
   assert.equal(publication.completedAt, null)
 
-  const feed = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  const feed = (await (await fetch(`${base}/api/store`)).json()).books
   assert.equal(feed.length, 1)
   assert.equal(feed[0].lineStatus, 'serializing')
 
@@ -494,7 +494,7 @@ test('byline @ID (COVER-FIX): a username author’s feed/detail carry the login 
   const story = completedLine(avatar.id)
   const { publication } = await (await publish(base, token, story)).json()
 
-  const feed = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  const feed = (await (await fetch(`${base}/api/store`)).json()).books
   assert.equal(feed[0].authorHandle, 'byline_author', 'feed byline @ID is the username')
   const detail = (await (await fetch(`${base}/api/plaza/${publication.id}`)).json()).publication
   assert.equal(detail.authorHandle, 'byline_author', 'detail byline @ID is the username')

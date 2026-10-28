@@ -5,6 +5,7 @@ import { CUSTOM_GENRE_ID } from '../src/story-engine.js'
 import { createSocialStore, pictureSourceFor, friendshipKeyFor } from './social-store.js'
 import { emailCodeUid, normalizeEmailAddress, validEmailAddress } from './email-code.js'
 import { createPlazaStore } from './plaza-store.js'
+import { createPlazaFeedStore } from './plaza-feed-store.js'
 import { createAvatarStore, collectionFromRecord, imageSlotFor } from './avatar-store.js'
 import { normalizedStoredImage } from './portrait-image.js'
 import { createCoverStore } from './cover-store.js'
@@ -47,10 +48,11 @@ export const HANDLE_PATTERN = /^[a-z0-9_]{3,20}$/
 /**
  * The message centre's three categories (NOTIFY-SETTINGS §36). 互动 is
  * ONE bucket for everything another person does that concerns the
- * reader — its item `kind` is an open enum ('follow', 'friend_request'
- * and 'friend_accepted' today; 'like' and 'comment' arrive with their
- * own batches and slot into the same category, the same list shape and
- * the same read watermark, which is kept per user × category, never per kind).
+ * reader — its item `kind` is an open enum ('follow', 'friend_request',
+ * 'friend_accepted', and — since BOOKSTORE-PLAZA — 'like' and
+ * 'comment' from the plaza feed, derived from the like/comment records
+ * themselves). All slot into the same category, the same list shape
+ * and the same read watermark, which is kept per user × category, never per kind).
  * 公告 is official-only. 系统 is the account's own security events,
  * written by the account routes at the moment the action succeeds —
  * never invented, never back-filled.
@@ -137,6 +139,7 @@ export function createSocialService({
   env = process.env,
   store,
   plazaStore,
+  feedStore,
   avatarStore,
   identityStore,
   coverStore,
@@ -144,6 +147,13 @@ export function createSocialService({
 } = {}) {
   const backend = store === undefined ? createSocialStore({ env }) : store
   const plazaBackend = plazaStore === undefined ? createPlazaStore({ env }) : plazaStore
+  // The plaza feed's records (BOOKSTORE-PLAZA): the 互动 category
+  // derives its like/comment items from the like and comment records
+  // pointing at the caller's posts — the same derive-from-real-records
+  // discipline as follows and friend requests, so un-liking a post
+  // retracts the item it made. Absent backend (no data store) simply
+  // contributes no items.
+  const feedBackend = feedStore === undefined ? createPlazaFeedStore({ env }) : feedStore
   const avatars = avatarStore === undefined ? createAvatarStore({ env }) : avatarStore
   const identities = identityStore === undefined ? createIdentityStore({ env }) : identityStore
   const covers = coverStore === undefined ? createCoverStore({ env }) : coverStore
@@ -1032,13 +1042,15 @@ export function createSocialService({
     async notifications(identity) {
       if (!backend) throw new ApiError(503, '消息服务尚未配置。')
       const byNewest = (a, b) => String(b.at || '').localeCompare(String(a.at || ''))
-      const [edges, announcementRecords, eventRecords, readMarks, incomingRequests, outgoingRequests] = await Promise.all([
+      const [edges, announcementRecords, eventRecords, readMarks, incomingRequests, outgoingRequests, postLikes, postComments] = await Promise.all([
         backend.listFollowsByFollowee(identity.uid),
         backend.listAnnouncements(),
         backend.listAccountEvents(identity.uid),
         Promise.all(NOTIFY_CATEGORIES.map((category) => backend.getNotifyRead(identity.uid, category))),
         backend.listFriendRequestsByTo(identity.uid),
         backend.listFriendRequestsByFrom(identity.uid),
+        feedBackend ? feedBackend.listLikesByPostAuthor(identity.uid).catch(() => []) : [],
+        feedBackend ? feedBackend.listCommentsByPostAuthor(identity.uid).catch(() => []) : [],
       ])
       const followItems = await Promise.all([...edges]
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
@@ -1093,7 +1105,52 @@ export function createSocialService({
             at: record.updatedAt || record.createdAt || null,
           }
         }))
-      const activityItems = [...followItems, ...friendRequestItems, ...friendAcceptedItems]
+      // Plaza engagement on the caller's own posts (BOOKSTORE-PLAZA):
+      // a like or a comment by SOMEONE ELSE is an 互动 item; acting on
+      // your own post never notifies you. The items are derived, not
+      // stored — un-like deletes the like record and the item goes
+      // with it, unread count and all.
+      const likeItems = await Promise.all(postLikes
+        .filter((record) => record.userUid && record.userUid !== identity.uid)
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        .slice(0, NOTIFY_ITEM_CAP)
+        .map(async (record) => {
+          const person = await resolvedPerson(record.userUid, identity)
+          return {
+            id: `like:${record.postId}:${record.userUid}`,
+            kind: 'like',
+            actorUid: record.userUid,
+            displayName: person.displayName,
+            handle: person.handle,
+            picture: person.picture,
+            target: { type: 'post', postId: record.postId, excerpt: record.postExcerpt || '' },
+            at: record.createdAt || null,
+          }
+        }))
+      const commentItems = await Promise.all(postComments
+        .filter((record) => record.status === 'active' && record.authorUid && record.authorUid !== identity.uid)
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        .slice(0, NOTIFY_ITEM_CAP)
+        .map(async (record) => {
+          const person = await resolvedPerson(record.authorUid, identity)
+          return {
+            id: `comment:${record.id}`,
+            kind: 'comment',
+            actorUid: record.authorUid,
+            displayName: person.displayName,
+            handle: person.handle,
+            picture: person.picture,
+            target: {
+              type: 'post',
+              postId: record.postId,
+              excerpt: record.postExcerpt || '',
+              commentId: record.id,
+              commentText: clip(record.content, 120),
+            },
+            at: record.createdAt || null,
+          }
+        }))
+      const activityItems = [...followItems, ...friendRequestItems, ...friendAcceptedItems, ...likeItems, ...commentItems]
         .sort(byNewest)
         .slice(0, NOTIFY_ITEM_CAP)
       const announcementItems = [...announcementRecords]
