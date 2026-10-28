@@ -60,9 +60,11 @@ import {
 import {
   createPlazaPost,
   createPostComment,
+  deleteBookRating,
   deletePlazaPost,
   deletePostComment,
   enterDraftFor,
+  fetchBookRatings,
   fetchPlazaDetail,
   fetchPlazaPost,
   fetchPlazaPosts,
@@ -84,6 +86,8 @@ import {
   plazaReaderStory,
   plazaTemplateNameFor,
   publishToPlaza,
+  rateBook,
+  ratingAverageText,
   reportPlazaPost,
   reportPostComment,
   reportPublication,
@@ -3426,7 +3430,7 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
         <div className="notify-empty">
           <img className="empty-art" src="/art/empty-messages-512.webp" alt="" loading="lazy" />
           <p>
-            {tab === "activity" && "还没有互动消息——关注、好友申请和评论都会记在这里。"}
+            {tab === "activity" && "还没有互动消息——关注、好友申请、评论和评价都会记在这里。"}
             {tab === "announcements" && "暂无公告。"}
             {tab === "system" && "暂无系统消息。密码重设、恢复邮箱变更这类账号动态会记在这里。"}
           </p>
@@ -3459,7 +3463,9 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
                                 ? " 赞了你的帖子"
                                 : item.kind === "comment"
                                   ? " 评论了你的帖子"
-                                  : " 与你有了新的互动"}
+                                  : item.kind === "rating"
+                                    ? " 评价了你的书"
+                                    : " 与你有了新的互动"}
                       </span>
                       {item.kind === "friend_request" && item.message ? (
                         <span className="notify-row-body">「{item.message}」</span>
@@ -3469,6 +3475,9 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
                       ) : null}
                       {item.kind === "like" && item.target?.excerpt ? (
                         <span className="notify-row-body">帖子：{item.target.excerpt}</span>
+                      ) : null}
+                      {item.kind === "rating" && item.target?.bookTitle ? (
+                        <span className="notify-row-body">《{item.target.bookTitle}》· {item.target.stars} 星{item.target.ratingText ? `：「${item.target.ratingText}」` : ""}</span>
                       ) : null}
                       {item.at && <small>{notifyTime(item.at)}</small>}
                     </span>
@@ -5230,6 +5239,9 @@ function StoreBookCard({ book, onOpen }) {
         </div>
         <div className="plaza-meta">
           <span>{plazaLengthLabel(book)}</span>
+          {book.ratingCount > 0 && ratingAverageText(book) && (
+            <span className="store-card-rating">★ {ratingAverageText(book)} · {book.ratingCount} 条评价</span>
+          )}
           {book.shareCount > 0 && <span>被分享 {book.shareCount} 次</span>}
         </div>
       </div>
@@ -5251,7 +5263,7 @@ const STORE_SORTS = [
  * world. Publishing a line shelves it here — the publish flow lives
  * one tap away in the heading.
  */
-function Store({ onNavigate, onOpenBook, onPublish }) {
+function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
   const [shelf, setShelf] = useState("");
   const [sort, setSort] = useState("latest");
   const [query, setQuery] = useState("");
@@ -5259,6 +5271,20 @@ function Store({ onNavigate, onOpenBook, onPublish }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+
+  // Keep-alive freshness (RATINGS): the store view stays mounted
+  // (§37 J), so without this its cards would keep the counts they
+  // were fetched with — rate a book in its detail page, come back,
+  // and the card must already carry the average. Every navigation
+  // hands the active view a fresh route object; when it changes
+  // while this view is the mounted one, silently refetch (existing
+  // cards stay on screen, scroll and filters untouched).
+  const mountedSignal = useRef(resumeSignal);
+  useEffect(() => {
+    if (resumeSignal === mountedSignal.current) return;
+    mountedSignal.current = resumeSignal;
+    setRetry((value) => value + 1);
+  }, [resumeSignal]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
@@ -6222,6 +6248,226 @@ function PlazaEntryOption({ icon, title, note, muted = false, onClick }) {
   );
 }
 
+/** Display stars for a value: whole filled stars, the precise number always rides beside it as text. */
+function RatingStars({ value = 0 }) {
+  const full = Math.round(Math.min(5, Math.max(0, Number(value) || 0)));
+  return (
+    <span className="rating-stars" aria-hidden="true">
+      {"★".repeat(full)}
+      <span className="rating-stars-off">{"★".repeat(5 - full)}</span>
+    </span>
+  );
+}
+
+/**
+ * The book's rating panel (RATINGS): the honest average + count, the
+ * review list (newest first), and the signed-in reader's own rating
+ * form — one rating per reader, re-posting edits it, deleting
+ * removes it. The author of the book gets an explanation instead of
+ * a form (the server hard-rejects self-rating anyway); a signed-out
+ * reader gets the sign-in door. No average is ever printed for a
+ * book nobody has rated.
+ */
+function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpenProfile }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [draftStars, setDraftStars] = useState(0);
+  const [draftText, setDraftText] = useState("");
+  const [seededFor, setSeededFor] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
+  const token = () => authClient.getAccessToken();
+
+  const load = useCallback(async () => {
+    try {
+      const payload = await fetchBookRatings({
+        id: bookId,
+        getAccessToken: account.user ? token : undefined,
+      });
+      setData(payload);
+      setError("");
+      return payload;
+    } catch {
+      setError("评价暂时没能打开，请稍后再试。");
+      return null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId, account.user]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  // Prefill the form from my existing rating once per server copy of
+  // it — an edit in progress is never overwritten by a later refetch.
+  useEffect(() => {
+    const mine = data?.viewerRating;
+    const seed = mine ? `${mine.id}:${mine.updatedAt}` : "";
+    if (seed && seed !== seededFor) {
+      setSeededFor(seed);
+      setDraftStars(mine.stars);
+      setDraftText(mine.text || "");
+    }
+    if (!mine && seededFor) {
+      setSeededFor("");
+      setDraftStars(0);
+      setDraftText("");
+    }
+  }, [data, seededFor]);
+
+  const submit = async () => {
+    if (!account.user) { onOpenAccount(); return; }
+    if (!draftStars) { setFormError("先点一下星星，给这本书打个分吧。"); return; }
+    setBusy(true);
+    setFormError("");
+    try {
+      await rateBook({ id: bookId, stars: draftStars, text: draftText, getAccessToken: token });
+      await load();
+    } catch (failure) {
+      if (failure?.code === "auth-required") onOpenAccount();
+      else setFormError(failure?.message || "评价没能保存，请稍后再试。");
+    } finally { setBusy(false); }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    setFormError("");
+    try {
+      await deleteBookRating({ id: bookId, getAccessToken: token });
+      setSeededFor("");
+      setDraftStars(0);
+      setDraftText("");
+      await load();
+    } catch (failure) {
+      if (failure?.code === "auth-required") onOpenAccount();
+      else setFormError(failure?.message || "评价没能删掉，请稍后再试。");
+    } finally { setBusy(false); }
+  };
+
+  const loadMore = async () => {
+    if (!data?.nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await fetchBookRatings({
+        id: bookId,
+        cursor: data.nextCursor,
+        getAccessToken: account.user ? token : undefined,
+      });
+      setData((current) => current ? { ...current, ratings: [...current.ratings, ...page.ratings], nextCursor: page.nextCursor } : current);
+    } catch { setError("更多评价没能打开，请稍后再试。"); } finally { setLoadingMore(false); }
+  };
+
+  const mine = data?.viewerRating || null;
+  const draftLength = [...draftText].length;
+  return (
+    <section className="plaza-panel book-ratings" aria-label="读者评价">
+      <div className="plaza-panel-heading">
+        <h2>读者评价</h2>
+        {data && data.ratingCount > 0 && <span className="book-ratings-count">{data.ratingCount} 条评价</span>}
+      </div>
+      {!data && !error && <p className="plaza-note" role="status">正在打开评价…</p>}
+      {error && <p className="plaza-thread-error" role="alert">{error}</p>}
+      {data && (
+        <>
+          {data.ratingCount > 0 ? (
+            <div className="book-ratings-summary">
+              <strong className="book-ratings-average">{ratingAverageText(data)}</strong>
+              <RatingStars value={data.ratingAverage} />
+              <span className="book-ratings-summary-note">读者打分</span>
+            </div>
+          ) : (
+            <p className="book-ratings-empty">还没有人评价这本书——读过的话，来打第一个分吧。</p>
+          )}
+
+          {data.viewerIsAuthor ? (
+            <p className="plaza-note book-ratings-own-note">这是你的书，不能给自己评分；读者的评价会记在这里。</p>
+          ) : !account.user ? (
+            <button type="button" className="book-ratings-signin" onClick={onOpenAccount}>
+              登录后评价这本书
+            </button>
+          ) : (
+            <div className="book-ratings-form">
+              <div className="book-ratings-picker" role="group" aria-label="给这本书打分">
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`book-ratings-pick ${value <= draftStars ? "is-on" : ""}`}
+                    aria-label={`打 ${value} 星`}
+                    aria-pressed={draftStars === value}
+                    onClick={() => setDraftStars(value)}
+                  >
+                    ★
+                  </button>
+                ))}
+                <span className="book-ratings-pick-note">{draftStars ? `${draftStars} 星` : "点星打分"}</span>
+              </div>
+              <textarea
+                className="plaza-composer-input book-ratings-input"
+                value={draftText}
+                maxLength={300}
+                rows={3}
+                onChange={(event) => setDraftText(event.target.value)}
+                placeholder="写点读后感（可不写）"
+                aria-label="写评价"
+              />
+              <div className="book-ratings-form-foot">
+                <span className={`plaza-composer-count ${draftLength > 270 ? "is-near" : ""}`}>{draftLength} / 300</span>
+                <span className="book-ratings-actions">
+                  {mine && (
+                    <button type="button" className="plaza-thread-delete" disabled={busy} onClick={() => void remove()}>
+                      删除我的评价
+                    </button>
+                  )}
+                  <Button variant="secondary" disabled={busy || !draftStars} onClick={() => void submit()}>
+                    {mine ? "保存修改" : "发表评价"}
+                  </Button>
+                </span>
+              </div>
+              {formError && <p className="plaza-thread-error" role="alert">{formError}</p>}
+            </div>
+          )}
+
+          {data.ratings.length > 0 && (
+            <ul className="book-ratings-list">
+              {data.ratings.map((rating) => (
+                <li key={rating.id} className="book-ratings-row">
+                  {onOpenProfile && rating.authorUid ? (
+                    <button
+                      type="button"
+                      className="book-ratings-face"
+                      onClick={() => onOpenProfile(rating.authorUid)}
+                      aria-label={`打开 ${rating.authorName} 的主页`}
+                    >
+                      <PersonPicture picture={rating.authorPicture} size={36} />
+                    </button>
+                  ) : (
+                    <PersonPicture picture={rating.authorPicture} size={36} />
+                  )}
+                  <div className="book-ratings-copy">
+                    <div className="book-ratings-head">
+                      <strong>{rating.authorName}</strong>
+                      {rating.authorHandle && <span className="book-ratings-handle">@{rating.authorHandle}</span>}
+                      {rating.official && <span className="plaza-byline-official">官方</span>}
+                      <span className="book-ratings-row-stars"><RatingStars value={rating.stars} /></span>
+                      <small>{postTimeFor(rating.createdAt)}{rating.edited ? " · 已编辑" : ""}</small>
+                    </div>
+                    {rating.text && <p>{rating.text}</p>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {data.nextCursor && (
+            <button type="button" className="book-ratings-more" disabled={loadingMore} onClick={() => void loadMore()}>
+              {loadingMore ? "正在打开…" : "更多评价"}
+            </button>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack, backLabel = "返回广场", onReadLine, onEnter, onOpenAccount, onToast, onOpenProfile }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState("");
@@ -6341,11 +6587,15 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         </div>
       </section>
 
-      {/* Rating seat (BOOKSTORE-PLAZA): the star-rating batch mounts
-          here — average + count + the review list anchor. Reserved in
-          the layout now so that batch changes no geometry; it renders
-          nothing until real ratings exist. */}
-      <div className="plaza-rating-slot" data-rating-slot="" aria-hidden="true" />
+      {/* Ratings (RATINGS): average + count + review list + the
+          viewer's own rating form, hung on the book. */}
+      <BookRatingsSection
+        bookId={detail.id}
+        account={account}
+        authClient={authClient}
+        onOpenAccount={onOpenAccount}
+        onOpenProfile={onOpenProfile}
+      />
 
       <section className="plaza-panel plaza-avatar-panel">
         {onOpenProfile && detail.authorUid ? (
@@ -10182,6 +10432,7 @@ function App() {
         onNavigate={navigate}
         onOpenBook={(book) => openPlazaDetail(book, "store")}
         onPublish={() => navigate("plaza-publish")}
+        resumeSignal={route}
       />
     );
   else if (view === "merge")

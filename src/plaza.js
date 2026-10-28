@@ -643,3 +643,46 @@ export async function reportPostComment({ postId, commentId, getAccessToken, fet
 
 /** Public URL of the author's avatar portrait as published (may 404 → placeholder). */
 export const plazaPortraitPath = (id) => `/api/plaza/${encodeURIComponent(id)}/portrait`
+
+// ---- Book ratings (RATINGS) ----------------------------------------------
+//
+// Five stars plus an optional written review, hung on the bookstore
+// book — never on a plaza post. One rating per reader per book:
+// posting again edits the same rating. The average a surface prints
+// is formatted to one decimal here so every surface rounds the same
+// way; a book with no ratings has no average to print at all.
+
+/** The one-decimal average a card or detail prints ('4.5'); '' when there is nothing honest to show. */
+export function ratingAverageText(book) {
+  const count = Number.isInteger(book?.ratingCount) ? book.ratingCount : 0
+  const average = typeof book?.ratingAverage === 'number' ? book.ratingAverage : 0
+  if (count <= 0 || !(average > 0)) return ''
+  return average.toFixed(1)
+}
+
+/** A book's rating panel payload: summary pair, review list page, the viewer's own rating and authorship. */
+export async function fetchBookRatings({ id, getAccessToken, cursor = '', limit, fetchImpl = globalThis.fetch } = {}) {
+  const params = new URLSearchParams()
+  if (cursor) params.set('cursor', cursor)
+  if (limit) params.set('limit', String(limit))
+  const query = params.toString()
+  const headers = await plazaHeaders(getAccessToken)
+  const response = await fetchImpl(`/api/store/${encodeURIComponent(id)}/ratings${query ? `?${query}` : ''}`, { headers })
+  return plazaJson(response)
+}
+
+/** Rate a book (stars 1–5, optional review text), or edit my existing rating of it. */
+export async function rateBook({ id, stars, text = '', getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await plazaHeaders(getAccessToken)) }
+  const response = await fetchImpl(`/api/store/${encodeURIComponent(id)}/ratings`, {
+    method: 'POST', headers, body: JSON.stringify({ stars, text }),
+  })
+  return plazaJson(response)
+}
+
+/** Delete my own rating of a book. */
+export async function deleteBookRating({ id, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { ...(await plazaHeaders(getAccessToken)) }
+  const response = await fetchImpl(`/api/store/${encodeURIComponent(id)}/ratings`, { method: 'DELETE', headers })
+  return plazaJson(response)
+}

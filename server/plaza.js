@@ -84,8 +84,9 @@ function summaryOf(record) {
     worldName: record.worldName,
     // Real counters only (BOOKSTORE-PLAZA): how many plaza posts share
     // this book, maintained by the feed service as posts come and go;
-    // the rating pair is the next batch's reserved seat — present in
-    // the shape from the start, honestly zero until real ratings exist.
+    // the rating pair (RATINGS) is the ratings service's denormalised
+    // summary of the book's real rating records — honestly zero until
+    // a real rating exists, and never set by anything else.
     shareCount: Math.max(0, record.shareCount || 0),
     ratingAverage: typeof record.ratingAverage === 'number' ? record.ratingAverage : 0,
     ratingCount: Math.max(0, record.ratingCount || 0),
@@ -140,6 +141,15 @@ function detailOf(record) {
 }
 
 const NOT_FOUND = () => new ApiError(404, '这条故事线已下架或不存在。')
+
+/**
+ * The 热门 ranking's rating prior strength (RATINGS): a book's mean
+ * stars enter its heat at weight count / (count + this). Ten real
+ * ratings halve the shrinkage; one rating barely moves the needle,
+ * so a brand-new book with a single friendly 5-star can never ride
+ * its average past books with real shares and likes.
+ */
+export const RATING_PRIOR_STRENGTH = 10
 
 function redLineViolation(story) {
   const texts = []
@@ -323,7 +333,17 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           .filter((book) => book.lineStatus !== 'serializing')
           .sort((a, b) => String(b.completedAt || b.publishedAt).localeCompare(String(a.completedAt || a.publishedAt)))
       } else if (sort === 'hot') {
-        const heat = (book) => (book.shareCount || 0) + (engagement?.get(book.id) || 0)
+        // Ratings join the heat SHRUNK (RATINGS): the average counts
+        // at weight n/(n+10), so a single 5-star rating contributes
+        // ≈0.45 — visible, but it can never outrank one real share —
+        // while a book with a dozen ratings earns its average almost
+        // in full. Real engagement (shares + post likes) stays the
+        // spine of the ranking; the average itself is display-only
+        // everywhere else.
+        const ratingHeat = (book) => (book.ratingCount || 0) > 0
+          ? (book.ratingAverage || 0) * (book.ratingCount / (book.ratingCount + RATING_PRIOR_STRENGTH))
+          : 0
+        const heat = (book) => (book.shareCount || 0) + (engagement?.get(book.id) || 0) + ratingHeat(book)
         books = books.sort((a, b) => heat(b) - heat(a)
           || String(b.publishedAt).localeCompare(String(a.publishedAt)))
       } else {
@@ -372,6 +392,32 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         if (shareCount === (record.shareCount || 0)) return shareCount
         await backend.putPublication({ ...record, shareCount, updatedAt: now().toISOString() })
         return shareCount
+      })
+    },
+
+    /**
+     * The rating summary the ratings service mirrors onto the book
+     * after every rating write (RATINGS): it recomputes the pair
+     * from the rating records (the source of truth) and this applies
+     * it, serialised with the record's other counter writes. Any
+     * record state accepts the mirror (a withdrawn book keeps the
+     * ratings it earned; they show again if it is re-shelved); a
+     * missing record is a no-op, never an error.
+     */
+    async syncRatingSummary(id, { ratingAverage = 0, ratingCount = 0 } = {}) {
+      if (!backend) return null
+      return serialise(`publication:${id}`, async () => {
+        const record = await backend.getPublication(id)
+        if (!record) return null
+        const next = {
+          ratingAverage: typeof ratingAverage === 'number' && Number.isFinite(ratingAverage) ? ratingAverage : 0,
+          ratingCount: Math.max(0, Math.trunc(ratingCount) || 0),
+        }
+        if (next.ratingAverage === (record.ratingAverage || 0) && next.ratingCount === (record.ratingCount || 0)) {
+          return next
+        }
+        await backend.putPublication({ ...record, ...next, updatedAt: now().toISOString() })
+        return next
       })
     },
 

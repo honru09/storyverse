@@ -1669,7 +1669,39 @@ button.settings-row{cursor:pointer}
 .store-card-status{position:absolute;top:10px;right:10px;padding:3px 9px;border-radius:999px;background:rgba(6,13,31,.72);color:#fff;font-size:11px;font-weight:600;letter-spacing:.02em}
 .store-book-body{padding:11px 2px 0}
 .store-book-intro{margin:8px 0 0;color:var(--dim);font-size:13px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.plaza-rating-slot{display:none}
+.store-card-rating{color:var(--amber);font-weight:600;white-space:nowrap}
+
+/* Book ratings (RATINGS): summary, the reader's own form, the review list. */
+.rating-stars{color:var(--amber);font-size:13px;letter-spacing:1px;white-space:nowrap}
+.rating-stars-off{color:var(--line-2)}
+.book-ratings-count{color:var(--dim);font-size:13px}
+.book-ratings-summary{display:flex;align-items:baseline;gap:10px;margin:2px 0 14px}
+.book-ratings-average{font-size:30px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.book-ratings-summary .rating-stars{font-size:16px}
+.book-ratings-summary-note{color:var(--dim-2);font-size:12.5px}
+.book-ratings-empty{margin:0 0 6px;color:var(--dim);font-size:14px;line-height:1.6}
+.book-ratings-own-note{margin-top:2px}
+.book-ratings-signin{margin-top:2px;min-height:38px;padding:7px 16px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--ink);font-size:13.5px;font-weight:550;cursor:pointer}
+.book-ratings-form{margin-top:4px}
+.book-ratings-picker{display:flex;align-items:center;gap:2px}
+.book-ratings-pick{padding:2px 3px;border:0;background:transparent;color:var(--line-2);font-size:26px;line-height:1;cursor:pointer;transition:transform var(--dur-press) var(--ease-press),color var(--dur-state) var(--ease-out)}
+.book-ratings-pick:active{transform:scale(.88)}
+.book-ratings-pick.is-on{color:var(--amber)}
+.book-ratings-pick-note{margin-left:8px;color:var(--dim);font-size:13px}
+.book-ratings-input{margin-top:10px;min-height:64px}
+.book-ratings-form-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px}
+.book-ratings-actions{display:flex;align-items:center;gap:12px}
+.book-ratings-list{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:14px}
+.book-ratings-row{display:flex;gap:10px;align-items:flex-start}
+.book-ratings-face{padding:0;border:0;background:transparent;cursor:pointer;flex:0 0 auto}
+.book-ratings-copy{flex:1;min-width:0}
+.book-ratings-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.book-ratings-head strong{font-size:14px}
+.book-ratings-handle{color:var(--dim-2);font-size:12.5px}
+.book-ratings-row-stars .rating-stars{font-size:12px}
+.book-ratings-head small{color:var(--dim-2);font-size:12px}
+.book-ratings-copy p{margin:4px 0 0;font-size:14px;line-height:1.65;color:var(--ink)}
+.book-ratings-more{margin-top:14px;width:100%;min-height:38px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--dim);font-size:13.5px;cursor:pointer}
 
 .plaza-composer-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;margin-top:22px;padding:13px 18px;border:1px solid var(--line);border-radius:999px;background:var(--glass);color:var(--dim-2);font-size:14.5px;text-align:left;cursor:pointer;transition:transform var(--dur-press) var(--ease-press),border-color var(--dur-state) var(--ease-out)}
 .plaza-composer-bar:active{transform:scale(.99)}

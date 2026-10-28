@@ -12,6 +12,8 @@ import { createAvatarService } from './avatar.js'
 import { createPlazaService } from './plaza.js'
 import { createPlazaFeedService } from './plaza-feed.js'
 import { createPlazaFeedStore } from './plaza-feed-store.js'
+import { createBookRatingsService } from './book-ratings.js'
+import { createBookRatingsStore } from './book-ratings-store.js'
 import { createSocialService } from './social.js'
 import { createLibraryService } from './library.js'
 import { createBillingService, pregeneratedFor, textSceneFor } from './billing.js'
@@ -189,7 +191,7 @@ async function serveStatic(request, response, pathname, distDir) {
   response.end(request.method === 'HEAD' ? undefined : bytes)
 }
 
-export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth, cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza = createPlazaService({ env }), plazaFeed, social, library = createLibraryService({ env }), billing = createBillingService({ env }), stripe, distDir = DEFAULT_DIST } = {}) {
+export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth, cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza = createPlazaService({ env }), plazaFeed, ratings, social, library = createLibraryService({ env }), billing = createBillingService({ env }), stripe, distDir = DEFAULT_DIST } = {}) {
   // Billing rides the same durable store family as usage; the Stripe
   // facade is env-gated code only (BILLING.md) and fulfils through
   // the billing service's one grant path.
@@ -208,6 +210,10 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
   // from those very records — two Maps in memory mode would silently
   // break the notification chain.
   const sharedFeedStore = createPlazaFeedStore({ env })
+  // The book-ratings store is shared the same way (RATINGS): the
+  // ratings service writes the records, and the social service
+  // derives the message centre's 评价 items from those very records.
+  const sharedRatingsStore = createBookRatingsStore({ env })
   if (auth === undefined || social === undefined) {
     const identityStore = createIdentityStore({ env })
     auth ??= createAuthService({
@@ -215,9 +221,10 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
       emailCode: createEmailCodeService({ env, store: identityStore }),
       usernameAuth: createUsernameAuthService({ env, store: identityStore }),
     })
-    social ??= createSocialService({ env, identityStore, feedStore: sharedFeedStore })
+    social ??= createSocialService({ env, identityStore, feedStore: sharedFeedStore, ratingsStore: sharedRatingsStore })
   }
   plazaFeed ??= createPlazaFeedService({ env, store: sharedFeedStore, books: plaza })
+  ratings ??= createBookRatingsService({ env, store: sharedRatingsStore, books: plaza })
   // Account events for the message centre's 系统 category
   // (NOTIFY-SETTINGS §36): recorded at the route, at the moment the
   // account action succeeds — a password reset, a recovery-email
@@ -925,6 +932,43 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         }
         const book = await plaza.publish(identity, await readPlazaJson(request))
         return sendJson(response, 200, { book })
+      }
+      const storeRatingsMatch = pathname.match(/^\/api\/store\/([^/]+)\/ratings$/)
+      if (storeRatingsMatch) {
+        // Book ratings (RATINGS): five stars + an optional written
+        // review, hung on the book. The list is public like the book
+        // itself; a valid credential only adds the viewer's own
+        // rating (form prefill) and the is-author flag. Writing and
+        // deleting are the signed-in reader's own acts — one rating
+        // per reader per book, enforced by the record key itself.
+        const id = decodeURIComponent(storeRatingsMatch[1])
+        if (request.method === 'GET') {
+          let viewer = null
+          if (request.headers.authorization) {
+            try { viewer = await auth.identity(request.headers.authorization) } catch { viewer = null }
+          }
+          const params = new URL(request.url, 'http://localhost').searchParams
+          return sendJson(response, 200, await ratings.list(id, {
+            viewer,
+            cursor: params.get('cursor') || '',
+            limit: Number(params.get('limit')) || undefined,
+          }))
+        }
+        if (request.method === 'POST' || request.method === 'DELETE') {
+          let identity
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) {
+              throw new ApiError(401, request.method === 'POST' ? '请先登录，再评价这本书。' : '请先登录，再删除评价。', 'auth-required')
+            }
+            throw error
+          }
+          if (request.method === 'POST') {
+            return sendJson(response, 200, await ratings.rate(identity, id, await readAuthJson(request)))
+          }
+          return sendJson(response, 200, await ratings.remove(identity, id))
+        }
       }
       const storeMatch = pathname.match(/^\/api\/store\/([^/]+)(?:\/(report|withdraw|portrait|cover))?$/)
       if (storeMatch) {

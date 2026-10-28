@@ -6,6 +6,7 @@ import { createSocialStore, pictureSourceFor, friendshipKeyFor } from './social-
 import { emailCodeUid, normalizeEmailAddress, validEmailAddress } from './email-code.js'
 import { createPlazaStore } from './plaza-store.js'
 import { createPlazaFeedStore } from './plaza-feed-store.js'
+import { createBookRatingsStore } from './book-ratings-store.js'
 import { createAvatarStore, collectionFromRecord, imageSlotFor } from './avatar-store.js'
 import { normalizedStoredImage } from './portrait-image.js'
 import { createCoverStore } from './cover-store.js'
@@ -51,14 +52,15 @@ export const HANDLE_PATTERN = /^[a-z0-9_]{3,20}$/
  * reader — its item `kind` is an open enum ('follow', 'friend_request',
  * 'friend_accepted', and — since BOOKSTORE-PLAZA — 'like' and
  * 'comment' from the plaza feed, derived from the like/comment records
- * themselves). All slot into the same category, the same list shape
+ * themselves; RATINGS added 'rating', derived from the book-rating
+ * records the same way). All slot into the same category, the same list shape
  * and the same read watermark, which is kept per user × category, never per kind).
  * 公告 is official-only. 系统 is the account's own security events,
  * written by the account routes at the moment the action succeeds —
  * never invented, never back-filled.
  */
 export const NOTIFY_CATEGORIES = ['activity', 'announcements', 'system']
-export const NOTIFY_ACTIVITY_KINDS = ['follow', 'like', 'comment', 'friend_request', 'friend_accepted']
+export const NOTIFY_ACTIVITY_KINDS = ['follow', 'like', 'comment', 'friend_request', 'friend_accepted', 'rating']
 const NOTIFY_ITEM_CAP = 50
 
 /**
@@ -140,6 +142,7 @@ export function createSocialService({
   store,
   plazaStore,
   feedStore,
+  ratingsStore,
   avatarStore,
   identityStore,
   coverStore,
@@ -154,6 +157,12 @@ export function createSocialService({
   // retracts the item it made. Absent backend (no data store) simply
   // contributes no items.
   const feedBackend = feedStore === undefined ? createPlazaFeedStore({ env }) : feedStore
+  // Book ratings (RATINGS): the 互动 category derives a "rated your
+  // book" item from each rating record pointing at one of the
+  // caller's books — same derive-from-real-records discipline, so
+  // deleting a rating retracts the item, and an edit (which keeps
+  // the record's createdAt) never re-notifies.
+  const ratingsBackend = ratingsStore === undefined ? createBookRatingsStore({ env }) : ratingsStore
   const avatars = avatarStore === undefined ? createAvatarStore({ env }) : avatarStore
   const identities = identityStore === undefined ? createIdentityStore({ env }) : identityStore
   const covers = coverStore === undefined ? createCoverStore({ env }) : coverStore
@@ -1042,7 +1051,7 @@ export function createSocialService({
     async notifications(identity) {
       if (!backend) throw new ApiError(503, '消息服务尚未配置。')
       const byNewest = (a, b) => String(b.at || '').localeCompare(String(a.at || ''))
-      const [edges, announcementRecords, eventRecords, readMarks, incomingRequests, outgoingRequests, postLikes, postComments] = await Promise.all([
+      const [edges, announcementRecords, eventRecords, readMarks, incomingRequests, outgoingRequests, postLikes, postComments, bookRatings] = await Promise.all([
         backend.listFollowsByFollowee(identity.uid),
         backend.listAnnouncements(),
         backend.listAccountEvents(identity.uid),
@@ -1051,6 +1060,7 @@ export function createSocialService({
         backend.listFriendRequestsByFrom(identity.uid),
         feedBackend ? feedBackend.listLikesByPostAuthor(identity.uid).catch(() => []) : [],
         feedBackend ? feedBackend.listCommentsByPostAuthor(identity.uid).catch(() => []) : [],
+        ratingsBackend ? ratingsBackend.listRatingsByBookAuthor(identity.uid).catch(() => []) : [],
       ])
       const followItems = await Promise.all([...edges]
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
@@ -1150,7 +1160,38 @@ export function createSocialService({
             at: record.createdAt || null,
           }
         }))
-      const activityItems = [...followItems, ...friendRequestItems, ...friendAcceptedItems, ...likeItems, ...commentItems]
+      // Ratings of the caller's own books (RATINGS): an 互动 item per
+      // rating record, keyed and TIMED by the record's createdAt —
+      // editing a rating updates the stars/text the item shows (the
+      // record is read live) without making it new again, and
+      // deleting the rating deletes the record, so the item retracts
+      // like an un-like. Your own books cannot be rated by you, and
+      // the actor filter below is the same belt-and-braces the like
+      // and comment items wear.
+      const ratingItems = await Promise.all(bookRatings
+        .filter((record) => record.userUid && record.userUid !== identity.uid)
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        .slice(0, NOTIFY_ITEM_CAP)
+        .map(async (record) => {
+          const person = await resolvedPerson(record.userUid, identity)
+          return {
+            id: `rating:${record.bookId}:${record.userUid}`,
+            kind: 'rating',
+            actorUid: record.userUid,
+            displayName: person.displayName,
+            handle: person.handle,
+            picture: person.picture,
+            target: {
+              type: 'book',
+              bookId: record.bookId,
+              bookTitle: record.bookTitle || '',
+              stars: record.stars,
+              ratingText: clip(record.text, 120),
+            },
+            at: record.createdAt || null,
+          }
+        }))
+      const activityItems = [...followItems, ...friendRequestItems, ...friendAcceptedItems, ...likeItems, ...commentItems, ...ratingItems]
         .sort(byNewest)
         .slice(0, NOTIFY_ITEM_CAP)
       const announcementItems = [...announcementRecords]
