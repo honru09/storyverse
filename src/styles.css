@@ -1746,3 +1746,38 @@ button.settings-row{cursor:pointer}
 .plaza-thread-composer input{flex:1;min-width:0;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--ink);font-size:14px;padding:9px 15px;outline:none;font-family:inherit}
 .plaza-thread-composer input:focus{border-color:var(--line-2)}
 @media (min-width:1050px){.plaza-post{padding:20px}}
+/* BILLING (§48): the member window — same card language as the
+   settings groups it is opened from; price cards in a 3-up grid,
+   the featured card carrying the one badge. Theme variables only,
+   so all three shell themes dress it without extra work. */
+.billing-panel{display:flex;flex-direction:column;gap:18px}
+.billing-state{border:1px solid var(--profile-edge);border-radius:18px;background:var(--profile-panel);padding:14px 16px}
+.billing-state-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:30px;font-size:14.5px;color:var(--profile-ink)}
+.billing-state-row strong{font-size:16px;font-weight:650;color:var(--profile-ink-strong)}
+.billing-state-value{font-size:14px;color:var(--profile-dim);white-space:nowrap}
+.billing-state-note{margin:10px 0 0;font-size:12.5px;line-height:1.65;color:var(--profile-faint)}
+.billing-redeem-label{display:block;margin:0 0 8px;font-size:13px;font-weight:650;color:var(--profile-dim)}
+.billing-redeem-row{display:flex;gap:8px}
+.billing-redeem-row input{flex:1;min-width:0;min-height:44px;padding:8px 12px;border:1px solid var(--profile-edge);border-radius:12px;background:var(--profile-panel);color:var(--profile-ink-strong);font:inherit;font-size:14px;letter-spacing:.04em}
+.billing-redeem-row button{flex:0 0 auto;min-height:44px;padding:8px 18px;border:0;border-radius:12px;background:var(--profile-ink-strong);color:var(--profile-panel);font:inherit;font-size:14.5px;font-weight:600;cursor:pointer}
+.billing-redeem-row button:disabled{opacity:.45;cursor:not-allowed}
+.billing-note-ok{margin:10px 0 0;font-size:13.5px;color:var(--ok, #3da35d)}
+.billing-error{margin:10px 0 0;font-size:13.5px;line-height:1.55;color:var(--danger)}
+.billing-loading{margin:0;font-size:14px;color:var(--profile-dim)}
+.billing-retry{margin-top:10px;min-height:40px;padding:6px 16px;border:1px solid var(--profile-edge);border-radius:10px;background:transparent;color:var(--profile-ink);font:inherit;cursor:pointer}
+.billing-group-title{margin:0 0 8px;font-size:13px;font-weight:650;color:var(--profile-dim)}
+.billing-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.billing-card{position:relative;display:flex;flex-direction:column;gap:3px;padding:12px 10px;border:1px solid var(--profile-edge);border-radius:14px;background:var(--profile-panel)}
+.billing-card strong{font-size:14px;font-weight:600;color:var(--profile-ink-strong)}
+.billing-card-price{font-size:19px;font-weight:700;color:var(--profile-ink-strong)}
+.billing-card small{font-size:11.5px;line-height:1.5;color:var(--profile-faint)}
+.billing-card.is-featured{border-color:var(--selected-border);background:var(--selected-surface)}
+.billing-card-badge{position:absolute;top:8px;right:8px;padding:1px 7px;border-radius:999px;background:var(--profile-ink-strong);color:var(--profile-panel);font-size:10.5px;font-weight:650}
+.billing-channel-note{margin:0;padding:12px 14px;border:1px dashed var(--profile-edge);border-radius:12px;font-size:13.5px;line-height:1.6;color:var(--profile-dim)}
+.billing-buy{display:flex;flex-direction:column;gap:8px}
+.billing-buy-button{min-height:44px;border:1px solid var(--profile-edge);border-radius:12px;background:var(--profile-panel);color:var(--profile-ink-strong);font:inherit;font-size:14.5px;font-weight:600;cursor:pointer}
+.billing-buy-button:disabled{opacity:.45;cursor:not-allowed}
+.billing-rules{border-top:1px solid var(--profile-edge);padding-top:12px}
+.billing-rules summary{font-size:13.5px;font-weight:600;color:var(--profile-dim);cursor:pointer}
+.billing-rules ul{margin:10px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+.billing-rules li{font-size:13px;line-height:1.65;color:var(--profile-faint)}

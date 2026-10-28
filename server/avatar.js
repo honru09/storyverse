@@ -280,7 +280,7 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
     return typeof candidate?.id === 'string' && candidate.id ? candidate.id : null
   }
 
-  async function produce(identity, collection, avatar, { lockPart = null } = {}) {
+  async function produce(identity, collection, avatar, { lockPart = null, credit = false } = {}) {
     const uid = identity.uid
     const commit = async (nextAvatar) => {
       const at = collection.avatars.findIndex((item) => item.id === nextAvatar.id)
@@ -292,7 +292,9 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
     }
     const day = dayKeyFor(now())
     const used = await backend.getDailyCount(uid, day)
-    if (used >= limit) throw new ApiError(429, `今天的立绘生成次数已用完（每天 ${limit} 张），请明天再试。`, 'avatar-quota')
+    // BILLING: image credits paint past the daily cap (the credit is
+    // the spend; the free daily count is not incremented for it).
+    if (!credit && used >= limit) throw new ApiError(429, `今天的立绘生成次数已用完（每天 ${limit} 张），请明天再试。`, 'avatar-quota')
     const currentSlot = imageSlotFor(collection, avatar.id, 'current')
     const previousSlot = imageSlotFor(collection, avatar.id, 'previous')
     const previousRecord = await backend.getImage(uid, currentSlot)
@@ -335,7 +337,7 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
       model,
       updatedAt: now().toISOString(),
     })
-    await backend.incrementDaily(uid, day)
+    if (!credit) await backend.incrementDaily(uid, day)
     const ready = {
       ...avatar,
       portrait: {
@@ -485,7 +487,7 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
         return { avatars: collection.avatars, mainId: avatarId }
       })
     },
-    async generate(identity, body) {
+    async generate(identity, body, options = {}) {
       if (!available) throw new ApiError(503, '立绘生成尚未配置。')
       return serialise(identity.uid, async () => {
         const collection = (await loadCollection(identity.uid)) || { mainId: null, avatars: [] }
@@ -515,7 +517,7 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
         const lockPart = typeof body?.lockPart === 'string' && AVATAR_LOCK_PARTS[body.lockPart]
           ? body.lockPart
           : null
-        return produce(identity, collection, avatar, { lockPart })
+        return produce(identity, collection, avatar, { lockPart, credit: options?.credit === true })
       })
     },
     async fetchImage(identity, which = 'current', avatarId = null) {

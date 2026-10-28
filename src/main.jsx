@@ -129,6 +129,8 @@ import InterventionOverlay from "./components/InterventionOverlay.jsx";
 import WorldArtwork from "./components/WorldArtwork.jsx";
 import StoryCover from "./components/StoryCover.jsx";
 import AccountPanel, { ShellThemeSegments } from "./components/AccountPanel.jsx";
+import BillingPanel from "./components/BillingPanel.jsx";
+import { billingGateMember } from "./billing.js";
 import { createAuthClient } from "./auth/client.js";
 import ReadingPreferences from "./components/ReadingPreferences.jsx";
 import { createReadingPreferencesStore, getReaderAppearance } from "./reading-preferences.js";
@@ -7263,7 +7265,7 @@ function ProfileStoreCard({ publication, onOpen }) {
   );
 }
 
-function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, onOpenAccount, onOpenLibrary, onOpenHelp, onOpenProfile, onNavigate }) {
+function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, onOpenAccount, onOpenBilling, onOpenLibrary, onOpenHelp, onOpenProfile, onNavigate }) {
   // 设置 (NOTIFY-SETTINGS §36; window form DEDUP-FIX §40 ②, user
   // order 2026-10-28): the groups live INSIDE the settings window —
   // appearance (theme + the motion switch that used to live in the
@@ -7323,6 +7325,14 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
           <span className="settings-row-copy">
             <strong>我的账号</strong>
             <small>用量、登录方式与恢复邮箱都在账号页里</small>
+          </span>
+          <Icon name="chevron" size={16} />
+        </button>
+        <button type="button" className="settings-row" onClick={onOpenBilling}>
+          <span className="settings-row-ic"><Icon name="spark" size={19} /></span>
+          <span className="settings-row-copy">
+            <strong>会员与额度</strong>
+            <small>会员到期、章额度与兑换码</small>
           </span>
           <Icon name="chevron" size={16} />
         </button>
@@ -7488,6 +7498,9 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   // The settings window (§40 ②): the page carries one entry row; the
   // groups themselves render inside a ReadingDialog.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The member window (BILLING): opened from the settings window's
+  // 账号 group, in the same dialog form.
+  const [billingOpen, setBillingOpen] = useState(false);
   // The avatar on the stage (PROFILE-ENRICH §35): the main avatar by
   // default; a return visit restores the tile left selected.
   const [stageAvatarId, setStageAvatarId] = useState(() => profileViewState(uid)?.avatarId || "");
@@ -8219,11 +8232,17 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           shellTheme={shellTheme}
           onShellThemeChange={onShellThemeChange}
           onOpenAccount={() => { setSettingsOpen(false); onOpenAccount(); }}
+          onOpenBilling={() => { setSettingsOpen(false); setBillingOpen(true); }}
           onOpenLibrary={() => { setSettingsOpen(false); onOpenLibrary(); }}
           onOpenHelp={() => { setSettingsOpen(false); onOpenHelp(); }}
           onOpenProfile={(target) => { setSettingsOpen(false); onOpenProfile?.(target); }}
           onNavigate={(next) => { setSettingsOpen(false); onNavigate(next); }}
         />
+      </ReadingDialog>
+    )}
+    {billingOpen && isSelf && !windowForm && (
+      <ReadingDialog title="会员与额度" onClose={() => setBillingOpen(false)}>
+        <BillingPanel getToken={getToken} />
       </ReadingDialog>
     )}
     </>
@@ -9757,6 +9776,16 @@ function App() {
   const prepareChapter = useCallback(async (id, index, signal) => {
     const source = store.getSnapshot().library.stories.find((book) => book.id === id);
     if (!source || nextGenerationIndex(source) !== index) return;
+    // BILLING gate: preparing a chapter nobody has asked for yet is a
+    // background spend, so it is reserved for members and for lines
+    // touched within the last three days (a line being read right now
+    // always qualifies — opening it just stamped updatedAt; a record
+    // with no timestamp at all is legacy and also qualifies, so the
+    // gate never takes the prepared-next-chapter feel away from an
+    // active reader). On-demand generation is never gated here.
+    const updatedMs = source.updatedAt ? Date.parse(source.updatedAt) : NaN;
+    const activeRecently = !Number.isFinite(updatedMs) || Date.now() - updatedMs < 3 * 86_400_000;
+    if (!activeRecently && !(await billingGateMember({ getAccessToken: () => authClient.getAccessToken() }))) return;
     const result = await requestChapter(source, index, { signal, getAccessToken: () => authClient.getAccessToken() });
     if (signal.aborted) return;
     const candidate = acceptGeneratedChapter(source, result);

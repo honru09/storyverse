@@ -14,6 +14,8 @@ import { createPlazaFeedService } from './plaza-feed.js'
 import { createPlazaFeedStore } from './plaza-feed-store.js'
 import { createSocialService } from './social.js'
 import { createLibraryService } from './library.js'
+import { createBillingService, pregeneratedFor, textSceneFor } from './billing.js'
+import { createStripeService } from './stripe.js'
 
 const DEFAULT_DIST = fileURLToPath(new URL('../dist/', import.meta.url))
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2' }
@@ -187,7 +189,11 @@ async function serveStatic(request, response, pathname, distDir) {
   response.end(request.method === 'HEAD' ? undefined : bytes)
 }
 
-export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth, cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza = createPlazaService({ env }), plazaFeed, social, library = createLibraryService({ env }), distDir = DEFAULT_DIST } = {}) {
+export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth, cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza = createPlazaService({ env }), plazaFeed, social, library = createLibraryService({ env }), billing = createBillingService({ env }), stripe, distDir = DEFAULT_DIST } = {}) {
+  // Billing rides the same durable store family as usage; the Stripe
+  // facade is env-gated code only (BILLING.md) and fulfils through
+  // the billing service's one grant path.
+  stripe ??= createStripeService({ env, billing, fetchImpl })
   // Default services share ONE identity store: the accounts the auth
   // channels register must be the accounts the social service can see
   // (profile existence is account-based, ACCOUNT-POLISH §5). Firestore
@@ -249,9 +255,14 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
     response.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self'${authScripts}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'${authConnections}; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'${authFrames}`)
     let requestPath = ''
     try {
-      allowedRequest(request, server, env, request.method === 'POST')
       const pathname = new URL(request.url, 'http://localhost').pathname
       requestPath = pathname
+      // The Stripe webhook is the one POST that arrives without an
+      // Origin and from outside the app: its HMAC signature is the
+      // authentication, so the origin discipline does not apply.
+      if (pathname !== '/api/billing/stripe/webhook') {
+        allowedRequest(request, server, env, request.method === 'POST')
+      }
       if ((pathname === '/api/health' || pathname === '/healthz') && request.method === 'GET') return sendJson(response, 200, { ok: true })
       if (pathname === '/api/status' && request.method === 'GET') {
         if (!generationEnabled) return sendJson(response, 200, GENERATION_PAUSED)
@@ -295,6 +306,46 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         await noteAccountEvent(session?.uid, 'password-reset', '')
         return sendJson(response, 200, session)
       }
+      // BILLING routes: the member page state, redemption, official
+      // code minting, the env-gated Stripe checkout and its webhook.
+      // Identity always comes from the credential, never the body.
+      const billingIdentity = async (message) => {
+        try {
+          return await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, message, 'auth-required')
+          throw error
+        }
+      }
+      if (pathname === '/api/billing/me' && request.method === 'GET') {
+        const identity = await billingIdentity('请先登录，再看会员与额度。')
+        return sendJson(response, 200, await billing.publicState(identity.uid, { stripeEnabled: stripe.enabled }))
+      }
+      if (pathname === '/api/billing/redeem' && request.method === 'POST') {
+        const identity = await billingIdentity('请先登录，再兑换。')
+        const body = await readAuthJson(request)
+        return sendJson(response, 200, await billing.redeem(identity.uid, typeof body?.code === 'string' ? body.code : ''))
+      }
+      if (pathname === '/api/billing/codes' && request.method === 'POST') {
+        const identity = await billingIdentity('请先登录，再生成兑换码。')
+        return sendJson(response, 200, await billing.mintCodes(identity, await readAuthJson(request)))
+      }
+      if (pathname === '/api/billing/checkout' && request.method === 'POST') {
+        const identity = await billingIdentity('请先登录，再购买。')
+        const body = await readAuthJson(request)
+        return sendJson(response, 200, await stripe.createCheckoutSession(identity, typeof body?.productId === 'string' ? body.productId : ''))
+      }
+      if (pathname === '/api/billing/stripe/webhook' && request.method === 'POST') {
+        const chunks = []
+        let length = 0
+        for await (const chunk of request) {
+          length += chunk.length
+          if (length > 1_000_000) throw new ApiError(413, '请求数据过大。')
+          chunks.push(chunk)
+        }
+        const rawBody = Buffer.concat(chunks).toString('utf8')
+        return sendJson(response, 200, await stripe.handleWebhook(rawBody, request.headers['stripe-signature']))
+      }
       if (pathname === '/api/auth/username/recovery-email' && request.method === 'POST') {
         if (typeof auth.usernameSetRecoveryEmail !== 'function') throw new ApiError(503, '用户名登录尚未配置，请使用其他方式登录。')
         const result = await auth.usernameSetRecoveryEmail(request.headers.authorization, await readAuthJson(request))
@@ -313,6 +364,12 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         // storage outages fail open (see server/usage.js) so bookkeeping
         // problems can never take generation down with them.
         let identity = null
+        // BILLING: past the daily token ceiling, a generation may
+        // still run on a chapter credit from a quota pack — the flag
+        // is settled here and the credit is spent only after the
+        // chapter actually lands (below), so a failed generation
+        // never eats a credit.
+        let spendChapterCredit = false
         if (typeof auth.requiresIdentity === 'function' && auth.requiresIdentity()) {
           try {
             identity = await auth.identity(request.headers.authorization)
@@ -321,8 +378,15 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             throw error
           }
           const usedToday = await auth.usageDailyTotal(identity.uid)
-          if (usedToday !== null && usedToday >= auth.dailyTokenCap()) {
-            throw new ApiError(429, '今天的生成额度已用完，请明天再继续创作。', 'quota-exceeded')
+          const cap = billing.available
+            ? await billing.dailyTokenCapFor(identity.uid, auth.dailyTokenCap())
+            : auth.dailyTokenCap()
+          if (usedToday !== null && usedToday >= cap) {
+            if (billing.available && await billing.hasChapterCredit(identity.uid)) {
+              spendChapterCredit = true
+            } else {
+              throw new ApiError(429, '今天的生成额度已用完，请明天再继续创作。', 'quota-exceeded')
+            }
           }
         }
         const body = await readJson(request)
@@ -348,6 +412,25 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           })}\n`)
         } catch { /* ledger is best-effort */ }
         if (identity && !result?.cached) await auth.recordUsage(identity.uid, result?.usage ?? 'unknown')
+        // BILLING cost ledger: every real generation is metered with
+        // its scene and whether it was prepared ahead of the reader,
+        // so chapter cost and pre-generation waste stay measurable.
+        // A pending chapter credit is spent now that the chapter
+        // exists. All of it is best-effort and never fails the chapter.
+        if (identity && !result?.cached && billing.available) {
+          if (spendChapterCredit) await billing.consumeChapterCredit(identity.uid)
+          await billing.recordTextCost({
+            uid: identity.uid,
+            scene: textSceneFor(body),
+            pregenerated: pregeneratedFor(body),
+            model: modelForLedger(),
+            usage: result?.usage ?? 'unknown',
+            storyId: typeof body.story?.id === 'string' ? body.story.id : null,
+            chapterIndex: body.index,
+            chapterId: typeof result?.chapter?.id === 'string' ? result.chapter.id : null,
+            creditUsed: spendChapterCredit,
+          })
+        }
         return sendJson(response, 200, result)
       }
       if (pathname === '/api/cover' && request.method === 'POST') {
@@ -362,7 +445,22 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           throw error
         }
         const coverBody = await readCoverJson(request)
-        const result = await cover.request(identity, coverBody)
+        // BILLING: past the daily painting cap, an image credit buys
+        // one more cover; the credit is spent only on success.
+        let coverCredit = false
+        let result
+        try {
+          result = await cover.request(identity, coverBody)
+        } catch (error) {
+          if (!(error instanceof ApiError) || error.code !== 'cover-quota'
+            || !billing.available || !(await billing.hasImageCredit(identity.uid))) throw error
+          result = await cover.request(identity, coverBody, { credit: true })
+          coverCredit = true
+        }
+        if (billing.available) {
+          if (coverCredit) await billing.consumeImageCredit(identity.uid)
+          await billing.recordImageCost({ uid: identity.uid, scene: 'cover', model: cover.model, creditUsed: coverCredit })
+        }
         // Cover ledger: identity, story id, model and provider usage only —
         // never the prompt and never image bytes.
         try {
@@ -439,7 +537,22 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           throw error
         }
         const avatarBody = await readCoverJson(request)
-        const result = await avatar.generate(identity, avatarBody)
+        // BILLING: same image-credit path as covers — past the daily
+        // cap, one credit buys one more portrait, spent on success.
+        let avatarCredit = false
+        let result
+        try {
+          result = await avatar.generate(identity, avatarBody)
+        } catch (error) {
+          if (!(error instanceof ApiError) || error.code !== 'avatar-quota'
+            || !billing.available || !(await billing.hasImageCredit(identity.uid))) throw error
+          result = await avatar.generate(identity, avatarBody, { credit: true })
+          avatarCredit = true
+        }
+        if (billing.available) {
+          if (avatarCredit) await billing.consumeImageCredit(identity.uid)
+          await billing.recordImageCost({ uid: identity.uid, scene: 'avatar', model: avatar.model, creditUsed: avatarCredit })
+        }
         // Avatar ledger: identity, model, anchor kind and provider usage
         // only — never the description and never image bytes.
         try {

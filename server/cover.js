@@ -174,10 +174,13 @@ export function createCoverService({ env = process.env, store, imageGenerate, tr
     return run
   }
 
-  async function produce(identity, payload) {
+  async function produce(identity, payload, { credit = false } = {}) {
     const day = dayKeyFor(now())
     const used = await backend.getDailyCount(identity.uid, day)
-    if (used >= limit) throw new ApiError(429, `今天的封面生成次数已用完（每天 ${limit} 张），请明天再试。`, 'cover-quota')
+    // BILLING: a caller holding image credits may paint past the daily
+    // cap; the credit is the spend, so the free daily count is not
+    // incremented for a credit painting.
+    if (!credit && used >= limit) throw new ApiError(429, `今天的封面生成次数已用完（每天 ${limit} 张），请明天再试。`, 'cover-quota')
     const prompt = buildCoverPrompt(payload)
     const generate = await getGenerate()
     let produced
@@ -209,7 +212,7 @@ export function createCoverService({ env = process.env, store, imageGenerate, tr
       updatedAt: now().toISOString(),
     }
     await backend.putCover(identity.uid, payload.storyId, record)
-    await backend.incrementDaily(identity.uid, day)
+    if (!credit) await backend.incrementDaily(identity.uid, day)
     return { status: 'ready', version, model, usage: produced.usage ?? null }
   }
 
@@ -217,12 +220,12 @@ export function createCoverService({ env = process.env, store, imageGenerate, tr
     available,
     model,
     dailyLimit: limit,
-    async request(identity, body) {
+    async request(identity, body, options = {}) {
       if (!available) throw new ApiError(503, '封面生成尚未配置。')
       const payload = validatedCoverPayload(body)
       const key = `${identity.uid}\n${payload.storyId}`
       if (inFlight.has(key)) return inFlight.get(key)
-      const run = serialise(identity.uid, () => produce(identity, payload))
+      const run = serialise(identity.uid, () => produce(identity, payload, options))
       inFlight.set(key, run)
       try {
         return await run
