@@ -2394,19 +2394,192 @@ const legacyDecisionSignature = (story, index, currentScene) => {
   return { outcomes: outcomes[genre.id] || [], tail: tails[genre.id] || currentScene[2] }
 }
 
+/*
+ * Display-layer paragraphing (READER-PARA). Early generated chapters
+ * could land as a handful of multi-hundred-character paragraphs — a
+ * wall of text in the reader even though every word was fine. The
+ * stored record is the author's canon and is never rewritten for
+ * this; instead the read-time view below re-paragraphs a chapter
+ * whose shape is a wall, and only that shape:
+ *
+ *   a chapter needs display segmentation when its prose totals at
+ *   least 600 characters AND (its longest paragraph exceeds 420
+ *   characters OR its average paragraph exceeds 300 characters OR
+ *   it has at most 3 paragraphs totalling at least 1000 characters).
+ *
+ * Chapters below the total floor, and chapters already carrying a
+ * normal paragraph shape, come back byte-identical (same array), so
+ * reading positions, bookmarks and search keep the identity they
+ * were recorded against. When segmentation does run, only the
+ * over-long paragraphs are re-cut; healthy paragraphs pass through
+ * untouched.
+ *
+ * The cut itself is conservative: boundaries fall only at sentence
+ * ends (。！？；… and the closers that trail them), never inside a
+ * sentence — including inside quotes. Sentences aggregate toward a
+ * 70–140 character band; a sentence that opens a quotation starts a
+ * new paragraph (dialogue stands on its own), except when it
+ * directly follows a short lead-in ending in a colon, and narration
+ * likewise starts a new paragraph once a quotation has closed.
+ * A single
+ * sentence longer than 320 characters may be clause-cut at commas,
+ * and only where no quotation is open at the comma.
+ */
+export const DISPLAY_SEGMENT_MIN_TOTAL = 600
+export const DISPLAY_SEGMENT_MAX_PARAGRAPH = 420
+export const DISPLAY_SEGMENT_MAX_AVERAGE = 300
+
+const DISPLAY_CLOSERS = new Set([...'」』）)】〕〉》"”’'])
+const isDisplayQuoteOpen = (char) => char === '「' || char === '『' || char === '“'
+
+export function paragraphsNeedSegmentation(paragraphs) {
+  if (!Array.isArray(paragraphs)) return false
+  const lengths = paragraphs
+    .filter((paragraph) => typeof paragraph === 'string')
+    .map((paragraph) => paragraph.trim().length)
+    .filter((length) => length > 0)
+  if (!lengths.length) return false
+  const total = lengths.reduce((sum, length) => sum + length, 0)
+  if (total < DISPLAY_SEGMENT_MIN_TOTAL) return false
+  const max = Math.max(...lengths)
+  const average = total / lengths.length
+  return max > DISPLAY_SEGMENT_MAX_PARAGRAPH
+    || average > DISPLAY_SEGMENT_MAX_AVERAGE
+    || (lengths.length <= 3 && total >= 1000)
+}
+
+// Split one block of prose into sentences. A sentence ends at a
+// sentence-final mark (plus any enders and closers trailing it) or at
+// a decimal-safe ASCII full stop; a newline always closes a sentence
+// and is reported via `breakAfter` so scene breaks survive.
+function splitDisplaySentences(block) {
+  const sentences = []
+  let current = ''
+  let index = 0
+  const push = (breakAfter) => {
+    const text = current.trim()
+    if (text) sentences.push({ text, breakAfter: Boolean(breakAfter) })
+    current = ''
+  }
+  while (index < block.length) {
+    const char = block[index]
+    if (char === '\n') { push(true); index += 1; continue }
+    current += char
+    index += 1
+    const isEnder = char === '。' || char === '！' || char === '？' || char === '；' || char === '…'
+    const isAsciiStop = char === '.'
+      && !/\d/.test(block[index - 2] || '')
+      && (index >= block.length || /[\s"”」』]/.test(block[index]))
+    if (!isEnder && !isAsciiStop) continue
+    // Consume the rest of the ender run (……, ！？) and its closers.
+    while (index < block.length) {
+      const next = block[index]
+      if (next === '…' || next === '。' || next === '！' || next === '？' || DISPLAY_CLOSERS.has(next)) {
+        current += next
+        index += 1
+      } else break
+    }
+    push(false)
+  }
+  push(false)
+  return sentences
+}
+
+// Clause-cut one monster sentence (> 320 chars) at commas where no
+// quotation is open; returns the sentence whole when no safe comma
+// exists. Sentences are never cut anywhere else.
+function clauseCutSentence(sentence) {
+  if (sentence.length <= 320) return [sentence]
+  const pieces = []
+  let depth = 0
+  let start = 0
+  for (let index = 0; index < sentence.length; index += 1) {
+    const char = sentence[index]
+    if (isDisplayQuoteOpen(char)) depth += 1
+    else if (char === '」' || char === '』' || char === '”') depth = Math.max(0, depth - 1)
+    if (depth === 0 && (char === '，' || char === '、') && index - start >= 110 && sentence.length - index > 40) {
+      pieces.push(sentence.slice(start, index + 1))
+      start = index + 1
+    }
+  }
+  if (!pieces.length) return [sentence]
+  const tail = sentence.slice(start)
+  if (tail) pieces.push(tail)
+  return pieces
+}
+
+const startsWithDialogue = (text) => {
+  const first = text.trimStart().charAt(0)
+  return first === '「' || first === '『' || first === '“'
+}
+
+/** Re-paragraph one over-long block of prose for display. */
+export function segmentTextForDisplay(text) {
+  if (typeof text !== 'string') return []
+  const paragraphs = []
+  for (const block of text.split(/\n+/)) {
+    let current = ''
+    const flush = () => { if (current) { paragraphs.push(current); current = '' } }
+    for (const { text: rawSentence, breakAfter } of splitDisplaySentences(block)) {
+      for (const sentence of clauseCutSentence(rawSentence)) {
+        if (!current) { current = sentence; continue }
+        const dialogue = startsWithDialogue(sentence)
+        const colonLead = /[：:]$/.test(current) && current.length < 40
+        if (dialogue && !colonLead && current.length >= 24) { flush(); current = sentence; continue }
+        // The alternation cuts both ways: once a quotation has closed
+        // inside this paragraph, plain narration starts a new one.
+        if (!dialogue && current.length >= 30 && /[」”]/.test(current)) { flush(); current = sentence; continue }
+        if (current.length >= 140) { flush(); current = sentence; continue }
+        if (current.length >= 70 && current.length + sentence.length > 140) { flush(); current = sentence; continue }
+        current += sentence
+      }
+      if (breakAfter) flush()
+    }
+    flush()
+  }
+  return paragraphs
+}
+
+/**
+ * The display form of a chapter's paragraphs: the SAME array when the
+ * chapter's shape is already readable; a new array (healthy paragraphs
+ * untouched, walls re-cut) when it is not.
+ */
+export function displayParagraphsFor(paragraphs) {
+  if (!paragraphsNeedSegmentation(paragraphs)) return paragraphs
+  const display = []
+  for (const paragraph of paragraphs) {
+    if (typeof paragraph !== 'string' || paragraph.trim().length <= DISPLAY_SEGMENT_MAX_PARAGRAPH) {
+      display.push(paragraph)
+    } else {
+      display.push(...segmentTextForDisplay(paragraph))
+    }
+  }
+  return display
+}
+
 // A read-time compatibility view: no mutation, revision change, or chapter
 // generation. Missing chapters return null; callers retain their own fallback.
+// The read-time view's final step: a wall-shaped chapter is shown
+// re-paragraphed (displayParagraphsFor); anything else is the chapter
+// itself, identity included. The stored record is never touched.
+const withDisplayParagraphs = (chapter) => {
+  if (!chapter || !Array.isArray(chapter.paragraphs)) return chapter
+  const paragraphs = displayParagraphsFor(chapter.paragraphs)
+  return paragraphs === chapter.paragraphs ? chapter : { ...chapter, paragraphs }
+}
+
 export function chapterForReading(story, index) {
   validateStory(story)
   validateIndex(index, story)
   const stored = story.chapters.find((chapter) => chapter?.index === index)
   if (!stored) return null
-  if (story.engine === 'gemini') return stored
-  if ((index !== 1 && index !== 3) || !Array.isArray(stored.paragraphs)) return stored
+  if (story.engine === 'gemini') return withDisplayParagraphs(stored)
+  if ((index !== 1 && index !== 3) || !Array.isArray(stored.paragraphs)) return withDisplayParagraphs(stored)
   const currentScene = sceneFor(story, index)
   const signature = legacyDecisionSignature(story, index, currentScene)
   const [opening, outcome, tail] = stored.paragraphs
-  if (opening !== currentScene[0] || !signature.outcomes.includes(outcome) || tail !== signature.tail) return stored
+  if (opening !== currentScene[0] || !signature.outcomes.includes(outcome) || tail !== signature.tail) return withDisplayParagraphs(stored)
 
   const choices = legacyChoiceAt(story, 1).options
   const selected = choices.find((option) => option.id === validChoiceAt(story, 1))
@@ -2415,7 +2588,7 @@ export function chapterForReading(story, index) {
     if (!legacyEchoes.has(paragraph)) return [paragraph]
     return selected ? [`“${selected.label}”的决定仍在回响，${selected.consequence}`] : []
   })
-  return { ...stored, paragraphs: [...currentScene, ...remaining] }
+  return withDisplayParagraphs({ ...stored, paragraphs: [...currentScene, ...remaining] })
 }
 
 export function chapterKey(story, index) {
