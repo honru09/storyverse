@@ -57,9 +57,9 @@
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .account-google { background: var(--surface-solid, #0d1834); } }
 @media (max-width: 360px) { .account-entry { width: 44px; padding: 8px; } .account-entry:has(svg) span { display: none; } }
 
-/* Shell theme control (DESIGN §27): three palettes, one segmented row. */
-.account-theme{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
-.account-theme-label{display:block;font-size:13px;font-weight:650;color:var(--dim);margin-bottom:10px}
+/* Shell theme segments (DESIGN §27): three palettes, one segmented
+   row — seated in 我的主页 → 设置. (The labelled control that once
+   wrapped them in the login card was deleted by LOGIN-TRIM §44.) */
 .account-theme-options{display:flex;gap:8px}
 .account-theme-options button{flex:1;min-height:42px;padding:8px 10px;border:1px solid var(--line);border-radius:999px;background:var(--glass);color:var(--ink);font-size:14px;font-weight:600;cursor:pointer}
 .account-theme-options button.is-active{background:var(--selected-surface);border-color:var(--selected-border);color:var(--selected-text)}
@@ -159,10 +159,6 @@
 .account-scene .account-message { background: rgba(255,255,255,.07); color: #ececf0; }
 .account-scene .account-message.is-error { background: rgba(229,72,77,.16); color: #ffb9bd; }
 .account-scene .account-recovery-note { background: rgba(229,72,77,.12); color: #ffd9db; }
-.account-scene .account-theme { margin-top: 0; border-top-color: rgba(255,255,255,.12); }
-.account-scene .account-theme-label { color: rgba(255,255,255,.6); }
-.account-scene .account-theme-options button { border-color: rgba(255,255,255,.22); background: transparent; color: rgba(255,255,255,.75); }
-.account-scene .account-theme-options button.is-active { background: #fff; border-color: #fff; color: #000; }
 .account-scene .account-avatar-entry { border-color: rgba(255,255,255,.16); background: rgba(255,255,255,.04); color: #f0f0f2; }
 
 /* Mid band: the phone composition, card capped at 520px and

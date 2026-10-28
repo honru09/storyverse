@@ -17,10 +17,12 @@ const SHELL_THEME_OPTIONS = [
 ];
 
 /**
- * The theme segments on their own (PHONE-FIX §37): the account sheet
- * wraps them with a label and the explanatory note (ShellThemeControl
- * below); the profile settings area seats the same control in a
- * settings row, where the section footnote carries the explanation.
+ * The theme segments on their own (PHONE-FIX §37): the profile
+ * settings area seats them in a settings row, where the section
+ * footnote carries the explanation. They used to also ride in the
+ * signed-out login card, wrapped with a label and an explanatory
+ * note (ShellThemeControl); LOGIN-TRIM (§44) deleted that copy as
+ * text noise — the settings row is the switch's only home now.
  */
 export function ShellThemeSegments({ shellTheme, onShellThemeChange }) {
   if (!onShellThemeChange) return null;
@@ -37,17 +39,6 @@ export function ShellThemeSegments({ shellTheme, onShellThemeChange }) {
           {option.label}
         </button>
       ))}
-    </div>
-  );
-}
-
-export function ShellThemeControl({ shellTheme, onShellThemeChange }) {
-  if (!onShellThemeChange) return null;
-  return (
-    <div className="account-theme">
-      <span className="account-theme-label">外观主题</span>
-      <ShellThemeSegments shellTheme={shellTheme} onShellThemeChange={onShellThemeChange} />
-      <p className="account-storage-note">只改界面外观；阅读时的纸色、字号在阅读设置里单独调，互不影响。</p>
     </div>
   );
 }
@@ -115,16 +106,10 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
     if (exclude !== "email" && passwordAvailable) options.push("邮箱密码");
     return options.length ? `可以改用${options.join("或")}登录。` : "其他登录方式还没开通。";
   };
-  // The guest footer follows the same rule (F-06 / N-05): an
-  // unconfigured deployment says only that the account service is not
-  // configured — it makes no storage promise in either direction — and
-  // a configured one names only the channels it actually offers.
-  const methodOptions = [usernameAvailable && "用户名", codeAvailable && "邮箱验证码"].filter(Boolean);
-  const guestFooter = account.status === "loading" ? "" : !configured
-    ? "账号服务尚未配置。你仍可继续本机阅读。"
-    : `${account.config?.storage === 'synced'
-        ? "不登录也能读，故事先保存在当前浏览器；登录后会自动同步到你的账号，换设备也能接着读。"
-        : "不登录也能读，故事和阅读进度会保存在当前浏览器，暂不跨设备同步。"}${methodOptions.length ? `没有 Google 账号，也可以用${methodOptions.join("或")}登录。` : ""}`;
+  // LOGIN-TRIM (§44): the guest storage footer that used to be
+  // composed here is deleted from the login card outright — a
+  // paragraph of text noise under the actions. The channels it
+  // named are already the tabs and buttons on the card itself.
   // The full form is always rendered; unavailable channels are disabled in
   // place. Untouched, the form prefers the email-code mode when it is the
   // only channel this deployment actually offers. Username sign-in needs no
@@ -295,10 +280,10 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       <p className="account-storage-note">{account.config?.storage === 'synced'
         ? "书架与阅读进度会同步到你的账号，换设备登录就能接着读。本机始终留一份，断网也能读。退出账号不会删除本机故事。"
         : "书架与阅读进度保存在当前浏览器，暂不跨设备同步。退出账号不会删除本机故事。"}</p>
-      {/* 外观主题 moved to 我的主页 → 设置 (NOTIFY-SETTINGS §36): this
-          signed-in panel no longer carries a second copy of the switch.
-          The signed-out branch below keeps it — a guest has no profile
-          page yet, and this dialog is their only theme entry. */}
+      {/* 外观主题 lives only in 我的主页 → 设置 (NOTIFY-SETTINGS §36
+          moved it out of this signed-in panel; LOGIN-TRIM §44 removed
+          the signed-out card's copy too — neither branch of this
+          panel carries the switch any more). */}
       {onOpenAvatar && <button className="account-avatar-entry" type="button" onClick={onOpenAvatar}>我的化身 <span aria-hidden="true">→</span></button>}
       {onOpenProfile && <button className="account-avatar-entry" type="button" onClick={onOpenProfile}>我的主页 <span aria-hidden="true">→</span></button>}
       {onOpenHelp && <button className="account-avatar-entry" type="button" onClick={onOpenHelp}>帮助与常见问题 <span aria-hidden="true">→</span></button>}
@@ -317,9 +302,11 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
           a welcome heading, the underline tabs, the form, the
           forgot-password link row, and a foot row where Google is a
           small square "other way" button and the guest entry a text
-          link; the honest footer, theme control and help entry stay
-          in the card's scroll tail, below the fold exactly as
-          before. Every entry and behaviour is the panel that was
+          link; the help entry closes the card's tail (LOGIN-TRIM
+          §44 cut the storage-note paragraph and the theme control
+          that used to sit below the foot row — text noise; the
+          theme switch lives only in 我的主页 → 设置 now). Every
+          entry and behaviour is the panel that was
           always here; only the container and its colour language
           changed (monochrome: white primary button, hairlines,
           grey scale). On desktop ≥1024 the same language splits:
@@ -382,8 +369,6 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
           <button className="account-google" type="button" aria-label="使用 Google 继续" title="使用 Google 继续" disabled={busy || !configured || !account.config?.providers?.google} onClick={() => void run(() => client.signInWithGoogle())}><GoogleMark/></button>
           <button className="account-guest" type="button" onClick={onContinue}>先不登录，继续体验 <span aria-hidden="true">→</span></button>
         </div>
-      {guestFooter && <p className="account-storage-note">{guestFooter}</p>}
-      <ShellThemeControl shellTheme={shellTheme} onShellThemeChange={onShellThemeChange} />
       {onOpenHelp && <button className="account-avatar-entry" type="button" onClick={onOpenHelp}>帮助与常见问题 <span aria-hidden="true">→</span></button>}
       </div>
         </div>

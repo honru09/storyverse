@@ -96,17 +96,22 @@ test('register mode shows one dynamic hint that follows the identifier shape', (
   assert.match(panel, /\{activeMode === "register" && <p className="account-storage-note">\{registerHint\}<\/p>\}/)
 })
 
-test('ACCOUNT-POLISH: the guest footer is composed from capability facts, never a hard promise', () => {
-  // F-06: the email-code channel is named only when the server config
-  // says it is open; the method list is built from the same booleans
-  // that gate the tabs and fields.
-  assert.match(panel, /const methodOptions = \[usernameAvailable && "用户名", codeAvailable && "邮箱验证码"\]\.filter\(Boolean\)/)
-  assert.match(panel, /没有 Google 账号，也可以用\$\{methodOptions\.join\("或"\)\}登录。/)
-  // N-05: an unconfigured deployment makes no storage promise in
-  // either direction — the old reverse promise is gone entirely.
-  assert.match(panel, /"账号服务尚未配置。你仍可继续本机阅读。"/)
+test('LOGIN-TRIM: the login card carries no guest storage footer and no second theme switch', () => {
+  // §44 (user, from a real-device screenshot): the storage-note
+  // paragraph under the card's actions and the 外观主题 block in
+  // its scroll tail were text noise — both deleted outright, not
+  // reworded. (This supersedes the ACCOUNT-POLISH guest-footer
+  // composition assertions: the footer itself no longer exists.)
+  assert.doesNotMatch(panel, /guestFooter/)
+  assert.doesNotMatch(panel, /不登录也能读/)
+  assert.doesNotMatch(panel, /没有 Google 账号，也可以用/)
+  assert.doesNotMatch(panel, /function ShellThemeControl/)
+  assert.doesNotMatch(panel, /<ShellThemeControl/)
   assert.doesNotMatch(panel, /不会自动上传故事或个人设定/)
   assert.doesNotMatch(panel, /也可以用用户名或邮箱验证码登录/)
+  // The theme switch survives where it belongs: the segments the
+  // profile settings row seats are still exported from this module.
+  assert.match(panel, /export function ShellThemeSegments/)
 })
 
 test('ACCOUNT-POLISH: registration confirms the password and blocks the request on mismatch', () => {
