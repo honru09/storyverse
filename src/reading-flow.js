@@ -1,4 +1,4 @@
-import { acceptChapter, advanceOpenedThrough, buildChapter, chapterKey, totalChaptersFor } from './story-engine.js'
+import { acceptChapter, advanceOpenedThrough, buildChapter, chapterKey, isManualStory, totalChaptersFor } from './story-engine.js'
 
 // Legacy default for short stories; every function below derives the real
 // total from the story's length mode via totalChaptersFor.
@@ -27,7 +27,9 @@ export function readerIndexFor(story, readOnly = false) {
 export function materialize(story, targetLength) {
   // Remote stories can only accept model responses through acceptChapter.
   // Preparing a reading window must never substitute the local demo prose.
-  if (story?.engine === 'gemini' || story?.readOnly) return story
+  // A hand-written book (WRITE-MODE §50) is refused for the same reason:
+  // its chapters are the author's own words and no path may invent more.
+  if (story?.engine === 'gemini' || story?.readOnly || isManualStory(story)) return story
   let current = story
   const total = totalChaptersFor(story)
   const target = Math.min(total, Math.max(0, Math.floor(targetLength)))
@@ -44,7 +46,7 @@ export function materialize(story, targetLength) {
 // One chapter ahead, unconditionally. Calling again is idempotent, so
 // reading, revisiting, and React effect reruns cannot overproduce.
 export function prepareReadingWindow(story, index = readerIndexFor(story)) {
-  if (story?.readOnly || story?.engine === 'gemini') return story
+  if (story?.readOnly || story?.engine === 'gemini' || isManualStory(story)) return story
   const position = readerIndexFor({ ...story, readerIndex: index })
   return materialize(story, position + 2)
 }

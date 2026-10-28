@@ -29,8 +29,13 @@ const totalForStory = (story) => {
 }
 const CONFIG_TEXT_FIELDS = [
   'genreId', 'genreTemplateId', 'storyLengthMode', 'originIdentityId', 'customWorldName', 'customWorldSetting', 'bookTitle', 'startPointName', 'startPointHook', 'avatarId', 'avatarAppearance', 'sourcePublicationId', 'name', 'persona', 'trait', 'origin', 'ability', 'tone', 'hometown',
-  'school', 'company', 'role', 'friend', 'destination', 'protagonist', 'appearance', 'finishedAt', 'stylePreset',
+  'school', 'company', 'role', 'friend', 'destination', 'protagonist', 'appearance', 'finishedAt', 'stylePreset', 'manualShelfId',
 ]
+
+// 自己写 (WRITE-MODE §50): a hand-written book's free tags ride the
+// config; the bounds mirror MANUAL_TAGS_MAX / MANUAL_TAG_MAX in
+// src/story-engine.js (this storage layer stays dependency-free).
+const MANUAL_TAG_LIMITS = { tags: 5, tag: 12 }
 
 // 文风预设 ids, mirrored from src/story-engine.js STYLE_PRESETS (this
 // storage layer stays dependency-free, like the length totals above).
@@ -150,6 +155,19 @@ function validateConfig(config, prefix, errors, merged = false, forStory = false
   // Absent on every pre-import save and on every public snapshot (the
   // engine strips it there); when present it is a bounded entry list.
   if (config.lorebook !== undefined) validateLorebook(config.lorebook, `${prefix}.lorebook`, errors)
+  // 自己写标签 (WRITE-MODE §50): absent on every AI line; when present a
+  // short list of short strings.
+  if (config.tags !== undefined) {
+    if (!Array.isArray(config.tags) || config.tags.length > MANUAL_TAG_LIMITS.tags) {
+      errors.push(`${prefix}.tags must be an array of at most ${MANUAL_TAG_LIMITS.tags} tags`)
+    } else {
+      for (let tagIndex = 0; tagIndex < config.tags.length; tagIndex += 1) {
+        if (typeof config.tags[tagIndex] !== 'string' || config.tags[tagIndex].length > MANUAL_TAG_LIMITS.tag) {
+          errors.push(`${prefix}.tags[${tagIndex}] must be a string of at most ${MANUAL_TAG_LIMITS.tag} characters`)
+        }
+      }
+    }
+  }
   if (merged || config.protagonists !== undefined) {
     if (!Array.isArray(config.protagonists) || config.protagonists.length !== 2) {
       errors.push(`${prefix}.protagonists must contain two characters`)
@@ -318,7 +336,11 @@ function validateStory(story, prefix) {
   if (story.openedThrough !== undefined && (!Number.isInteger(story.openedThrough) || story.openedThrough < 0)) {
     errors.push(`${prefix}.openedThrough must be a non-negative integer`)
   }
-  validateOptionalFields(story, prefix, ['author', 'createdAt', 'updatedAt', 'status', 'genreTemplateId', 'previousSeasonId', 'synopsis'], 'string', errors)
+  validateOptionalFields(story, prefix, ['author', 'createdAt', 'updatedAt', 'status', 'genreTemplateId', 'previousSeasonId', 'synopsis', 'engine', 'creationMode'], 'string', errors)
+  // 自己写 (WRITE-MODE §50): the only sanctioned creationMode value.
+  if (story.creationMode !== undefined && story.creationMode !== 'manual') {
+    errors.push(`${prefix}.creationMode is invalid`)
+  }
   // 本书简介 (EDIT-BOOK): an optional owner-written blurb; the bound
   // mirrors SYNOPSIS_MAX in src/story-engine.js (this storage layer
   // stays dependency-free, like the lorebook limits above).

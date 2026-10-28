@@ -30,7 +30,10 @@ import {
   genreFor,
   genreTemplateById,
   isManuallyFinished,
+  isManualStory,
   isStoryComplete,
+  manualChapterHasProse,
+  manualTagsOf,
   storyLengthModeOf,
   totalChaptersFor,
   worldBibleFor,
@@ -113,6 +116,18 @@ export function snapshotSourceViolation(story) {
 /** The publish gate, identical on the publish screen and the server. */
 export function plazaGateFor(story) {
   if (!story || typeof story !== 'object') return { publishable: false, reason: '故事不存在。', lineStatus: 'finished' }
+  // 自己写 (WRITE-MODE §50): a hand-written book has no avatar journey
+  // to prove and no designed total to finish — its one gate is that at
+  // least one chapter is actually written. While the author keeps
+  // writing it shelves as 连载中； once they finish it by hand it
+  // shelves as finished. The avatar rule below never applies to it.
+  if (isManualStory(story)) {
+    const written = (Array.isArray(story.chapters) ? story.chapters : []).filter(manualChapterHasProse).length
+    if (written < 1) {
+      return { publishable: false, reason: '至少写完一章，才能把这本书上架。', lineStatus: 'serializing' }
+    }
+    return { publishable: true, reason: '', lineStatus: isManuallyFinished(story) ? 'finished' : 'serializing' }
+  }
   // A short fused line never publishes. A fused line that inherited
   // endless mode falls through to the ordinary endless rule below (the
   // avatar check and the ≥1-chapter floor included).
@@ -145,6 +160,57 @@ export function plazaGateFor(story) {
     return { publishable: false, reason, lineStatus: 'finished' }
   }
   return { publishable: true, reason: '', lineStatus: 'finished' }
+}
+
+/**
+ * The public snapshot of a hand-written book (WRITE-MODE §50). Unlike an
+ * avatar line there is nothing to desensitise: the author wrote every
+ * word for readers, so the snapshot carries the prose verbatim and the
+ * author's own introduction as the book's synopsis — the red-line scan
+ * on the server is the only gate, and it runs over the same fields it
+ * scans for any line. Only chapters with real prose are shelved (an
+ * untouched draft chapter stays home), re-indexed so the published
+ * book reads 1..N with no gaps. There is deliberately NO enterTemplate:
+ * nobody can bring an avatar into a hand-written book or fuse with it.
+ */
+export function manualSnapshotFor(story) {
+  const written = (Array.isArray(story?.chapters) ? story.chapters : []).filter(manualChapterHasProse)
+  const chapters = written.map((chapter, index) => ({
+    id: `${story.id}:chapter:${index}:manual`,
+    index,
+    title: chapter.title,
+    paragraphs: (Array.isArray(chapter.paragraphs) ? chapter.paragraphs : []).filter((paragraph) => typeof paragraph === 'string'),
+    summary: '',
+    choice: null,
+    events: [],
+    foreshadowing: [],
+  }))
+  const synopsis = typeof story?.synopsis === 'string' && story.synopsis.trim()
+    ? story.synopsis.trim()
+    : (typeof story?.worldBible?.premise === 'string' ? story.worldBible.premise.trim() : '')
+  return {
+    title: story.title,
+    ...(synopsis ? { synopsis } : {}),
+    manual: true,
+    genreId: CUSTOM_GENRE_ID,
+    genreTemplateId: '',
+    worldName: '',
+    storyLengthMode: 'endless',
+    seasonNumber: 1,
+    totalChapters: chapters.length,
+    lineStatus: isManuallyFinished(story) ? 'finished' : 'serializing',
+    config: {
+      genreId: CUSTOM_GENRE_ID,
+      storyLengthMode: 'endless',
+      manualShelfId: typeof story?.config?.manualShelfId === 'string' ? story.config.manualShelfId : '',
+      tags: manualTagsOf(story),
+    },
+    worldBible: { premise: synopsis, rules: [], endingAnchor: '', outline: [] },
+    chapters,
+    choices: {},
+    beats: chapters.map((chapter, index) => ({ chapter: index + 1, title: chapter.title, summary: '', events: [] })),
+    engine: 'manual',
+  }
 }
 
 /** The world's display name for a story or a publication-shaped object. */
@@ -371,6 +437,9 @@ export function plazaReaderStory(detail) {
     genreId: detail.genreId || snapshot.config?.genreId || '',
     ...(detail.genreTemplateId ? { genreTemplateId: detail.genreTemplateId } : {}),
     ...(snapshot.engine ? { engine: snapshot.engine } : {}),
+    // A hand-written book reads as what it is (WRITE-MODE §50): the mark
+    // keeps every generation/repair path away from its chapters.
+    ...(detail.manual ? { creationMode: 'manual' } : {}),
     // A published fused line reads as what it is — a two-protagonist
     // merged line — and carries its source titles for the provenance
     // label; the ids themselves never leave the server.

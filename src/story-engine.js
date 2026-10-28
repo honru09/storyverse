@@ -1944,6 +1944,209 @@ export function renameBookTitle(story, title) {
 }
 
 /*
+ * 自己写 (WRITE-MODE batch, DESIGN §50): a book the owner writes by hand,
+ * chapter by chapter, in their own words. It reuses the story record so
+ * the shelf, the reader and the cloud library treat it like any other
+ * book, but it carries `creationMode: 'manual'` and `engine: 'manual'`,
+ * and those two marks are the whole contract:
+ *
+ * - No generation path may touch it: the model is never called for it,
+ *   nothing is pre-generated, and it consumes no generation quota. The
+ *   reading flow's materialiser and the chapter generator both refuse it.
+ * - It has no avatar journey, so the avatar-world semantics (bringing an
+ *   avatar in, fusion, intervention) do not exist for it; surfaces hide
+ *   those entries rather than grey them into fake buttons.
+ * - Its length mode is 'endless' purely as bookkeeping: there is no
+ *   designed total, the book grows as the author writes, and the author
+ *   finishes it by hand (finishEndlessLine) when it is done.
+ *
+ * The chapters are the author's own prose, stored as paragraphs split on
+ * blank lines. Editing is free at ANY position — there is no frontier
+ * rule for a hand-written book, because no generated chapter stands on
+ * top of an earlier one.
+ */
+export const isManualStory = (story) => story?.creationMode === 'manual'
+
+export const MANUAL_TAG_MAX = 12
+export const MANUAL_TAGS_MAX = 5
+export const MANUAL_CHAPTER_TEXT_MAX = 100_000
+
+const cleanManualTags = (tags) => {
+  if (!Array.isArray(tags)) return []
+  const seen = new Set()
+  const cleaned = []
+  for (const raw of tags) {
+    const tag = typeof raw === 'string' ? raw.trim().slice(0, MANUAL_TAG_MAX) : ''
+    if (!tag || seen.has(tag)) continue
+    seen.add(tag)
+    cleaned.push(tag)
+    if (cleaned.length >= MANUAL_TAGS_MAX) break
+  }
+  return cleaned
+}
+
+export const manualTagsOf = (story) => cleanManualTags(story?.config?.tags)
+
+/**
+ * Open a hand-written book: title and (optionally) the author's own
+ * introduction, a family shelf to file it under, and free tags. No
+ * world, no protagonist, no draft walk — the book starts empty and the
+ * writing desk is where its chapters appear.
+ */
+export function createManualStory({ title = '', synopsis = '', shelfId = '', tags = [] } = {}) {
+  const cleanedTitle = typeof title === 'string' ? title.trim() : ''
+  if (!cleanedTitle) throw new RangeError('先给这本书起个名字。')
+  if (cleanedTitle.length > BOOK_TITLE_MAX) {
+    throw new RangeError(`书名最多 ${BOOK_TITLE_MAX} 字。`)
+  }
+  const cleanedSynopsis = typeof synopsis === 'string' ? synopsis.trim() : ''
+  if (cleanedSynopsis.length > SYNOPSIS_MAX) {
+    throw new RangeError(`简介最多 ${SYNOPSIS_MAX} 字。`)
+  }
+  const shelf = shelfById(typeof shelfId === 'string' ? shelfId : '')
+  const timestamp = now()
+  return {
+    id: makeId(),
+    creationMode: 'manual',
+    engine: 'manual',
+    title: cleanedTitle,
+    genreId: CUSTOM_GENRE_ID,
+    config: {
+      genreId: CUSTOM_GENRE_ID,
+      storyLengthMode: 'endless',
+      bookTitle: cleanedTitle,
+      manualShelfId: shelf ? shelf.id : '',
+      tags: cleanManualTags(tags),
+    },
+    // The bible is a courtesy shell: surfaces that read a premise find
+    // the author's own introduction there, and nothing else exists —
+    // no rules, no outline, no ending, because no engine runs on it.
+    worldBible: { premise: cleanedSynopsis, rules: [], endingAnchor: '', outline: [] },
+    ...(cleanedSynopsis ? { synopsis: cleanedSynopsis } : {}),
+    chapterIndex: 0,
+    chapters: [],
+    choices: {},
+    revision: 0,
+    kind: 'solo',
+    sourceIds: [],
+    author: '我',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    bookmarked: false,
+  }
+}
+
+/** Editor text ⇄ stored paragraphs: blank lines (or any newline run) split. */
+export const manualTextToParagraphs = (text) =>
+  (typeof text === 'string' ? text : '')
+    .split(/\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+
+export const manualParagraphsToText = (paragraphs) =>
+  (Array.isArray(paragraphs) ? paragraphs : []).filter((paragraph) => typeof paragraph === 'string' && paragraph.trim()).join('\n\n')
+
+/** A chapter counts as written when it carries real prose. */
+export const manualChapterHasProse = (chapter) =>
+  (Array.isArray(chapter?.paragraphs) ? chapter.paragraphs : []).some((paragraph) => typeof paragraph === 'string' && paragraph.trim())
+
+export const manualWrittenChapterCount = (story) =>
+  (Array.isArray(story?.chapters) ? story.chapters : []).filter(manualChapterHasProse).length
+
+export const manualChapterWordCount = (chapter) =>
+  (Array.isArray(chapter?.paragraphs) ? chapter.paragraphs : []).join('').replace(/\s/g, '').length
+
+const assertManualEditable = (story) => {
+  validateStory(story)
+  if (!isManualStory(story)) throw new RangeError('只有自己写的书能这样编辑。')
+  if (story.readOnly === true) throw new RangeError('只读副本不能编辑。')
+}
+
+const reindexManualChapters = (chapters) =>
+  chapters.map((chapter, index) => ({ ...chapter, index, id: `${chapter.id.split(':chapter:')[0]}:chapter:${index}:manual` }))
+
+const withManualChapters = (story, chapters) => {
+  const next = { ...story, chapters: reindexManualChapters(chapters), updatedAt: now() }
+  next.chapterIndex = chapters.length
+  if (Number.isInteger(next.readerIndex)) {
+    next.readerIndex = Math.max(0, Math.min(next.readerIndex, Math.max(0, chapters.length - 1)))
+  }
+  return next
+}
+
+const cleanManualChapterTitle = (title, position) => {
+  const cleaned = typeof title === 'string' ? title.trim() : ''
+  if (!cleaned) return `第 ${position + 1} 章`
+  if (cleaned.length > CHAPTER_TITLE_MAX) {
+    throw new RangeError(`章节标题最多 ${CHAPTER_TITLE_MAX} 字。`)
+  }
+  return cleaned
+}
+
+const manualChapterRecord = (story, position, { title = '', text = '' } = {}) => {
+  const cleanedText = typeof text === 'string' ? text : ''
+  if (cleanedText.length > MANUAL_CHAPTER_TEXT_MAX) {
+    throw new RangeError('这一章太长了，先分一章再写。')
+  }
+  const paragraphs = manualTextToParagraphs(cleanedText)
+  return {
+    id: `${story.id}:chapter:${position}:manual`,
+    index: position,
+    title: cleanManualChapterTitle(title, position),
+    // An untouched new chapter stores one empty paragraph: the storage
+    // contract requires a non-empty paragraph list, and an empty string
+    // is the honest shape of "nothing written yet" — the publish gate
+    // and every word count treat it as unwritten.
+    paragraphs: paragraphs.length ? paragraphs : [''],
+    summary: '',
+    events: [],
+    foreshadowing: [],
+    choice: null,
+  }
+}
+
+/** Append a chapter at the end of a hand-written book. */
+export function appendManualChapter(story, draft = {}) {
+  assertManualEditable(story)
+  const position = story.chapters.length
+  return withManualChapters(story, [...story.chapters, manualChapterRecord(story, position, draft)])
+}
+
+/** Replace one chapter's title and prose, in place. */
+export function updateManualChapter(story, index, draft = {}) {
+  assertManualEditable(story)
+  if (!Number.isInteger(index) || index < 0 || index >= story.chapters.length) {
+    throw new RangeError('这一章还不存在。')
+  }
+  const chapters = story.chapters.slice()
+  chapters[index] = manualChapterRecord(story, index, draft)
+  return withManualChapters(story, chapters)
+}
+
+/** Remove one chapter; the ones after it close ranks. */
+export function removeManualChapter(story, index) {
+  assertManualEditable(story)
+  if (!Number.isInteger(index) || index < 0 || index >= story.chapters.length) {
+    throw new RangeError('这一章还不存在。')
+  }
+  return withManualChapters(story, story.chapters.filter((_, position) => position !== index))
+}
+
+/** Move one chapter to a new position (the desk's up/down controls). */
+export function moveManualChapter(story, from, to) {
+  assertManualEditable(story)
+  const length = story.chapters.length
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0 || from >= length || to >= length) {
+    throw new RangeError('章节位置不对。')
+  }
+  if (from === to) return story
+  const chapters = story.chapters.slice()
+  const [moved] = chapters.splice(from, 1)
+  chapters.splice(to, 0, moved)
+  return withManualChapters(story, chapters)
+}
+
+/*
  * 文风预设 (style presets): the owner's per-story directing dial for the
  * generation instructions. A preset is a bounded instruction block the
  * server appends to its system prompt for every chapter generated AFTER
@@ -2646,7 +2849,11 @@ export function chapterForReading(story, index) {
   validateIndex(index, story)
   const stored = story.chapters.find((chapter) => chapter?.index === index)
   if (!stored) return null
-  if (story.engine === 'gemini') return withDisplayParagraphs(stored)
+  // A hand-written chapter is already the author's final text: the only
+  // read-time courtesy it gets is the display re-paragraphing (a long
+  // hand-typed paragraph reads as a wall otherwise, READER-PARA §44).
+  // The legacy decision-scene repair below must never run on it.
+  if (story.engine === 'gemini' || isManualStory(story)) return withDisplayParagraphs(stored)
   if ((index !== 1 && index !== 3) || !Array.isArray(stored.paragraphs)) return withDisplayParagraphs(stored)
   const currentScene = sceneFor(story, index)
   const signature = legacyDecisionSignature(story, index, currentScene)
@@ -3007,6 +3214,40 @@ export function publicSnapshot(story) {
     readOnly: true,
     readerIndex: 0,
     status: story.chapters.length >= total ? 'complete' : 'ongoing',
+  }
+  // 自己写 (WRITE-MODE §50): a hand-written book's local share copy is
+  // the author's own prose verbatim — there is no avatar privacy to
+  // redact and no scaffold may be substituted for the real chapters
+  // (the generic path below would rebuild them from the local scene
+  // machine). The title stays the author's real title.
+  if (isManualStory(story)) {
+    safe.creationMode = 'manual'
+    safe.engine = 'manual'
+    safe.title = story.title
+    safe.config = {
+      genreId: CUSTOM_GENRE_ID,
+      storyLengthMode: 'endless',
+      manualShelfId: typeof story.config?.manualShelfId === 'string' ? story.config.manualShelfId : '',
+      tags: manualTagsOf(story),
+    }
+    safe.worldBible = {
+      premise: typeof story.synopsis === 'string' ? story.synopsis : (story.worldBible?.premise || ''),
+      rules: [],
+      endingAnchor: '',
+      outline: [],
+    }
+    safe.chapters = story.chapters.map((chapter, index) => ({
+      id: `${safe.id}:chapter:${index}:manual`,
+      index,
+      title: chapter.title,
+      paragraphs: (Array.isArray(chapter.paragraphs) ? chapter.paragraphs : []).filter((paragraph) => typeof paragraph === 'string'),
+      summary: '',
+      choice: null,
+      events: [],
+      foreshadowing: [],
+    }))
+    safe.status = isManuallyFinished(story) ? 'complete' : 'ongoing'
+    return safe
   }
   if (story.engine === 'gemini') safe.engine = 'gemini'
   if (story.kind === 'merged') {

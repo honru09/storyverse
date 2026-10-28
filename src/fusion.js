@@ -6,6 +6,7 @@
 
 import {
   fusionSourceStateFor,
+  isManualStory,
   isStoryComplete,
   storyLengthModeOf,
   totalChaptersFor,
@@ -18,7 +19,7 @@ import {
  */
 export function fusionCandidatesFor(stories) {
   return (Array.isArray(stories) ? stories : [])
-    .filter((story) => story && typeof story === 'object' && story.kind !== 'merged' && !story.readOnly)
+    .filter((story) => story && typeof story === 'object' && story.kind !== 'merged' && !story.readOnly && !isManualStory(story))
 }
 
 /** The card facts for one source line: mode, progress, fusion state. */

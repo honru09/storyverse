@@ -14,6 +14,9 @@ export { aggregateStates, chapterStates };
 /** The one-line generation state, same words + same colors everywhere. */
 export function generationState({ total = CHAPTER_COUNT, generated = 0, current = 0, engine, preparing = false, complete = false }) {
   if (complete || (generated >= total && current >= total - 1)) return { key: "done", label: "已完结", className: "is-ready" };
+  // A hand-written book (WRITE-MODE §50) is never waiting on a
+  // generator: its next chapter exists when its author writes it.
+  if (engine === "manual") return { key: "manual", label: "作者手写", className: "is-waiting" };
   if (engine !== "gemini") return generated > current + 1
     ? { key: "ready", label: "下一章已备好", className: "is-ready" }
     : { key: "waiting", label: "下一章待生成", className: "is-waiting" };

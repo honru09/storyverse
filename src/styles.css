@@ -1813,3 +1813,38 @@ button.settings-row{cursor:pointer}
 .billing-rules summary{font-size:13.5px;font-weight:600;color:var(--profile-dim);cursor:pointer}
 .billing-rules ul{margin:10px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
 .billing-rules li{font-size:13px;line-height:1.65;color:var(--profile-faint)}
+
+/* WRITE-MODE (§50): the 自己写 entry card, the create form and the
+   writing desk. Plain working surfaces — the desk is a tool, so it
+   spends its space on the chapter list and the editor, not decoration. */
+.forge-manual-entry{display:flex;align-items:center;gap:12px;width:100%;margin-top:18px;padding:16px 18px;border:1px dashed var(--line);border-radius:16px;background:var(--glass);color:var(--ink);text-align:left;cursor:pointer;font:inherit}
+.forge-manual-entry:active{transform:scale(.99)}
+.forge-manual-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.forge-manual-copy strong{font-size:16px;font-weight:650}
+.forge-manual-copy small{font-size:13px;line-height:1.55;color:var(--dim)}
+.manual-book-form{max-width:640px}
+.manual-book-form .field-label{display:block;margin-top:18px}
+.manual-book-more{margin-top:26px;padding-top:18px;border-top:1px solid var(--line)}
+.manual-shelf-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.plaza-manual-note{font-size:12px;font-weight:650;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:2px 9px}
+.page-write{max-width:760px;margin:0 auto}
+.write-heading h1{margin:10px 0 6px;font-size:24px}
+.write-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0;font-size:13.5px;color:var(--dim)}
+.write-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:18px 0 8px}
+.write-finished-note{font-size:13.5px;color:var(--dim)}
+.write-finish-confirm{font-size:13.5px;color:var(--dim);display:inline-flex;gap:10px;align-items:center;flex-wrap:wrap}
+.write-chapters{margin-top:22px}
+.write-chapter-list{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-direction:column;gap:8px}
+.write-chapter-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--glass)}
+.write-chapter-row.is-current{border-color:var(--selected-border);background:var(--selected-surface)}
+.write-chapter-main{flex:1;min-width:0;display:flex;align-items:baseline;gap:10px;background:none;border:none;color:inherit;font:inherit;text-align:left;cursor:pointer;padding:0}
+.write-chapter-main strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}
+.write-chapter-index{font-size:12.5px;color:var(--dim);white-space:nowrap}
+.write-chapter-words{font-size:12.5px;color:var(--dim);white-space:nowrap}
+.write-chapter-tools{display:inline-flex;gap:10px;white-space:nowrap}
+.write-chapter-tools .small-link:disabled{opacity:.35}
+.write-delete-confirm{color:var(--danger)}
+.write-editor{margin-top:24px;padding-top:18px;border-top:1px solid var(--line)}
+.write-editor .field-label{display:block;margin-top:14px}
+.write-textarea{width:100%;min-height:320px;line-height:1.8;font-size:16px;resize:vertical}
+.write-editor-foot{display:flex;justify-content:space-between;margin-top:8px;font-size:13px;color:var(--dim)}

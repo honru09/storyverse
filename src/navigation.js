@@ -8,6 +8,14 @@ export function parseRoute(hash = '') {
       return id ? { view: 'reader', id, shared: path === 'shared' } : { view: 'home' }
     } catch { return { view: 'home' } }
   }
+  // The writing desk of a hand-written book (WRITE-MODE §50): the
+  // author's own surface over one of their manual books.
+  if (path === 'write') {
+    try {
+      const id = decodeURIComponent(value || '')
+      return id ? { view: 'write', id } : { view: 'home' }
+    } catch { return { view: 'home' } }
+  }
   // The plaza is the front door: the bare route and every unknown route
   // land on the feed. A plaza id opens the line's detail; plaza-read is
   // the reader over a published line; plaza-enter is the bring-my-avatar
@@ -53,6 +61,9 @@ export function parseRoute(hash = '') {
 export function routeHash(route) {
   if (route.view === 'reader' && route.id) {
     return `#/${route.plaza ? 'plaza-read' : route.shared ? 'shared' : 'reader'}/${encodeURIComponent(route.id)}`
+  }
+  if (route.view === 'write' && route.id) {
+    return `#/write/${encodeURIComponent(route.id)}`
   }
   if (route.view === 'plaza' && route.postId) return `#/plaza/${encodeURIComponent(route.postId)}`
   if (route.view === 'plaza-detail' && route.id) return `#/plaza/${encodeURIComponent(route.id)}`

@@ -207,6 +207,16 @@ import {
   updateSynopsis,
   createMergedStory,
   createStory,
+  appendManualChapter,
+  createManualStory,
+  isManualStory,
+  manualChapterWordCount,
+  manualParagraphsToText,
+  manualTagsOf,
+  manualWrittenChapterCount,
+  moveManualChapter,
+  removeManualChapter,
+  updateManualChapter,
   finishEndlessLine,
   fusionProductModeFor,
   genreTemplateById,
@@ -847,7 +857,16 @@ function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, dr
                     : "继续阅读"
                 : "开启第一本书"}
             </Button>
-            {activeStory && activeStory.kind !== "merged" && !activeStory.readOnly && (
+            {activeStory && isManualStory(activeStory) && !activeStory.readOnly && (
+              <Button
+                variant="ghost"
+                icon="pencil"
+                onClick={() => onNavigate("write", { storyId: activeStory.id })}
+              >
+                回写作台
+              </Button>
+            )}
+            {activeStory && activeStory.kind !== "merged" && !activeStory.readOnly && !isManualStory(activeStory) && (
               <Button
                 variant="ghost"
                 icon="git"
@@ -1113,7 +1132,7 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
                         </span>
                       </span>
                     </button>
-                    {story.kind !== "merged" && !story.readOnly && onFuseStory && (
+                    {story.kind !== "merged" && !story.readOnly && !isManualStory(story) && onFuseStory && (
                       <button
                         type="button"
                         className="wood-book-fuse"
@@ -1765,11 +1784,119 @@ function GenerationMode({ provider, value, onChange, disabled }) {
   </div>;
 }
 
-function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, avatar, avatars = [], mainId = null, avatarLoaded, onOpenAvatar }) {
+/**
+ * 自己写 · 建书 (WRITE-MODE §50): the whole act of opening a hand-written
+ * book is this one short form — a name and the author's own introduction
+ * up front; the family shelf and the tags ride one row below (progressive
+ * disclosure: file it if you care, skip it if you don't). No world, no
+ * protagonist, no length — chapters are added in the writing desk.
+ * onCreate returns a human error string, or null once the book exists.
+ */
+function ManualBookForm({ onCreate, onCancel }) {
+  const [title, setTitle] = useState("");
+  const [synopsis, setSynopsis] = useState("");
+  const [shelfId, setShelfId] = useState("");
+  const [tagsText, setTagsText] = useState("");
+  const [error, setError] = useState("");
+  const submit = () => {
+    const tags = tagsText.split(/[、，,\s]+/).map((tag) => tag.trim()).filter(Boolean);
+    const failure = onCreate ? onCreate({ title, synopsis, shelfId, tags }) : "建书没能完成，请再试一次。";
+    if (failure) setError(failure);
+  };
+  return (
+    <div className="manual-book-form">
+      <div className="forge-section-heading">
+        <div>
+          <h2 tabIndex={-1}>自己写一本</h2>
+          <p className="step-intro">这本书的每一章都由你亲手写。先给它一个名字和一句介绍，剩下的到写作台里慢慢写。</p>
+        </div>
+      </div>
+      <label className="field-label">
+        书名
+        <input
+          type="text"
+          maxLength={BOOK_TITLE_MAX}
+          value={title}
+          aria-label="书名"
+          placeholder="给这本书起个名字"
+          onChange={(event) => { setTitle(event.target.value); setError(""); }}
+        />
+      </label>
+      <label className="field-label">
+        简介
+        <textarea
+          rows={4}
+          maxLength={SYNOPSIS_MAX}
+          value={synopsis}
+          aria-label="本书简介"
+          placeholder="用几句话介绍这本书：它讲什么、谁在里面、会往哪里走。之后在设定集里随时能改。"
+          onChange={(event) => setSynopsis(event.target.value)}
+        />
+      </label>
+      <div className="manual-book-more">
+        <span className="field-label">题材分类（可不选）</span>
+        <div className="manual-shelf-row" role="group" aria-label="题材分类">
+          <button
+            type="button"
+            className={`choice-chip ${shelfId === "" ? "active" : ""}`}
+            aria-pressed={shelfId === ""}
+            onClick={() => setShelfId("")}
+          >
+            不分类
+          </button>
+          {GENRE_SHELVES.map((shelf) => (
+            <button
+              type="button"
+              key={shelf.id}
+              className={`choice-chip ${shelfId === shelf.id ? "active" : ""}`}
+              aria-pressed={shelfId === shelf.id}
+              onClick={() => setShelfId(shelf.id)}
+            >
+              {shelf.name}
+            </button>
+          ))}
+        </div>
+        <label className="field-label">
+          标签（可不填，用顿号隔开，最多 5 个）
+          <input
+            type="text"
+            value={tagsText}
+            aria-label="标签"
+            placeholder="例如：海港、旧信、慢热"
+            onChange={(event) => setTagsText(event.target.value)}
+          />
+        </label>
+      </div>
+      {error && (
+        <p className="intervention-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="forge-actions">
+        <button type="button" className="back-button" onClick={onCancel}>
+          <Icon name="chevron" size={15} className="rotate-180" />
+          回到造世
+        </button>
+        <div className="forge-actions-right">
+          <Button icon="pencil" onClick={submit}>
+            建书，开始写
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provider, authClient, avatar, avatars = [], mainId = null, avatarLoaded, onOpenAvatar }) {
   const forgeRef = useRef(null);
   const operation = useRef(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // 自己写 (WRITE-MODE §50): the forge's first screen carries one more
+  // door beside the AI flow — a book the reader writes by hand. It swaps
+  // the whole forge body for the short create form; the AI draft under
+  // way is untouched and waits exactly where it was left.
+  const [manualOpen, setManualOpen] = useState(false);
   const [mode, setMode] = useState(null);
   const engine = mode || (provider.configured ? "gemini" : "local");
   useEffect(() => () => operation.current?.abort(), []);
@@ -2325,6 +2452,16 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
       set({ storyLengthMode: nextMode });
     }
   };
+  if (manualOpen) {
+    return (
+      <div className="page page-forge page-enter">
+        <ManualBookForm
+          onCreate={onCreateManual}
+          onCancel={() => setManualOpen(false)}
+        />
+      </div>
+    );
+  }
   return (
     <div ref={forgeRef} className="page page-forge page-enter" data-step={step}>
       <div className="forge-progress">
@@ -2422,6 +2559,14 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                 : template
                   ? <>已选：<b>{twoSegmentTemplateName(template)}</b>{pickedTemplate ? "" : "（默认）"}。{template.blurb}。</>
                   : "不绑任何题材模板，写法完全自由。世界在下一步由你决定。"}</p>
+              <button type="button" className="forge-manual-entry" onClick={() => setManualOpen(true)}>
+                <Icon name="pencil" size={20} />
+                <span className="forge-manual-copy">
+                  <strong>自己写一本</strong>
+                  <small>不用 AI——书名、简介和每一章都由你亲手写，草稿存在云端书库，换设备接着写。</small>
+                </span>
+                <Icon name="chevron" size={16} />
+              </button>
             </>
           )}
           {step === 2 && (
@@ -3173,10 +3318,13 @@ function ShareSheet({ story, onClose, onPublish, authClient, authSignal = "" }) 
   const preview = useMemo(() => publicSnapshot(story), [story]);
   const [reviewed, setReviewed] = useState(false);
   const requiresReview = story.engine === "gemini";
+  const manual = isManualStory(story);
   return (
     <ReadingDialog title="分享预览" onClose={onClose}>
       <p>
-        {requiresReview ? "仅保存在本机书城。已替换设定中的原始资料，但正文仍可能含有可识别的线索，请逐章检查。" : "匿名只读副本，仅保存在本机书城，不会上传。姓名与现实资料已移除。"}
+        {manual
+          ? "只读副本，仅保存在本机书城，不会上传。正文是你亲手写的原文，一个字都不会改。"
+          : requiresReview ? "仅保存在本机书城。已替换设定中的原始资料，但正文仍可能含有可识别的线索，请逐章检查。" : "匿名只读副本，仅保存在本机书城，不会上传。姓名与现实资料已移除。"}
       </p>
       <div className="sw-share-preview">
         <span className="share-cover"><StoryCover story={story} genreId={genreOf(story).id} sources={coverSources(story)} getAccessToken={() => authClient.getAccessToken()} authSignal={authSignal} /></span>
@@ -3855,6 +4003,11 @@ function ProseEditor({ chapter, onClose, onSave }) {
 // The lorebook shown here is the owner's private material (imported or
 // hand-written): it appears in no public snapshot, ever.
 function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSynopsis, onSaveBookTitle, onSaveChapterTitles }) {
+  // 自己写 (WRITE-MODE §50): a hand-written book has no world bible to
+  // steer, no lorebook to inject and no style preset to dial — those
+  // sections would be dead controls. Its settings book keeps only what
+  // is real for it: 书名 / 本书简介 / 章节目录 / 删除.
+  const manual = isManualStory(story);
   const [premise, setPremise] = useState(story.worldBible?.premise || "");
   // 书名 (TITLE-FLOW): the book's own name, editable here next to the
   // synopsis. Unlike the synopsis (a publish-time snapshot on the
@@ -3942,7 +4095,9 @@ function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSyn
   return (
     <ReadingDialog title="设定集" onClose={onClose}>
       <p className="field-hint">
-        这本书的世界设定都在这里。在这里改，只影响之后生成的章节——已经写好的章节，一个字都不会动。
+        {manual
+          ? "这本书是你自己写的：这里只有书名、简介和目录。正文在写作台里改，这里的每一处保存都只动名字，不动正文。"
+          : "这本书的世界设定都在这里。在这里改，只影响之后生成的章节——已经写好的章节，一个字都不会动。"}
       </p>
       <div className="settings-section">
         <h3>书名</h3>
@@ -4000,7 +4155,7 @@ function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSyn
           {synopsisSaved && !synopsisError && <span role="status">已保存。</span>}
         </div>
       </div>
-      {story.kind === "merged" ? (
+      {!manual && story.kind === "merged" ? (
         <div className="settings-section settings-fusion">
           <h3>这本书的来历</h3>
           <p className="settings-fusion-line">
@@ -4015,7 +4170,7 @@ function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSyn
             合流故事是两条线的结晶，不能再作合流的来源。
           </p>
         </div>
-      ) : onFuse ? (
+      ) : !manual && onFuse ? (
         <div className="settings-section settings-fusion">
           <h3>合流</h3>
           <p className="field-hint">让这条线与另一条线相遇，融合成一本双主角的新书——原书保留。如果另一条线还在连载中（无限连载），新线会继承无限连载继续往下写。</p>
@@ -4024,6 +4179,7 @@ function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSyn
           </Button>
         </div>
       ) : null}
+      {!manual && (
       <div className="settings-section">
         <h3>世界圣经</h3>
         <label className="field-label">
@@ -4071,6 +4227,7 @@ function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSyn
           </>
         )}
       </div>
+      )}
       <div className="settings-section">
         <h3>章节目录</h3>
         <p className="field-hint">
@@ -4132,6 +4289,8 @@ function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSyn
           </>
         )}
       </div>
+      {!manual && (
+      <>
       <div className="settings-section">
         <h3>世界书条目</h3>
         <p className="field-hint">
@@ -4221,6 +4380,8 @@ function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSyn
           ))}
         </div>
       </div>
+      </>
+      )}
       {interventions.length > 0 && (
         <div className="settings-section">
           <h3>介入记录</h3>
@@ -4244,7 +4405,7 @@ function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSyn
         </div>
       )}
       <div className="reading-dialog-actions">
-        <Button onClick={save}>保存设定集</Button>
+        {!manual && <Button onClick={save}>保存设定集</Button>}
         <Button variant="ghost" onClick={onClose}>
           关闭
         </Button>
@@ -4479,6 +4640,11 @@ function Reader({
   );
   const total = totalChaptersFor(story);
   const lengthMode = storyLengthModeOf(story);
+  // 自己写 (WRITE-MODE §50): a hand-written book in its owner's reader
+  // keeps the reading chrome and the settings book, but every AI
+  // semantic is absent — no intervention, no frontier re-roll, no
+  // prepared next chapter; in their place the reader offers the desk.
+  const manual = isManualStory(story);
   // A running endless line: no denominator anywhere — the position reads
   // as a serialising count, progress is measured against what exists,
   // and the map shows the chapters written plus the one being written.
@@ -4547,7 +4713,7 @@ function Reader({
   // edited by hand while it is the latest one written — no later chapter
   // exists yet. Both levers vanish by omission everywhere else; earlier
   // chapters offer nothing, which is their locked state.
-  const isFrontier = !readOnly && isFrontierChapter(story, index) && Boolean(story.chapters?.[index]);
+  const isFrontier = !readOnly && !manual && isFrontierChapter(story, index) && Boolean(story.chapters?.[index]);
   // 换一版： the frontier chapter is regenerated from the brief and
   // context as of its slot; the version it replaces is discarded (there
   // is no version stack — the note in the confirm row says so before
@@ -4658,6 +4824,13 @@ function Reader({
       return;
     }
     if (isFinal) return;
+    // A hand-written book has no next chapter until its author writes
+    // one: paging past the last written chapter is a no-op here, and
+    // the chapter-end block below offers the desk instead.
+    if (manual) {
+      if (nextAvailable) goToChapter(index + 1);
+      return;
+    }
     if (story.engine === "gemini") {
       if (nextAvailable) goToChapter(index + 1);
       else if (!requesting.current) {
@@ -4855,12 +5028,17 @@ function Reader({
                 <Icon name="book" size={20} />
                 <span>专注</span>
               </button>
-              {!readOnly && (
+              {!readOnly && (manual ? (
+                <button type="button" className="reader-chrome-intervene" onClick={() => onNavigate("write", { storyId: story.id })}>
+                  <Icon name="pencil" size={20} />
+                  <span>写作</span>
+                </button>
+              ) : (
                 <button type="button" className="reader-chrome-intervene" onClick={() => setInterveneOpen(true)} aria-haspopup="dialog">
                   <Icon name="ripple" size={20} />
                   <span>介入</span>
                 </button>
-              )}
+              ))}
             </div>
           </div>
         </>
@@ -4986,7 +5164,7 @@ function Reader({
               )}
             </div>
           )}
-          {!isFinal && (!readOnly || nextAvailable) && (
+          {!isFinal && (!readOnly || nextAvailable) && !(manual && !nextAvailable) && (
             <div className="sw-next-action">              <Button
                 icon="arrow"
                 onClick={handleNext}
@@ -4995,6 +5173,14 @@ function Reader({
                 {preparing && !nextAvailable ? "下一章准备中…" : generationError && !nextAvailable ? "重试下一章" : "下一章"}
               </Button>
               {generationError && <span role="alert">{generationError}</span>}
+            </div>
+          )}
+          {manual && !readOnly && !isFinal && !nextAvailable && (
+            <div className="sw-next-action">
+              <Button icon="pencil" onClick={() => onNavigate("write", { storyId: story.id })}>
+                写下一章
+              </Button>
+              <span>这一章之后还空着——下一章由你来写。</span>
             </div>
           )}
           {(isFinal || (readOnly && !nextAvailable)) && (
@@ -5019,6 +5205,16 @@ function Reader({
                   <button onClick={() => onNavigate("merge")}>
                     开启合流本
                   </button>
+                  <button onClick={() => onNavigate("forge")}>
+                    再开一本
+                  </button>
+                </>
+              ) : manual && !readOnly ? (
+                <>
+                  <p>这本书是你一个字一个字写下来的。书名和简介在设定集里改，正文在写作台里写。</p>
+                  <Button icon="pencil" onClick={() => onNavigate("write", { storyId: story.id })}>
+                    回写作台
+                  </Button>
                   <button onClick={() => onNavigate("forge")}>
                     再开一本
                   </button>
@@ -5229,7 +5425,7 @@ function StoreBookCard({ book, onOpen }) {
         </div>
         {intro && <p className="store-book-intro">{intro}</p>}
         <div className="plaza-chips">
-          <span className="plaza-chip">{templateName}</span>
+          <span className="plaza-chip">{book.manual ? (shelfById(book.shelfId)?.name || "作者手写") : templateName}</span>
           {showWorld && (
             <>
               <span className="plaza-chip-x" aria-hidden="true">·</span>
@@ -5776,13 +5972,13 @@ function PlazaPostBookCard({ book, onOpenDetail, onReadLine, onEnter }) {
         <span className="plaza-post-book-copy">
           <strong>《{book.title}》</strong>
           {intro && <small className="plaza-post-book-intro">{intro}</small>}
-          <small>{book.authorName} · {templateName} · {plazaLengthLabel(book)}</small>
+          <small>{book.authorName} · {book.manual ? "作者手写" : templateName} · {plazaLengthLabel(book)}</small>
         </span>
         <Icon name="chevron" size={16} />
       </button>
       <div className="plaza-post-book-actions">
         <button type="button" onClick={() => onReadLine(book)}>读原作线</button>
-        <button type="button" onClick={() => onEnter(book)}>带化身进入</button>
+        {!book.manual && <button type="button" onClick={() => onEnter(book)}>带化身进入</button>}
       </div>
     </div>
   );
@@ -6572,6 +6768,7 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         ) : (
           <span className="plaza-author">作者 · {detail.authorName}</span>
         )}
+        {detail.manual && <span className="plaza-manual-note">作者手写</span>}
       </div>
 
       <section className="plaza-detail-cover">
@@ -6579,7 +6776,9 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         <span className="plaza-cover-shade" aria-hidden="true" />
         <div className="plaza-detail-cover-copy">
           <h1 className={`is-${plazaTitleTierFor(detail.title)}`}>《{detail.title}》</h1>
-          <p>{detail.worldName} × {templateName} · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"}</p>
+          <p>{detail.manual
+            ? <>{shelfById(detail.shelfId)?.name ? `${shelfById(detail.shelfId).name} · ` : ""}作者手写 · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"}</>
+            : <>{detail.worldName} × {templateName} · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"}</>}</p>
           {detail.merged && Array.isArray(detail.sourceTitles) && detail.sourceTitles.length === 2 && (
             <span className="plaza-badge is-fused">由《{detail.sourceTitles[0]}》×《{detail.sourceTitles[1]}》融合而来</span>
           )}
@@ -6597,6 +6796,7 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         onOpenProfile={onOpenProfile}
       />
 
+      {!detail.manual && (
       <section className="plaza-panel plaza-avatar-panel">
         {onOpenProfile && detail.authorUid ? (
           <button
@@ -6619,6 +6819,7 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
           {detail.avatar?.appearance && <small>化身设定：{detail.avatar.appearance}</small>}
         </div>
       </section>
+      )}
 
       {detail.synopsis && (
         <section className="plaza-panel">
@@ -6629,6 +6830,8 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         </section>
       )}
 
+      {!detail.manual && (
+      <>
       <section className="plaza-panel plaza-world-intro">
         <div className="plaza-panel-heading">
           <h2>世界设定</h2>
@@ -6674,9 +6877,11 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         </ol>
         {beats.length > 4 && <small className="plaza-note">其余 {beats.length - 4} 章节拍，进入后逐步展开</small>}
       </section>
+      </>
+      )}
 
       <section className="plaza-panel plaza-cta-panel">
-        <h2>你想怎样走这条线？</h2>
+        <h2>{detail.manual ? "读这本书" : "你想怎样走这条线？"}</h2>
         {/* ENTRY-OPTIONS: the three ways in are one option-card family.
             What each way costs rides in its own card's line — the yellow
             fee box that used to float under the buttons is gone. */}
@@ -6684,9 +6889,13 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
           <PlazaEntryOption
             icon="book"
             title="读原作线"
-            note="作者的化身走完的版本，打开就能读 · 不消耗你的生成额度"
+            note={detail.manual
+              ? "作者亲手写的版本，打开就能读 · 不消耗你的生成额度"
+              : "作者的化身走完的版本，打开就能读 · 不消耗你的生成额度"}
             onClick={() => onReadLine(detail)}
           />
+          {!detail.manual && (
+          <>
           <PlazaEntryOption
             icon="user"
             title="带我的化身进入"
@@ -6706,7 +6915,12 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
               ? onNavigate("forge")
               : onNavigate("merge", { publicationId: detail.id }))}
           />
+          </>
+          )}
         </div>
+        {detail.manual && (
+          <p className="plaza-note">这本书是作者自己写的，没有化身世界可以进入，也不能合流——它就是一本拿来读的书。</p>
+        )}
         {/* Sharing is the plaza's door out of the detail (BOOKSTORE-
             PLAZA): one tap opens the composer pre-set to this book;
             the words are the reader's own. */}
@@ -8560,7 +8774,7 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
       <header className="plaza-heading">
         <h1>上架到书城</h1>
       </header>
-      <p className="page-caption">把一条故事线上架到书城：走完的线整条上架；无限连载的线连载中就能上架，之后的新章会自己跟上。上架后，其他人能在书城读你的原作线，也能带自己的化身进入这个世界重演一条新线，还能把这本书分享到广场。</p>
+      <p className="page-caption">把一条故事线上架到书城：走完的线整条上架；无限连载的线和自己写的书连载中就能上架，之后的新章会自己跟上。上架后，其他人能在书城读你的书，也能把这本书分享到广场；化身走完的线还能被带化身进入重演，自己写的书只能读。</p>
 
       <OfficialDemoEntry onNavigate={onNavigate} />
 
@@ -8570,10 +8784,10 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
           <p>上架会记在你的账号名下，别人举报时也由你下架处理。</p>
           <Button onClick={onOpenAccount}>登录 / 注册</Button>
         </div>
-      ) : avatarLoaded && !avatar ? (
+      ) : avatarLoaded && !avatar && !rows.some((row) => isManualStory(row.story)) ? (
         <div className="plaza-empty" role="status">
           <h3>先有化身，才能上架它的故事线</h3>
-          <p>书城里的每本书，都是某个化身走完的旅程。</p>
+          <p>书城里的故事线，都是某个化身走完的旅程。自己写的书不用化身——去造世选「自己写」就能开一本。</p>
           <Button onClick={onOpenAvatar}>创建我的化身</Button>
         </div>
       ) : (
@@ -8581,7 +8795,7 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
           <h2 className="plaza-section-title">选择要上架的故事线</h2>
           {rows.length === 0 && (
             <div className="plaza-empty" role="status">
-              <p>你还没有故事线。先用化身走一季，或开一条无限连载，再来上架。</p>
+              <p>你还没有故事线。先用化身走一季、开一条无限连载，或者自己写一本，再来上架。</p>
               <Button variant="secondary" icon="arrow" onClick={() => onNavigate("forge")}>去造世</Button>
             </div>
           )}
@@ -8604,9 +8818,9 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
                     <span>
                       {gate.publishable
                         ? gate.lineStatus === "serializing"
-                          ? <><span className="plaza-badge">连载中</span> {plazaLengthLabel(story)} · 发布后新章自动跟上{published ? " · 已在书城上" : ""}</>
-                          : <><span className="plaza-badge">已完结</span> {plazaLengthLabel(story)}{published ? " · 已在书城上，再次上架会更新" : ""}</>
-                        : <>{story.kind === "merged" ? "合流故事" : "连载中"} · {gate.reason}</>}
+                          ? <><span className="plaza-badge">连载中</span> {plazaLengthLabel(story)} · 发布后新章自动跟上{isManualStory(story) ? " · 作者手写" : ""}{published ? " · 已在书城上" : ""}</>
+                          : <><span className="plaza-badge">已完结</span> {plazaLengthLabel(story)}{isManualStory(story) ? " · 作者手写" : ""}{published ? " · 已在书城上，再次上架会更新" : ""}</>
+                        : <>{story.kind === "merged" ? "合流故事" : isManualStory(story) ? "作者手写" : "连载中"} · {gate.reason}</>}
                     </span>
                   </span>
                   {selectedId === story.id && gate.publishable && <Icon name="check" size={18} />}
@@ -8617,11 +8831,19 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
 
           <section className="plaza-panel">
             <h2>将上架的内容</h2>
-            <ul className="plaza-checklist">
-              <li><Icon name="check" size={15} /><span><strong>世界设定（脱敏版）</strong><small>私有设定与未公开分支不会上架</small></span></li>
-              <li><Icon name="check" size={15} /><span><strong>原作线全文</strong><small>你化身走过的全部章节与当时的选择（连载中的线随新章更新）</small></span></li>
-              <li><Icon name="check" size={15} /><span><strong>可进入的世界模板</strong><small>主线节拍骨架，供他人带化身重演</small></span></li>
-            </ul>
+            {selected && isManualStory(selected) ? (
+              <ul className="plaza-checklist">
+                <li><Icon name="check" size={15} /><span><strong>本书简介</strong><small>你自己写的那段介绍，原样上架</small></span></li>
+                <li><Icon name="check" size={15} /><span><strong>正文全文</strong><small>已经写完的章节（还没写的空章不上架；连载中上架后，新章会自己跟上）</small></span></li>
+                <li><Icon name="check" size={15} /><span><strong>作者手写</strong><small>这本书没有化身旅程，别人只能读，不能带化身进入，也不能合流</small></span></li>
+              </ul>
+            ) : (
+              <ul className="plaza-checklist">
+                <li><Icon name="check" size={15} /><span><strong>世界设定（脱敏版）</strong><small>私有设定与未公开分支不会上架</small></span></li>
+                <li><Icon name="check" size={15} /><span><strong>原作线全文</strong><small>你化身走过的全部章节与当时的选择（连载中的线随新章更新）</small></span></li>
+                <li><Icon name="check" size={15} /><span><strong>可进入的世界模板</strong><small>主线节拍骨架，供他人带化身重演</small></span></li>
+              </ul>
+            )}
           </section>
 
           <section className="plaza-panel">
@@ -9508,6 +9730,262 @@ function HelpContent() {
   );
 }
 
+/**
+ * 写作台 (WRITE-MODE §50): the author's own surface over a hand-written
+ * book. A chapter list on top (order, word counts, up/down/delete), one
+ * plain editor below. The editor autosaves through the ordinary story
+ * update, so a draft rides the same cloud-library sync as every other
+ * book — write on the phone, continue on the desktop. No AI lives here:
+ * no generate button, no quota, nothing that invents text.
+ */
+function WriteDesk({ story, onUpdateStory, onNavigate }) {
+  const chapters = Array.isArray(story.chapters) ? story.chapters : [];
+  const [selected, setSelected] = useState(() => Math.max(0, chapters.length - 1));
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftText, setDraftText] = useState("");
+  const [saveNote, setSaveNote] = useState("");
+  const [deskError, setDeskError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(-1);
+  const [confirmFinish, setConfirmFinish] = useState(false);
+  const storyRef = useRef(story);
+  storyRef.current = story;
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const draftRef = useRef({ title: "", text: "" });
+  draftRef.current = { title: draftTitle, text: draftText };
+  const dirtyRef = useRef(false);
+  const loadedKeyRef = useRef("");
+
+  const loadChapter = useCallback((book, index) => {
+    const chapter = (book.chapters || [])[index];
+    loadedKeyRef.current = `${book.id}:${index}`;
+    dirtyRef.current = false;
+    setDraftTitle(chapter ? chapter.title || "" : "");
+    setDraftText(chapter ? manualParagraphsToText(chapter.paragraphs) : "");
+    setSaveNote("");
+    setDeskError("");
+  }, []);
+
+  useEffect(() => {
+    loadChapter(storyRef.current, selectedRef.current);
+    // Loading is keyed to the book and the chosen chapter only: story
+    // updates landing from our own autosave must never reload the
+    // editor under the author's fingers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story.id, selected, loadChapter]);
+
+  const commitDraft = useCallback(() => {
+    if (!dirtyRef.current) return true;
+    const book = storyRef.current;
+    const index = selectedRef.current;
+    if (!book.chapters?.[index]) { dirtyRef.current = false; return true; }
+    try {
+      const next = updateManualChapter(book, index, { title: draftRef.current.title, text: draftRef.current.text });
+      dirtyRef.current = false;
+      onUpdateStory?.(next);
+      setSaveNote(`已保存 ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`);
+      setDeskError("");
+      return true;
+    } catch (failure) {
+      setDeskError(failure.message || "这一章没能保存，请再试一次。");
+      return false;
+    }
+  }, [onUpdateStory]);
+
+  // Autosave: a short quiet beat after the last keystroke.
+  useEffect(() => {
+    if (!dirtyRef.current) return undefined;
+    setSaveNote("正在保存…");
+    const timer = window.setTimeout(() => { commitDraft(); }, 700);
+    return () => window.clearTimeout(timer);
+  }, [draftTitle, draftText, commitDraft]);
+
+  // Leaving must not lose words: flush on unmount, and hold the tab
+  // while a draft is still unsaved.
+  useEffect(() => () => { commitDraft(); }, [commitDraft]);
+  useEffect(() => {
+    const warn = (event) => { if (dirtyRef.current) { event.preventDefault(); event.returnValue = ""; } };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
+
+  const pickChapter = (index) => {
+    if (index === selected) return;
+    if (!commitDraft()) return;
+    setConfirmDelete(-1);
+    setSelected(index);
+  };
+  const addChapter = () => {
+    if (!commitDraft()) return;
+    try {
+      const next = appendManualChapter(storyRef.current, {});
+      onUpdateStory?.(next);
+      setConfirmDelete(-1);
+      setSelected(next.chapters.length - 1);
+    } catch (failure) {
+      setDeskError(failure.message || "新章节没能建起来，请再试一次。");
+    }
+  };
+  const deleteChapter = (index) => {
+    try {
+      const next = removeManualChapter(storyRef.current, index);
+      dirtyRef.current = false;
+      onUpdateStory?.(next);
+      setConfirmDelete(-1);
+      setSelected((current) => Math.max(0, Math.min(current, next.chapters.length - 1)));
+    } catch (failure) {
+      setDeskError(failure.message || "这一章没能删掉，请再试一次。");
+    }
+  };
+  const moveChapter = (index, delta) => {
+    if (!commitDraft()) return;
+    const target = index + delta;
+    try {
+      const next = moveManualChapter(storyRef.current, index, target);
+      if (next !== storyRef.current) onUpdateStory?.(next);
+      if (selected === index) setSelected(target);
+    } catch (failure) {
+      setDeskError(failure.message || "章节没能移动，请再试一次。");
+    }
+  };
+  const finishBook = () => {
+    if (!commitDraft()) return;
+    onUpdateStory?.(finishEndlessLine(storyRef.current));
+    setConfirmFinish(false);
+  };
+
+  const finished = isManuallyFinished(story);
+  const written = manualWrittenChapterCount(story);
+  const draftWords = draftText.replace(/\s/g, "").length;
+  const shelf = shelfById(story.config?.manualShelfId || "");
+  const tags = manualTagsOf(story);
+  const current = chapters[selected] || null;
+
+  return (
+    <div className="page page-write page-enter">
+      <button type="button" className="back-link" onClick={() => { commitDraft(); onNavigate("home"); }}>
+        <Icon name="chevron" size={15} className="rotate-180" /> 回书架
+      </button>
+      <header className="write-heading">
+        <h1>《{story.title}》</h1>
+        <p className="write-meta">
+          <span className="plaza-badge">作者手写</span>
+          共 {chapters.length} 章 · 写完 {written} 章 · {finished ? "已完结" : "连载中"}
+          {shelf ? ` · ${shelf.name}` : ""}
+          {tags.length > 0 ? ` · ${tags.join("、")}` : ""}
+        </p>
+      </header>
+
+      <div className="write-actions">
+        <Button variant="secondary" icon="book" onClick={() => { commitDraft(); onNavigate("reader", { storyId: story.id }); }}>
+          在阅读器里看
+        </Button>
+        <Button variant="secondary" icon="send" onClick={() => { commitDraft(); onNavigate("plaza-publish"); }}>
+          上架到书城
+        </Button>
+        {finished ? (
+          <span className="write-finished-note">这本书已经完结。</span>
+        ) : confirmFinish ? (
+          <span className="write-finish-confirm">
+            写完了？完结后书城里会标成已完结。
+            <button type="button" className="small-link" onClick={finishBook}>确认完结</button>
+            <button type="button" className="small-link" onClick={() => setConfirmFinish(false)}>再想想</button>
+          </span>
+        ) : (
+          <button type="button" className="small-link" onClick={() => setConfirmFinish(true)}>
+            标记完结
+          </button>
+        )}
+      </div>
+      <p className="field-hint">写完一章就能上架；上架后新写的章节会自己跟上。改书名和简介在阅读器的设定集里。</p>
+
+      <section className="write-chapters" aria-label="章节列表">
+        {chapters.length === 0 ? (
+          <div className="plaza-empty" role="status">
+            <h3>还没有章节</h3>
+            <p>第一章从一句话开始就行——草稿自动保存，写错了随时改。</p>
+            <Button icon="pencil" onClick={addChapter}>写第一章</Button>
+          </div>
+        ) : (
+          <>
+            <ol className="write-chapter-list">
+              {chapters.map((chapter, index) => {
+                const words = manualChapterWordCount(chapter);
+                const isCurrent = index === selected;
+                return (
+                  <li key={chapter.id} className={`write-chapter-row ${isCurrent ? "is-current" : ""}`}>
+                    <button
+                      type="button"
+                      className="write-chapter-main"
+                      aria-pressed={isCurrent}
+                      onClick={() => pickChapter(index)}
+                    >
+                      <span className="write-chapter-index">第 {index + 1} 章</span>
+                      <strong>{chapterTitleTextFor(chapter.title) || chapter.title}</strong>
+                      <span className="write-chapter-words">{words > 0 ? `${words} 字` : "还没写"}</span>
+                    </button>
+                    <span className="write-chapter-tools">
+                      <button type="button" className="small-link" disabled={index === 0} onClick={() => moveChapter(index, -1)}>上移</button>
+                      <button type="button" className="small-link" disabled={index === chapters.length - 1} onClick={() => moveChapter(index, 1)}>下移</button>
+                      {confirmDelete === index ? (
+                        <>
+                          <button type="button" className="small-link write-delete-confirm" onClick={() => deleteChapter(index)}>确认删除</button>
+                          <button type="button" className="small-link" onClick={() => setConfirmDelete(-1)}>取消</button>
+                        </>
+                      ) : (
+                        <button type="button" className="small-link" onClick={() => setConfirmDelete(index)}>删除</button>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+            <Button variant="secondary" icon="plus" onClick={addChapter}>
+              新建一章
+            </Button>
+          </>
+        )}
+      </section>
+
+      {current && (
+        <section className="write-editor" aria-label="章节编辑">
+          <label className="field-label">
+            第 {selected + 1} 章 · 标题
+            <input
+              type="text"
+              maxLength={CHAPTER_TITLE_MAX}
+              value={draftTitle}
+              aria-label="章节标题"
+              placeholder={`第 ${selected + 1} 章`}
+              onChange={(event) => { dirtyRef.current = true; setDraftTitle(event.target.value); }}
+            />
+          </label>
+          <label className="field-label">
+            正文
+            <textarea
+              className="write-textarea"
+              rows={16}
+              value={draftText}
+              aria-label="章节正文"
+              placeholder="在这里写这一章。空行分段——回车两次，就是新的一段。"
+              onChange={(event) => { dirtyRef.current = true; setDraftText(event.target.value); }}
+            />
+          </label>
+          <div className="write-editor-foot">
+            <span>{draftWords} 字</span>
+            <span role="status">{deskError ? "" : saveNote}</span>
+          </div>
+          {deskError && (
+            <p className="intervention-error" role="alert">
+              {deskError}
+            </p>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const sceneRef = useRef(null);
   const [authClient] = useState(() => createAuthClient());
@@ -9917,6 +10395,7 @@ function App() {
       profile: "个人主页",
       home: "我的世界",
       forge: "新故事",
+      write: "写作台",
       store: "书城",
       merge: "世界合流",
       avatar: "我的化身",
@@ -9970,6 +10449,8 @@ function App() {
         }
       : next === "plaza" && options.postId
         ? { view: next, postId: options.postId }
+        : next === "write"
+        ? { view: next, id: options.storyId }
         : next === "plaza-detail" || next === "plaza-enter" || next === "profile"
         ? { view: next, id: options.id }
         : next === "merge"
@@ -10207,6 +10688,20 @@ function App() {
       navigate("reader", { storyId: story.id });
       opening.current = null;
   };
+  // 自己写 (WRITE-MODE §50): opening a hand-written book is a local,
+  // quota-free act — the record lands in the library like any other
+  // book (and so rides the cloud sync), and the author lands in the
+  // writing desk, not the reader.
+  const createManualBook = ({ title, synopsis, shelfId, tags }) => {
+    try {
+      const story = createManualStory({ title, synopsis, shelfId, tags });
+      setLibrary((current) => libraryWithStory(current, story));
+      navigate("write", { storyId: story.id });
+      return null;
+    } catch (failure) {
+      return failure.message || "这本书没能建起来，请再试一次。";
+    }
+  };
   const startNextSeasonFor = (story) => {
     try {
       const rolled = startNextSeason(story);
@@ -10361,11 +10856,27 @@ function App() {
     return story;
   };
   let page;
-  if (view === "forge")
+  if (view === "write") {
+    const writeStory = library.stories.find((story) => story.id === pageRoute.id);
+    page = writeStory && isManualStory(writeStory) ? (
+      <WriteDesk
+        key={writeStory.id}
+        story={writeStory}
+        onUpdateStory={commitStory}
+        onNavigate={navigate}
+      />
+    ) : (
+      <div className="page page-enter">
+        <p className="plaza-loading" role="status">正在打开写作台…</p>
+        <Button variant="secondary" onClick={() => navigate("home")}>返回书架</Button>
+      </div>
+    );
+  } else if (view === "forge")
     page = (
       <Forge
         provider={provider}
         onGenerate={generate}
+        onCreateManual={createManualBook}
         initialDraft={legacyDraftToDraft(library)}
         onDraftChange={saveDraft}
         authClient={authClient}

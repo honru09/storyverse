@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { ApiError, sanitizeSettingText } from './gemini.js'
 import { findSettingViolation } from '../src/setting-guard.js'
-import { plazaSnapshot, redactedTitleFor, shelfForTemplate } from '../src/story-engine.js'
-import { cleanBookTitle, PLAZA_REPORT_THRESHOLD, plazaGateFor, plazaTemplateNameFor, plazaWorldIntroFor, snapshotSourceViolation, WORLD_INTRO_VERSION } from '../src/plaza.js'
+import { isManualStory, plazaSnapshot, redactedTitleFor, shelfForTemplate } from '../src/story-engine.js'
+import { cleanBookTitle, manualSnapshotFor, PLAZA_REPORT_THRESHOLD, plazaGateFor, plazaTemplateNameFor, plazaWorldIntroFor, snapshotSourceViolation, WORLD_INTRO_VERSION } from '../src/plaza.js'
 import { emptyLibrary, validateLibrary } from '../src/persistence.js'
 import { avatarAppearanceText } from '../src/avatar.js'
 import { usernameUid } from './username-auth.js'
@@ -74,13 +74,21 @@ function summaryOf(record) {
     // see OFFICIAL_USERNAMES above. Rides every summary surface (feed,
     // detail, author profiles) because they all pass through here.
     official: isOfficialUid(record.authorUid),
+    // 自己写 (WRITE-MODE §50): a hand-written book shelves beside the
+    // avatar lines with no special card treatment; the flag exists so
+    // the detail page can label it 作者手写 and hide the enter/fusion
+    // entries that do not exist for it.
+    manual: record.manual === true,
     avatar: record.avatar,
     genreId: record.genreId,
     genreTemplateId: record.genreTemplateId,
     // The L1 family shelf this book files under in the bookstore
     // (BOOKSTORE-PLAZA): derived from the template, never stored, so
-    // the taxonomy can be re-shelved without touching records.
-    shelfId: shelfForTemplate(record.genreTemplateId)?.id || '',
+    // the taxonomy can be re-shelved without touching records. A
+    // hand-written book carries the family its author picked at
+    // creation time (it has no template to derive one from).
+    shelfId: (typeof record.manualShelfId === 'string' && record.manualShelfId)
+      || shelfForTemplate(record.genreTemplateId)?.id || '',
     worldName: record.worldName,
     // Real counters only (BOOKSTORE-PLAZA): how many plaza posts share
     // this book, maintained by the feed service as posts come and go;
@@ -439,6 +447,61 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         if (errors.length) throw new ApiError(400, '这条故事线的数据不完整，暂时不能发布。')
         const gate = plazaGateFor(story)
         if (!gate.publishable) throw new ApiError(400, gate.reason)
+        // 自己写 (WRITE-MODE §50): a hand-written book shelves through
+        // its own branch — there is no avatar to resolve and no engine
+        // mark to demand, because the author wrote every word for
+        // readers in the first place. What still applies, unchanged:
+        // the shared gate (≥1 written chapter) and the red-line scan
+        // over the introduction and every chapter — a violation blocks
+        // the shelving, never the draft on the author's own shelf. The
+        // snapshot is the author's text verbatim (manualSnapshotFor);
+        // the world outline stays empty, because the introduction IS
+        // the book's public description.
+        if (isManualStory(story)) {
+          const violation = redLineViolation(story)
+          if (violation) throw new ApiError(400, violation)
+          const snapshot = manualSnapshotFor(story)
+          const timestamp = now().toISOString()
+          const existing = await findOwnPublication(identity.uid, story.id)
+          const authorName = authorNameFor(identity) || '织界旅人'
+          const record = {
+            id: existing?.id || `pub-${randomUUID().slice(0, 12)}`,
+            authorUid: identity.uid,
+            authorName,
+            sourceStoryId: story.id,
+            title: snapshot.title,
+            shareCount: Math.max(0, existing?.shareCount || 0),
+            ratingAverage: typeof existing?.ratingAverage === 'number' ? existing.ratingAverage : 0,
+            ratingCount: Math.max(0, existing?.ratingCount || 0),
+            manual: true,
+            manualShelfId: snapshot.config.manualShelfId || '',
+            genreId: snapshot.genreId,
+            genreTemplateId: '',
+            worldName: '',
+            merged: false,
+            sourceTitles: [],
+            storyLengthMode: snapshot.storyLengthMode,
+            seasonNumber: 1,
+            chapterCount: snapshot.chapters.length,
+            totalChapters: snapshot.totalChapters,
+            lineStatus: gate.lineStatus,
+            avatar: { name: authorName, appearance: '', hasPortrait: false },
+            worldIntro: null,
+            worldIntroVersion: WORLD_INTRO_VERSION,
+            snapshot,
+            status: 'published',
+            reporters: existing?.reporters || [],
+            createdAt: existing?.createdAt || timestamp,
+            completedAt: gate.lineStatus === 'serializing'
+              ? null
+              : existing?.completedAt
+                || (typeof story.updatedAt === 'string' && !Number.isNaN(Date.parse(story.updatedAt)) ? story.updatedAt : timestamp),
+            publishedAt: timestamp,
+            updatedAt: timestamp,
+          }
+          await backend.putPublication(record)
+          return summaryOf(record)
+        }
         if (!avatars) throw new ApiError(400, '先创建你的化身，再发布它的故事线。')
         // The line may have been lived by ANY of the author's avatars,
         // not only the main one: resolve the avatar that walked it from
@@ -621,6 +684,26 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           if (!record || record.status !== 'published') return { synced: false }
           const safeConfig = record.snapshot?.config
           if (!safeConfig) return { synced: false }
+          // A hand-written book's title needs no redaction round-trip —
+          // the author typed it for the public cover — and its record
+          // carries no baked world outline to re-bake (WRITE-MODE §50).
+          if (record.manual === true) {
+            const nextTitle = story.title.trim()
+            if (!nextTitle || nextTitle === record.title) return { synced: false }
+            const timestamp = now().toISOString()
+            const next = {
+              ...record,
+              title: nextTitle,
+              snapshot: { ...record.snapshot, title: nextTitle },
+              titleHistory: [
+                ...(Array.isArray(record.titleHistory) ? record.titleHistory : []),
+                { from: record.title, to: nextTitle, at: timestamp },
+              ].slice(-10),
+              updatedAt: timestamp,
+            }
+            await backend.putPublication(next)
+            return { synced: true, id: record.id }
+          }
           const nextTitle = redactedTitleFor(story, safeConfig).trim()
           if (!nextTitle || nextTitle === record.title) return { synced: false }
           const timestamp = now().toISOString()
