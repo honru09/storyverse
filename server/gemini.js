@@ -243,6 +243,12 @@ export function sanitizeSettingText(value) {
   if (typeof value !== 'string') return ''
   let text = value
   text = text.replace(/<\/?(system|assistant|user|prompt|instructions?)>/gi, '〈$1〉')
+  // Model control tokens (IMPORT-DAYLIGHT, import spec §5.3): ChatML's
+  // <|im_start|> / <|im_end|> family and the <start_of_turn> pair lose
+  // their machine shape — imported lore and personas quote fiction,
+  // they never address the runtime.
+  text = text.replace(/<\|/g, '〈|').replace(/\|>/g, '|〉')
+  text = text.replace(/<\/?(start_of_turn|end_of_turn|start_of_response|end_of_response)>/gi, '〈$1〉')
   text = text.replace(/<<\/?SYS>>/gi, 'SYS')
   text = text.replace(/\[\/?(INST|SYS)\]/gi, '$1')
   text = text.replace(/(请)?(忽略|无视|忘掉)(以上|之前|先前|上述|所有|全部)(的)?(系统)?(指令|提示词|提示|规则|设定)[，。；、]?/g, '')

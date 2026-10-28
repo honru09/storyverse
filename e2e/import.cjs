@@ -85,9 +85,16 @@ async function startFixtureServer() {
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByRole('heading', { name: '故事发生在哪个世界？', exact: true }).waitFor();
 
-    await check('step 2 shows the world import entry alongside god mode', async () => {
-      await page.locator('.world-card-import').waitFor();
+    await check('step 2 folds the world import into the "more ways" disclosure', async () => {
+      // IMPORT-DAYLIGHT (progressive disclosure): the import card no
+      // longer competes with the world grid — a one-line fold, closed
+      // by default, opens to the same import card as before.
+      const fold = page.locator('.forge-more').first();
+      await fold.locator('summary').waitFor();
+      assert.equal(await page.locator('.world-card-import').isVisible(), false);
       await shot('01-world-import-entry.png');
+      await fold.locator('summary').click();
+      await page.locator('.world-card-import').waitFor({ state: 'visible' });
     });
 
     await check('world book import lands as a custom world with its entries attached', async () => {
@@ -111,9 +118,13 @@ async function startFixtureServer() {
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByRole('heading', { name: '你是怎样的主角？', exact: true }).waitFor();
 
-    await check('step 4 shows the character card import entry', async () => {
-      await page.locator('.card-import').waitFor();
+    await check('step 4 folds the character card import into "more ways" too', async () => {
+      const fold = page.locator('.forge-more').first();
+      await fold.locator('summary').waitFor();
+      assert.equal(await page.locator('.card-import').isVisible(), false);
       await shot('03-card-import-entry.png');
+      await fold.locator('summary').click();
+      await page.locator('.card-import').waitFor({ state: 'visible' });
     });
 
     await check('PNG card import previews first, then applies on confirm', async () => {

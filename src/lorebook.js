@@ -33,6 +33,78 @@ export const LOREBOOK_BUDGET_CHARS = LOREBOOK_BUDGET_TOKENS
 // A plain-text world file is kept whole up to this cap; anything beyond
 // it is truncated at import and the reader is told.
 export const WORLD_TEXT_MAX = 12000
+// IMPORT-DAYLIGHT (spec §5.1/§5.2/§5.4): hard file-size limits at the
+// door, a cap on how many imported entries may stay "constant" (an
+// always-on entry rides into EVERY chapter's context, so a book that
+// marks everything constant would crowd the budget permanently), and
+// an encoding rescue for the GBK files Windows users really have.
+export const IMPORT_TEXT_FILE_MAX_BYTES = 5 * 1024 * 1024
+export const IMPORT_PNG_FILE_MAX_BYTES = 15 * 1024 * 1024
+export const LOREBOOK_CONSTANT_MAX = 8
+
+export function assertImportFileSize(size, kind) {
+  const bytes = Number(size) || 0
+  if (kind === 'png') {
+    if (bytes > IMPORT_PNG_FILE_MAX_BYTES) throw new Error('这张图片超过 15 MB，太大了——换一张小一点的角色卡图片。')
+  } else if (bytes > IMPORT_TEXT_FILE_MAX_BYTES) {
+    throw new Error('这个文件超过 5 MB，太大了——世界书和设定文本请控制在 5 MB 以内。')
+  }
+}
+
+const replacementRatio = (text) => {
+  if (!text) return 0
+  // Replacement chars, private-use glyphs and stray control characters
+  // all count as garble: some legacy decoders map invalid bytes into
+  // the private-use area instead of admitting defeat (Big5 turns 0xFF
+  // into U+F878), and that must not pass for a clean decode.
+  const bad = (text.match(/�|[\uE000-\uF8FF]|[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g) || []).length
+  return bad / text.length
+}
+
+/*
+ * Decode an uploaded text file's bytes. UTF-8 first (strict); when the
+ * strict decode fails or comes back full of replacement characters,
+ * try GBK then Big5 — the encodings Simplified/Traditional Chinese
+ * editors still emit. Returns { text, encoding }; throws a
+ * plain-language error when nothing decodes cleanly (spec §5.4: an
+ * irreversible-garble ratio above ~3% is a stop, not a shrug).
+ */
+export function decodeImportText(input) {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input || [])
+  const view = bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf
+    ? bytes.subarray(3)
+    : bytes
+  try {
+    return { text: new TextDecoder('utf-8', { fatal: true }).decode(view), encoding: 'utf-8' }
+  } catch { /* not UTF-8: fall through to the rescue decoders */ }
+  const lenient = new TextDecoder('utf-8').decode(view)
+  if (replacementRatio(lenient) <= 0.01) return { text: lenient, encoding: 'utf-8' }
+  for (const encoding of ['gbk', 'big5']) {
+    try {
+      const rescued = new TextDecoder(encoding).decode(view)
+      if (replacementRatio(rescued) <= 0.03) return { text: rescued, encoding }
+    } catch { /* decoder unavailable: try the next one */ }
+  }
+  throw new Error('这个文件的编码读不出来，可能已损坏，或是非常老的编码格式。请用文本编辑器打开、另存为 UTF-8 后再导入。')
+}
+
+/*
+ * Constant entries are honoured up to LOREBOOK_CONSTANT_MAX; beyond
+ * that, later constants are demoted to keyed entries (their keys still
+ * trigger them) and the caller tells the reader it happened.
+ */
+export function capConstantEntries(entries) {
+  let seen = 0
+  let degraded = 0
+  const next = entries.map((entry) => {
+    if (!entry.constant) return entry
+    seen += 1
+    if (seen <= LOREBOOK_CONSTANT_MAX) return entry
+    degraded += 1
+    return { ...entry, constant: false }
+  })
+  return { entries: next, degraded }
+}
 // One section of a split text world becomes one entry; sections are
 // merged until they approach this size so entry contents stay well
 // inside the per-entry bound.
@@ -129,10 +201,53 @@ export function parseWorldInfoJson(text) {
     if (entries.length >= LOREBOOK_MAX_ENTRIES) break
   }
   if (!entries.length) throw new Error('这本世界书里的条目都是空的或已被禁用，没有可导入的内容。')
+  const capped = capConstantEntries(normalizeLorebookEntries(entries))
   return {
     name: isRecord(parsed) ? cleanText(parsed.name, 60) : '',
     description: isRecord(parsed) ? cleanText(parsed.description, 2000) : '',
-    entries: normalizeLorebookEntries(entries),
+    entries: capped.entries,
+    degradedConstants: capped.degraded,
+  }
+}
+
+/*
+ * A character card may carry its own embedded lorebook
+ * (data.character_book, spec §1.5): an entries ARRAY whose fields use
+ * the card-side names (keys / secondary_keys / enabled /
+ * insertion_order). The entries belong to the card's world, so they
+ * land on the same book the card is imported into, under the same
+ * privacy rules as a world book. Returns null when the card carries no
+ * usable book. (Field-name leniency matches parseWorldInfoJson:
+ * secondary keys fold into the trigger list — the IMPORT.md ruling.)
+ */
+export function parseCharacterBook(book) {
+  if (!isRecord(book) || !Array.isArray(book.entries)) return null
+  const entries = []
+  for (const raw of book.entries) {
+    if (!isRecord(raw)) continue
+    if (raw.enabled === false || raw.disable === true || raw.disabled === true) continue
+    const content = typeof raw.content === 'string' ? raw.content : ''
+    if (!content.trim()) continue
+    entries.push({
+      id: makeEntryId('cb'),
+      name: cleanText(raw.name ?? raw.comment, LOREBOOK_ENTRY_NAME_MAX),
+      keys: [
+        ...keyListOf(raw.keys), ...keyListOf(raw.key),
+        ...keyListOf(raw.secondary_keys), ...keyListOf(raw.keysecondary),
+      ],
+      content,
+      constant: raw.constant === true,
+      enabled: true,
+      source: 'worldbook',
+    })
+    if (entries.length >= LOREBOOK_MAX_ENTRIES) break
+  }
+  if (!entries.length) return null
+  const capped = capConstantEntries(normalizeLorebookEntries(entries))
+  return {
+    name: cleanText(book.name, 60),
+    entries: capped.entries,
+    degradedConstants: capped.degraded,
   }
 }
 
@@ -254,6 +369,9 @@ const cardFieldsOf = (root) => {
     personality: pick('personality'),
     scenario: pick('scenario'),
     firstMessage: pick('first_mes', 'firstMessage', 'first_message'),
+    // The card's embedded lorebook (v2/v3), if any — parsed under the
+    // same rules as a standalone world book.
+    book: parseCharacterBook(data.character_book ?? root.character_book),
   }
 }
 
@@ -279,6 +397,9 @@ export function pngTextChunks(bytes) {
   let offset = 8
   while (offset + 8 <= bytes.length) {
     const length = ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0
+    // A hostile or bruised length must never walk the cursor off a
+    // cliff (spec §2.4): no single chunk is worth scanning past 20 MB.
+    if (length > 20 * 1024 * 1024) break
     const type = String.fromCharCode(bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7])
     const dataStart = offset + 8
     if (dataStart + length > bytes.length) break

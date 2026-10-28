@@ -102,7 +102,12 @@ button.chapter-item:disabled {
   max-height: min(80dvh, 680px);
   padding: 1.5rem;
   color: var(--ink);
-  background: rgba(9, 16, 36, .95);
+  /* IMPORT-DAYLIGHT: the shell face of this dialog follows the shell
+     theme tokens. (The hardcoded navy rgba(9,16,36,.95) that used to sit
+     here left white-theme dialogs as a dark block with near-black ink —
+     the user's "白昼模式全坏" report. Inside the reader, the
+     [data-reader-theme] override below still wins and paints paper.) */
+  background: var(--surface-solid);
   border: 1px solid var(--line);
   border-radius: var(--radius-sheet, 24px);
   box-shadow: var(--shadow-raised, 0 8px 24px rgba(26,32,28,.10));
@@ -130,7 +135,9 @@ button.chapter-item:disabled {
   }
 }
 .reading-dialog::backdrop {
-  background: rgba(3, 6, 18, .55);
+  /* A neutral scrim reads correctly over all three shell palettes and
+     over every reader paper; the old navy tint belonged to one theme. */
+  background: rgba(0, 0, 0, .5);
 }
 .sheet-grabber {
   display: none;

@@ -211,7 +211,9 @@ import {
 import {
   exportLibrary,
   importLibrary,
+  mergeLibraryImport,
   STORAGE_KEY,
+  summarizeLibraryImport,
   upsertStory,
 } from "./persistence";
 import { findSettingViolation } from "./setting-guard";
@@ -222,7 +224,11 @@ import {
   resolveFusionPreselect,
 } from "./fusion.js";
 import {
+  assertImportFileSize,
+  decodeImportText,
   leadingExcerpt,
+  LOREBOOK_CONSTANT_MAX,
+  normalizeLorebookEntries,
   parseCharacterCardJson,
   parseCharacterCardPng,
   parseWorldInfoJson,
@@ -2083,9 +2089,14 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
   const handleWorldFile = async (file) => {
     if (!file) return;
     try {
+      // IMPORT-DAYLIGHT: size gate at the door, and text arrives via
+      // the encoding rescue (GBK/Big5 files from real editors decode
+      // instead of garbling) — the note says when a rescue happened.
+      assertImportFileSize(file.size, "text");
       const lower = file.name.toLowerCase();
       if (lower.endsWith(".json")) {
-        const parsed = parseWorldInfoJson(await file.text());
+        const { text, encoding } = decodeImportText(new Uint8Array(await file.arrayBuffer()));
+        const parsed = parseWorldInfoJson(text);
         const setting = (parsed.description || "").slice(0, CUSTOM_WORLD_SETTING_MAX);
         const violation = findSettingViolation([setting, ...parsed.entries.map((entry) => entry.content)].join("\n"));
         if (violation) { setError(violation); return; }
@@ -2094,10 +2105,11 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
           name: parsed.name,
           setting,
           entries: parsed.entries,
-          note: `已导入世界书${parsed.name ? `《${parsed.name}》` : ""}：${parsed.entries.length} 条条目（其中 ${constants} 条常驻），挂在这本书上，生成时按关键词命中注入。世界名与设定可以在下面改；条目开书后在阅读器的「设定集」里查看和修改。`,
+          note: `已导入世界书${parsed.name ? `《${parsed.name}》` : ""}：${parsed.entries.length} 条条目（其中 ${constants} 条常驻），挂在这本书上，生成时按关键词命中注入。${parsed.degradedConstants ? `常驻条目超过 ${LOREBOOK_CONSTANT_MAX} 条上限，多出的 ${parsed.degradedConstants} 条已改成按关键词触发。` : ""}${encoding !== "utf-8" ? "文件不是 UTF-8 编码，已自动转好。" : ""}世界名与设定可以在下面改；条目开书后在阅读器的「设定集」里查看和修改。`,
         });
       } else if (/\.(txt|md|markdown)$/.test(lower)) {
-        const parsed = parseWorldText(await file.text(), file.name);
+        const { text, encoding } = decodeImportText(new Uint8Array(await file.arrayBuffer()));
+        const parsed = parseWorldText(text, file.name);
         const violation = findSettingViolation(parsed.text);
         if (violation) { setError(violation); return; }
         const long = parsed.text.trim().length > CUSTOM_WORLD_SETTING_MAX;
@@ -2106,7 +2118,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
           name: parsed.name,
           setting: leadingExcerpt(parsed.text, CUSTOM_WORLD_SETTING_MAX),
           entries,
-          note: `已导入世界设定${parsed.name ? `《${parsed.name}》` : ""}（${parsed.text.trim().length} 字）${parsed.truncated ? "，文件过长，只取了前一部分" : ""}${long ? `：全文拆成 ${entries.length} 条世界书条目挂在这本书上，第一条常驻，其余按标题关键词命中注入；设定框里是开头摘要，可以改` : ""}。开书后在阅读器的「设定集」里能看全和修改。`,
+          note: `已导入世界设定${parsed.name ? `《${parsed.name}》` : ""}（${parsed.text.trim().length} 字）${parsed.truncated ? "，文件过长，只取了前一部分" : ""}${long ? `：全文拆成 ${entries.length} 条世界书条目挂在这本书上，第一条常驻，其余按标题关键词命中注入；设定框里是开头摘要，可以改` : ""}${encoding !== "utf-8" ? "。文件不是 UTF-8 编码，已自动转好" : ""}。开书后在阅读器的「设定集」里能看全和修改。`,
         });
       } else {
         setError("这个文件类型读不了——世界可以导入 .json 世界书，或 .txt / .md 的设定文本。");
@@ -2120,15 +2132,21 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
     try {
       const lower = file.name.toLowerCase();
       let card;
-      if (lower.endsWith(".png")) card = parseCharacterCardPng(new Uint8Array(await file.arrayBuffer()));
-      else if (lower.endsWith(".json")) card = parseCharacterCardJson(await file.text());
-      else { setError("角色卡可以导入 .json，或内嵌了角色卡的 .png 图片。"); return; }
+      if (lower.endsWith(".png")) {
+        assertImportFileSize(file.size, "png");
+        card = parseCharacterCardPng(new Uint8Array(await file.arrayBuffer()));
+      } else if (lower.endsWith(".json")) {
+        assertImportFileSize(file.size, "text");
+        card = parseCharacterCardJson(decodeImportText(new Uint8Array(await file.arrayBuffer())).text);
+      } else { setError("角色卡可以导入 .json，或内嵌了角色卡的 .png 图片。"); return; }
       const persona = personaTextFromCard(card);
-      const violation = findSettingViolation(persona);
+      const violation = findSettingViolation([persona, ...(card.book?.entries || []).map((entry) => entry.content)].join("\n"));
       if (violation) { setError(violation); return; }
       // Nothing is applied yet: the parsed card is shown first, and the
-      // reader confirms (or edits) it into the protagonist profile.
-      setCardPreview({ name: card.name, persona });
+      // reader confirms (or edits) it into the protagonist profile. A
+      // card may also carry its own little world book; it rides along
+      // in the preview and lands on the book at the same confirmation.
+      setCardPreview({ name: card.name, persona, book: card.book || null });
       setError("");
     } catch (failure) {
       setError(failure.message || "这张卡没能读进来，换个文件试试。");
@@ -2137,8 +2155,15 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
   const applyCardPreview = () => {
     if (!cardPreview) return;
     // The card's character becomes this book's protagonist; a brought-in
-    // avatar yields to it (the avatar itself is untouched).
-    set({ name: cardPreview.name, persona: cardPreview.persona, avatarId: "", avatarAppearance: "" });
+    // avatar yields to it (the avatar itself is untouched). The card's
+    // embedded world book APPENDS to whatever the world step already
+    // hung on this book (the world step defines the world; the card's
+    // book is its own travelling material), inside the entry cap.
+    const bookEntries = cardPreview.book?.entries || [];
+    const lorebook = bookEntries.length
+      ? normalizeLorebookEntries([...(draft.lorebook || []), ...bookEntries])
+      : draft.lorebook;
+    set({ name: cardPreview.name, persona: cardPreview.persona, avatarId: "", avatarAppearance: "", ...(bookEntries.length ? { lorebook } : {}) });
     setCardPreview(null);
   };
   const next = () => {
@@ -2488,6 +2513,21 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                         <small>从六个世界里抽一个，抽中哪个就去哪个世界。</small>
                       </span>
                     </button>
+                    {worlds.map((item) => (
+                      <WorldCard
+                        key={item.id}
+                        world={item}
+                        selected={draft.worldChosen && draft.genreId === item.id}
+                        onSelect={selectStage}
+                      />
+                    ))}
+                  </div>
+                  {/* IMPORT-DAYLIGHT (progressive disclosure): importing
+                      your own world is a power-user path, so it lives in
+                      the "more ways" fold below the world grid instead
+                      of competing with the six worlds as a seventh card. */}
+                  <details className="forge-more">
+                    <summary>更多方式：导入自己的世界</summary>
                     <label className="world-card world-card-import">
                       <span className="world-card-cover world-card-cover--symbol" aria-hidden="true">
                         <span className="world-card-symbol">入</span>
@@ -2506,15 +2546,7 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                         onChange={(event) => { void handleWorldFile(event.target.files?.[0]); event.target.value = ""; }}
                       />
                     </label>
-                    {worlds.map((item) => (
-                      <WorldCard
-                        key={item.id}
-                        world={item}
-                        selected={draft.worldChosen && draft.genreId === item.id}
-                        onSelect={selectStage}
-                      />
-                    ))}
-                  </div>
+                  </details>
                   <p className="god-ip-note">请勿直接使用他人作品或 IP 的设定——换上你自己的世界，故事才真正属于你。</p>
                 </>
               )}
@@ -2691,22 +2723,29 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                   </button>
                 </div>
               )}
-              <div className="card-import">
-                <div className="card-import-copy">
-                  <b>导入角色卡</b>
-                  <small>酒馆 / Flai 的角色卡（.json，或内嵌了卡的 .png）——先预览，确认了才填进主角档案。</small>
+              {/* IMPORT-DAYLIGHT (progressive disclosure): the card
+                  import folds into "more ways" on this step too; the
+                  preview it produces stays outside the fold — a result
+                  the reader must see and confirm. */}
+              <details className="forge-more">
+                <summary>更多方式：导入角色卡</summary>
+                <div className="card-import">
+                  <div className="card-import-copy">
+                    <b>导入角色卡</b>
+                    <small>酒馆 / Flai 的角色卡（.json，或内嵌了卡的 .png）——先预览，确认了才填进主角档案。卡里若带着自己的世界书，会一并挂到这本书上。</small>
+                  </div>
+                  <label className="small-link card-import-button">
+                    选择文件
+                    <input
+                      type="file"
+                      accept=".json,.png"
+                      hidden
+                      aria-label="导入角色卡文件"
+                      onChange={(event) => { void handleCardFile(event.target.files?.[0]); event.target.value = ""; }}
+                    />
+                  </label>
                 </div>
-                <label className="small-link card-import-button">
-                  选择文件
-                  <input
-                    type="file"
-                    accept=".json,.png"
-                    hidden
-                    aria-label="导入角色卡文件"
-                    onChange={(event) => { void handleCardFile(event.target.files?.[0]); event.target.value = ""; }}
-                  />
-                </label>
-              </div>
+              </details>
               {cardPreview && (
                 <div className="card-preview">
                   <b>读到一张角色卡，先看看对不对</b>
@@ -2728,6 +2767,9 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                       onChange={(event) => setCardPreview((current) => ({ ...current, persona: event.target.value }))}
                     />
                   </label>
+                  {cardPreview.book && (
+                    <p className="field-hint">这张卡还带着一本自己的世界书（{cardPreview.book.entries.length} 条条目）——点「用这张卡」会一并挂到这本书上，只属于你，不会出现在广场。开书后在阅读器的「设定集」里能看和改。</p>
+                  )}
                   <div className="card-preview-actions">
                     <Button onClick={applyCardPreview}>用这张卡</Button>
                     <Button variant="ghost" onClick={() => setCardPreview(null)}>
@@ -8139,7 +8181,13 @@ function libraryWithStory(library, story) {
 }
 
 function LibraryTools({ store, library, onClose, onRestored, syncNote }) {
+  // IMPORT-DAYLIGHT: the backup panel is a real flow now, not a bare
+  // file input. First screen (progressive disclosure): the shelf count,
+  // an Export button, an Import button — the merge rules and the file
+  // fine print live in the expandable notes below. Importing runs
+  // choose → validate → summary confirmation → merge → receipt.
   const [candidate, setCandidate] = useState(null);
+  const [receipt, setReceipt] = useState(null);
   const [message, setMessage] = useState("");
   const [confirmReload, setConfirmReload] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -8150,12 +8198,15 @@ function LibraryTools({ store, library, onClose, onRestored, syncNote }) {
     if (!file) return;
     const request = ++fileRequest.current;
     setCandidate(null);
+    setReceipt(null);
     setMessage("");
     setBusy(true);
     try {
       if (file.size > 5 * 1024 * 1024) throw new Error("备份不能超过 5 MB。");
       const restored = importLibrary(await file.text());
-      if (request === fileRequest.current) setCandidate(restored);
+      if (request === fileRequest.current) {
+        setCandidate({ library: restored, summary: summarizeLibraryImport(library, restored) });
+      }
     } catch (error) {
       if (request === fileRequest.current) setMessage(error.message || "无法读取这份备份。");
     } finally {
@@ -8163,31 +8214,57 @@ function LibraryTools({ store, library, onClose, onRestored, syncNote }) {
       event.target.value = "";
     }
   };
+  const confirmImport = () => {
+    if (!candidate) return;
+    try {
+      const { library: merged, summary } = mergeLibraryImport(library, candidate.library);
+      store.restore(merged);
+      setReceipt(summary);
+      setCandidate(null);
+    } catch (error) { setMessage(error.message); }
+  };
   return <ReadingDialog title="书架与备份" onClose={onClose}>
     <div className="library-tools">
       <p>{library.stories.length} 本故事 · {library.publications.length} 份分享</p>
       {syncNote && <p className="field-hint">{syncNote}</p>}
-      <p className="field-hint">备份含个人设定，请自行保管。恢复前会保留一份原存档。</p>
-      <Button variant="secondary" onClick={() => {
-        try {
-          downloadText(exportLibrary(library), `storyweave-${new Date().toISOString().slice(0, 10)}.json`);
-          setMessage("备份已交给浏览器下载。");
-        } catch (error) { setMessage(error.message); }
-      }}>导出书架备份</Button>
-      <label className="backup-upload">{busy ? "正在读取…" : "选择备份文件"}
-        <input type="file" accept=".json,application/json" aria-label="选择备份文件" onChange={chooseBackup} disabled={busy} />
-      </label>
+      <div className="reading-dialog-actions">
+        <Button variant="secondary" onClick={() => {
+          try {
+            downloadText(exportLibrary(library), `storyweave-${new Date().toISOString().slice(0, 10)}.json`);
+            setMessage("备份已交给浏览器下载。");
+          } catch (error) { setMessage(error.message); }
+        }}>导出备份</Button>
+        <label className="button button-primary backup-import-button">{busy ? "正在读取…" : "导入备份"}
+          <input type="file" accept=".json,application/json" aria-label="选择备份文件" onChange={chooseBackup} disabled={busy} hidden />
+        </label>
+      </div>
       {candidate && <section className="backup-confirm">
-        <h3>恢复 {candidate.stories.length} 本故事？</h3>
-        <p>当前书架和阅读进度将被这份备份替换。</p>
+        <h3>把这份备份并入书架？</h3>
+        <p>
+          备份里有 {candidate.summary.totalStories} 本故事：{candidate.summary.added} 本是新的，会加入书架
+          {candidate.summary.updated > 0 && <>；{candidate.summary.updated} 本和现有的同名同 id，内容不同，会以备份里的为准更新</>}
+          {candidate.summary.unchanged > 0 && <>；{candidate.summary.unchanged} 本和现有一模一样，不动</>}。
+          现在书架上的 {candidate.summary.currentStories} 本故事一本都不会少。
+          {candidate.summary.publicationsAdded > 0 && <>另有 {candidate.summary.publicationsAdded} 份分享记录会一并并入。</>}
+          {candidate.summary.draftAdopted && <>备份里还有一份没写完的造世草稿，这台设备上正好没有，会一并带入。</>}
+        </p>
         <div className="reading-dialog-actions">
-          <Button onClick={() => {
-            try { store.restore(candidate); onRestored(); }
-            catch (error) { setMessage(error.message); }
-          }}>确认恢复</Button>
-          <Button variant="ghost" onClick={() => setCandidate(null)}>取消</Button>
+          <Button onClick={confirmImport}>确认导入</Button>
+          <Button variant="ghost" onClick={() => setCandidate(null)}>先不导入</Button>
         </div>
       </section>}
+      {receipt && <section className="backup-confirm">
+        <h3>导入完成</h3>
+        <p>新增 {receipt.added} 本、更新 {receipt.updated} 本{receipt.publicationsAdded > 0 && <>、并入 {receipt.publicationsAdded} 份分享记录</>}。书架现在共 {library.stories.length} 本故事。</p>
+        <div className="reading-dialog-actions">
+          <Button onClick={onRestored}>去书架看看</Button>
+        </div>
+      </section>}
+      <details className="backup-details">
+        <summary>导入细则与说明</summary>
+        <p className="field-hint">导入是「并入」不是「覆盖」：备份里有的新书会加入；同一本书两边都有、内容不同时以备份为准；这台设备上正在写的造世草稿不会被备份里的草稿冲掉。</p>
+        <p className="field-hint">备份含个人设定（世界书条目、主角档案都在书里），请自行保管，别转发给不信任的人。化身不在书架备份里——化身跟着账号走，登录后自动回来。</p>
+      </details>
       {store.getSnapshot().warning && <div className="backup-recovery">
         <Button variant="ghost" onClick={() => {
           try { downloadText(store.raw() || "{}", "storyweave-original.json"); }

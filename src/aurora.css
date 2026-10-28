@@ -41,7 +41,9 @@
 .generation-overlay .particle-field{z-index:0}
 .generation-card{z-index:1}
 .generation-bg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,8,20,.58),rgba(4,8,20,.8))}
-.generation-card{position:relative;width:min(100%,430px);padding:30px 26px 26px;border:1px solid var(--line);border-radius:var(--radius-sheet);background:rgba(10,20,48,.88);box-shadow:var(--shadow-raised);text-align:center}
+/* IMPORT-DAYLIGHT: the waiting card's face follows the shell theme
+   (it used to be hardcoded navy, which broke the white palette). */
+.generation-card{position:relative;width:min(100%,430px);padding:30px 26px 26px;border:1px solid var(--line);border-radius:var(--radius-sheet);background:var(--surface-solid);box-shadow:var(--shadow-raised);text-align:center}
 .generation-orb{position:relative;width:64px;height:64px;margin:0 auto 20px;border-radius:50%;background:radial-gradient(circle at 35% 35%,rgba(110,231,255,.85),rgba(167,139,250,.55) 55%,rgba(240,166,255,.25));filter:blur(.4px);animation:orb-pulse 2s ease-in-out infinite}
 .generation-halo{position:absolute;inset:-14px;border-radius:50%;border:1px solid rgba(110,231,255,.45);animation:halo-breathe 2.6s ease-in-out infinite}
 @keyframes halo-breathe{0%,100%{transform:scale(.82);opacity:.25}50%{transform:scale(1.08);opacity:.8}}
@@ -52,7 +54,7 @@
 .generation-stages{display:flex;justify-content:center;gap:8px;margin:16px 0 12px;padding:0;list-style:none}
 .generation-stages li{padding:6px 12px;border:1px solid var(--line);border-radius:999px;color:var(--dim);font-size:13px;font-weight:650;transition:opacity var(--dur-state) var(--ease-out),color var(--dur-state) var(--ease-out),border-color var(--dur-state) var(--ease-out)}
 .generation-stages li.active{color:#06122b;background:linear-gradient(120deg,var(--cyan),var(--violet));border-color:transparent}
-.generation-stages li.done{color:var(--mint);border-color:rgba(125,255,206,.45)}
+.generation-stages li.done{color:var(--mint);border-color:color-mix(in srgb,var(--mint) 45%,transparent)}
 .generation-progress{height:5px;border-radius:99px;background:var(--glass-2);overflow:hidden}
 .generation-progress i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--cyan),var(--violet));transition:width .3s linear}
 .generation-skeleton{display:grid;gap:10px;margin-top:20px;text-align:left}
@@ -63,10 +65,12 @@
 /* ---- Intervention sequence （介入）: the worldline stirs and reweaves ----
    Transform/opacity only, so the global motion policy freezes it cleanly. */
 .intervention-overlay{position:fixed;inset:0;height:100dvh;max-height:100dvh;z-index:60;display:grid;place-items:safe center;overflow-y:auto;overscroll-behavior:contain;padding:max(24px,env(safe-area-inset-top)) max(24px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(24px,env(safe-area-inset-left));background:rgba(4,8,20,.66);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:page-in var(--dur-sheet) var(--ease-out) both}
-.intervention-progress{height:5px;margin-top:16px;border-radius:99px;background:rgba(148,178,255,.16);overflow:hidden}
+.intervention-progress{height:5px;margin-top:16px;border-radius:99px;background:var(--glass-2);overflow:hidden}
 .intervention-progress i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--cyan),var(--violet));transition:width var(--dur-state) var(--ease-out)}
-.intervention-card{width:min(100%,430px);padding:30px 26px 26px;border:1px solid rgba(168,196,255,.35);border-radius:var(--radius-sheet);background:rgba(8,16,38,.96);box-shadow:var(--shadow-raised);text-align:center;color:#eaf2ff}
-.intervention-card h2{margin:0 0 14px;font-size:21px;font-weight:800;color:#f2f7ff}
+/* IMPORT-DAYLIGHT: face, ink and hairline follow the shell theme; the
+   card used to be hardcoded navy with hardcoded pale text. */
+.intervention-card{width:min(100%,430px);padding:30px 26px 26px;border:1px solid var(--line);border-radius:var(--radius-sheet);background:var(--surface-solid);box-shadow:var(--shadow-raised);text-align:center;color:var(--ink)}
+.intervention-card h2{margin:0 0 14px;font-size:21px;font-weight:800;color:var(--ink)}
 .intervention-weave{width:150px;height:90px;margin:0 auto 16px;display:block;overflow:visible}
 .weave-strand{fill:none;stroke-width:1.6;stroke-linecap:round}
 .strand-a{stroke:rgba(110,231,255,.75);animation:weave-drift-a 2.8s ease-in-out infinite}
@@ -78,10 +82,10 @@
 .weave-node.node-b{fill:var(--violet);animation-delay:.5s}
 .weave-node.node-c{fill:var(--pink);animation-delay:1s}
 .intervention-stages{display:flex;justify-content:center;gap:8px;margin:0 0 10px;padding:0;list-style:none}
-.intervention-stages li{padding:6px 12px;border:1px solid rgba(168,196,255,.35);border-radius:999px;color:rgba(214,228,255,.75);font-size:13px;font-weight:650;transition:opacity var(--dur-state) var(--ease-out),color var(--dur-state) var(--ease-out),border-color var(--dur-state) var(--ease-out)}
+.intervention-stages li{padding:6px 12px;border:1px solid var(--line);border-radius:999px;color:var(--dim);font-size:13px;font-weight:650;transition:opacity var(--dur-state) var(--ease-out),color var(--dur-state) var(--ease-out),border-color var(--dur-state) var(--ease-out)}
 .intervention-stages li.active{color:#06122b;background:linear-gradient(120deg,var(--cyan),var(--violet));border-color:transparent}
-.intervention-stages li.done{color:var(--mint);border-color:rgba(125,255,206,.45)}
-.intervention-stage-note{min-height:26px;margin:0;color:rgba(214,228,255,.8);font-size:13.5px;line-height:1.75}
+.intervention-stages li.done{color:var(--mint);border-color:color-mix(in srgb,var(--mint) 45%,transparent)}
+.intervention-stage-note{min-height:26px;margin:0;color:var(--dim);font-size:13.5px;line-height:1.75}
 
 /* ---- Story map ---- */
 .storymap{display:block;width:100%}

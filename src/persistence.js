@@ -462,6 +462,73 @@ export function importLibrary(raw) {
   return parsed
 }
 
+/*
+ * IMPORT-DAYLIGHT: a backup import MERGES into the current shelf; it
+ * no longer replaces it wholesale. The merge rules are the ones the
+ * confirmation summary states to the reader, word for word:
+ *   - a story only in the backup is added;
+ *   - a story in both with different content is updated to the
+ *     backup's copy (importing a backup means trusting that copy);
+ *   - an identical story is left alone;
+ *   - publication records merge by id, favourites union;
+ *   - an in-progress forge draft on THIS device is never overwritten
+ *     by the backup's draft; the backup's draft is adopted only when
+ *     there is none here.
+ * Avatars are NOT part of a shelf backup: they live on the account
+ * server-side and come back at sign-in. The summary says so.
+ */
+export function summarizeLibraryImport(current, incoming) {
+  const currentById = new Map((current?.stories || []).map((story) => [story.id, story]))
+  let added = 0
+  let updated = 0
+  let unchanged = 0
+  for (const story of incoming?.stories || []) {
+    const existing = currentById.get(story.id)
+    if (!existing) added += 1
+    else if (JSON.stringify(existing) !== JSON.stringify(story)) updated += 1
+    else unchanged += 1
+  }
+  const currentPublicationIds = new Set((current?.publications || []).map((item) => item.id))
+  const publicationsAdded = (incoming?.publications || []).filter((item) => !currentPublicationIds.has(item.id)).length
+  return {
+    totalStories: (incoming?.stories || []).length,
+    added,
+    updated,
+    unchanged,
+    publicationsAdded,
+    currentStories: (current?.stories || []).length,
+    draftAdopted: !current?.draft && Boolean(incoming?.draft),
+  }
+}
+
+export function mergeLibraryImport(current, incoming) {
+  const base = isRecord(current) ? current : emptyLibrary()
+  const summary = summarizeLibraryImport(base, incoming)
+  const incomingById = new Map((incoming.stories || []).map((story) => [story.id, story]))
+  const stories = (base.stories || []).map((story) => incomingById.get(story.id) || story)
+  const known = new Set(stories.map((story) => story.id))
+  for (const story of incoming.stories || []) {
+    if (!known.has(story.id)) { stories.push(story); known.add(story.id) }
+  }
+  const publicationIds = new Set((base.publications || []).map((item) => item.id))
+  const publications = [...(base.publications || [])]
+  for (const item of incoming.publications || []) {
+    if (!publicationIds.has(item.id)) { publications.push(item); publicationIds.add(item.id) }
+  }
+  const merged = {
+    version: CURRENT_VERSION,
+    stories,
+    activeStoryId: base.activeStoryId && known.has(base.activeStoryId)
+      ? base.activeStoryId
+      : (incoming.activeStoryId && known.has(incoming.activeStoryId) ? incoming.activeStoryId : stories[0]?.id ?? null),
+    publications,
+    favorites: [...new Set([...(base.favorites || []), ...(incoming.favorites || [])])].filter((id) => known.has(id)),
+    draft: base.draft ?? incoming.draft ?? null,
+  }
+  assertValidLibrary(merged)
+  return { library: merged, summary }
+}
+
 function warningFor(message) {
   return `${message} 原始数据已保留，未覆盖。`
 }
