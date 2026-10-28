@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { ApiError, sanitizeSettingText } from './gemini.js'
 import { avatarAppearanceText } from '../src/avatar.js'
 import { CUSTOM_GENRE_ID } from '../src/story-engine.js'
@@ -6,7 +7,7 @@ import { createPlazaStore } from './plaza-store.js'
 import { createAvatarStore, collectionFromRecord, imageSlotFor } from './avatar-store.js'
 import { createCoverStore } from './cover-store.js'
 import { createIdentityStore } from './identity-store.js'
-import { plazaSummaryOf } from './plaza.js'
+import { isOfficialUid, plazaSummaryOf } from './plaza.js'
 
 /**
  * The social service: public profile pages, the follow graph, plaza
@@ -40,6 +41,21 @@ export const PRESENCE_WINDOW_MS = 90_000
 export const DEFAULT_AVATAR_PATH = '/default-avatar.svg'
 export const PROFILE_PICTURE_MAX_BYTES = 1_048_576
 export const HANDLE_PATTERN = /^[a-z0-9_]{3,20}$/
+
+/**
+ * The message centre's three categories (NOTIFY-SETTINGS §36). 互动 is
+ * ONE bucket for everything another person does that concerns the
+ * reader — its item `kind` is an open enum ('follow' today; 'like',
+ * 'comment' and 'friend_request' arrive with their own batches and
+ * slot into the same category, the same list shape and the same
+ * read watermark, which is kept per user × category, never per kind).
+ * 公告 is official-only. 系统 is the account's own security events,
+ * written by the account routes at the moment the action succeeds —
+ * never invented, never back-filled.
+ */
+export const NOTIFY_CATEGORIES = ['activity', 'announcements', 'system']
+export const NOTIFY_ACTIVITY_KINDS = ['follow', 'like', 'comment', 'friend_request']
+const NOTIFY_ITEM_CAP = 50
 
 const WORLD_ART_IDS = new Set(['mist', 'cultivation', 'neon', 'city', 'court', 'frontier', CUSTOM_GENRE_ID])
 const clip = (value, length) => typeof value === 'string' ? value.trim().slice(0, length) : ''
@@ -625,6 +641,145 @@ export function createSocialService({
       const at = now()
       const all = await backend.listPresence()
       return all.filter((record) => Number.isFinite(record?.lastSeen) && at - record.lastSeen < PRESENCE_WINDOW_MS).length
+    },
+
+    /**
+     * One account event for the 系统 category, recorded by the account
+     * routes at the moment the action it describes succeeds (a
+     * password reset, a recovery-email bind/change/unbind). Only
+     * uid/kind/detail/instant are stored — never an address, never a
+     * code. Recording is best-effort by contract: callers swallow
+     * failures so an event can never break the account action itself.
+     */
+    async recordAccountEvent(uid, kind, detail = '') {
+      if (!backend || !uid) return
+      await backend.putAccountEvent({
+        id: `evt-${randomUUID()}`,
+        uid,
+        kind: clip(kind, 40),
+        detail: clip(detail, 40),
+        createdAt: new Date(now()).toISOString(),
+      })
+    },
+
+    /**
+     * The message centre payload: three categories, each with its
+     * items and its unread count against the caller's per-category
+     * read watermark. Every item is derived from a real record —
+     * 互动 from the follow edges pointing at the caller (later kinds
+     * join the same list), 公告 from the announcements collection,
+     * 系统 from the caller's own account events. A follow edge stored
+     * before edges carried timestamps has no `at`: it is listed (the
+     * followers list is the present truth) but it never counts as
+     * unread — an unknown age is not a new event, and no time is
+     * invented for it.
+     */
+    async notifications(identity) {
+      if (!backend) throw new ApiError(503, '消息服务尚未配置。')
+      const byNewest = (a, b) => String(b.at || '').localeCompare(String(a.at || ''))
+      const [edges, announcementRecords, eventRecords, readMarks] = await Promise.all([
+        backend.listFollowsByFollowee(identity.uid),
+        backend.listAnnouncements(),
+        backend.listAccountEvents(identity.uid),
+        Promise.all(NOTIFY_CATEGORIES.map((category) => backend.getNotifyRead(identity.uid, category))),
+      ])
+      const activityItems = await Promise.all([...edges]
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        .slice(0, NOTIFY_ITEM_CAP)
+        .map(async (record) => {
+        const [personRecord, personAvatar, personPublications] = await Promise.all([
+          profileRecordOf(record.followerUid),
+          avatarProfileOf(record.followerUid),
+          visiblePublicationsOf(record.followerUid),
+        ])
+        const fallback = publicIdentityFor(record.followerUid, personPublications, identity)
+        const merged = identityFromRecord(personRecord, fallback)
+        const avatarName = personAvatar ? sanitizeSettingText(clip(personAvatar.name, 40)).trim() : ''
+        return {
+          id: `follow:${record.followerUid}`,
+          kind: 'follow',
+          actorUid: record.followerUid,
+          displayName: publicDisplayName([merged.displayName, avatarName]),
+          handle: publicHandle(merged.handle),
+          picture: await pictureFor(record.followerUid, personRecord, personAvatar),
+          at: typeof record.createdAt === 'string' && record.createdAt ? record.createdAt : null,
+        }
+        }))
+      activityItems.sort(byNewest)
+      const announcementItems = [...announcementRecords]
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        .slice(0, NOTIFY_ITEM_CAP)
+        .map((record) => ({
+          id: record.id,
+          kind: 'announcement',
+          title: record.title,
+          body: record.body,
+          at: record.createdAt || null,
+        }))
+      const systemItems = [...eventRecords]
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        .slice(0, NOTIFY_ITEM_CAP)
+        .map((record) => ({
+          id: record.id,
+          kind: record.kind,
+          detail: record.detail || '',
+          at: record.createdAt || null,
+        }))
+      const itemsByCategory = { activity: activityItems, announcements: announcementItems, system: systemItems }
+      const categories = {}
+      let totalUnread = 0
+      NOTIFY_CATEGORIES.forEach((category, index) => {
+        const readAt = readMarks[index] || ''
+        const items = itemsByCategory[category]
+        const unread = items.filter((item) => item.at && item.at > readAt).length
+        categories[category] = { unread, items }
+        totalUnread += unread
+      })
+      return { categories, totalUnread }
+    },
+
+    /**
+     * Opening a category marks THAT category read: the watermark is
+     * the server's own instant, stored per user × category, so the
+     * badge, another device and a later visit all agree — and reading
+     * one category never touches the others.
+     */
+    async markNotificationsRead(identity, category) {
+      if (!backend) throw new ApiError(503, '消息服务尚未配置。')
+      if (!NOTIFY_CATEGORIES.includes(category)) throw new ApiError(400, '消息分类不对。')
+      const readAt = new Date(now()).toISOString()
+      await backend.putNotifyRead(identity.uid, category, readAt)
+      return { category, readAt }
+    },
+
+    /** The public announcement list — what the 公告 category shows everyone. */
+    async listAnnouncements() {
+      if (!backend) return { announcements: [] }
+      const records = await backend.listAnnouncements()
+      const announcements = [...records]
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        .slice(0, NOTIFY_ITEM_CAP)
+        .map((record) => ({ id: record.id, title: record.title, body: record.body, at: record.createdAt || null }))
+      return { announcements }
+    },
+
+    /**
+     * Publishing an announcement is official-only: the same derived
+     * test as the plaza's official samples (the uid IS a designated
+     * official username account) — never a request flag. Title and
+     * body are plain text, clipped and sanitised like every other
+     * creator-authored string on the site.
+     */
+    async publishAnnouncement(identity, body) {
+      if (!backend) throw new ApiError(503, '公告服务尚未配置。')
+      if (!isOfficialUid(identity?.uid)) throw new ApiError(403, '只有织界官方可以发布公告。')
+      const input = body && typeof body === 'object' ? body : {}
+      const title = sanitizeSettingText(clip(input.title, 80)).trim()
+      const text = sanitizeSettingText(clip(input.body, 2000)).trim()
+      if (!title || !text) throw new ApiError(400, '公告要有标题和内容。')
+      const record = { id: `ann-${randomUUID()}`, title, body: text, createdAt: new Date(now()).toISOString() }
+      await backend.putAnnouncement(record)
+      return { id: record.id, title: record.title, body: record.body, at: record.createdAt }
     },
   }
 }

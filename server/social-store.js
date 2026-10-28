@@ -23,6 +23,8 @@ export const profileKeyFor = (uid) => createHash('sha256').update(`user-profile\
 export const pictureKeyFor = (uid) => createHash('sha256').update(`profile-picture\n${uid}`).digest('hex')
 export const userReportKeyFor = (reporterUid, targetUid) =>
   createHash('sha256').update(`user-report\n${reporterUid}\n${targetUid}`).digest('hex')
+export const notifyReadKeyFor = (uid, category) =>
+  createHash('sha256').update(`notify-read\n${uid}\n${category}`).digest('hex')
 
 /**
  * Which picture a profile shows, given the owner's stored preference and
@@ -52,6 +54,9 @@ export function createMemorySocialStore() {
   const handles = new Map()
   const pictures = new Map()
   const reports = new Map()
+  const announcements = new Map()
+  const notifyReads = new Map()
+  const accountEvents = new Map()
   return {
     kind: 'memory',
     async getFollow(followerUid, followeeUid) {
@@ -96,6 +101,24 @@ export function createMemorySocialStore() {
     },
     async putUserReport(record) {
       reports.set(userReportKeyFor(record.reporterUid, record.targetUid), { ...record })
+    },
+    async putAnnouncement(record) {
+      announcements.set(record.id, { ...record })
+    },
+    async listAnnouncements() {
+      return [...announcements.values()].map((record) => ({ ...record }))
+    },
+    async getNotifyRead(uid, category) {
+      return notifyReads.get(notifyReadKeyFor(uid, category)) ?? null
+    },
+    async putNotifyRead(uid, category, readAt) {
+      notifyReads.set(notifyReadKeyFor(uid, category), readAt)
+    },
+    async putAccountEvent(record) {
+      accountEvents.set(record.id, { ...record })
+    },
+    async listAccountEvents(uid) {
+      return [...accountEvents.values()].filter((record) => record.uid === uid).map((record) => ({ ...record }))
     },
   }
 }
@@ -169,6 +192,27 @@ export function createFirestoreSocialStore(loadDb) {
       await (await db()).collection('user_reports')
         .doc(userReportKeyFor(record.reporterUid, record.targetUid))
         .set({ ...record })
+    },
+    async putAnnouncement(record) {
+      await (await db()).collection('announcements').doc(record.id).set({ ...record })
+    },
+    async listAnnouncements() {
+      const snapshot = await (await db()).collection('announcements').get()
+      return snapshot.docs.map((doc) => doc.data())
+    },
+    async getNotifyRead(uid, category) {
+      const snapshot = await (await db()).collection('notify_reads').doc(notifyReadKeyFor(uid, category)).get()
+      return snapshot.exists ? (snapshot.data()?.readAt ?? null) : null
+    },
+    async putNotifyRead(uid, category, readAt) {
+      await (await db()).collection('notify_reads').doc(notifyReadKeyFor(uid, category)).set({ uid, category, readAt })
+    },
+    async putAccountEvent(record) {
+      await (await db()).collection('account_events').doc(record.id).set({ ...record })
+    },
+    async listAccountEvents(uid) {
+      const snapshot = await (await db()).collection('account_events').where('uid', '==', uid).get()
+      return snapshot.docs.map((doc) => doc.data())
     },
   }
 }

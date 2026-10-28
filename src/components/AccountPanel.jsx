@@ -15,7 +15,7 @@ const SHELL_THEME_OPTIONS = [
   { id: "aurora", label: "极光" },
 ];
 
-function ShellThemeControl({ shellTheme, onShellThemeChange }) {
+export function ShellThemeControl({ shellTheme, onShellThemeChange }) {
   if (!onShellThemeChange) return null;
   return (
     <div className="account-theme">
@@ -281,7 +281,10 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       <p className="account-storage-note">{account.config?.storage === 'synced'
         ? "书架与阅读进度会同步到你的账号，换设备登录就能接着读。本机始终留一份，断网也能读。退出账号不会删除本机故事。"
         : "书架与阅读进度保存在当前浏览器，暂不跨设备同步。退出账号不会删除本机故事。"}</p>
-      <ShellThemeControl shellTheme={shellTheme} onShellThemeChange={onShellThemeChange} />
+      {/* 外观主题 moved to 我的主页 → 设置 (NOTIFY-SETTINGS §36): this
+          signed-in panel no longer carries a second copy of the switch.
+          The signed-out branch below keeps it — a guest has no profile
+          page yet, and this dialog is their only theme entry. */}
       {onOpenAvatar && <button className="account-avatar-entry" type="button" onClick={onOpenAvatar}>我的化身 <span aria-hidden="true">→</span></button>}
       {onOpenProfile && <button className="account-avatar-entry" type="button" onClick={onOpenProfile}>我的主页 <span aria-hidden="true">→</span></button>}
       {onOpenHelp && <button className="account-avatar-entry" type="button" onClick={onOpenHelp}>帮助与常见问题 <span aria-hidden="true">→</span></button>}

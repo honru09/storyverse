@@ -203,6 +203,19 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
     })
     social ??= createSocialService({ env, identityStore })
   }
+  // Account events for the message centre's 系统 category
+  // (NOTIFY-SETTINGS §36): recorded at the route, at the moment the
+  // account action succeeds — a password reset, a recovery-email
+  // change. Best-effort by contract: an event write must never fail
+  // the account action it describes, and injected test doubles that
+  // predate the method simply skip it.
+  const noteAccountEvent = async (uid, kind, detail) => {
+    try {
+      if (uid && typeof social?.recordAccountEvent === 'function') {
+        await social.recordAccountEvent(uid, kind, detail)
+      }
+    } catch { /* the event is a record of the action, never a gate on it */ }
+  }
   // Explicit opt-out preserves existing deployments until the release owner sets it.
   const generationEnabled = env.GENERATION_ENABLED !== 'false'
   // The model id is static configuration; remember it the first time status
@@ -269,11 +282,19 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
       }
       if (pathname === '/api/auth/username/recovery/reset' && request.method === 'POST') {
         if (typeof auth.usernameRecoveryReset !== 'function') throw new ApiError(503, '用户名登录尚未配置，请使用其他方式登录。')
-        return sendJson(response, 200, await auth.usernameRecoveryReset(await readAuthJson(request), clientKeyOf(request)))
+        const session = await auth.usernameRecoveryReset(await readAuthJson(request), clientKeyOf(request))
+        await noteAccountEvent(session?.uid, 'password-reset', '')
+        return sendJson(response, 200, session)
       }
       if (pathname === '/api/auth/username/recovery-email' && request.method === 'POST') {
         if (typeof auth.usernameSetRecoveryEmail !== 'function') throw new ApiError(503, '用户名登录尚未配置，请使用其他方式登录。')
-        return sendJson(response, 200, await auth.usernameSetRecoveryEmail(request.headers.authorization, await readAuthJson(request)))
+        const result = await auth.usernameSetRecoveryEmail(request.headers.authorization, await readAuthJson(request))
+        // The binding succeeded; whose it was comes from the same
+        // credential the service just resolved, never from the body.
+        let eventUid = ''
+        try { eventUid = (await auth.identity(request.headers.authorization))?.uid || '' } catch { eventUid = '' }
+        await noteAccountEvent(eventUid, 'recovery-email', result?.hasRecoveryEmail ? 'set' : 'unbound')
+        return sendJson(response, 200, result)
       }
       if (pathname === '/api/generate' && request.method === 'POST') {
         if (!generationEnabled) throw new ApiError(503, GENERATION_PAUSED.message)
@@ -501,6 +522,46 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         let onlineCount = 0
         try { onlineCount = await social.onlineCount() } catch { /* count is decorative */ }
         return sendJson(response, 200, { publications, onlineCount })
+      }
+      if (pathname === '/api/me/notifications' && request.method === 'GET') {
+        // The message centre is the caller's own: every category is
+        // derived from records about them, and the read watermarks are
+        // theirs alone.
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再看消息。', 'auth-required')
+          throw error
+        }
+        return sendJson(response, 200, await social.notifications(identity))
+      }
+      if (pathname === '/api/me/notifications/read' && request.method === 'POST') {
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再看消息。', 'auth-required')
+          throw error
+        }
+        const body = await readAuthJson(request)
+        return sendJson(response, 200, await social.markNotificationsRead(identity, body.category))
+      }
+      if (pathname === '/api/announcements' && request.method === 'GET') {
+        // Public like the plaza feed: announcements are site notices.
+        return sendJson(response, 200, await social.listAnnouncements())
+      }
+      if (pathname === '/api/announcements' && request.method === 'POST') {
+        // Publishing is official-only; the service derives that from
+        // the caller's uid, never from anything in the request body.
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再发布公告。', 'auth-required')
+          throw error
+        }
+        return sendJson(response, 200, { announcement: await social.publishAnnouncement(identity, await readAuthJson(request)) })
       }
       if (pathname === '/api/me/profile' && request.method === 'PUT') {
         // Profile customization is account property: a signed-in

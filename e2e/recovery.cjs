@@ -37,9 +37,12 @@ async function openBackup(page) {
   if (await recoveryButton.isVisible()) {
     await recoveryButton.click();
   } else {
-    const toolbarButton = page.getByRole('button', { name: '书架与备份', exact: true });
-    if (!(await toolbarButton.isVisible())) await page.getByRole('button', { name: '我的世界', exact: true }).click();
-    await toolbarButton.click();
+    // The topbar shelf entry retired (NOTIFY-SETTINGS §36): backup now
+    // lives on the shelf page's own footer (and in 主页 → 设置 for
+    // signed-in readers). This suite runs signed out, so it goes to
+    // the shelf page directly.
+    await page.goto(`${targetUrl}#/home`, { waitUntil: 'domcontentloaded' });
+    await recoveryButton.click();
   }
   const dialog = page.getByRole('dialog', { name: '书架与备份' });
   await dialog.waitFor();

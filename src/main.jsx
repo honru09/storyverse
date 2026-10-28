@@ -81,10 +81,12 @@ import {
 } from "./profile-boards.js";
 import {
   checkHandleAvailable,
+  fetchNotifications,
   fetchUserConnections,
   fetchUserProfile,
   fileToSquareJpeg,
   followUser,
+  markNotificationsRead,
   publicDisplayName as profileDisplayName,
   publicHandle as profileHandle,
   reportUser,
@@ -92,7 +94,6 @@ import {
   unfollowUser,
   updateMyProfile,
   uploadMyPicture,
-  userPicturePath,
 } from "./users.js";
 import {
   clearProfileCache,
@@ -109,7 +110,7 @@ import { acceptGeneratedChapter, acceptRerolledChapter, acceptRevisedChapter, ge
 import InterventionOverlay from "./components/InterventionOverlay.jsx";
 import WorldArtwork from "./components/WorldArtwork.jsx";
 import StoryCover from "./components/StoryCover.jsx";
-import AccountPanel from "./components/AccountPanel.jsx";
+import AccountPanel, { ShellThemeControl } from "./components/AccountPanel.jsx";
 import { createAuthClient } from "./auth/client.js";
 import ReadingPreferences from "./components/ReadingPreferences.jsx";
 import { createReadingPreferencesStore, getReaderAppearance } from "./reading-preferences.js";
@@ -119,8 +120,8 @@ import ReadingTools from "./components/ReadingTools.jsx";
 import "./reader-experience.css";
 import {
   MotionProvider,
-  MotionToggle,
   useMotionPolicy,
+  useMotionSettings,
 } from "./motion/MotionProvider.jsx";
 import {
   scrollToTop,
@@ -577,32 +578,37 @@ function Sidebar({ view, onNavigate, onOpenProfile }) {
   );
 }
 
-function Topbar({ onNavigate, onOpenLibrary, onOpenAccount, account, faceSrc, facePortrait }) {
-  const [faceFailed, setFaceFailed] = useState(false);
-  const letter = (account.user?.displayName || account.user?.email || "你").slice(0, 1).toUpperCase();
+function Topbar({ onNavigate, account, unreadCount = 0, onOpenNotifications, onOpenAccount }) {
+  // The top-right cluster (NOTIFY-SETTINGS §36, user order
+  // 2026-10-28): signed in, it is ONE thing — the message bell in the
+  // shared glass capsule, badged with the unread total (99+ cap).
+  // The account face, the motion toggle and the shelf button that
+  // used to crowd this corner have moved, not vanished: the account
+  // lives in the bottom-nav 主页 tab, motion and theme in 主页 →
+  // 设置， the shelf on the profile itself. Signed out, a bell means
+  // nothing, so the corner keeps the login entry instead.
   return (
     <header className="topbar">
       <Brand onClick={() => onNavigate("plaza")} />
       <div className="topbar-actions">
-        <button className="account-entry" onClick={onOpenAccount} aria-label={account.user ? "我的账号" : "登录与注册"} aria-haspopup="dialog">
-          {account.user ? (
-            // F-09: the account button wears the same face the profile
-            // shows (face-anchored when it is the avatar portrait), not
-            // a letter disc that reads as a second identity.
-            faceSrc && !faceFailed ? (
-              <span className={`nav-face-frame ${facePortrait ? "is-portrait" : ""}`} aria-hidden="true">
-                <img className="nav-face-img" src={faceSrc} alt="" onError={() => setFaceFailed(true)} />
-              </span>
-            ) : <span>{letter}</span>
-          ) : <><Icon name="users" size={20}/><span>登录</span></>}
-        </button>
-        <MotionToggle />
-        {/* F-02: the shelf/backup entry names itself in visible text
-            wherever the bar has room (icon-only under 760px). */}
-        <button className="icon-button topbar-library-button" onClick={onOpenLibrary} aria-label="书架与备份" aria-haspopup="dialog">
-          <Icon name="book" size={20} />
-          <span className="topbar-library-label">书架与备份</span>
-        </button>
+        {account.user ? (
+          <button
+            type="button"
+            className="topbar-bell"
+            onClick={onOpenNotifications}
+            aria-label={unreadCount > 0 ? `消息，${unreadCount} 条未读` : "消息"}
+            aria-haspopup="dialog"
+          >
+            <Icon name="bell" size={20} />
+            {unreadCount > 0 && (
+              <span className="topbar-bell-badge" aria-hidden="true">{unreadCount > 99 ? "99+" : unreadCount}</span>
+            )}
+          </button>
+        ) : (
+          <button className="account-entry" onClick={onOpenAccount} aria-label="登录与注册" aria-haspopup="dialog">
+            <Icon name="users" size={20} /><span>登录</span>
+          </button>
+        )}
       </div>
     </header>
   );
@@ -649,7 +655,7 @@ function MobileBottomNav({ view, onNavigate, onOpenProfile }) {
   );
 }
 
-function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, draft, account, onOpenAccount, authClient, avatar, onOpenAvatar, syncNote, onOpenHelp }) {
+function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, draft, account, onOpenAccount, authClient, avatar, onOpenAvatar, syncNote, onOpenHelp, onOpenLibrary }) {
   const genre = genreOf(activeStory);
   const activeTotal = activeStory ? totalChaptersFor(activeStory) : 6;
   const currentChapter = activeStory
@@ -789,6 +795,9 @@ function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, dr
       <footer className="home-footer">
         <button type="button" className="small-link" onClick={() => onNavigate("merge")}>
           <Icon name="git" size={15} /> 世界合流
+        </button>
+        <button type="button" className="small-link" onClick={onOpenLibrary}>
+          <Icon name="book" size={15} /> 备份与恢复
         </button>
         <button type="button" className="small-link" onClick={onOpenHelp}>
           <Icon name="spark" size={15} /> 帮助与常见问题
@@ -3031,6 +3040,181 @@ function ReadingDialog({ title, children, onClose }) {
       </div>
       {children}
     </dialog>
+  );
+}
+
+const NOTIFY_TABS = [
+  { id: "activity", label: "互动" },
+  { id: "announcements", label: "公告" },
+  { id: "system", label: "系统" },
+];
+
+function notifyTime(iso) {
+  const stamp = typeof iso === "string" ? Date.parse(iso) : Number.NaN;
+  if (Number.isNaN(stamp)) return "";
+  const diff = Date.now() - stamp;
+  if (diff < 60_000) return "刚刚";
+  if (diff < 3_600_000) return `${Math.max(1, Math.floor(diff / 60_000))} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  const days = Math.floor(diff / 86_400_000);
+  if (days === 1) return "昨天";
+  if (days < 30) return `${days} 天前`;
+  const date = new Date(stamp);
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+const NOTIFY_SYSTEM_COPY = {
+  "password-reset": {
+    title: "密码已重设",
+    body: "你的账号密码刚刚通过恢复邮箱重设。如果不是你本人操作，请尽快再重设一次，并检查账号。",
+  },
+  "recovery-email:set": {
+    title: "恢复邮箱已更新",
+    body: "绑定或更换了恢复邮箱；忘了密码时，可以用它找回。",
+  },
+  "recovery-email:unbound": {
+    title: "恢复邮箱已取消绑定",
+    body: "这个账号暂时不能用邮箱找回密码了。",
+  },
+};
+
+function notifySystemCopy(item) {
+  return NOTIFY_SYSTEM_COPY[`${item.kind}:${item.detail || ""}`]
+    || NOTIFY_SYSTEM_COPY[item.kind]
+    || { title: "账号动态", body: "" };
+}
+
+function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
+  // The message centre (NOTIFY-SETTINGS §36): three categories over
+  // one server payload. Opening a category marks THAT category read
+  // (the watermark lives server-side, per user × category), and the
+  // bell badge follows the same totals the panel shows.
+  const [tab, setTab] = useState("activity");
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const getToken = useCallback(() => authClient.getAccessToken(), [authClient]);
+
+  useEffect(() => {
+    let live = true;
+    setError("");
+    fetchNotifications({ getAccessToken: getToken })
+      .then((result) => { if (live) setData(result); })
+      .catch(() => { if (live) setError("消息没能打开，请稍后再试。"); });
+    return () => { live = false; };
+  }, [getToken, retry]);
+
+  const activeUnread = data?.categories?.[tab]?.unread || 0;
+  useEffect(() => {
+    if (!data || activeUnread <= 0) return undefined;
+    let live = true;
+    markNotificationsRead({ category: tab, getAccessToken: getToken })
+      .then(() => {
+        if (!live) return;
+        setData((current) => {
+          if (!current?.categories?.[tab]) return current;
+          const next = {
+            ...current,
+            categories: { ...current.categories, [tab]: { ...current.categories[tab], unread: 0 } },
+          };
+          next.totalUnread = NOTIFY_TABS.reduce((sum, entry) => sum + (next.categories[entry.id]?.unread || 0), 0);
+          onUnreadChange?.(next.totalUnread);
+          return next;
+        });
+      })
+      .catch(() => { /* the watermark retries on the next open */ });
+    return () => { live = false; };
+  }, [data, tab, activeUnread, getToken, onUnreadChange]);
+
+  const category = data?.categories?.[tab] || { unread: 0, items: [] };
+  const items = Array.isArray(category.items) ? category.items : [];
+
+  return (
+    <div className="notify-panel">
+      <div className="notify-tabs" role="tablist" aria-label="消息分类">
+        {NOTIFY_TABS.map((entry) => {
+          const unread = data?.categories?.[entry.id]?.unread || 0;
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === entry.id}
+              className={`notify-tab ${tab === entry.id ? "is-active" : ""}`}
+              onClick={() => setTab(entry.id)}
+            >
+              {entry.label}
+              {unread > 0 && <span className="notify-tab-badge" aria-label={`${unread} 条未读`}>{unread > 99 ? "99+" : unread}</span>}
+            </button>
+          );
+        })}
+      </div>
+      {error ? (
+        <div className="notify-empty" role="alert">
+          <p>{error}</p>
+          <button type="button" className="small-link" onClick={() => setRetry((value) => value + 1)}>再试一次</button>
+        </div>
+      ) : !data ? (
+        <p className="notify-empty" role="status">正在打开消息…</p>
+      ) : items.length === 0 ? (
+        <p className="notify-empty">
+          {tab === "activity" && "还没有互动消息——关注、点赞和评论都会记在这里。"}
+          {tab === "announcements" && "暂无公告。"}
+          {tab === "system" && "暂无系统消息。密码重设、恢复邮箱变更这类账号动态会记在这里。"}
+        </p>
+      ) : (
+        <ul className="notify-list">
+          {items.map((item) => {
+            if (tab === "activity") {
+              const portrait = item.picture?.kind === "avatar";
+              return (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    className="notify-row"
+                    onClick={() => item.actorUid && onOpenProfile?.(item.actorUid)}
+                  >
+                    <span className={`nav-face-frame is-person ${portrait ? "is-portrait" : ""}`} aria-hidden="true">
+                      <img className="nav-face-img" src={item.picture?.url || "/default-avatar.svg"} alt="" loading="lazy" />
+                    </span>
+                    <span className="notify-row-copy">
+                      <span className="notify-row-text">
+                        <strong>{item.displayName}</strong>
+                        {item.kind === "follow" ? " 关注了你" : " 与你有了新的互动"}
+                      </span>
+                      {item.at && <small>{notifyTime(item.at)}</small>}
+                    </span>
+                  </button>
+                </li>
+              );
+            }
+            if (tab === "announcements") {
+              return (
+                <li key={item.id} className="notify-row notify-row-static">
+                  <span className="notify-row-icon" aria-hidden="true"><Icon name="spark" size={18} /></span>
+                  <span className="notify-row-copy">
+                    <strong className="notify-row-title">{item.title}</strong>
+                    <span className="notify-row-body">{item.body}</span>
+                    {item.at && <small>{notifyTime(item.at)}</small>}
+                  </span>
+                </li>
+              );
+            }
+            const copy = notifySystemCopy(item);
+            return (
+              <li key={item.id} className="notify-row notify-row-static">
+                <span className="notify-row-icon" aria-hidden="true"><Icon name="lock" size={18} /></span>
+                <span className="notify-row-copy">
+                  <strong className="notify-row-title">{copy.title}</strong>
+                  {copy.body && <span className="notify-row-body">{copy.body}</span>}
+                  {item.at && <small>{notifyTime(item.at)}</small>}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -5592,7 +5776,115 @@ function ProfileStoreCard({ publication, onOpen }) {
   );
 }
 
-function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onOpenDetail, onOpenProfile, onClose = null, ownStories = null, onOpenStory = null }) {
+function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, onOpenAccount, onOpenLibrary, onOpenHelp, onOpenProfile, onNavigate }) {
+  // 设置 (NOTIFY-SETTINGS §36, user order 2026-10-28): everything
+  // settings-shaped gathers at the bottom of MY profile page —
+  // appearance (theme + the motion switch that used to live in the
+  // topbar), account, data, about. Rows open the existing panels;
+  // nothing here re-implements them. Self + page form only — the
+  // parent gates it, and someone else's profile never renders it.
+  const motion = useMotionSettings();
+  const systemPaused = motion.reducedMotion || motion.saveData;
+  const motionOn = motion.enabled && !systemPaused;
+  const [signingOut, setSigningOut] = useState(false);
+  const signOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await authClient.signOut();
+      onNavigate("plaza");
+    } catch {
+      setSigningOut(false);
+    }
+  };
+  return (
+    <section className="profile-sec profile-settings" aria-label="设置">
+      <div className="profile-sec-head">
+        <h2 className="profile-sec-title">设置<small>都收在这里</small></h2>
+      </div>
+
+      <h3 className="settings-group-title">外观</h3>
+      <div className="settings-card">
+        <ShellThemeControl shellTheme={shellTheme} onShellThemeChange={onShellThemeChange} />
+        <div className="settings-row settings-row-motion">
+          <span className="settings-row-copy">
+            <strong>动态效果</strong>
+            <small>{systemPaused ? "系统已要求减少动态效果，动效保持关闭" : motionOn ? "界面动效开启中" : "界面动效已暂停"}</small>
+          </span>
+          <button
+            type="button"
+            className={`settings-switch ${motionOn ? "is-on" : ""}`}
+            role="switch"
+            aria-checked={motionOn}
+            aria-label="动态效果"
+            disabled={systemPaused}
+            onClick={motion.toggle}
+          >
+            <span aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      <h3 className="settings-group-title">账号</h3>
+      <div className="settings-card">
+        <button type="button" className="settings-row" onClick={onOpenAccount}>
+          <span className="settings-row-copy">
+            <strong>我的账号</strong>
+            <small>用量、登录方式与恢复邮箱都在账号页里</small>
+          </span>
+          <Icon name="chevron" size={16} />
+        </button>
+        <button type="button" className="settings-row settings-row-danger" onClick={() => void signOut()} disabled={signingOut}>
+          <span className="settings-row-copy">
+            <strong>{signingOut ? "正在退出…" : "退出登录"}</strong>
+            <small>退出不会删除本机书架</small>
+          </span>
+          <Icon name="chevron" size={16} />
+        </button>
+      </div>
+
+      <h3 className="settings-group-title">数据</h3>
+      <div className="settings-card">
+        <button type="button" className="settings-row" onClick={onOpenLibrary}>
+          <span className="settings-row-copy">
+            <strong>书架备份与恢复</strong>
+            <small>导出、导入与本机存储</small>
+          </span>
+          <Icon name="chevron" size={16} />
+        </button>
+      </div>
+
+      <h3 className="settings-group-title">关于</h3>
+      <div className="settings-card">
+        <div className="settings-row settings-row-static">
+          <span className="settings-row-copy">
+            <strong>版本</strong>
+          </span>
+          {/* Kept in step with package.json "version" by hand — there
+              is no build-time injection for it. */}
+          <span className="settings-row-value">织界 v0.3.0</span>
+        </div>
+        <button type="button" className="settings-row" onClick={() => onOpenProfile?.("username:storyweave")}>
+          <span className="settings-row-copy">
+            <strong>织界官方</strong>
+            <small>官方账号与示例故事</small>
+          </span>
+          <Icon name="chevron" size={16} />
+        </button>
+        <button type="button" className="settings-row" onClick={onOpenHelp}>
+          <span className="settings-row-copy">
+            <strong>帮助与常见问题</strong>
+            <small>额度、找回、广场规则</small>
+          </span>
+          <Icon name="chevron" size={16} />
+        </button>
+      </div>
+      <p className="settings-foot-note">阅读时的纸色、字号与翻页方式在阅读器里的「阅读设置」单独调，不在这里。</p>
+    </section>
+  );
+}
+
+function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onOpenDetail, onOpenProfile, onClose = null, ownStories = null, onOpenStory = null, shellTheme, onShellThemeChange, onOpenLibrary, onOpenHelp }) {
   // Two forms, one component (PROFILE-FIX §33): the WINDOW form (a
   // sheet over the current page, onClose set) for someone else's
   // profile, and the PAGE form (a bottom-nav tab) for your own. The
@@ -6057,7 +6349,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
       <section className="profile-sec profile-shelf" aria-label="书架">
         <div className="profile-sec-head">
           <h2 className="profile-sec-title">书架<small>{(ownBooks || publications).length > 0 ? `共 ${(ownBooks || publications).length} 本` : ""}</small></h2>
-          {ownBooks && ownBooks.length > 0 && (
+          {ownBooks && (
             <button type="button" className="profile-sec-more" onClick={() => onNavigate("home")}>全部 ›</button>
           )}
         </div>
@@ -6212,6 +6504,19 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
             </div>
           )}
         </section>
+      )}
+      {isSelf && !windowForm && (
+        <ProfileSettings
+          account={account}
+          authClient={authClient}
+          shellTheme={shellTheme}
+          onShellThemeChange={onShellThemeChange}
+          onOpenAccount={onOpenAccount}
+          onOpenLibrary={onOpenLibrary}
+          onOpenHelp={onOpenHelp}
+          onOpenProfile={onOpenProfile}
+          onNavigate={onNavigate}
+        />
       )}
       </>
       )}
@@ -7185,7 +7490,7 @@ function HelpContent() {
     },
     {
       q: "界面太亮/太暗，能换个样子吗？",
-      a: "可以。在「我的账号」里切换外观主题：黑夜（默认）、白昼、极光（最初的深藏青玻璃风）。阅读时的纸色、字号在阅读器自己的「阅读设置」里调，和外观主题互不影响。",
+      a: "可以。在「我的主页」最下面的「设置」里切换外观主题：黑夜（默认）、白昼、极光（最初的深藏青玻璃风）；动效开关也收在设置里。还没登录时，登录面板里也能先换主题。阅读时的纸色、字号在阅读器自己的「阅读设置」里调，和外观主题互不影响。",
     },
   ];
   return (
@@ -7211,6 +7516,8 @@ function App() {
   const account = useSyncExternalStore(authClient.subscribe, authClient.getSnapshot);
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountIntent, setAccountIntent] = useState(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifyUnread, setNotifyUnread] = useState(0);
   useEffect(() => { void authClient.start(); return () => authClient.stop(); }, [authClient]);
   const [store] = useState(() => createLibraryStore());
   useEffect(() => { installRipple(); }, []);
@@ -7277,20 +7584,23 @@ function App() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [authClient, viewerUid]);
-  // The viewer's own resolved picture (uploaded → avatar portrait →
-  // default), for the nav face slots. Face-anchor cropping applies when
-  // the picture is the avatar's full-body portrait (kind 'avatar').
-  const [ownPicture, setOwnPicture] = useState(null);
+  // The bell badge (NOTIFY-SETTINGS §36): the unread total comes from
+  // the same payload the panel renders, refreshed on sign-in and
+  // once a minute while foregrounded. The panel reports back after
+  // each category it marks read, so the badge never waits for the
+  // next poll to clear.
   useEffect(() => {
-    if (!viewerUid) { setOwnPicture(null); return undefined; }
+    if (!viewerUid) { setNotifyUnread(0); return undefined; }
     let live = true;
-    fetchUserProfile({ uid: viewerUid, getAccessToken: () => authClient.getAccessToken() })
-      .then((profile) => { if (live) setOwnPicture(profile?.picture || null); })
-      .catch(() => {});
-    return () => { live = false; };
-  }, [viewerUid, authClient]);
-  const faceSrc = ownPicture?.url || (viewerUid ? userPicturePath(viewerUid) : null);
-  const facePortrait = ownPicture?.kind === "avatar";
+    const load = () => {
+      fetchNotifications({ getAccessToken: () => authClient.getAccessToken() })
+        .then((result) => { if (live && result) setNotifyUnread(result.totalUnread || 0); })
+        .catch(() => { /* a missed poll only leaves the badge stale */ });
+    };
+    load();
+    const timer = window.setInterval(() => { if (!document.hidden) load(); }, 60_000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [authClient, viewerUid]);
   // Sign-out drops every cached profile payload: viewerState (follow
   // flags, self view) must never leak into the next account's session.
   const prevViewerUidRef = useRef("");
@@ -8079,6 +8389,10 @@ function App() {
         onOpenProfile={openProfile}
         ownStories={library.stories}
         onOpenStory={openOwnReader}
+        shellTheme={shellTheme}
+        onShellThemeChange={changeShellTheme}
+        onOpenLibrary={() => setLibraryOpen(true)}
+        onOpenHelp={() => setHelpOpen(true)}
       />
     );
   else
@@ -8097,6 +8411,7 @@ function App() {
         onOpenAvatar={() => navigate("avatar")}
         syncNote={syncNote}
         onOpenHelp={() => setHelpOpen(true)}
+        onOpenLibrary={() => setLibraryOpen(true)}
       />
     );
   return (
@@ -8109,7 +8424,7 @@ function App() {
       <AuroraBackground />
       <Sidebar view={profileRoute ? "profile" : navView} onNavigate={navigate} onOpenProfile={openOwnProfile} />
       <main className="main-shell">
-        <Topbar onNavigate={navigate} onOpenLibrary={() => setLibraryOpen(true)} account={account} onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }} faceSrc={faceSrc} facePortrait={facePortrait} />
+        <Topbar onNavigate={navigate} account={account} unreadCount={notifyUnread} onOpenNotifications={() => setNotificationsOpen(true)} onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }} />
         {warning && (
           <div className="sw-storage-warning" role="alert">
             <Icon name="lock" size={14} />
@@ -8138,6 +8453,13 @@ function App() {
           </div>
         </div>
       )}
+      {notificationsOpen && account.user && <ReadingDialog title="消息" onClose={() => setNotificationsOpen(false)}>
+        <NotificationsPanel
+          authClient={authClient}
+          onUnreadChange={setNotifyUnread}
+          onOpenProfile={(uid) => { setNotificationsOpen(false); openProfile(uid); }}
+        />
+      </ReadingDialog>}
       {accountOpen && <ReadingDialog title={account.user ? "我的账号" : "登录与注册"} onClose={() => setAccountOpen(false)}>
         <AccountPanel client={authClient} account={account} shellTheme={shellTheme} onShellThemeChange={changeShellTheme} onOpenHelp={() => { setAccountOpen(false); setHelpOpen(true); }} onOpenAvatar={() => { setAccountOpen(false); navigate("avatar"); }} onOpenProfile={() => { setAccountOpen(false); if (account.user?.uid) navigate("profile", { id: account.user.uid }); }} onContinue={() => {
           setAccountOpen(false);

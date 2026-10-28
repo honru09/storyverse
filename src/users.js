@@ -182,3 +182,30 @@ export async function sendPresenceHeartbeat({ getAccessToken, fetchImpl = global
     return false
   }
 }
+
+/**
+ * The message centre (NOTIFY-SETTINGS §36): three categories —
+ * 互动 (an open item-kind enum: follow today, like / comment /
+ * friend_request later), 公告 and 系统 — each with its items and the
+ * caller's unread count against the server-side read watermark. The
+ * server derives everything from real records; this only moves the
+ * payload.
+ */
+export async function fetchNotifications({ getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = await usersHeaders(getAccessToken)
+  const response = await fetchImpl('/api/me/notifications', { headers })
+  const result = await usersJson(response)
+  return {
+    categories: result?.categories ?? {},
+    totalUnread: result?.totalUnread ?? 0,
+  }
+}
+
+/** Opening a category marks that category — and only it — as read. */
+export async function markNotificationsRead({ category, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await usersHeaders(getAccessToken)) }
+  const response = await fetchImpl('/api/me/notifications/read', {
+    method: 'POST', headers, body: JSON.stringify({ category }),
+  })
+  return usersJson(response)
+}

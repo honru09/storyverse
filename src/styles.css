@@ -137,20 +137,17 @@ button:disabled{cursor:not-allowed}
 .brand-copy{display:grid;line-height:1}
 .brand-copy strong{font-size:24px;font-weight:800;letter-spacing:.04em}
 .brand-copy small{color:var(--dim);font-size:10px;margin-top:4px;letter-spacing:.08em}
-/* Top-right cluster (TOPBAR-POLISH, DESIGN §35): the account entry,
-   the motion toggle and the shelf entry used to float as three
-   unrelated shapes — an indigo pill, two bare glyphs. They now sit in
-   ONE glass capsule (translucent fill, hairline edge, light blur —
-   the mock glass-btn material, voiced in shell tokens so all three
-   themes speak it) and share one segment grammar: 44px hit areas,
-   20px glyphs at 1.8 stroke, 2px rhythm. No behaviour changes. */
+/* Top-right cluster (NOTIFY-SETTINGS §36): the capsule now holds ONE
+   segment — signed in, the message bell; signed out, the login
+   entry. Same glass material and 44px segment grammar as the
+   TOPBAR-POLISH cluster it replaces; the account face, motion toggle
+   and shelf segments that shared it have moved (profile tab / 主页
+   设置 / profile shelf), and their rules are retired with them. */
 .topbar-actions{display:flex;align-items:center;gap:2px;padding:2px;border:1px solid var(--line);border-radius:999px;background:var(--glass);backdrop-filter:blur(10px) saturate(1.3);-webkit-backdrop-filter:blur(10px) saturate(1.3)}
 .topbar-actions .account-entry{min-width:44px;min-height:44px;padding:4px 9px;border:0;border-radius:999px;background:transparent;color:var(--ink)}
-.topbar-actions .motion-toggle,.topbar-actions .icon-button{border-radius:999px}
-.topbar-actions .nav-face-frame{width:28px;height:28px}
+.topbar-bell{position:relative;display:grid;place-items:center;min-width:44px;min-height:44px;padding:4px;border:0;border-radius:999px;background:transparent;color:var(--ink)}
+.topbar-bell-badge{position:absolute;top:1px;right:0;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#e5484d;color:#fff;font-size:10.5px;font-weight:700;line-height:18px;text-align:center;pointer-events:none}
 .local-badge{margin-right:8px;padding:6px 9px;border-radius:var(--radius-nav);background:var(--glass);border:1px solid var(--line);color:var(--dim);font-size:11px;font-weight:650}
-.topbar-library-label{display:none}
-@media(min-width:760px){.topbar-library-button{display:flex;align-items:center;justify-content:center;gap:7px;width:auto;padding:0 14px}.topbar-library-label{display:inline;font-size:13.5px;font-weight:650;white-space:nowrap}}
 .motion-toggle,.icon-button{display:grid;place-items:center;min-width:44px;min-height:44px;border:1px solid transparent;border-radius:var(--radius-nav);background:transparent;color:var(--ink);transition:background-color var(--dur-state) var(--ease-out),transform var(--dur-press) var(--ease-press)}
 .motion-toggle[aria-pressed="false"]{color:var(--dim-2)}
 .sidebar{display:none}
@@ -1447,3 +1444,48 @@ button.profile-stat{cursor:pointer}
 .profile-skeleton-stats{height:46px;margin-top:20px;border-radius:12px}
 .profile-skeleton-action{align-self:center}
 .profile-actions .btn-pill-white{height:48px}
+
+/* ——— NOTIFY-SETTINGS (DESIGN §36): message centre + profile settings ———
+   The panel rides the shared ReadingDialog sheet; its rows reuse the
+   face-frame grammar of the connection lists. The settings section is
+   the profile page's last section: group cards in the profile token
+   family, rows with a 44px+ hit area, and one switch for motion. */
+.notify-panel{min-width:min(78vw,340px)}
+.notify-tabs{display:flex;gap:6px;margin-bottom:14px}
+.notify-tab{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:40px;padding:7px 10px;border:1px solid var(--line);border-radius:999px;background:var(--glass);color:var(--dim);font-size:14px;font-weight:600;cursor:pointer}
+.notify-tab.is-active{background:var(--selected-surface);border-color:var(--selected-border);color:var(--selected-text)}
+.notify-tab-badge{min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#e5484d;color:#fff;font-size:10.5px;font-weight:700;line-height:18px;text-align:center}
+.notify-list{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.notify-row{display:flex;align-items:flex-start;gap:11px;width:100%;padding:10px;border:0;border-radius:14px;background:transparent;color:var(--ink);text-align:left;font:inherit}
+button.notify-row{cursor:pointer}
+button.notify-row:hover{background:var(--glass)}
+.notify-row-static{cursor:default}
+.notify-row-icon{display:grid;place-items:center;width:40px;height:40px;flex:0 0 auto;border-radius:50%;background:var(--glass-2);color:var(--dim)}
+.notify-row-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;padding-top:2px}
+.notify-row-text{font-size:14.5px;line-height:1.45;color:var(--ink)}
+.notify-row-text strong{font-weight:650}
+.notify-row-title{font-size:14.5px;font-weight:650;line-height:1.45}
+.notify-row-body{font-size:13.5px;line-height:1.55;color:var(--dim);white-space:pre-wrap;overflow-wrap:anywhere}
+.notify-row-copy small{font-size:12px;color:var(--dim-2)}
+.notify-empty{margin:0;padding:26px 12px;text-align:center;color:var(--dim);font-size:14px;line-height:1.7}
+.profile-settings{margin-top:34px}
+.settings-group-title{margin:20px 0 8px;font-size:13px;font-weight:650;color:var(--profile-dim)}
+.settings-group-title:first-of-type{margin-top:2px}
+.settings-card{border:1px solid var(--profile-edge);border-radius:18px;background:var(--profile-panel);overflow:hidden}
+.settings-card .account-theme{margin-top:0;padding:14px 16px 4px;border-top:0}
+.settings-row{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:10px 16px;border:0;border-top:1px solid var(--profile-edge);background:transparent;color:var(--profile-ink);text-align:left;font:inherit}
+button.settings-row{cursor:pointer}
+.settings-row:first-child{border-top:0}
+.settings-card .account-theme + .settings-row{border-top:1px solid var(--profile-edge)}
+.settings-row-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.settings-row-copy strong{font-size:14.5px;font-weight:600;color:var(--profile-ink-strong)}
+.settings-row-copy small{font-size:12.5px;line-height:1.5;color:var(--profile-dim)}
+.settings-row-value{font-size:13.5px;color:var(--profile-dim);white-space:nowrap}
+.settings-row-danger strong{color:var(--danger)}
+.settings-row > svg{flex:0 0 auto;color:var(--profile-faint)}
+.settings-switch{position:relative;flex:0 0 auto;width:48px;height:28px;border:1px solid var(--profile-edge);border-radius:999px;background:var(--profile-chip);cursor:pointer;padding:0;transition:background-color var(--dur-state) var(--ease-out)}
+.settings-switch span{position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:var(--profile-ink);opacity:.55;transition:transform var(--dur-state) var(--ease-out),opacity var(--dur-state) var(--ease-out)}
+.settings-switch.is-on{background:var(--selected-surface);border-color:var(--selected-border)}
+.settings-switch.is-on span{transform:translateX(20px);opacity:1}
+.settings-switch:disabled{opacity:.45;cursor:not-allowed}
+.settings-foot-note{margin:14px 2px 0;font-size:12.5px;line-height:1.6;color:var(--profile-faint)}
