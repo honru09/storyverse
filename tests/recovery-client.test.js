@@ -169,3 +169,78 @@ test('binding from settings demands the current password and resyncs the snapsho
   assert.equal(client.getSnapshot().user.hasRecoveryEmail, false)
   client.stop()
 })
+
+/**
+ * N-01: the recovery status lookup on a slow network. The stub hangs
+ * until the client's own abort signal fires, the way a stalled fetch
+ * behaves — first-hit stalls must be retried, a fully stalled lookup
+ * must end in the timeout message (never the generic one), and a
+ * server answer must never be retried.
+ */
+function slowFixture(statusBehavior) {
+  const store = memoryStore()
+  let statusAttempts = 0
+  const fetchImpl = (url, options = {}) => {
+    if (url === '/api/auth/config') return Promise.resolve(Response.json(usernameOnlyConfig))
+    if (url === '/api/auth/username/recovery/status') {
+      statusAttempts += 1
+      return statusBehavior(statusAttempts, options)
+    }
+    return Promise.reject(new Error(`unexpected ${url}`))
+  }
+  const client = createAuthClient({
+    fetchImpl,
+    loadSdk: () => { throw new Error('SDK must not load for username-only config') },
+    sessionStore: store,
+    timeoutMs: 40,
+  })
+  return { client, statusCount: () => statusAttempts }
+}
+
+const hangUntilAbort = (options) => new Promise((resolve, reject) => {
+  options.signal.addEventListener('abort', () => reject(new DOMException('The operation was aborted', 'AbortError')))
+})
+
+test('recovery status retries once after a stalled first attempt and still reaches the stage data', async () => {
+  const { client, statusCount } = slowFixture((attempt, options) => attempt === 1
+    ? hangUntilAbort(options)
+    : Promise.resolve(Response.json({ hasRecoveryEmail: true, maskedRecoveryEmail: 'a***@gmail.com', channelOpen: false })))
+  await client.start()
+  const status = await client.usernameRecoveryStatus('reader_01')
+  assert.deepEqual(status, { hasRecoveryEmail: true, maskedRecoveryEmail: 'a***@gmail.com', channelOpen: false })
+  assert.equal(statusCount(), 2, 'exactly one automatic retry')
+  client.stop()
+})
+
+test('recovery status that stalls twice ends in the timeout message, not the generic one', async () => {
+  const { client, statusCount } = slowFixture((attempt, options) => hangUntilAbort(options))
+  await client.start()
+  await assert.rejects(client.usernameRecoveryStatus('reader_01'), (error) => {
+    assert.equal(error.code, 'auth/network-timeout')
+    assert.equal(error.message, '网络有点慢，没能连上账号服务。请检查网络后再试一次。')
+    return true
+  })
+  assert.equal(statusCount(), 2, 'one retry, then it gives up honestly')
+  client.stop()
+})
+
+test('recovery status never retries a server answer, not even a 429', async () => {
+  const { client, statusCount } = slowFixture(() => Promise.resolve(Response.json({ error: 'slow down' }, { status: 429 })))
+  await client.start()
+  await assert.rejects(client.usernameRecoveryStatus('reader_01'), (error) => {
+    assert.equal(error.code, 'auth/too-many-requests')
+    return true
+  })
+  assert.equal(statusCount(), 1)
+  client.stop()
+})
+
+test('clearError drops a published failure so it cannot follow the reader into another view', async () => {
+  const { client } = fixture({ channelOpen: false })
+  await client.start()
+  await assert.rejects(client.usernameRecoveryStart('reader_01'))
+  assert.equal(client.getSnapshot().error, '邮箱找回通道尚未开通。')
+  client.clearError()
+  assert.equal(client.getSnapshot().error, null)
+  client.stop()
+})

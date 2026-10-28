@@ -4,6 +4,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import { ApiError, createGeminiGenerator, MAX_REQUEST_BYTES } from './gemini.js'
 import { createAuthService } from './auth.js'
+import { createEmailCodeService } from './email-code.js'
+import { createUsernameAuthService } from './username-auth.js'
+import { createIdentityStore } from './identity-store.js'
 import { createCoverService } from './cover.js'
 import { createAvatarService } from './avatar.js'
 import { createPlazaService } from './plaza.js'
@@ -182,7 +185,24 @@ async function serveStatic(request, response, pathname, distDir) {
   response.end(request.method === 'HEAD' ? undefined : bytes)
 }
 
-export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth = createAuthService({ env }), cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza = createPlazaService({ env }), social = createSocialService({ env }), library = createLibraryService({ env }), distDir = DEFAULT_DIST } = {}) {
+export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth, cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza = createPlazaService({ env }), social, library = createLibraryService({ env }), distDir = DEFAULT_DIST } = {}) {
+  // Default services share ONE identity store: the accounts the auth
+  // channels register must be the accounts the social service can see
+  // (profile existence is account-based, ACCOUNT-POLISH §5). Firestore
+  // deployments already share the underlying collections; in memory
+  // mode separate stores would be separate Maps and the split would
+  // silently hide every account from the profile endpoint. Callers
+  // that inject their own auth/social wire their own stores, as the
+  // test fixtures do.
+  if (auth === undefined || social === undefined) {
+    const identityStore = createIdentityStore({ env })
+    auth ??= createAuthService({
+      env,
+      emailCode: createEmailCodeService({ env, store: identityStore }),
+      usernameAuth: createUsernameAuthService({ env, store: identityStore }),
+    })
+    social ??= createSocialService({ env, identityStore })
+  }
   // Explicit opt-out preserves existing deployments until the release owner sets it.
   const generationEnabled = env.GENERATION_ENABLED !== 'false'
   // The model id is static configuration; remember it the first time status

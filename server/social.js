@@ -171,8 +171,29 @@ export function createSocialService({
     }
   }
 
+  /**
+   * Account-level existence: the account registry itself, not any
+   * footprint the account may have left. Username accounts live in the
+   * identity store (`site_users`, keyed by the normalised name the uid
+   * carries); that record is created at registration, before any
+   * avatar, publication or profile record can exist. An account with
+   * no avatar yet is still an account — deep links to it must open an
+   * (honestly empty) profile page, not a 404.
+   */
+  async function accountExists(uid) {
+    if (!identities || !uid.startsWith('username:')) return false
+    const name = clip(uid.slice('username:'.length), 40)
+    if (!name) return false
+    try {
+      return Boolean(await identities.getUser(name))
+    } catch {
+      return false
+    }
+  }
+
   async function exists(uid, viewerIdentity) {
     if (viewerIdentity?.uid === uid) return true
+    if (await accountExists(uid)) return true
     if (await profileRecordOf(uid)) return true
     if (await avatarProfileOf(uid)) return true
     return (await visiblePublicationsOf(uid)).length > 0
@@ -267,7 +288,7 @@ export function createSocialService({
         backend ? backend.listFollowsByFollowee(target) : Promise.resolve([]),
       ])
       const isSelf = viewerIdentity?.uid === target
-      if (!record && !profile && publications.length === 0 && !isSelf) {
+      if (!record && !profile && publications.length === 0 && !isSelf && !(await accountExists(target))) {
         throw NOT_FOUND()
       }
       const fallback = publicIdentityFor(target, publications, viewerIdentity)

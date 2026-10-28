@@ -42,6 +42,7 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
   const [mode, setMode] = useState("login");
   const [accountId, setAccountId] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [code, setCode] = useState("");
   const [cooldown, setCooldown] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
@@ -60,6 +61,7 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
   const [bindPassword, setBindPassword] = useState("");
   const [bindEmail, setBindEmail] = useState("");
   const [dismissedReminderKey, setDismissedReminderKey] = useState("");
+  const [slowPending, setSlowPending] = useState(false);
   const inFlight = useRef(false);
   const modeTouched = useRef(false);
   const hadUser = useRef(false);
@@ -73,6 +75,7 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       setMode("login");
       setLocalError("");
       setPassword("");
+      setConfirmPassword("");
       setCode("");
       setAccountId("");
       setRecoveryInfo(null);
@@ -88,6 +91,26 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
   const codeAvailable = Boolean(account.config?.emailCode);
   const usernameAvailable = Boolean(account.config?.providers?.username);
   const configured = Boolean(account.config?.enabled || codeAvailable || usernameAvailable);
+  // Every "you could use X instead" sentence is composed from the same
+  // capability facts the tabs render by, so a channel this deployment
+  // has not opened is never offered as an alternative (F-06 / N-05).
+  const alternativeLoginText = (exclude) => {
+    const options = [];
+    if (exclude !== "username" && usernameAvailable) options.push("用户名");
+    if (exclude !== "code" && codeAvailable) options.push("邮箱验证码");
+    if (exclude !== "email" && passwordAvailable) options.push("邮箱密码");
+    return options.length ? `可以改用${options.join("或")}登录。` : "其他登录方式还没开通。";
+  };
+  // The guest footer follows the same rule (F-06 / N-05): an
+  // unconfigured deployment says only that the account service is not
+  // configured — it makes no storage promise in either direction — and
+  // a configured one names only the channels it actually offers.
+  const methodOptions = [usernameAvailable && "用户名", codeAvailable && "邮箱验证码"].filter(Boolean);
+  const guestFooter = account.status === "loading" ? "" : !configured
+    ? "账号服务尚未配置。你仍可继续本机阅读。"
+    : `${account.config?.storage === 'synced'
+        ? "不登录也能读，故事先保存在当前浏览器；登录后会自动同步到你的账号，换设备也能接着读。"
+        : "不登录也能读，故事和阅读进度会保存在当前浏览器，暂不跨设备同步。"}${methodOptions.length ? `没有 Google 账号，也可以用${methodOptions.join("或")}登录。` : ""}`;
   // The full form is always rendered; unavailable channels are disabled in
   // place. Untouched, the form prefers the email-code mode when it is the
   // only channel this deployment actually offers. Username sign-in needs no
@@ -132,7 +155,19 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
     const timer = window.setTimeout(() => setCooldown((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearTimeout(timer);
   }, [cooldown]);
-  const changeMode = (next) => { modeTouched.current = true; setMode(next); setLocalError(""); setPassword(""); setCode(""); setShowPassword(false); setRecoveryEmail(""); setRecoveryInfo(null); setRecoverySent(false); setRecoveryCode(""); setNewPassword(""); };
+  // A request that is still running after a few seconds says so out
+  // loud (N-01): a bare 「正在处理…」 with no explanation reads as a
+  // hang on slow networks, so the wait gets words while it lasts.
+  useEffect(() => {
+    if (!pending) { setSlowPending(false); return undefined; }
+    const timer = window.setTimeout(() => setSlowPending(true), 5000);
+    return () => window.clearTimeout(timer);
+  }, [pending]);
+  // Switching views drops every error with the view it belonged to:
+  // the panel's own message is local state, and the client's snapshot
+  // error is cleared through the client, so a reset failure can never
+  // still be hanging on the login form (F-08).
+  const changeMode = (next) => { modeTouched.current = true; setMode(next); setLocalError(""); if (typeof client.clearError === "function") client.clearError(); setPassword(""); setConfirmPassword(""); setCode(""); setShowPassword(false); setRecoveryEmail(""); setRecoveryInfo(null); setRecoverySent(false); setRecoveryCode(""); setNewPassword(""); };
   // Editing the identifier after a recovery lookup invalidates the lookup:
   // the panel must never act on a previous name's state.
   const changeAccountId = (value) => { setAccountId(value); setRecoveryInfo(null); setRecoverySent(false); setRecoveryCode(""); };
@@ -141,7 +176,7 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
     inFlight.current = true;
     setPending(true);
     setLocalError("");
-    try { await operation(); setPassword(""); }
+    try { await operation(); setPassword(""); setConfirmPassword(""); }
     catch (failure) { setLocalError(failure.message || "暂时无法完成，请重试。"); }
     finally { inFlight.current = false; setPending(false); }
   };
@@ -159,11 +194,11 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       // identifiers go through the recovery stages instead of the old
       // dead end: look up, send the code, set a new password.
       if (identifierIsEmail) {
-        if (!passwordAvailable) { setLocalError("邮箱密码登录还没开通，可以改用用户名或验证码登录。"); return; }
+        if (!passwordAvailable) { setLocalError(`邮箱密码登录还没开通。${alternativeLoginText("email")}`); return; }
         void run(() => client.resetPassword(identifier));
         return;
       }
-      if (!usernameAvailable) { setLocalError("用户名登录还没开通，可以改用邮箱登录。"); return; }
+      if (!usernameAvailable) { setLocalError(`用户名登录还没开通。${alternativeLoginText("username")}`); return; }
       if (resetStage === "code") { void run(() => client.usernameRecoveryReset(identifier, recoveryCode, newPassword)); return; }
       if (resetStage === "send") {
         void run(async () => { await client.usernameRecoveryStart(identifier); setRecoverySent(true); setCooldown(60); });
@@ -174,13 +209,16 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       return;
     }
     if (!identifier) { setLocalError("先填邮箱或用户名。"); return; }
+    // Registration confirms the password before anything is sent: a
+    // mismatch is a form problem, never a request (F-08).
+    if (activeMode === "register" && password !== confirmPassword) { setLocalError("两次输入的密码不一致，请再确认。"); return; }
     // One field, two password channels, routed by the identifier's shape.
     if (identifierIsEmail) {
-      if (!passwordAvailable) { setLocalError("邮箱密码登录还没开通，可以改用用户名或验证码登录。"); return; }
+      if (!passwordAvailable) { setLocalError(`邮箱密码登录还没开通。${alternativeLoginText("email")}`); return; }
       void run(() => activeMode === "register" ? client.register(identifier, password) : client.signIn(identifier, password));
       return;
     }
-    if (!usernameAvailable) { setLocalError("用户名登录还没开通，可以改用邮箱登录。"); return; }
+    if (!usernameAvailable) { setLocalError(`用户名登录还没开通。${alternativeLoginText("username")}`); return; }
     void run(() => activeMode === "register" ? client.registerWithUsername(identifier, password, recoveryEmail) : client.signInWithUsername(identifier, password));
   };
   const resendRecoveryCode = () => {
@@ -267,6 +305,8 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
           : <label>邮箱或用户名<input type="text" name="account" autoComplete="username" autoCapitalize="none" spellCheck={false} required maxLength={254} value={accountId} disabled={busy || !configured} onChange={(event) => changeAccountId(event.target.value)} placeholder="邮箱或用户名"/></label>}
         {activeMode === "code" && <label>验证码<div className="account-password"><input type="text" name="code" autoComplete="one-time-code" inputMode="numeric" autoCapitalize="none" spellCheck={false} required maxLength={6} value={code} disabled={busy || !codeAvailable} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} placeholder="6 位数字"/><button type="button" disabled={busy || !codeAvailable || cooldown > 0} onClick={sendCode}>{cooldown > 0 ? `${cooldown} 秒后重发` : "发送验证码"}</button></div></label>}
         {activeMode !== "reset" && activeMode !== "code" && <label>密码<div className="account-password"><input type={showPassword ? "text" : "password"} name="password" autoComplete={activeMode === "register" ? "new-password" : "current-password"} required minLength={activeMode === "register" ? 8 : undefined} maxLength={128} value={password} disabled={busy || !(passwordAvailable || usernameAvailable)} onChange={(event) => setPassword(event.target.value)} placeholder={activeMode === "register" ? "至少 8 位" : "输入密码"}/><button type="button" aria-label={showPassword ? "隐藏密码" : "显示密码"} aria-pressed={showPassword} disabled={busy || !(passwordAvailable || usernameAvailable)} onClick={() => setShowPassword((value) => !value)}>{showPassword ? "隐藏" : "显示"}</button></div></label>}
+        {activeMode === "register" && <label>确认密码<input type="password" name="confirmPassword" autoComplete="new-password" required minLength={8} maxLength={128} value={confirmPassword} disabled={busy || !(passwordAvailable || usernameAvailable)} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="再输入一次密码"/></label>}
+        {activeMode === "register" && confirmPassword && confirmPassword !== password && <p className="account-message is-error" role="alert">两次输入的密码不一致。</p>}
         {usernameForm && <>
           <p className="account-message account-recovery-note">用户名账号没有邮箱验证，密码忘了将无法找回，除非现在绑定一个恢复邮箱。</p>
           <label>恢复邮箱（可选）<input type="email" name="recoveryEmail" autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} maxLength={254} value={recoveryEmail} disabled={busy || !configured} onChange={(event) => setRecoveryEmail(event.target.value)} placeholder="you@example.com"/></label>
@@ -284,8 +324,9 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
         {activeMode === "register" && <p className="account-storage-note">{registerHint}</p>}
         {error && <p className="account-message is-error" role="alert">{error}</p>}
         {account.notice && <p className="account-message" role="status">{account.notice}</p>}
+        {busy && slowPending && <p className="account-message" role="status">网络较慢，仍在处理中，请稍等；如果一直没有结果，可以检查网络后重试。</p>}
         {account.status === "loading" && <p className="account-message" role="status">正在连接账号服务…</p>}
-        {resetActionable && <button type="submit" className="button button-primary account-primary" disabled={busy || !configured || (activeMode === "code" ? !codeAvailable || code.length !== 6 : activeMode === "reset" ? resetDisabled : !(passwordAvailable || usernameAvailable))}>{busy ? "正在处理…" : activeMode === "register" ? "创建账号" : activeMode === "reset" ? resetLabel : activeMode === "code" ? "验证码登录" : "登录账号"}</button>}
+        {resetActionable && <button type="submit" className="button button-primary account-primary" disabled={busy || !configured || (activeMode === "code" ? !codeAvailable || code.length !== 6 : activeMode === "reset" ? resetDisabled : activeMode === "register" ? !(passwordAvailable || usernameAvailable) || password !== confirmPassword : !(passwordAvailable || usernameAvailable))}>{busy ? "正在处理…" : activeMode === "register" ? "创建账号" : activeMode === "reset" ? resetLabel : activeMode === "code" ? "验证码登录" : "登录账号"}</button>}
       </form>
       <div className="account-links">
         {activeMode === "login" ? <button type="button" disabled={busy} onClick={() => changeMode("reset")}>忘记密码？</button> : <button type="button" disabled={busy} onClick={() => changeMode("login")}>返回登录</button>}
@@ -293,9 +334,7 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
         {configured && account.status === "error" && <button type="button" disabled={busy} onClick={() => void run(() => client.refreshUser())}>重试验证</button>}
       </div>
       {configured && <button className="account-guest" type="button" onClick={onContinue}>先不登录，继续体验 <span aria-hidden="true">→</span></button>}
-      <p className="account-storage-note">{account.config?.storage === 'synced'
-        ? "不登录也能读，故事先保存在当前浏览器；登录后会自动同步到你的账号，换设备也能接着读。没有 Google 账号，也可以用用户名或邮箱验证码登录。"
-        : "登录后书架仍保存在本机；不会自动上传故事或个人设定。没有 Google 账号，也可以用用户名或邮箱验证码登录。"}</p>
+      {guestFooter && <p className="account-storage-note">{guestFooter}</p>}
       <ShellThemeControl shellTheme={shellTheme} onShellThemeChange={onShellThemeChange} />
       {onOpenHelp && <button className="account-avatar-entry" type="button" onClick={onOpenHelp}>帮助与常见问题 <span aria-hidden="true">→</span></button>}
     </>}

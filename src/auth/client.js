@@ -1,6 +1,7 @@
 const ERROR_MESSAGES = {
   'auth/unavailable': '账号服务尚未配置。你仍可继续本机阅读。',
   'auth/network-request-failed': '网络暂时无法连接，请检查网络后重试。',
+  'auth/network-timeout': '网络有点慢，没能连上账号服务。请检查网络后再试一次。',
   'auth/invalid-email': '请输入有效的邮箱地址。',
   'auth/invalid-credential': '邮箱或密码不正确，请重试或重置密码。',
   'auth/wrong-password': '邮箱或密码不正确，请重试或重置密码。',
@@ -104,7 +105,7 @@ function defaultSessionStore() {
  * Either way, a session only becomes `authenticated` after this server
  * confirms the identity through GET /api/account.
  */
-export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defaultLoadSdk, sessionStore } = {}) {
+export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defaultLoadSdk, sessionStore, timeoutMs = 12_000 } = {}) {
   const store = sessionStore === undefined ? defaultSessionStore() : sessionStore
   let snapshot = { status: 'loading', user: null, error: null, notice: null, config: null, busy: false, usage: null }
   const listeners = new Set()
@@ -131,12 +132,37 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
   async function request(url, options = {}) {
     const controller = new AbortController()
     requests.add(controller)
-    const timeout = setTimeout(() => controller.abort(), 12_000)
+    // Only an abort this timer caused is a timeout; stop() aborts too,
+    // and those must keep their cancellation meaning, not a network one.
+    let timedOut = false
+    const timeout = setTimeout(() => { timedOut = true; controller.abort() }, timeoutMs)
     try {
       return await fetchImpl(url, { ...options, cache: 'no-store', credentials: 'same-origin', signal: controller.signal })
+    } catch (error) {
+      if (timedOut) throw authError('auth/network-timeout')
+      throw error
     } finally {
       clearTimeout(timeout)
       requests.delete(controller)
+    }
+  }
+
+  /**
+   * The recovery status lookup is a read-only query, so a single
+   * network jitter must not strand the reset flow (N-01): one automatic
+   * retry on transport failures only. A server answer — even an error
+   * status — is definitive and never retried (a 429 least of all).
+   */
+  async function requestWithRetry(url, options, guard) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await request(url, options)
+      } catch (error) {
+        const retryable = error?.code === 'auth/network-timeout' || error?.name === 'TypeError'
+        if (!retryable || attempt >= 1) throw error
+        await new Promise((resolve) => setTimeout(resolve, 600))
+        guard()
+      }
     }
   }
 
@@ -404,6 +430,13 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
   const client = {
     getSnapshot: () => snapshot,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) },
+    /**
+     * Drop the published error without touching anything else. The
+     * account panel calls this when the reader switches views, so a
+     * failure from the reset form can never linger on the login form
+     * (F-08) — the snapshot error is shared across views by design.
+     */
+    clearError() { if (active) publish({ error: null }) },
     start,
     stop() {
       active = false
@@ -525,11 +558,11 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
     }),
     usernameRecoveryStatus: (username) => runUsername(async (guard) => {
       const name = usernameInput(username)
-      const response = await request('/api/auth/username/recovery/status', {
+      const response = await requestWithRetry('/api/auth/username/recovery/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: name }),
-      })
+      }, guard)
       guard()
       if (!response.ok) throw authError(response.status === 503 ? 'auth/unavailable' : response.status === 429 ? 'auth/too-many-requests' : 'auth/account-unavailable')
       const result = await response.json().catch(() => null)

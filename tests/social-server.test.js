@@ -9,6 +9,9 @@ import { createPlazaService } from '../server/plaza.js'
 import { createMemoryCoverStore } from '../server/cover-store.js'
 import { createMemorySocialStore } from '../server/social-store.js'
 import { createSocialService, PRESENCE_WINDOW_MS } from '../server/social.js'
+import { createMemoryIdentityStore } from '../server/identity-store.js'
+import { createUsernameAuthService } from '../server/username-auth.js'
+import { createAuthService } from '../server/auth.js'
 import { createServer } from '../server/index.js'
 import {
   acceptChapter,
@@ -353,4 +356,75 @@ test('connections: the name-list behind the counts, with viewer follow state (PR
   // A ghost has no list.
   const ghost = await fetch(`${base}/api/users/username%3Aghost/connections?kind=followers`)
   assert.equal(ghost.status, 404)
+})
+
+/**
+ * ACCOUNT-POLISH §5 fixture: the auth service and the social service
+ * share one identity store, exactly the way production shares the
+ * `site_users` collection — so a registration is visible to the
+ * profile endpoint as an account, footprint or not.
+ */
+async function startAccountOnlyServer(t) {
+  const env = { AUTH_ENABLED: 'true', DATA_STORE: 'memory' }
+  const identityStore = createMemoryIdentityStore()
+  const usernameAuth = createUsernameAuthService({ env, store: identityStore })
+  const authService = createAuthService({ env, usernameAuth })
+  const avatarStore = createMemoryAvatarStore()
+  const avatarService = createAvatarService({
+    env: { GENAI_BACKEND: 'vertex', GOOGLE_CLOUD_PROJECT: 'project-test-123' },
+    store: avatarStore,
+    imageGenerate: async () => ({ buffer: tinyPng(), mimeType: 'image/png', usage: null }),
+  })
+  const plazaStore = createMemoryPlazaStore()
+  const coverStore = createMemoryCoverStore()
+  const plazaService = createPlazaService({ env: {}, store: plazaStore, avatarStore, coverStore })
+  const socialService = createSocialService({
+    env,
+    store: createMemorySocialStore(),
+    plazaStore,
+    avatarStore,
+    coverStore,
+    identityStore,
+  })
+  const server = createServer({
+    env,
+    generator: { status: () => ({ configured: false, provider: 'gemini', model: 'fixture' }), generate: async () => { throw new Error('unused') } },
+    auth: authService,
+    avatar: avatarService,
+    plaza: plazaService,
+    social: socialService,
+    fetchImpl: async () => { throw new Error('Unexpected external request in HTTP fixture') },
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(async () => {
+    server.closeAllConnections()
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  })
+  return { base: `http://127.0.0.1:${server.address().port}` }
+}
+
+test('a registered account with no avatar and no publications still has a profile page', async (t) => {
+  const { base } = await startAccountOnlyServer(t)
+  const fresh = await register(base, 'fresh_face')
+  // No avatar created, nothing published, no profile record saved: the
+  // account itself is the existence proof, so the deep link opens an
+  // honestly empty page instead of the old footprint-based 404.
+  const response = await fetch(`${base}/api/users/${encodeURIComponent(fresh.uid)}/profile`)
+  assert.equal(response.status, 200)
+  const { profile } = await response.json()
+  assert.equal(profile.uid, fresh.uid)
+  assert.equal(profile.displayName, 'fresh_face', 'username accounts present their username')
+  assert.equal(profile.handle, 'fresh_face')
+  assert.equal(profile.avatar, null, 'no avatar record: the showcase stays absent, never fabricated')
+  assert.deepEqual(profile.picture, { kind: 'default', url: '/default-avatar.svg' })
+  assert.deepEqual(profile.counts, { following: 0, followers: 0, publications: 0 })
+  assert.deepEqual(profile.publications, [])
+  assert.deepEqual(profile.worlds, [])
+  // A username that was never registered is still a 404, as is any
+  // other unknown uid.
+  const ghost = await fetch(`${base}/api/users/username%3Aghost_user/profile`)
+  assert.equal(ghost.status, 404)
+  const missing = await fetch(`${base}/api/users/no-such-user-123/profile`)
+  assert.equal(missing.status, 404)
 })

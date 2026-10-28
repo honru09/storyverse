@@ -95,3 +95,38 @@ test('register mode shows one dynamic hint that follows the identifier shape', (
   assert.match(panel, /用户名 3–20 个字符，大小写不敏感；注册后直接登录，不用邮箱。/)
   assert.match(panel, /\{activeMode === "register" && <p className="account-storage-note">\{registerHint\}<\/p>\}/)
 })
+
+test('ACCOUNT-POLISH: the guest footer is composed from capability facts, never a hard promise', () => {
+  // F-06: the email-code channel is named only when the server config
+  // says it is open; the method list is built from the same booleans
+  // that gate the tabs and fields.
+  assert.match(panel, /const methodOptions = \[usernameAvailable && "用户名", codeAvailable && "邮箱验证码"\]\.filter\(Boolean\)/)
+  assert.match(panel, /没有 Google 账号，也可以用\$\{methodOptions\.join\("或"\)\}登录。/)
+  // N-05: an unconfigured deployment makes no storage promise in
+  // either direction — the old reverse promise is gone entirely.
+  assert.match(panel, /"账号服务尚未配置。你仍可继续本机阅读。"/)
+  assert.doesNotMatch(panel, /不会自动上传故事或个人设定/)
+  assert.doesNotMatch(panel, /也可以用用户名或邮箱验证码登录/)
+})
+
+test('ACCOUNT-POLISH: registration confirms the password and blocks the request on mismatch', () => {
+  assert.match(panel, /<label>确认密码<input type="password" name="confirmPassword"/)
+  assert.match(panel, /两次输入的密码不一致/)
+  // The guard sits in submit before any channel call.
+  assert.match(panel, /if \(activeMode === "register" && password !== confirmPassword\) \{ setLocalError\("两次输入的密码不一致，请再确认。"\); return; \}/)
+})
+
+test('ACCOUNT-POLISH: switching views clears the client snapshot error with the view', () => {
+  assert.match(panel, /client\.clearError\(\)/)
+})
+
+test('ACCOUNT-POLISH: a slow request says it is still working instead of looking hung', () => {
+  assert.match(panel, /网络较慢，仍在处理中，请稍等/)
+  assert.match(panel, /setSlowPending\(true\), 5000\)/)
+})
+
+test('ACCOUNT-POLISH: alternative-channel sentences never offer a closed channel', () => {
+  assert.match(panel, /const alternativeLoginText = \(exclude\) =>/)
+  assert.doesNotMatch(panel, /可以改用用户名或验证码登录/)
+  assert.doesNotMatch(panel, /可以改用邮箱登录/)
+})
