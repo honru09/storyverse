@@ -1477,37 +1477,18 @@ button.profile-stat{cursor:pointer}
 .profile-store-copy small{font-size:12px;color:var(--profile-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .profile-store-card>svg{flex:0 0 auto;color:var(--profile-faint)}
 .profile-stage{position:relative;height:384px;border-radius:24px;overflow:hidden;background:var(--profile-panel);margin:0;width:auto;text-align:left}
-.profile-stage-bg{position:absolute;inset:-30px;background-size:cover;background-position:center 18%;filter:blur(30px) brightness(.27) saturate(1.08);z-index:0}
-:root[data-shell-theme='white'] .profile-stage-bg{filter:blur(30px) brightness(.94) saturate(1.04)}
-/* The halo, rebuilt as layered brand light (§37): a violet wash
-   behind the figure cooling into the mint brand colour — never a
-   white core. The old near-white ellipse from the top read as a
-   searchlight on the reader's phone. */
-.profile-stage-spot{position:absolute;inset:0;z-index:1;background:radial-gradient(58% 46% at 50% 34%,rgba(139,124,240,.26),rgba(29,158,116,.10) 55%,transparent 74%)}
-:root[data-shell-theme='white'] .profile-stage-spot{background:radial-gradient(58% 46% at 50% 34%,rgba(139,124,240,.15),rgba(29,158,116,.06) 55%,transparent 74%)}
-.profile-stage-floor{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);width:210px;height:26px;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.48),transparent);z-index:1}
-.profile-stage::before{content:"";position:absolute;inset:0;z-index:1;background:radial-gradient(92% 72% at 50% 38%,transparent 36%,color-mix(in srgb,var(--bg) 76%,transparent) 100%)}
+/* Poster stage (POSTER-AVATAR): the fake light rig is retired — no
+   spot wash, no floor ellipse, no brightened glow copy of the figure.
+   Portraits are poster key visuals that carry their own backdrop,
+   light and effects inside the painting, so the stage simply lets
+   the painting fill the frame edge to edge. The crop anchors high
+   (50% 8%) because the poster contract keeps the face in the upper
+   part of the frame; older plain-background portraits crop to a
+   face-and-torso poster cut the same way. The two pseudo layers that
+   remain are legibility scrims for the name plate, not light. */
+.profile-stage::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(92% 72% at 50% 38%,transparent 36%,color-mix(in srgb,var(--bg) 76%,transparent) 100%)}
 :root[data-shell-theme='white'] .profile-stage::before{background:radial-gradient(92% 72% at 50% 38%,transparent 42%,color-mix(in srgb,var(--bg) 26%,transparent) 100%)}
-/* Stage fusion (PROFILE-ENRICH follow-up, parent review bounce): the
-   portrait's own light backdrop must read as a pool of light, never as
-   a rectangle. The old single radial (88% 96%, solid to 55%) was larger
-   than the frame — the top edge stayed fully opaque and the sides ~94%,
-   so the straight bright edges survived (measured step ≈96–144 lum,
-   9px transition). The mask is now two intersected layers whose fade
-   completes INSIDE the frame on every side: a radial pool (52% 52% at
-   50% 40%, solid to 48%) keeps the face and torso fully solid while
-   every edge midpoint reaches alpha 0, and a linear layer closes the
-   short headroom at the top (and the floor line at the bottom) that an
-   ellipse alone cannot fade without eating the face. */
-.profile-stage-glow{position:absolute;left:50%;bottom:38px;transform:translateX(-50%) scale(1.03);height:330px;max-width:94%;object-fit:contain;z-index:1;opacity:.16;filter:blur(10px) brightness(1.3) saturate(.95);-webkit-mask-image:radial-gradient(56% 54% at 50% 42%,#000 32%,transparent 92%),linear-gradient(180deg,transparent 0,#000 13%,#000 88%,transparent 100%),linear-gradient(90deg,transparent 0,#000 8%,#000 92%,transparent 100%);mask-image:radial-gradient(56% 54% at 50% 42%,#000 32%,transparent 92%),linear-gradient(180deg,transparent 0,#000 13%,#000 88%,transparent 100%),linear-gradient(90deg,transparent 0,#000 8%,#000 92%,transparent 100%);-webkit-mask-composite:source-in,source-in;mask-composite:intersect,intersect}
-:root[data-shell-theme='white'] .profile-stage-glow{opacity:.18}
-/* The portrait melts into the stage on every side (§37): a modest
-   solid core keeps the face and torso whole, then a LONG ramp lets
-   the portrait's own ground dissolve into the stage instead of
-   ending as a pale slab, and the two linear gradients feather the
-   vertical and horizontal edges — a light-ground portrait's
-   rectangular corners can no longer show. */
-.profile-stage-img{position:absolute;left:50%;bottom:38px;transform:translateX(-50%);height:330px;max-width:94%;object-fit:contain;z-index:2;-webkit-mask-image:radial-gradient(56% 55% at 50% 44%,#000 46%,transparent 97%),linear-gradient(180deg,transparent 0,#000 12%,#000 86%,transparent 100%),linear-gradient(90deg,transparent 0,#000 9%,#000 91%,transparent 100%);mask-image:radial-gradient(56% 55% at 50% 44%,#000 46%,transparent 97%),linear-gradient(180deg,transparent 0,#000 12%,#000 86%,transparent 100%),linear-gradient(90deg,transparent 0,#000 9%,#000 91%,transparent 100%);-webkit-mask-composite:source-in,source-in;mask-composite:intersect,intersect}
+.profile-stage-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 8%;z-index:1}
 .profile-stage::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(76% 68% at 50% 42%,transparent 58%,color-mix(in srgb,var(--bg) 55%,transparent) 100%),linear-gradient(180deg,transparent calc(100% - 112px),color-mix(in srgb,var(--bg) 48%,transparent))}
 :root[data-shell-theme='white'] .profile-stage::after{background:radial-gradient(76% 68% at 50% 42%,transparent 58%,color-mix(in srgb,var(--bg) 32%,transparent) 100%),linear-gradient(180deg,transparent calc(100% - 112px),color-mix(in srgb,var(--bg) 48%,transparent))}
 .profile-stage-noface{position:absolute;left:50%;bottom:118px;transform:translateX(-50%);font-size:120px;font-weight:700;line-height:1;color:color-mix(in srgb,var(--profile-ink) 15%,transparent);z-index:1}

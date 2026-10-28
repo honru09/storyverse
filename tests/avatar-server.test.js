@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { PNG } from 'pngjs'
-import { createAvatarService, buildAvatarPrompt, AVATAR_IMAGE_MODEL } from '../server/avatar.js'
+import { createAvatarService, buildAvatarPrompt, posterCompositionFor, AVATAR_POSTER_CAMERAS, AVATAR_POSTER_POSES, AVATAR_IMAGE_MODEL } from '../server/avatar.js'
 import { createMemoryAvatarStore } from '../server/avatar-store.js'
 import { createServer } from '../server/index.js'
 
@@ -56,6 +56,42 @@ test('buildAvatarPrompt with a reference anchors identity to the previous painti
   const prompt = buildAvatarPrompt(profile(), { hasReference: true })
   assert.match(prompt, /SAME character/)
   assert.match(prompt, /stated look wins/)
+})
+
+test('buildAvatarPrompt paints a poster key visual, never an ID-photo reference sheet (POSTER-AVATAR)', () => {
+  const prompt = buildAvatarPrompt(profile())
+  assert.match(prompt, /poster/i)
+  assert.match(prompt, /Camera: a (dramatic low angle|dramatic high angle|dynamic three-quarter)/)
+  assert.match(prompt, /Pose: (caught mid-stride|turning back over one shoulder|one arm raised)/)
+  assert.match(prompt, /colour-block shapes/)
+  assert.match(prompt, /rim light tracing the silhouette/)
+  assert.match(prompt, /painted into the image itself/)
+  assert.match(prompt, /face sits in the UPPER part of the frame/)
+  assert.match(prompt, /no typography or lettering of any kind/)
+  assert.ok(!prompt.includes('clean plain softly-lit background'), 'the plain-background contract is gone')
+  assert.ok(!prompt.includes('relaxed natural pose'), 'the standing ID-photo pose is gone')
+  assert.ok(!prompt.includes('character reference portrait'), 'no reference-sheet framing remains')
+})
+
+test('posterCompositionFor is stable per profile and rotates across profiles', () => {
+  const first = posterCompositionFor(profile())
+  assert.equal(posterCompositionFor(profile()).camera.id, first.camera.id)
+  assert.equal(posterCompositionFor(profile()).pose.id, first.pose.id)
+  assert.ok(AVATAR_POSTER_CAMERAS.some((item) => item.id === first.camera.id))
+  assert.ok(AVATAR_POSTER_POSES.some((item) => item.id === first.pose.id))
+  const cameras = new Set()
+  for (const name of ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛']) {
+    cameras.add(posterCompositionFor(profile({ name })).camera.id)
+  }
+  assert.ok(cameras.size >= 2, 'different avatars do not all share one camera')
+})
+
+test('buildAvatarPrompt under a lock keeps the reference composition — no poster restyle', () => {
+  const prompt = buildAvatarPrompt(profile(), { hasReference: true, lockPart: 'hairColor' })
+  assert.match(prompt, /REPAINT LOCK/)
+  assert.ok(!prompt.includes('Camera: a dramatic'), 'a locked repaint must not re-stage the painting')
+  assert.ok(!prompt.includes('colour-block'), 'a locked repaint must not swap the backdrop')
+  assert.match(prompt, /face sits in the UPPER part of the frame/, 'the face contract survives the lock')
 })
 
 test('buildAvatarPrompt scrubs structural impersonation from reader text', () => {

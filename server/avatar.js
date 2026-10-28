@@ -18,8 +18,13 @@ import {
  * The avatar service: one fixed character per account, painted by the
  * same image model the covers use (gemini-2.5-flash-image on the Vertex
  * generateContent surface — the probe result recorded in server/cover.js
- * applies unchanged). Portraits are character reference paintings:
- * a single character, full or large half body, clean background, no text.
+ * applies unchanged). Portraits are POSTER key visuals (POSTER-AVATAR):
+ * a single character in a dynamic pose and a dramatic camera angle,
+ * against a graphic colour-block backdrop themed to the character's
+ * world, with rim light and one genre effect painted into the image —
+ * never a plain-background reference sheet, and never any text. The
+ * face always sits in the upper part of the frame so the face-anchor
+ * crop every small round surface relies on keeps working.
  *
  * Cross-generation consistency has two anchors, used together:
  *   1. the structured profile (fixed-vocabulary appearance), restated in
@@ -88,31 +93,68 @@ function lockInstruction(profile, lockPart) {
   return `REPAINT LOCK — this is a single-part adjustment: change ONLY the ${AVATAR_LOCK_PARTS[lockPart]}${changed ? ` (now: ${changed})` : ''}. Everything else must stay exactly as it is in the reference image and as restated below; preserved unchanged: ${preserved || 'the full stated look'}. Do not substitute, restyle, drop or add any other garment, accessory or feature, and any clothing named in the character impression stays on the character.`
 }
 
+// The poster composition vocabulary (POSTER-AVATAR). A portrait is a
+// key visual, not an ID photo: the camera and the pose rotate between
+// dramatic options, picked deterministically from the profile so one
+// avatar keeps a signature composition across repaints while different
+// avatars do not all stand in the same spot.
+export const AVATAR_POSTER_CAMERAS = Object.freeze([
+  { id: 'low-angle', prompt: 'Camera: a dramatic low angle looking up at the character, strong foreshortening — the figure towers over the viewer against the backdrop.' },
+  { id: 'high-angle', prompt: 'Camera: a dramatic high angle looking down at the character, the graphic ground plane of the backdrop sweeping out below them.' },
+  { id: 'diagonal', prompt: 'Camera: a dynamic three-quarter view on a tilted diagonal axis — the whole composition cuts across the frame on a bold slant.' },
+])
+
+export const AVATAR_POSTER_POSES = Object.freeze([
+  { id: 'stride', prompt: 'Pose: caught mid-stride, walking toward the viewer, garments and hair lifted by the motion.' },
+  { id: 'glance-back', prompt: 'Pose: turning back over one shoulder to glance at the viewer, the body still in motion.' },
+  { id: 'reach', prompt: 'Pose: one arm raised in a decisive gesture, weight shifted onto one leg, garments caught mid-motion.' },
+])
+
+/** The composition one profile paints with — stable per avatar + look. */
+export function posterCompositionFor(profile) {
+  const seed = `${profile?.name || ''}|${avatarAppearancePrompt(profile?.appearance)}|${profile?.description || ''}`
+  let hash = 0
+  for (let index = 0; index < seed.length; index += 1) hash = (hash * 31 + seed.charCodeAt(index)) >>> 0
+  return {
+    camera: AVATAR_POSTER_CAMERAS[hash % AVATAR_POSTER_CAMERAS.length],
+    pose: AVATAR_POSTER_POSES[Math.floor(hash / AVATAR_POSTER_CAMERAS.length) % AVATAR_POSTER_POSES.length],
+  }
+}
+
 /**
  * Assemble the portrait prompt from the structured profile. The structured
  * appearance is restated in full every time (that is the text anchor);
  * with a reference image the prompt additionally instructs the model to
  * keep the same person and apply the stated look. A `lockPart` narrows
- * that instruction to the one changed part (see lockInstruction).
+ * that instruction to the one changed part (see lockInstruction) — under
+ * a lock the reference also wins the composition, so the poster lines
+ * step aside and only a full repaint restyles the painting.
  */
 export function buildAvatarPrompt(profile, { hasReference = false, lockPart = null } = {}) {
   const look = avatarAppearancePrompt(profile?.appearance)
   const description = safeText(profile?.description, AVATAR_DESCRIPTION_MAX)
   const faceNote = safeText(profile?.appearance?.faceNote, AVATAR_FACE_NOTE_MAX)
   const lock = hasReference ? lockInstruction(profile, lockPart) : ''
+  const composition = posterCompositionFor(profile)
+  const poster = !lock
   const parts = [
-    'A vertical 3:4 character portrait illustration for a fiction companion character. The image must contain absolutely no text: no letters, no words, no typography, no watermark, no logo.',
+    'A vertical 3:4 poster-style character key visual illustration for a fiction companion character. The image must contain absolutely no text: no letters, no words, no typography or lettering of any kind, no watermark, no logo.',
     hasReference
       ? lock
         ? 'The attached reference image shows the SAME character. Keep the same person — same face, same identity, recognisably them. This repaint changes one part only, under the lock below: where the stated look and the reference disagree on any OTHER part, the reference wins.'
-        : 'The attached reference image shows the SAME character. Keep the same person — same face, same identity, recognisably them — and repaint them with the look stated below. Where the stated look and the reference disagree, the stated look wins.'
-      : 'Paint this character as a character reference portrait.',
+        : 'The attached reference image shows the SAME character. Keep the same person — same face, same identity, recognisably them — and repaint them with the look stated below, in the poster composition below. Where the stated look and the reference disagree, the stated look wins.'
+      : 'Paint this character as the key visual of a poster.',
     lock,
-    'Framing: one single character only, full body or large three-quarter body, standing in a relaxed natural pose, facing the viewer, against a clean plain softly-lit background with no scenery and no other people.',
+    poster ? 'Framing: one single character only, full body or large three-quarter body, and no other people.' : '',
+    poster ? composition.camera.prompt : '',
+    poster ? composition.pose.prompt : '',
+    poster ? 'Backdrop: a poster-style graphic backdrop themed to the character\'s world and impression — bold flat colour-block shapes, graphic texture and thematic motifs. Never a plain empty background, and never a realistic photographed scene.' : '',
+    poster ? 'Light and effects: strong rim light tracing the silhouette in a colour drawn from the backdrop, plus one genre effect painted into the image itself — drifting mist, electric arcs, sword-light streaks, floating embers or neon glow — matched to the character\'s world.' : '',
+    'Face: the face sits in the UPPER part of the frame, fully visible, sharply detailed and clearly lit — never cropped by the frame edge, never turned fully away, never covered by hair, hands or effects.',
     look ? `Appearance: ${look}.` : '',
     faceNote ? `Facial detail: ${faceNote}.` : '',
     description ? `Character impression (mood and personality to express, not scenery): ${description}` : '',
-    'Style: polished 2.5D painterly illustration, gentle cel shading over soft rendering, calm cinematic light, consistent character-design quality.',
+    'Style: polished 2.5D painterly illustration, gentle cel shading over soft rendering, bold poster colour design, cinematic contrast, consistent character-design quality.',
   ]
   return parts.filter(Boolean).join('\n')
 }

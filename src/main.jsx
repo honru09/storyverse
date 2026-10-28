@@ -1535,7 +1535,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
           )}
           {selected && (
             <p className="avatar-lock-note">
-              重画只改你动的那一项，其余样子保持不变。每次重画用掉今天 1 次立绘额度{quotaLine ? `（${quotaLine}）` : ""}。
+              重画只改你动的那一项，其余样子保持不变。每次重画用掉今天 1 次立绘额度{quotaLine ? `（${quotaLine}）` : ""}。新风格：海报式立绘，机位与氛围都画进图里。
             </p>
           )}
           <AppearanceFields
@@ -7193,16 +7193,6 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
               <div className="profile-stage profile-avatar-stand">
                 {stageAvatar.hasPortrait && stageAvatar.portraitUrl && stageFailedFor !== stageAvatar.id ? (
                   <>
-                    <span className="profile-stage-bg" style={{ backgroundImage: `url("${stageAvatar.portraitUrl}")` }} aria-hidden="true" />
-                    <span className="profile-stage-spot" aria-hidden="true" />
-                    <span className="profile-stage-floor" aria-hidden="true" />
-                    <img
-                      className="profile-stage-glow"
-                      src={stageAvatar.portraitUrl}
-                      alt=""
-                      aria-hidden="true"
-                      loading="lazy"
-                    />
                     <img
                       className="profile-stage-img"
                       src={stageAvatar.portraitUrl}
@@ -7213,11 +7203,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
                     <ParticleField density="dust" className="profile-stage-motes" />
                   </>
                 ) : (
-                  <>
-                    <span className="profile-stage-spot" aria-hidden="true" />
-                    <span className="profile-stage-floor" aria-hidden="true" />
-                    <span className="profile-stage-noface" aria-hidden="true">{[...(stageAvatar.name || "化")][0]}</span>
-                  </>
+                  <span className="profile-stage-noface" aria-hidden="true">{[...(stageAvatar.name || "化")][0]}</span>
                 )}
                 <div className="profile-stage-plate">
                   <div className="profile-stage-main">

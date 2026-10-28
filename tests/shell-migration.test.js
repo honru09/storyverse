@@ -130,6 +130,13 @@ test('face-anchor cropping: small round slots zoom portraits to the face', () =>
   assert.match(css, /\.profile-stage\{[^}]*height:384px/)
 })
 
+test('poster stage (POSTER-AVATAR): the fake light rig is retired, the painting fills the stage', () => {
+  assert.doesNotMatch(main, /profile-stage-spot|profile-stage-floor|profile-stage-glow|profile-stage-bg/)
+  assert.doesNotMatch(css, /\.profile-stage-spot|\.profile-stage-floor|\.profile-stage-glow|\.profile-stage-bg/)
+  assert.match(css, /\.profile-stage-img\{[^}]*object-fit:cover/)
+  assert.match(css, /\.profile-stage-img\{[^}]*object-position:50% 8%/)
+})
+
 test('boards retired (PROFILE-ENRICH §35): the fan collage gives way to shelf / store / stage sections', () => {
   // §27's 合集 fan geometry belonged to the boards the enriched
   // profile replaces; the sections that replace it are pinned here so
