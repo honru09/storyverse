@@ -50,9 +50,14 @@
 @keyframes reader-chrome-down{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
 @keyframes reader-chrome-up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 .reader-chrome-back{display:grid;place-items:center;width:44px;height:44px;flex:none;background:transparent;border:0;border-radius:50%;color:var(--reader-text);cursor:pointer}
-.reader-chrome-title{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
-.reader-chrome-title b{font-size:.875rem;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.reader-chrome-title span{font-size:.6875rem;color:var(--reader-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* READER-CHROME §24 / READER-FIX3 §5: the summoned top bar carries ONE
+   line — back + book/chapter (truncated) + icon cluster — so the back
+   chevron, title and icons share a single vertical centre. The old
+   two-line stack left the icons aligned to the gap between the lines,
+   which read as misalignment on the user's device. */
+.reader-chrome-title{flex:1;min-width:0;font-size:.875rem;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reader-chrome-title b{font-weight:650}
+.reader-chrome-title span{color:var(--reader-secondary)}
 .reader-chrome-actions{display:flex;gap:2px;flex:none}
 .reader-chrome-actions button{display:grid;place-items:center;width:44px;height:44px;background:transparent;border:0;border-radius:50%;color:var(--reader-text);cursor:pointer}
 .reader-chrome-navrow{display:flex;align-items:center;gap:8px;padding:2px 2px 4px}

@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from "react";
 import {
   DEFAULT_READING_PREFERENCES,
-  READER_FONT_SIZES,
+  READER_FONT_SCALES,
   getReaderAppearance,
   normalizeReadingPreferences,
 } from "../reading-preferences.js";
@@ -13,8 +13,8 @@ const THEMES = [
   { value: "oled", label: "纯黑" }, { value: "system", label: "自动" },
 ];
 const SIZE_PRESETS = [
-  { value: 16, label: "小" }, { value: 18, label: "标准" },
-  { value: 20, label: "大" }, { value: 22, label: "特大" },
+  { value: 0.875, label: "小" }, { value: 1, label: "标准" },
+  { value: 1.25, label: "大" }, { value: 1.5, label: "特大" },
 ];
 
 function OptionGroup({ legend, name, options, value, onChange, className = "" }) {
@@ -38,7 +38,7 @@ export default function ReadingPreferences({ value, onChange, storageWarning }) 
   const [inputMethod, setInputMethod] = useState("pointer");
   const markInput = (method) => { inputRef.current = method; setInputMethod(method); };
   const change = (patch) => onChange(patch, { inputMethod: inputRef.current });
-  const sizeIndex = READER_FONT_SIZES.indexOf(settings.fontSize);
+  const sizeIndex = READER_FONT_SCALES.indexOf(settings.fontScale);
   const isDefault = Object.keys(DEFAULT_READING_PREFERENCES).every((key) => settings[key] === DEFAULT_READING_PREFERENCES[key]);
   const options = (key, legend, values, className) => <OptionGroup key={key} legend={legend} name={`${id}-${key}`}
     value={settings[key]} options={values} className={className} onChange={(next) => change({ [key]: next })} />;
@@ -53,19 +53,19 @@ export default function ReadingPreferences({ value, onChange, storageWarning }) 
       <legend>文字大小</legend>
       <div className="reading-font-stepper">
         <button type="button" className="reading-font-step" aria-label="缩小字号" disabled={sizeIndex === 0}
-          onClick={() => change({ fontSize: READER_FONT_SIZES[sizeIndex - 1] })}><span aria-hidden="true">A−</span></button>
-        <output className="reading-font-value" aria-live="polite" aria-atomic="true">{settings.fontSize}<span>字号</span></output>
+          onClick={() => change({ fontScale: READER_FONT_SCALES[sizeIndex - 1] })}><span aria-hidden="true">A−</span></button>
+        <output className="reading-font-value" aria-live="polite" aria-atomic="true">{Math.round(settings.fontScale * 100)}<span>%</span></output>
         <button type="button" className="reading-font-step reading-font-step-large" aria-label="放大字号"
-          disabled={sizeIndex === READER_FONT_SIZES.length - 1}
-          onClick={() => change({ fontSize: READER_FONT_SIZES[sizeIndex + 1] })}><span aria-hidden="true">A+</span></button>
+          disabled={sizeIndex === READER_FONT_SCALES.length - 1}
+          onClick={() => change({ fontScale: READER_FONT_SCALES[sizeIndex + 1] })}><span aria-hidden="true">A+</span></button>
       </div>
       <div className="reading-font-options" role="group" aria-label="选择字号">
         {SIZE_PRESETS.map(({ value: size, label }) => <label className="reading-preference-option" key={size}>
-          <input type="radio" name={`${id}-font-size`} value={size} checked={settings.fontSize === size}
-            onChange={() => change({ fontSize: size })} /><span>{label}</span>
+          <input type="radio" name={`${id}-font-size`} value={size} checked={settings.fontScale === size}
+            onChange={() => change({ fontScale: size })} /><span>{label}</span>
         </label>)}
       </div>
-      <p className="reading-preference-hint">14–32 号，跟随设备文字缩放。</p>
+      <p className="reading-preference-hint">字号随屏幕宽度自动适配，档位是相对基准的倍率。</p>
     </fieldset>
 
     <fieldset className="reading-preferences-fieldset">
@@ -104,7 +104,6 @@ export default function ReadingPreferences({ value, onChange, storageWarning }) 
     <details className="reading-advanced">
       <summary>更多排版<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></summary>
       <div className="reading-advanced-content">
-        {options("fontWeight", "字重", [{ value: 400, label: "常规" }, { value: 600, label: "加重" }])}
         {options("margin", "页边距", [{ value: "narrow", label: "窄" }, { value: "standard", label: "标准" }, { value: "wide", label: "宽" }])}
         {options("paragraphSpacing", "段间距", [{ value: 0.6, label: "紧凑" }, { value: 1, label: "标准" }, { value: 1.4, label: "宽松" }])}
         {options("paragraphIndent", "首行缩进", [{ value: true, label: "空两格" }, { value: false, label: "不缩进" }])}

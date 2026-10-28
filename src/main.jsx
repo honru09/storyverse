@@ -4201,7 +4201,7 @@ function Reader({
             </button>
             <div className="reader-chrome-title">
               <b>{story.title}</b>
-              <span>第 {index + 1} 章 · {chapter.title}</span>
+              <span> · 第 {index + 1} 章 · {chapter.title}</span>
             </div>
             {!readOnly && (
               <div className="reader-chrome-actions">

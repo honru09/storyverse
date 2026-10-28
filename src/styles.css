@@ -143,7 +143,20 @@ button:disabled{cursor:not-allowed}
 .motion-toggle[aria-pressed="false"]{color:var(--dim-2)}
 .sidebar{display:none}
 .page{width:min(100%,1240px);margin:0 auto;padding:24px 20px calc(84px + env(safe-area-inset-bottom))}
-.page-enter{animation:page-in var(--dur-page) var(--ease-out) both}
+/* Fill mode must stay `backwards`, never `both`: page-in animates
+   transform, and a forwards fill keeps the finished animation's
+   transform value applied forever (engines report it as an identity
+   matrix, not `none`). Any transform on .page — even an identity
+   matrix — makes it the containing block for fixed descendants, so
+   the reader's viewport-pinned hairlines and tap-summoned chrome
+   silently anchor to the page box instead of the viewport whenever
+   motion is on (real devices): the bottom dock lands a full document
+   below the fold and the top hairline scrolls away with the prose
+   (user iPhone screenshots 2026-10-28, READER-FIX3). Reduced-motion
+   test rigs never see it because the animation never applies there.
+   With `backwards` the end state is the element's natural style
+   (opacity 1, no transform) the moment the 320ms entry finishes. */
+.page-enter{animation:page-in var(--dur-page) var(--ease-out) backwards}
 @keyframes page-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 .button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:50px;padding:12px 20px;border-radius:999px;font-weight:700;font-size:15px;border:1px solid transparent;position:relative;overflow:hidden;transition:transform var(--dur-press) var(--ease-press),box-shadow var(--dur-state) var(--ease-out),background-color var(--dur-state) var(--ease-out),border-color var(--dur-state) var(--ease-out),filter var(--dur-state) var(--ease-out)}
 .button:active:not(:disabled){transform:scale(.97)}
@@ -406,7 +419,11 @@ select{appearance:auto}
 .reader-article h1{overflow-wrap:anywhere}
 .reader-article h1{margin:0 0 28px;font-size:clamp(1.7rem,6vw,2.3rem);line-height:1.4;letter-spacing:-.02em;font-weight:800}
 .reader-article h1:focus{outline:none}
-.article-lede{font-weight:550}
+/* READER-FIX3: no font-weight rule for .article-lede. The legacy 550
+   here was a direct rule, so it outranked the inherited
+   --reader-font-weight and rendered the first paragraph of every
+   chapter semibold no matter what the reading settings said. The
+   lede now inherits the article's weight like every other paragraph. */
 .article-body p,.article-lede{margin:0 0 1.35em;line-height:2.05}
 .choice-block{margin-top:38px;padding-top:26px;border-top:1px solid var(--line)}
 .choice-heading{margin-bottom:16px}

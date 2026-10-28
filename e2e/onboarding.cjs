@@ -78,6 +78,9 @@ async function readerReady(page) {
   }, storageKey);
 }
 
+/* Fluid type oracle (DESIGN §32): base = clamp(15px, 2.56vw + 6px, 19px), times the reader's scale step. */
+const fluidPx = (width, scale) => Math.min(19, Math.max(15, 2.56 * width / 100 + 6)) * scale;
+
 async function assertAppearance(page, expected) {
   await page.waitForFunction(({ fontSize, lineHeight, theme }) => {
     const root = document.querySelector('.page-reader');
@@ -369,12 +372,12 @@ async function runOnboarding(browser, width) {
       assert.equal(await sizes.getByRole('radio', { name: '标准', exact: true }).isChecked(), true);
       await dialog.getByRole('button', { name: '放大字号', exact: true }).click();
       await dialog.getByRole('button', { name: '放大字号', exact: true }).click();
-      assert.equal(await sizes.getByRole('radio', { name: '特大', exact: true }).isChecked(), true);
+      assert.equal(await sizes.getByRole('radio', { name: '大', exact: true }).isChecked(), true);
       assert.equal(await dialog.getByRole('button', { name: '放大字号', exact: true }).isDisabled(), false);
-      for (let step = 0; step < 5; step += 1) {
+      for (let step = 0; step < 2; step += 1) {
         await dialog.getByRole('button', { name: '放大字号', exact: true }).click();
       }
-      await assertAppearance(page, { fontSize: 32, lineHeight: 1.9, theme: 'light' });
+      await assertAppearance(page, { fontSize: fluidPx(width, 1.5), lineHeight: 1.9, theme: 'light' });
       assert.equal(await dialog.getByRole('button', { name: '放大字号', exact: true }).isDisabled(), true);
       await noOverflow(page, 'maximum reading size');
       await sizes.getByRole('radio', { name: '特大', exact: true }).click();
@@ -385,7 +388,7 @@ async function runOnboarding(browser, width) {
       await themes.getByRole('radio', { name: '夜间', exact: true }).click();
       assert.equal(await spacing.getByRole('radio', { name: '紧凑', exact: true }).isChecked(), true);
       assert.equal(await themes.getByRole('radio', { name: '夜间', exact: true }).isChecked(), true);
-      await assertAppearance(page, { fontSize: 22, lineHeight: 1.8, theme: 'night' });
+      await assertAppearance(page, { fontSize: fluidPx(width, 1.5), lineHeight: 1.8, theme: 'night' });
       const surfaces = await page.evaluate(() => {
         const root = document.querySelector('.page-reader');
         const preview = document.querySelector('.reading-preferences-preview');
@@ -400,9 +403,9 @@ async function runOnboarding(browser, width) {
       assert.equal(surfaces.rootBackground, surfaces.previewBackground);
       assert.ok(Math.abs(surfaces.rootWidth - surfaces.parentWidth) < 2, 'Reader background must span its page container.');
       const savedPreferences = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), preferencesKey);
-      assert.deepEqual({ version: savedPreferences.version, fontSize: savedPreferences.fontSize,
+      assert.deepEqual({ version: savedPreferences.version, fontScale: savedPreferences.fontScale,
         lineHeight: savedPreferences.lineHeight, theme: savedPreferences.theme },
-      { version: 2, fontSize: 22, lineHeight: 1.8, theme: 'night' });
+      { version: 4, fontScale: 1.5, lineHeight: 1.8, theme: 'night' });
       assert.equal(savedPreferences.fontFamily, 'system');
       assert.equal(savedPreferences.fontWeight, 400);
       assert.equal(savedPreferences.margin, 'standard');
@@ -417,7 +420,7 @@ async function runOnboarding(browser, width) {
     await step('preferences survive reload while story bytes and chapter stay unchanged', async () => {
       await page.reload({ waitUntil: 'domcontentloaded' });
       await readerReady(page);
-      await assertAppearance(page, { fontSize: 22, lineHeight: 1.8, theme: 'night' });
+      await assertAppearance(page, { fontSize: fluidPx(width, 1.5), lineHeight: 1.8, theme: 'night' });
       assert.equal(await readRawLibrary(page), originalStoryRaw);
       assert.equal(await page.locator('.reader-article').innerText(), originalChapter);
       await summonReaderChrome(page);
@@ -433,10 +436,10 @@ async function runOnboarding(browser, width) {
       // theme/typography motion synchronously rather than waiting for a timer.
       await themes.getByRole('radio', { name: '暖色', exact: true }).focus();
       await page.keyboard.press('Space');
-      await assertAppearance(page, { fontSize: 22, lineHeight: 1.8, theme: 'warm' });
+      await assertAppearance(page, { fontSize: fluidPx(width, 1.5), lineHeight: 1.8, theme: 'warm' });
       assert.equal(await page.locator('.page-reader').getAttribute('data-reader-motion'), 'off');
       await dialog.getByRole('button', { name: '恢复默认', exact: true }).click();
-      await assertAppearance(page, { fontSize: 18, lineHeight: 1.9, theme: 'light' });
+      await assertAppearance(page, { fontSize: fluidPx(width, 1), lineHeight: 1.9, theme: 'light' });
       await closeReaderSheetWithEscape(page, dialog);
       assert.equal(await readRawLibrary(page), originalStoryRaw);
       await noOverflow(page, 'restored reader');

@@ -119,8 +119,8 @@ const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).f
           const icons = await page.locator('.reader-chrome-actions button').evaluateAll(nodes => nodes.map(node => { const r = node.getBoundingClientRect(); return { w: r.width, h: r.height }; }));
           assert.equal(icons.length, 3, '设定集 / 封面 / 分享 icon buttons');
           assert.ok(icons.every(icon => icon.w >= 44 && icon.h >= 44), 'top icon hit areas are at least 44px');
-          const title = await page.locator('.reader-chrome-title b').evaluate(node => ({ h: node.offsetHeight, sw: node.scrollWidth, cw: node.clientWidth }));
-          assert.ok(title.h <= 24 && title.sw >= title.cw - 1, 'chrome title is one truncated line');
+          const title = await page.locator('.reader-chrome-title').evaluate(node => ({ h: node.clientHeight, sh: node.scrollHeight }));
+          assert.ok(title.h <= 24 && title.sh <= title.h + 1, 'chrome title is one truncated line');
         });
 
         await check('scrolling folds the chrome away', async () => {
@@ -192,8 +192,12 @@ const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).f
           await slider.fill('75');
           await page.waitForFunction(() => window.scrollY > 500, null, { timeout: 4000 });
           await slider.fill('0');
-          // Seek home can take a moment to settle when the earlier
-          // smooth scroll is still draining; assert the settled value.
+          // Wait until the home seek has visibly left the 75% landing
+          // before judging the settled value: under heavy parallel
+          // load the second fill's scroll can start late, and
+          // settleScroll alone would happily certify the pre-seek
+          // position. A genuinely broken seek still fails here.
+          await page.waitForFunction(() => window.scrollY < 300, null, { timeout: 6000 });
           const settled = await settleScroll();
           assert.ok(settled < 120, `slider seek home settles near the chapter top (scrollY ${settled})`);
           await closeChrome();
@@ -374,14 +378,136 @@ const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).f
       finally { await context.close(); }
     }
 
-    // Real devices run with motion ON, and the shell's page-in
-    // animation makes .page the containing block for fixed elements
-    // while it applies — the anchoring must land identically. One
-    // no-preference pass at 390 locks the geometry the reduced-motion
-    // runs cannot see.
+    // Real devices run with motion ON. READER-FIX3 root cause: page-in's
+    // fill mode `both` kept the finished animation's transform applied
+    // to .page forever (an identity matrix still counts), making .page
+    // the containing block for every fixed descendant — hairlines and
+    // chrome anchored to the document box, not the viewport. The FIX2
+    // version of this pass asserted one-sided bounds only
+    // (bottom >= viewportH - 2 passes even when the bar sits a whole
+    // document below the fold) and never scrolled, so it stayed green
+    // on the broken build. Every bound below is two-sided and the
+    // geometry is re-measured three screens deep and at the very end.
     {
       const width = 390;
       const context = await browser.newContext({ viewport: { width, height: 844 }, locale: 'zh-CN', reducedMotion: 'no-preference', isMobile: true, hasTouch: true });
+      const page = await context.newPage();
+      await page.route('**/api/generate', route => route.fulfill({ status: 503, json: { error: 'Test safety guard' } }));
+      const check = async (name, work) => { await work(); report.checks.push({ width, name }); console.log(`PASS ${width} ${name}`); };
+      try {
+        await page.goto(target);
+        await page.locator('button').filter({ hasText: '你的书架、化身与草稿都在这里' }).click();
+        await page.getByRole('button', { name: '开启第一本书', exact: true }).click();
+        for (let i = 0; i < 5; i++) await page.getByRole('button', { name: '继续', exact: true }).click();
+        await page.getByRole('button', { name: '预设体验', exact: true }).click();
+        await page.getByRole('button', { name: '进入第一章', exact: true }).click();
+        await page.locator('[data-reading-paragraph]').first().waitFor();
+        await page.evaluate(key => {
+          const library = JSON.parse(localStorage.getItem(key));
+          const book = library.stories.find(story => story.id === library.activeStoryId);
+          book.chapters[0].paragraphs = Array.from({ length: 22 }, (_, i) => `第${i + 1}段，海风穿过长街。年轻的旅人放慢脚步，听见远处的钟声。` + '他记得那片海，也记得故乡的名字。'.repeat(9));
+          localStorage.setItem(key, JSON.stringify(library));
+        }, key);
+        await page.reload();
+        await page.locator('[data-reading-paragraph="21"]').waitFor();
+        await page.evaluate(() => window.scrollTo(0, 0));
+        // Let the page-in animation finish, like a settled real device.
+        await page.waitForTimeout(900);
+
+        const hairlines = () => page.evaluate(() => {
+          const top = document.querySelector('.reader-status-top').getBoundingClientRect();
+          const bottom = document.querySelector('.reader-status-bottom').getBoundingClientRect();
+          return { topTop: top.top, topBottom: top.bottom, bottomTop: bottom.top, bottomBottom: bottom.bottom, viewportH: window.innerHeight,
+            topPaint: getComputedStyle(document.querySelector('.reader-status-top')).backgroundColor,
+            transform: getComputedStyle(document.querySelector('.page-reader')).transform };
+        });
+        const assertPinned = async (label) => {
+          const geo = await hairlines();
+          assert.equal(geo.transform, 'none', `${label}: no transform may linger on .page after page-in (got ${geo.transform})`);
+          assert.ok(geo.topTop >= -1 && geo.topTop <= 2, `${label}: top hairline hugs the viewport top (top ${geo.topTop})`);
+          assert.ok(geo.topBottom >= 20 && geo.topBottom <= 42, `${label}: top hairline has its strip height (${geo.topBottom})`);
+          assert.ok(geo.bottomBottom >= geo.viewportH - 2 && geo.bottomBottom <= geo.viewportH + 1, `${label}: bottom hairline hugs the viewport bottom (${geo.bottomBottom} of ${geo.viewportH})`);
+          assert.ok(geo.bottomTop >= geo.viewportH - 42, `${label}: bottom hairline strip sits at the edge (top ${geo.bottomTop})`);
+          assert.notEqual(geo.topPaint, 'rgba(0, 0, 0, 0)', `${label}: top hairline is painted, never transparent`);
+          return geo;
+        };
+
+        await check('motion on: hairlines pinned to both viewport edges at the chapter top', async () => {
+          await assertPinned('top');
+        });
+
+        await check('motion on: hairlines stay pinned three screens deep and at the chapter end', async () => {
+          await page.evaluate(() => window.scrollTo(0, 3000));
+          await page.waitForTimeout(250);
+          const deepY = await page.evaluate(() => window.scrollY);
+          assert.ok(deepY >= 3 * 844, `scrolled three screens deep (${deepY})`);
+          await assertPinned('deep');
+          await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+          await page.waitForTimeout(250);
+          await assertPinned('end');
+        });
+
+        await check('motion on: deep centre tap summons a fully in-viewport dock with single-line labels', async () => {
+          await page.evaluate(() => window.scrollTo(0, 3000));
+          await page.waitForTimeout(250);
+          await page.touchscreen.tap(195, 422);
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
+          await page.waitForTimeout(350);
+          const box = await page.locator('.reader-chrome-bottom').boundingBox();
+          assert.ok(box, 'bottom dock has a bounding box');
+          assert.ok(box.y >= 844 - box.height - 2 && box.y + box.height <= 845, `dock fully inside the viewport (y ${box.y}, height ${box.height})`);
+          const topBox = await page.locator('.reader-chrome-top').boundingBox();
+          assert.ok(topBox && topBox.y >= -1 && topBox.y <= 2, `top bar hugs the viewport top (y ${topBox && topBox.y})`);
+          const titleLine = await page.locator('.reader-chrome-title').evaluate(node => ({ sh: node.scrollHeight, ch: node.clientHeight }));
+          assert.ok(titleLine.sh <= titleLine.ch + 1 && titleLine.ch <= 24, `chrome title is a single line (${titleLine.sh}/${titleLine.ch})`);
+          const cells = await page.locator('.reader-chrome-grid button').evaluateAll(nodes => nodes.map(node => {
+            const span = node.querySelector('span');
+            return { spanH: span.offsetHeight, spanSW: span.scrollWidth, spanCW: span.clientWidth };
+          }));
+          assert.equal(cells.length, 5, 'five dock cells at depth');
+          for (const cell of cells) {
+            assert.ok(cell.spanH <= 20, `dock label single-line at depth (offsetHeight ${cell.spanH})`);
+            assert.ok(cell.spanSW <= cell.spanCW + 1, 'dock label never overflows at depth');
+          }
+          const shot = path.join(artifacts, '390-motion-chrome-deep.png');
+          await page.screenshot({ path: shot, fullPage: false });
+          report.captures.push(shot);
+          await page.touchscreen.tap(195, 422);
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
+        });
+
+        await check('motion on: default prose computes at the fluid size / weight 400, lede included', async () => {
+          await page.evaluate(() => window.scrollTo(0, 0));
+          const prose = await page.evaluate(() => {
+            const body = getComputedStyle(document.querySelector('.article-body p'));
+            const lede = getComputedStyle(document.querySelector('.article-lede'));
+            return { size: parseFloat(body.fontSize), weight: body.fontWeight, ledeWeight: lede.fontWeight, lineHeight: parseFloat(body.lineHeight) };
+          });
+          // Fluid base at 390 wide (DESIGN §32): clamp(15, 2.56vw + 6, 19) = 15.98px at 1x.
+          assert.ok(Math.abs(prose.size - 15.98) < 0.75, `default prose size is the fluid base at this width (got ${prose.size})`);
+          assert.equal(prose.weight, '400', `default prose weight (got ${prose.weight})`);
+          assert.equal(prose.ledeWeight, '400', `first paragraph follows the article weight, no legacy 550 (got ${prose.ledeWeight})`);
+          assert.ok(Math.abs(prose.lineHeight - prose.size * 1.9) < 0.8, `default line height is size x 1.9 (got ${prose.lineHeight} at ${prose.size})`);
+        });
+      } catch (error) { report.failures.push({ width, error: error.stack }); console.error(error); }
+      finally { await context.close(); }
+    }
+
+    // Stored-settings rationalization, end to end (READER-FIX3 §3): a
+    // complete version-2 record frozen on the pre-FIX3 defaults
+    // (18px / lh 2.05 / spacing 1 / weight 600) must reach the reader
+    // as the current defaults — fluid 1x / 1.9 / 0.6em / weight 400 —
+    // without the user opening settings.
+    {
+      const width = 390;
+      const context = await browser.newContext({ viewport: { width, height: 844 }, locale: 'zh-CN', reducedMotion: 'reduce', isMobile: true, hasTouch: true });
+      await context.addInitScript(() => {
+        localStorage.setItem('storyweave:reading-preferences:v1', JSON.stringify({
+          version: 2, fontSize: 18, lineHeight: 2.05, theme: 'light', fontFamily: 'system',
+          fontWeight: 600, margin: 'standard', paragraphSpacing: 1, paragraphIndent: true,
+          textAlign: 'left', letterSpacing: 0, readingMode: 'scroll', keepAwake: false,
+        }));
+      });
       const page = await context.newPage();
       await page.route('**/api/generate', route => route.fulfill({ status: 503, json: { error: 'Test safety guard' } }));
       try {
@@ -392,25 +518,16 @@ const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).f
         await page.getByRole('button', { name: '预设体验', exact: true }).click();
         await page.getByRole('button', { name: '进入第一章', exact: true }).click();
         await page.locator('[data-reading-paragraph]').first().waitFor();
-        // Let the page-in animation finish, like a settled real device.
-        await page.waitForTimeout(900);
-        const name = 'motion on: hairlines and chrome stay pinned to the viewport edges';
-        const geo = await page.evaluate(() => {
-          const top = document.querySelector('.reader-status-top').getBoundingClientRect();
-          const bottom = document.querySelector('.reader-status-bottom').getBoundingClientRect();
-          return { lineTop: top.top, bottomBottom: bottom.bottom, viewportH: window.innerHeight };
+        const name = 'frozen v2 defaults migrate on load: fluid 1x / 1.9 / 0.6em / weight 400';
+        const prose = await page.evaluate(() => {
+          const body = document.querySelector('.article-body p');
+          const cs = getComputedStyle(body);
+          return { size: parseFloat(cs.fontSize), weight: cs.fontWeight, lineHeight: parseFloat(cs.lineHeight), marginBottom: parseFloat(cs.marginBottom) };
         });
-        assert.ok(geo.lineTop <= 2, `top hairline pinned with motion on (top ${geo.lineTop})`);
-        assert.ok(geo.bottomBottom >= geo.viewportH - 2, `bottom hairline pinned with motion on (${geo.bottomBottom} of ${geo.viewportH})`);
-        await page.touchscreen.tap(195, 422);
-        await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
-        const chromeGeo = await page.evaluate(() => {
-          const bar = document.querySelector('.reader-chrome-bottom').getBoundingClientRect();
-          const topBar = document.querySelector('.reader-chrome-top').getBoundingClientRect();
-          return { barBottom: bar.bottom, topBarTop: topBar.top, viewportH: window.innerHeight };
-        });
-        assert.ok(chromeGeo.barBottom >= chromeGeo.viewportH - 2, `chrome bottom bar reaches the viewport bottom with motion on (${chromeGeo.barBottom} of ${chromeGeo.viewportH})`);
-        assert.ok(chromeGeo.topBarTop <= 2, `chrome top bar reaches the viewport top with motion on (top ${chromeGeo.topBarTop})`);
+        assert.ok(Math.abs(prose.size - 15.98) < 0.75, `frozen 18px follows the fluid 1x default (got ${prose.size})`);
+        assert.equal(prose.weight, '400', `stored 600 is retired (got ${prose.weight})`);
+        assert.ok(Math.abs(prose.lineHeight - prose.size * 1.9) < 0.8, `frozen lh 2.05 follows 1.9 (got ${prose.lineHeight})`);
+        assert.ok(Math.abs(prose.marginBottom - prose.size * 0.6) < 0.8, `frozen spacing 1em follows 0.6em (got ${prose.marginBottom})`);
         report.checks.push({ width, name });
         console.log(`PASS ${width} ${name}`);
       } catch (error) { report.failures.push({ width, error: error.stack }); console.error(error); }

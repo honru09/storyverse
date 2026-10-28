@@ -24,6 +24,8 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
       const check = async (name, work) => { await work(); report.checks.push({ width, name }); console.log(`PASS ${width} ${name}`); };
       const capture = async name => { if (process.env.SKIP_CAPTURE === 'true') return; const file = path.join(artifacts, `${width}-${name}.png`); await page.screenshot({ path: file, fullPage: false }); report.captures.push(file); };
       const noOverflow = async () => assert.ok(await page.evaluate(() => Math.max(document.body.scrollWidth, document.documentElement.scrollWidth) <= window.innerWidth + 1));
+      // Fluid type oracle (DESIGN §32): base = clamp(15px, 2.56vw + 6px, 19px), times the reader's scale step.
+      const fluidPx = (scale) => Math.min(19, Math.max(15, 2.56 * width / 100 + 6)) * scale;
       // The menu chrome is summoned by a tap in the middle of the
       // screen. Tests dispatch that same tap on the article so the
       // scroll position never decides whether it lands.
@@ -100,8 +102,13 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           assert.ok(geometry.titleTop >= geometry.lineBottom - 1, 'the chapter title starts below the top hairline');
           assert.ok(geometry.firstTop >= geometry.lineBottom, 'the first paragraph clears the top hairline');
           // Summon the menu, then scroll like a thumb: the chrome must
-          // fold away instead of riding over the prose.
+          // fold away instead of riding over the prose. The fold watcher
+          // ignores scrolls for ~800ms after a summon (its slider-scrub
+          // guard window, baseline behaviour verified identical on
+          // cb30dc8): a real thumb keeps moving past the window, so this
+          // check waits it out before scrolling instead of racing it.
           await openChrome();
+          await page.waitForTimeout(900);
           await page.evaluate(async () => {
             for (let y = 150; y <= 900; y += 150) {
               window.scrollTo(0, y);
@@ -141,15 +148,17 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
         });
         await check('font size presets respond to real taps and persist', async () => {
           const dialog = await openSettings();
-          for (const [label, px] of [['小', 16], ['大', 20], ['特大', 22], ['标准', 18]]) {
+          for (const [label, scale] of [['小', 0.875], ['大', 1.25], ['特大', 1.5], ['标准', 1]]) {
             await dialog.getByRole('group', { name: '选择字号', exact: true }).getByRole('radio', { name: label, exact: true }).click();
-            assert.equal(await page.locator('.reader-article').evaluate(node => getComputedStyle(node).fontSize), `${px}px`, `preset ${label} applies at once`);
+            const applied = await page.locator('.reader-article').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+            assert.ok(Math.abs(applied - fluidPx(scale)) < 0.75, `preset ${label} applies at once (${applied} ≈ ${fluidPx(scale)})`);
           }
           await close();
           await page.reload();
           await page.locator('[data-reading-paragraph]').first().waitFor();
-          assert.equal(await page.locator('.reader-article').evaluate(node => getComputedStyle(node).fontSize), '18px', 'the last tapped preset survives reload');
-          assert.equal(JSON.parse(await page.evaluate(key => localStorage.getItem(key), prefKey)).fontSize, 18);
+          const survived = await page.locator('.reader-article').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+          assert.ok(Math.abs(survived - fluidPx(1)) < 0.75, 'the last tapped preset survives reload');
+          assert.equal(JSON.parse(await page.evaluate(key => localStorage.getItem(key), prefKey)).fontScale, 1);
         });
         await check('paragraph position survives type changes and reload', async () => {
           await page.locator('[data-reading-paragraph="9"]').evaluate(node => window.scrollTo({ top: window.scrollY + node.getBoundingClientRect().top - 130, behavior:'instant' }));
@@ -157,14 +166,15 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           const before = await page.evaluate(() => JSON.parse(localStorage.getItem('storyweave:reading-locations:v1')).locations.at(-1).anchor.paragraph);
           const dialog = await openSettings();
           await dialog.getByRole('group', { name: '字体', exact: true }).getByRole('radio', { name:'宋体', exact:true }).click();
-          for (let i = 0; i < 7; i++) await dialog.getByRole('button', { name:'放大字号', exact:true }).click();
+          for (let i = 0; i < 4; i++) await dialog.getByRole('button', { name:'放大字号', exact:true }).click();
           assert.ok(await dialog.getByRole('button', { name:'放大字号', exact:true }).isDisabled());
           await noOverflow(); await capture('max-font-settings'); await close();
           await page.reload();
           await page.waitForFunction(() => window.scrollY > 400);
           const visible = await page.evaluate(() => [...document.querySelectorAll('[data-reading-paragraph]')].findIndex(node => node.getBoundingClientRect().bottom > 130));
           assert.ok(Math.abs(visible-before) <= 1, `anchor moved from ${before} to ${visible}`);
-          assert.equal(await page.locator('.reader-article').evaluate(node => getComputedStyle(node).fontSize), '32px');
+          const maxed = await page.locator('.reader-article').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+          assert.ok(Math.abs(maxed - fluidPx(1.5)) < 0.75, `stepper tops out at the 1.5x fluid size (${maxed} ≈ ${fluidPx(1.5)})`);
           assert.equal(await page.evaluate(key => localStorage.getItem(key), key), storyBefore);
           await capture('max-font-reading');
         });
@@ -179,12 +189,11 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           await dialog.locator('summary').filter({ hasText:'更多排版' }).click();
           await dialog.getByRole('group', { name:'页边距', exact:true }).getByRole('radio', { name:'宽', exact:true }).click();
           assert.equal(await page.locator('.page-reader').evaluate(node => getComputedStyle(node).getPropertyValue('--reader-margin').trim()), '2rem', 'wide margin applies at once');
-          await dialog.getByRole('group', { name:'字重', exact:true }).getByRole('radio', { name:'加重', exact:true }).click();
           await noOverflow(); await capture('advanced-layout');
           await dialog.getByRole('button', { name:'恢复默认', exact:true }).click();
           await close();
           const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), prefKey);
-          assert.equal(saved.version, 2); assert.equal(saved.fontSize, 18); assert.equal(saved.fontWeight, 400);
+          assert.equal(saved.version, 4); assert.equal(saved.fontScale, 1); assert.equal(saved.fontWeight, 400);
         });
         await check('literal search and position bookmarks lead to exact paragraphs', async () => {
           await openChrome();
@@ -252,7 +261,7 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
         await check('large-font chapter end remains reachable and nothing gates the next chapter', async () => {
           await page.getByRole('button', { name:'下一章', exact:true }).click();
           const dialog = await openSettings();
-          for (let i=0;i<7;i++) await dialog.getByRole('button',{name:'放大字号',exact:true}).click();
+          for (let i=0;i<4;i++) await dialog.getByRole('button',{name:'放大字号',exact:true}).click();
           await close();
           await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
           // The bottom hairline is the progress readout now: at the very

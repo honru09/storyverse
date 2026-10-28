@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEFAULT_READING_PREFERENCES, READING_PREFERENCES_KEY, READER_FONT_SIZES,
+  DEFAULT_READING_PREFERENCES, READING_PREFERENCES_KEY, READER_FONT_SCALES,
   READER_LINE_HEIGHTS, READER_THEMES, READER_FONT_FAMILIES,
   createReadingPreferencesStore, getReaderAppearance, normalizeReadingPreferences,
 } from "../src/reading-preferences.js";
@@ -27,20 +27,24 @@ test("new readers get comfortable defaults without writing storage on mount", ()
 test("supported font sizes, spacing and themes survive a new store instance", () => {
   const storage = memoryStorage();
   const store = createReadingPreferencesStore({ storage });
-  for (const fontSize of READER_FONT_SIZES) {
+  for (const fontScale of READER_FONT_SCALES) {
     for (const lineHeight of READER_LINE_HEIGHTS) {
       for (const theme of READER_THEMES) {
-        assert.equal(store.update({ fontSize, lineHeight, theme }), true);
+        assert.equal(store.update({ fontScale, lineHeight, theme }), true);
         assert.deepEqual(createReadingPreferencesStore({ storage }).getSnapshot().settings,
-          { ...DEFAULT_READING_PREFERENCES, fontSize, lineHeight, theme });
+          { ...DEFAULT_READING_PREFERENCES, fontScale, lineHeight, theme });
       }
     }
   }
 });
 
 test("invalid values cannot inject CSS or escape supported size and spacing ranges", () => {
-  for (const fontSize of [0, 15, 17, 34, -10, Infinity, NaN, "22", null]) {
-    assert.equal(normalizeReadingPreferences({ fontSize }).fontSize, 18);
+  /* Finite numeric scales clamp to the nearest ladder bound (READER-FIX3);
+     non-steps and non-numbers fall back to the default. */
+  const sizeCases = new Map([[0, 0.875], [0.9, 1], [1.3, 1], [2, 1.5], [-1, 0.875],
+    [Infinity, 1], [NaN, 1], ["1.25", 1], [null, 1], [1.5, 1.5], [1.125, 1.125]]);
+  for (const [fontScale, expected] of sizeCases) {
+    assert.equal(normalizeReadingPreferences({ fontScale }).fontScale, expected, `fontScale ${String(fontScale)}`);
   }
   for (const lineHeight of [0, 1.5, 3, "1.8", null]) {
     assert.equal(normalizeReadingPreferences({ lineHeight }).lineHeight, 1.9);
@@ -54,7 +58,7 @@ test("invalid values cannot inject CSS or escape supported size and spacing rang
 });
 
 test("malformed or unknown-version stored settings safely recover without writing", () => {
-  for (const raw of ["{broken", "null", "[]", "true", '"night"', '{"version":3,"theme":"night"}']) {
+  for (const raw of ["{broken", "null", "[]", "true", '"night"', '{"version":5,"theme":"night"}']) {
     const storage = memoryStorage(raw);
     const store = createReadingPreferencesStore({ storage });
     assert.deepEqual(store.getSnapshot().settings, DEFAULT_READING_PREFERENCES);
@@ -67,9 +71,9 @@ test("malformed or unknown-version stored settings safely recover without writin
 test("partially invalid storage preserves valid fields and reports the fallback", () => {
   const storage = memoryStorage(JSON.stringify({ version: 1, fontSize: "22", lineHeight: 1.8, theme: "night" }));
   const store = createReadingPreferencesStore({ storage });
-  assert.deepEqual(store.getSnapshot().settings, { ...DEFAULT_READING_PREFERENCES, fontSize: 18, lineHeight: 1.8, theme: "night" });
+  assert.deepEqual(store.getSnapshot().settings, { ...DEFAULT_READING_PREFERENCES, lineHeight: 1.8, theme: "night" });
   assert.match(store.getSnapshot().storageWarning, /默认/);
-  assert.equal(store.update({ fontSize: 20 }), true);
+  assert.equal(store.update({ fontScale: 1.25 }), true);
   assert.equal(store.getSnapshot().storageWarning, null);
 });
 
@@ -79,8 +83,8 @@ test("denied reads and saves never prevent in-memory reading changes", () => {
   }]) {
     const store = createReadingPreferencesStore({ storage });
     assert.match(store.getSnapshot().storageWarning, /无法保存/);
-    assert.doesNotThrow(() => assert.equal(store.update({ theme: "night", fontSize: 22 }), false));
-    assert.deepEqual(store.getSnapshot().settings, { ...DEFAULT_READING_PREFERENCES, fontSize: 22, theme: "night" });
+    assert.doesNotThrow(() => assert.equal(store.update({ theme: "night", fontScale: 1.375 }), false));
+    assert.deepEqual(store.getSnapshot().settings, { ...DEFAULT_READING_PREFERENCES, fontScale: 1.375, theme: "night" });
   }
 });
 
@@ -103,9 +107,9 @@ test("updates notify subscribers once, preserve snapshot identity on no-op, and 
   const store = createReadingPreferencesStore({ storage: memoryStorage() });
   let changes = 0;
   const stop = store.subscribe(() => { changes += 1; });
-  store.update({ fontSize: 20 });
+  store.update({ fontScale: 1.25 });
   const snapshot = store.getSnapshot();
-  store.update({ fontSize: 20 });
+  store.update({ fontScale: 1.25 });
   assert.equal(store.getSnapshot(), snapshot);
   assert.equal(changes, 1);
   stop();
@@ -117,9 +121,9 @@ test("updates are partial and reset only touches the independent preferences key
   const storage = memoryStorage();
   storage.values.set("storyweave:library", "existing stories");
   const store = createReadingPreferencesStore({ storage });
-  store.update({ fontSize: 22, theme: "night" });
+  store.update({ fontScale: 1.375, theme: "night" });
   store.update({ lineHeight: 1.8 });
-  assert.deepEqual(store.getSnapshot().settings, { ...DEFAULT_READING_PREFERENCES, fontSize: 22, lineHeight: 1.8, theme: "night" });
+  assert.deepEqual(store.getSnapshot().settings, { ...DEFAULT_READING_PREFERENCES, fontScale: 1.375, lineHeight: 1.8, theme: "night" });
   store.reset();
   assert.deepEqual(store.getSnapshot().settings, DEFAULT_READING_PREFERENCES);
   assert.equal(storage.values.get("storyweave:library"), "existing stories");
@@ -128,15 +132,15 @@ test("updates are partial and reset only touches the independent preferences key
 
 test("reader appearance uses scoped variables and records instant keyboard changes", () => {
   const store = createReadingPreferencesStore({ storage: memoryStorage() });
-  store.update({ theme: "night", fontSize: 22, lineHeight: 1.8 }, { inputMethod: "keyboard" });
+  store.update({ theme: "night", fontScale: 1.375, lineHeight: 1.8 }, { inputMethod: "keyboard" });
   const { settings, inputMethod } = store.getSnapshot();
   const appearance = getReaderAppearance(settings, { inputMethod });
   assert.equal(appearance["data-reader-theme"], "night");
   assert.equal(appearance["data-reader-motion"], "off");
   assert.equal(appearance["data-reader-mode"], "scroll");
-  assert.equal(appearance.style["--reader-font-size"], "1.375rem");
+  assert.equal(appearance.style["--reader-font-size"], "calc(clamp(0.9375rem, 2.56vw + 0.375rem, 1.1875rem) * 1.375)");
   assert.equal(appearance.style["--reader-line-height"], 1.8);
-  assert.equal(getReaderAppearance({ theme: "invalid", fontSize: "100vw" })["data-reader-theme"], "light");
+  assert.equal(getReaderAppearance({ theme: "invalid", fontScale: "100vw" })["data-reader-theme"], "light");
   assert.equal(getReaderAppearance(settings)["data-reader-motion"], "on");
 });
 
@@ -144,30 +148,55 @@ test("version 1 preferences upgrade silently and retain all existing reader choi
   const raw = JSON.stringify({ version: 1, fontSize: 22, lineHeight: 1.8, theme: "night" });
   const storage = memoryStorage(raw);
   const store = createReadingPreferencesStore({ storage });
-  assert.deepEqual(store.getSnapshot().settings, { ...DEFAULT_READING_PREFERENCES, fontSize: 22, lineHeight: 1.8, theme: "night" });
+  assert.deepEqual(store.getSnapshot().settings, { ...DEFAULT_READING_PREFERENCES, fontScale: 1.375, lineHeight: 1.8, theme: "night" });
   assert.equal(store.getSnapshot().storageWarning, null);
   assert.equal(storage.values.get(READING_PREFERENCES_KEY), raw);
   assert.deepEqual(storage.writes, []);
   store.update({ fontFamily: "serif" });
-  assert.equal(JSON.parse(storage.values.get(READING_PREFERENCES_KEY)).version, 2);
+  assert.equal(JSON.parse(storage.values.get(READING_PREFERENCES_KEY)).version, 4);
   assert.equal(createReadingPreferencesStore({ storage }).getSnapshot().storageWarning, null);
+});
+
+test("version 2 records frozen at the old defaults follow the new defaults silently", () => {
+  /* A complete v2 record sitting exactly on the pre-FIX3 shipped defaults
+     (18 / 2.05 / 1 / weight 600) was frozen by an unrelated settings change,
+     not chosen field by field: it migrates to the current defaults with no
+     warning and no mount-time write (READER-FIX3 §3). */
+  const frozen = { version: 2, ...DEFAULT_READING_PREFERENCES, fontSize: 18, lineHeight: 2.05, paragraphSpacing: 1, fontWeight: 600, theme: "night" };
+  const storage = memoryStorage(JSON.stringify(frozen));
+  const store = createReadingPreferencesStore({ storage });
+  assert.deepEqual(store.getSnapshot().settings, { ...DEFAULT_READING_PREFERENCES, theme: "night" });
+  assert.equal(store.getSnapshot().storageWarning, null);
+  assert.deepEqual(storage.writes, []);
+});
+
+test("version 2 deliberate non-default typography survives the FIX3 migration", () => {
+  const chosen = { version: 2, ...DEFAULT_READING_PREFERENCES, fontSize: 20, lineHeight: 1.8, paragraphSpacing: 1.4 };
+  const storage = memoryStorage(JSON.stringify(chosen));
+  const store = createReadingPreferencesStore({ storage });
+  assert.deepEqual(store.getSnapshot().settings,
+    { ...DEFAULT_READING_PREFERENCES, fontScale: 1.25, lineHeight: 1.8, paragraphSpacing: 1.4 });
+  assert.equal(store.getSnapshot().storageWarning, null);
 });
 
 test("all advanced typography and reader behavior options persist without touching story data", () => {
   const storage = memoryStorage();
   const store = createReadingPreferencesStore({ storage });
-  const settings = { fontSize: 32, lineHeight: 2.3, theme: "system", fontFamily: "serif", fontWeight: 600,
+  const settings = { fontScale: 2, lineHeight: 2.3, theme: "system", fontFamily: "serif", fontWeight: 600,
     margin: "wide", paragraphSpacing: 1.4, paragraphIndent: false, textAlign: "justify", letterSpacing: 0.06,
     readingMode: "page", keepAwake: true };
   store.update(settings);
-  assert.deepEqual(createReadingPreferencesStore({ storage }).getSnapshot().settings, settings);
+  /* READER-FIX3/§32 contract: the scale clamps to the 1.5 ladder top and
+     prose weight is pinned to 400; every other option round-trips. */
+  assert.deepEqual(createReadingPreferencesStore({ storage }).getSnapshot().settings,
+    { ...settings, fontScale: 1.5, fontWeight: 400 });
   assert.equal(storage.writes.length, 1);
   const appearance = getReaderAppearance(settings);
   assert.equal(appearance["data-reader-theme"], "system");
   assert.equal(appearance["data-reader-mode"], "page");
   assert.deepEqual(appearance.style, {
-    "--reader-font-size": "2rem", "--reader-line-height": 2.3,
-    "--reader-font-family": READER_FONT_FAMILIES.serif, "--reader-font-weight": 600,
+    "--reader-font-size": "calc(clamp(0.9375rem, 2.56vw + 0.375rem, 1.1875rem) * 1.5)", "--reader-line-height": 2.3,
+    "--reader-font-family": READER_FONT_FAMILIES.serif, "--reader-font-weight": 400,
     "--reader-margin": "2rem", "--reader-measure": "32em", "--reader-paragraph-spacing": "1.4em", "--reader-text-indent": "0",
     "--reader-text-align": "justify", "--reader-letter-spacing": "0.06em",
   });
@@ -198,7 +227,7 @@ test("version 2 corruption recovers only invalid fields and missing fields repor
   const storage = memoryStorage(JSON.stringify({ version: 2, ...DEFAULT_READING_PREFERENCES, fontFamily: "serif", keepAwake: "true", fontSize: 32 }));
   const snapshot = createReadingPreferencesStore({ storage }).getSnapshot();
   assert.equal(snapshot.settings.fontFamily, "serif");
-  assert.equal(snapshot.settings.fontSize, 32);
+  assert.equal(snapshot.settings.fontScale, 1.5);
   assert.equal(snapshot.settings.keepAwake, false);
   assert.match(snapshot.storageWarning, /默认/);
   const incomplete = createReadingPreferencesStore({ storage: memoryStorage('{"version":2,"theme":"oled"}') }).getSnapshot();
