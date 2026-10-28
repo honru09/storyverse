@@ -2613,6 +2613,23 @@ export function displayParagraphsFor(paragraphs) {
   return display
 }
 
+/**
+ * The printable form of a chapter title: the stored title, trimmed — or
+ * '' when there is nothing worth printing next to 「第 N 章」. Early
+ * generated chapters sometimes landed with the model echoing the bare
+ * chapter number as the title, which read as 「第 3 章 · 3」 in the
+ * reader header, the chapter list and the plaza beat list. Display
+ * falls back to the ordinal alone (ENTRY-OPTIONS); generation now
+ * refuses a bare-number title outright (server/gemini.js), so new
+ * chapters never need the fallback.
+ */
+export function chapterTitleTextFor(title) {
+  const text = typeof title === 'string' ? title.trim() : ''
+  if (!text) return ''
+  if (/^[\d０-９]+$/.test(text)) return ''
+  return text
+}
+
 // A read-time compatibility view: no mutation, revision change, or chapter
 // generation. Missing chapters return null; callers retain their own fallback.
 // The read-time view's final step: a wall-shaped chapter is shown

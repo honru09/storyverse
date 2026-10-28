@@ -192,6 +192,7 @@ import {
   fusionProductModeFor,
   genreTemplateById,
   isManuallyFinished,
+  chapterTitleTextFor,
   localIdentityTitle,
   originIdentityById,
   originSummaryFor,
@@ -217,6 +218,7 @@ import { findSettingViolation } from "./setting-guard";
 import {
   fusionCandidatesFor,
   fusionLineMetaFor,
+  plazaFusionEntryFor,
   resolveFusionPreselect,
 } from "./fusion.js";
 import {
@@ -3118,8 +3120,8 @@ function ShareSheet({ story, onClose, onPublish, authClient, authSignal = "" }) 
         <Icon name="lock" size={15} />
       </div>
       {requiresReview && <>
-        <div className="share-prose-preview">{preview.chapters.map((chapter) => <details key={chapter.id}>
-          <summary>{chapter.title}</summary>
+        <div className="share-prose-preview">{preview.chapters.map((chapter, chapterIndex) => <details key={chapter.id}>
+          <summary>{chapterTitleTextFor(chapter.title) || `第 ${chapterIndex + 1} 章`}</summary>
           {chapter.paragraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
           {chapter.summary && <p>章节摘要：{chapter.summary}</p>}
         </details>)}</div>
@@ -4020,11 +4022,14 @@ function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSyn
         ) : (
           <>
             <ol className="settings-outline">
-              {tocChapters.map((chapter, position) => (
-                <li key={chapter.id || position}>
-                  第 {position + 1} 章 · {chapter.title}
-                </li>
-              ))}
+              {tocChapters.map((chapter, position) => {
+                const itemTitle = chapterTitleTextFor(chapter.title);
+                return (
+                  <li key={chapter.id || position}>
+                    第 {position + 1} 章{itemTitle ? ` · ${itemTitle}` : ""}
+                  </li>
+                );
+              })}
             </ol>
             <div className="settings-inline-actions">
               <Button variant="secondary" onClick={beginTocEdit}>
@@ -4649,6 +4654,10 @@ function Reader({
     else setChromeOpen((open) => !open);
   };
   const clockText = clock.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  // A stored bare-number title (early generation artifact) prints as
+  // nothing: the header and the chapter heading fall back to the
+  // ordinal alone instead of 「第 3 章 · 3」 (ENTRY-OPTIONS).
+  const displayChapterTitle = chapterTitleTextFor(chapter.title);
 
   return (
     <div ref={readerRef} className="page page-reader page-enter" data-reader-focused={focused ? 'true' : 'false'} data-chrome-lift={chromeLift || undefined} data-chrome-open={chromeOpen || undefined} onPointerDown={noteTapStart} onPointerUp={handleReaderTap} onPointerCancel={forgetTap} {...getReaderAppearance(preferences.settings, { inputMethod: preferences.inputMethod })}>
@@ -4660,7 +4669,7 @@ function Reader({
           onClick={goBack}
         >
           <Icon name="chevron" size={13} className="rotate-180" />
-          <span>第 {index + 1} 章 · {chapter.title}</span>
+          <span>第 {index + 1} 章{displayChapterTitle ? ` · ${displayChapterTitle}` : ""}</span>
         </button>
         <span
           className="sr-only"
@@ -4691,7 +4700,7 @@ function Reader({
             </button>
             <div className="reader-chrome-title">
               <b>{story.title}</b>
-              <span> · 第 {index + 1} 章 · {chapter.title}</span>
+              <span> · 第 {index + 1} 章{displayChapterTitle ? ` · ${displayChapterTitle}` : ""}</span>
             </div>
             {!readOnly && (
               <div className="reader-chrome-actions">
@@ -4778,7 +4787,7 @@ function Reader({
       <div className="reader-layout">
         <article className="reader-article">
           <h1 ref={titleRef} tabIndex={-1}>
-            {chapter.title}
+            {displayChapterTitle || `第 ${index + 1} 章`}
           </h1>
           <div className="reader-prose" lang="zh-CN">
           <p className="article-lede" data-reading-paragraph="0">{chapter.paragraphs[0]}</p>
@@ -5643,13 +5652,44 @@ function PlazaFeed({ account, authClient, activeStory, stories, onNavigate, onOp
   );
 }
 
-function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter, onOpenAccount, onToast, onOpenProfile }) {
+/**
+ * One of the plaza detail page's three ways in (ENTRY-OPTIONS): every
+ * way in wears the same option card — icon, title, one plain-words line
+ * saying what happens and whether it costs generation quota, chevron.
+ * A card whose prerequisite is missing renders greyed but stays
+ * tappable, so the tap lands on guidance instead of silence.
+ */
+function PlazaEntryOption({ icon, title, note, muted = false, onClick }) {
+  return (
+    <button
+      type="button"
+      className={`plaza-entry-option${muted ? " is-muted" : ""}`}
+      aria-disabled={muted || undefined}
+      onClick={onClick}
+    >
+      <Icon name={icon} size={20} />
+      <span className="plaza-entry-copy">
+        <strong>{title}</strong>
+        <small>{note}</small>
+      </span>
+      <Icon name="chevron" size={16} className="plaza-entry-arrow" />
+    </button>
+  );
+}
+
+function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onReadLine, onEnter, onOpenAccount, onToast, onOpenProfile }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
   const own = useMemo(() => plazaMineIds().has(id), [id]);
+  // The fusion card's honest state against the reader's own shelf —
+  // the same resolution the merge page runs (fusion.js).
+  const fusionEntry = useMemo(
+    () => plazaFusionEntryFor({ stories, publicationId: id, mine: plazaMine() }),
+    [stories, id],
+  );
   useEffect(() => {
     let live = true;
     setDetail(null);
@@ -5807,28 +5847,54 @@ function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter,
         <div className="plaza-panel-heading">
           <h2>主线节拍</h2>
         </div>
-        <p className="plaza-note">进入重演时，你的新线会沿用这套骨架，走向由你的选择分叉。</p>
+        <p className="plaza-note">带化身进入时，你的新线会沿用这套骨架，走向由你的选择分叉。</p>
         <ol className="plaza-beats">
-          {beats.slice(0, 4).map((beat) => (
-            <li key={beat.chapter}>
-              <span className="plaza-beat-dot" aria-hidden="true" />
-              <span>第 {beat.chapter} 章</span>
-              <strong>{beat.title}</strong>
-            </li>
-          ))}
+          {beats.slice(0, 4).map((beat) => {
+            const beatTitle = chapterTitleTextFor(beat.title);
+            return (
+              <li key={beat.chapter}>
+                <span className="plaza-beat-dot" aria-hidden="true" />
+                <span>第 {beat.chapter} 章</span>
+                {beatTitle && <strong>{beatTitle}</strong>}
+              </li>
+            );
+          })}
         </ol>
         {beats.length > 4 && <small className="plaza-note">其余 {beats.length - 4} 章节拍，进入后逐步展开</small>}
       </section>
 
       <section className="plaza-panel plaza-cta-panel">
         <h2>你想怎样走这条线？</h2>
-        <Button className="plaza-cta-main" onClick={() => onReadLine(detail)}>读原作线</Button>
-        <p className="plaza-note">读作者化身走完的版本 · 不消耗你的生成额度</p>
-        <Button variant="secondary" className="plaza-cta-main" onClick={() => onEnter(detail)}>带我的化身进入</Button>
-        <p className="plaza-note">同一世界、同步节拍，捞出一条只属于你的新线</p>
-        <Button variant="ghost" className="plaza-cta-main" onClick={() => onNavigate("merge", { publicationId: detail.id })}>与我的线合流</Button>
-        <p className="plaza-note">把这条线和你的一条线接在一起，双主角共同往下写（需要先进入过这条线，或它本就是你发布的线）</p>
-        <p className="plaza-fee-note"><span aria-hidden="true">●</span> 进入重演后，新章节的生成费用计入你自己的额度。</p>
+        {/* ENTRY-OPTIONS: the three ways in are one option-card family.
+            What each way costs rides in its own card's line — the yellow
+            fee box that used to float under the buttons is gone. */}
+        <div className="plaza-entry-options">
+          <PlazaEntryOption
+            icon="book"
+            title="读原作线"
+            note="作者的化身走完的版本，打开就能读 · 不消耗你的生成额度"
+            onClick={() => onReadLine(detail)}
+          />
+          <PlazaEntryOption
+            icon="user"
+            title="带我的化身进入"
+            note="同一个世界，换你的化身从头走一遍 · 新章节会消耗你的生成额度"
+            onClick={() => onEnter(detail)}
+          />
+          <PlazaEntryOption
+            icon="git"
+            title="与我的线合流"
+            note={fusionEntry.state === "no-line"
+              ? "你还没有自己的故事线——先去造世开一条，就能回来合流"
+              : fusionEntry.state === "needs-enter"
+                ? "先带化身进入这条线，它进你的书架后，就能选它合流"
+                : "和你的一条线接在一起，两个主角共同往下写 · 新章节会消耗你的生成额度"}
+            muted={fusionEntry.state === "no-line"}
+            onClick={() => (fusionEntry.state === "no-line"
+              ? onNavigate("forge")
+              : onNavigate("merge", { publicationId: detail.id }))}
+          />
+        </div>
       </section>
 
       {note && <p className="plaza-inline-note" role="status">{note}</p>}
@@ -7472,7 +7538,7 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
       {!account.user ? (
         <div className="plaza-empty" role="status">
           <h3>先登录，再带化身进入</h3>
-          <p>重演出的新线会记在你的账号名下，生成费用也计入你的额度。</p>
+          <p>进入后生成的新线会记在你的账号名下，生成费用也计入你的额度。</p>
           <Button onClick={onOpenAccount}>登录 / 注册</Button>
         </div>
       ) : avatarLoaded && avatars.length === 0 ? (
@@ -7580,7 +7646,7 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
             )}
           </div>
 
-          <p className="plaza-fee-note"><span aria-hidden="true">●</span> 进入重演后，新章节的生成费用计入你自己的额度。</p>
+          <p className="plaza-note">进入后，新章节的生成费用计入你自己的额度。</p>
           {error && <div className="sw-inline-alert" role="alert">{error}</div>}
           <div className="plaza-publish-actions">
             <Button disabled={!identityId || busy} onClick={() => void enter()}>
@@ -9168,6 +9234,7 @@ function App() {
         id={pageRoute.id}
         account={account}
         authClient={authClient}
+        stories={library.stories}
         onNavigate={navigate}
         onReadLine={(detail) => void openPlazaLine(detail)}
         onEnter={(detail) => navigate("plaza-enter", { id: detail.id })}

@@ -70,3 +70,23 @@ export function resolveFusionPreselect({ stories = [], storyId = '', publication
   }
   return empty
 }
+
+/**
+ * The plaza detail page's fusion entry, stated honestly (ENTRY-OPTIONS):
+ * the same shelf resolution the merge page runs, collapsed to the three
+ * things the detail card must distinguish —
+ * - 'no-line': the reader has no line of their own at all; fusion has
+ *   nothing to fuse with, so the card says so and points at the forge
+ *   instead of walking the reader into the merge page's empty state.
+ * - 'needs-enter': the reader has lines, but this publication is not on
+ *   their shelf yet; it joins the fusion choices only after they enter
+ *   it with an avatar (the merge page carries that guidance + button).
+ * - 'ready': the partner side already resolves (entered, or the
+ *   reader's own line behind the publication).
+ */
+export function plazaFusionEntryFor({ stories = [], publicationId = '', mine = {} } = {}) {
+  if (!fusionCandidatesFor(stories).length) return { state: 'no-line' }
+  const resolution = resolveFusionPreselect({ stories, publicationId, mine })
+  if (resolution.pendingPublication) return { state: 'needs-enter' }
+  return { state: 'ready' }
+}

@@ -53,7 +53,7 @@ const arraySchema = (minItems, maxItems, description) => ({ type: 'array', items
 
 function responseSchema(opening, outlineLength = 6) {
   const properties = {
-    title: textSchema('中文章节标题，1–80 字。'),
+    title: textSchema('中文章节标题，1–80 字。必须是真正的标题，不能只写章节编号数字。'),
     paragraphs: arraySchema(3, 16, '一段小说正文，40–320 字：短段落，对话独立成段（一人一段、问答分行），场景切换另起一段。全章 1600–1950 字，不含标题或 Markdown。'),
     summary: textSchema('20–600 字的事实摘要；记录已发生的事件、人物关系和未解伏笔，不提前写定尚未发生的剧情。'),
     events: arraySchema(1, 5, '本章发生的关键事件，一条一句、只记事实（4–240 字）；供后续章节的事件台账引用，不得提前写定尚未发生的剧情。'),
@@ -126,6 +126,17 @@ function validateOutput(value, opening, outlineLength = 6) {
     title: boundedText(value.title, 1, 80),
     paragraphs: textList(value.paragraphs, 3, 16, 20, 1400),
     summary: boundedText(value.summary, 20, 600),
+  }
+  // A bare number is not a title: early chapters landed with the model
+  // echoing the chapter number, which printed as 「第 3 章 · 3」 in the
+  // reader (READER-PARA §③). Like the paragraph-shape gate below, this
+  // is a sampling slip, not a format fact — refuse it retryable so the
+  // resilience loop re-asks inside the same request and the bad title
+  // never lands; the display layer also falls back for stored chapters.
+  if (/^[\d０-９]+$/.test(chapter.title)) {
+    const error = new ApiError(502, '这一章的标题不对，请重试。')
+    error.retryable = true
+    throw error
   }
   // 章节台账：模型给出时按界校验；缺省时以摘要与空伏笔落账，不让台账缺失
   // 拖垮一章正文（本地回退路径同样总是带台账字段）。

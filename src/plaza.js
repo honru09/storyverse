@@ -24,6 +24,7 @@
 
 import {
   buildChapter,
+  chapterTitleTextFor,
   CUSTOM_GENRE_ID,
   GENRES,
   genreFor,
@@ -210,7 +211,9 @@ export function plazaWorldIntroFor(detail, templateName = '') {
 
   const appearance = typeof detail?.avatar?.appearance === 'string' ? detail.avatar.appearance.trim() : ''
   const synopsis = typeof detail?.synopsis === 'string' ? detail.synopsis.trim() : ''
-  const beats = Array.isArray(detail?.beats) ? detail.beats.filter((beat) => beat && typeof beat.title === 'string' && beat.title) : []
+  // Bare-number beat titles (an early generation artifact) are not
+  // titles at all — the composed thread must never say 故事从「3」开始.
+  const beats = Array.isArray(detail?.beats) ? detail.beats.filter((beat) => beat && chapterTitleTextFor(beat.title)) : []
   const status = plazaLineStatusFor(detail)
   const count = Number(detail?.chapterCount) || beats.length
   let thread
