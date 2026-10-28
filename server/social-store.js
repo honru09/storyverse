@@ -7,7 +7,11 @@ import { loadFirestore } from './firebase-app.js'
  * records, uploaded profile pictures and user reports.
  *
  * Follows are one record per (follower, followee) pair, keyed by a hash
- * of the pair so neither uid needs to be a valid document id. Presence
+ * of the pair so neither uid needs to be a valid document id. Friend
+ * requests are one record per directional (from, to) pair carrying a
+ * status (pending / accepted / declined / cancelled); a friendship is
+ * one record per unordered pair, written when a request is accepted.
+ * Presence
  * is one record per account holding only the last heartbeat instant —
  * no location, no device, nothing else. Profile records hold only what
  * the owner chose to publish (display name, @handle, picture choice);
@@ -25,6 +29,13 @@ export const userReportKeyFor = (reporterUid, targetUid) =>
   createHash('sha256').update(`user-report\n${reporterUid}\n${targetUid}`).digest('hex')
 export const notifyReadKeyFor = (uid, category) =>
   createHash('sha256').update(`notify-read\n${uid}\n${category}`).digest('hex')
+export const friendRequestKeyFor = (fromUid, toUid) =>
+  createHash('sha256').update(`friend-request\n${fromUid}\n${toUid}`).digest('hex')
+/** Friendships are mutual: one record per unordered pair, keyed by the sorted pair. */
+export const friendshipKeyFor = (a, b) => {
+  const [first, second] = [String(a), String(b)].sort()
+  return createHash('sha256').update(`friendship\n${first}\n${second}`).digest('hex')
+}
 
 /**
  * Which picture a profile shows, given the owner's stored preference and
@@ -57,6 +68,8 @@ export function createMemorySocialStore() {
   const announcements = new Map()
   const notifyReads = new Map()
   const accountEvents = new Map()
+  const friendRequests = new Map()
+  const friendships = new Map()
   return {
     kind: 'memory',
     async getFollow(followerUid, followeeUid) {
@@ -119,6 +132,32 @@ export function createMemorySocialStore() {
     },
     async listAccountEvents(uid) {
       return [...accountEvents.values()].filter((record) => record.uid === uid).map((record) => ({ ...record }))
+    },
+    async listProfileRecords() {
+      return [...profiles.values()].map((record) => ({ ...record }))
+    },
+    async getFriendRequest(fromUid, toUid) {
+      return friendRequests.get(friendRequestKeyFor(fromUid, toUid)) ?? null
+    },
+    async putFriendRequest(record) {
+      friendRequests.set(friendRequestKeyFor(record.fromUid, record.toUid), { ...record })
+    },
+    async listFriendRequestsByFrom(uid) {
+      return [...friendRequests.values()].filter((record) => record.fromUid === uid).map((record) => ({ ...record }))
+    },
+    async listFriendRequestsByTo(uid) {
+      return [...friendRequests.values()].filter((record) => record.toUid === uid).map((record) => ({ ...record }))
+    },
+    async getFriendship(a, b) {
+      return friendships.get(friendshipKeyFor(a, b)) ?? null
+    },
+    async putFriendship(record) {
+      friendships.set(friendshipKeyFor(record.uidA, record.uidB), { ...record })
+    },
+    async listFriendships(uid) {
+      return [...friendships.values()]
+        .filter((record) => record.uidA === uid || record.uidB === uid)
+        .map((record) => ({ ...record }))
     },
   }
 }
@@ -213,6 +252,44 @@ export function createFirestoreSocialStore(loadDb) {
     async listAccountEvents(uid) {
       const snapshot = await (await db()).collection('account_events').where('uid', '==', uid).get()
       return snapshot.docs.map((doc) => doc.data())
+    },
+    async listProfileRecords() {
+      const snapshot = await (await db()).collection('user_profiles').get()
+      return snapshot.docs.map((doc) => doc.data())
+    },
+    async getFriendRequest(fromUid, toUid) {
+      const snapshot = await (await db()).collection('friend_requests').doc(friendRequestKeyFor(fromUid, toUid)).get()
+      return snapshot.exists ? snapshot.data() : null
+    },
+    async putFriendRequest(record) {
+      await (await db()).collection('friend_requests')
+        .doc(friendRequestKeyFor(record.fromUid, record.toUid))
+        .set({ ...record })
+    },
+    async listFriendRequestsByFrom(uid) {
+      const snapshot = await (await db()).collection('friend_requests').where('fromUid', '==', uid).get()
+      return snapshot.docs.map((doc) => doc.data())
+    },
+    async listFriendRequestsByTo(uid) {
+      const snapshot = await (await db()).collection('friend_requests').where('toUid', '==', uid).get()
+      return snapshot.docs.map((doc) => doc.data())
+    },
+    async getFriendship(a, b) {
+      const snapshot = await (await db()).collection('friendships').doc(friendshipKeyFor(a, b)).get()
+      return snapshot.exists ? snapshot.data() : null
+    },
+    async putFriendship(record) {
+      await (await db()).collection('friendships')
+        .doc(friendshipKeyFor(record.uidA, record.uidB))
+        .set({ ...record })
+    },
+    async listFriendships(uid) {
+      const database = await db()
+      const [asA, asB] = await Promise.all([
+        database.collection('friendships').where('uidA', '==', uid).get(),
+        database.collection('friendships').where('uidB', '==', uid).get(),
+      ])
+      return [...asA.docs, ...asB.docs].map((doc) => doc.data())
     },
   }
 }

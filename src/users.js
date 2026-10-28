@@ -11,6 +11,7 @@ function usersError(response, result) {
   if (response.status === 409) {
     return Object.assign(new Error(result?.error || '这个用户名已经被占用了，换一个试试。'), { code: 'conflict' })
   }
+  if (response.status === 429) return new Error(result?.error || '操作太频繁了，请稍后再试。')
   if (response.status === 503) return new Error('这个功能还没开通，过段时间再试。')
   if (result?.error && response.status === 400) return new Error(result.error)
   return new Error('暂时没能完成，请稍后再试。')
@@ -226,6 +227,75 @@ export async function markNotificationsRead({ category, getAccessToken, fetchImp
   const headers = { 'Content-Type': 'application/json', ...(await usersHeaders(getAccessToken)) }
   const response = await fetchImpl('/api/me/notifications/read', {
     method: 'POST', headers, body: JSON.stringify({ category }),
+  })
+  return usersJson(response)
+}
+
+/**
+ * Find people (FRIENDS). Name mode is a fuzzy search over public
+ * names (@handle and display name); email mode is an exact lookup —
+ * the address goes up in the query, but the payload only ever
+ * carries the found person's public card, never the address.
+ * Signed-in only; the server throttles email lookups per account.
+ */
+export async function searchPeople({ q, email, limit, offset, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = await usersHeaders(getAccessToken)
+  const params = new URLSearchParams()
+  if (email) params.set('email', email)
+  else if (q) params.set('q', q)
+  if (limit) params.set('limit', String(limit))
+  if (offset) params.set('offset', String(offset))
+  const response = await fetchImpl(`/api/users/search?${params.toString()}`, { headers })
+  const result = await usersJson(response)
+  return {
+    mode: result?.mode || (email ? 'email' : 'name'),
+    people: Array.isArray(result?.people) ? result.people : [],
+    total: result?.total ?? 0,
+  }
+}
+
+/**
+ * The signed-in reader's own 好友区 in one payload: friends (person
+ * rows with friendState 'friends'), the pending requests waiting on
+ * them (person + the sender's note), and their outgoing requests
+ * with standing states — a decline is only ever visible here, to the
+ * person who asked.
+ */
+export async function fetchFriends({ getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = await usersHeaders(getAccessToken)
+  const response = await fetchImpl('/api/me/friends', { headers })
+  const result = await usersJson(response)
+  return {
+    friends: Array.isArray(result?.friends) ? result.friends : [],
+    incoming: Array.isArray(result?.incoming) ? result.incoming : [],
+    outgoing: Array.isArray(result?.outgoing) ? result.outgoing : [],
+    counts: result?.counts ?? { friends: 0, incomingPending: 0 },
+  }
+}
+
+/** Ask someone to be friends, with one short note (≤50 chars). Returns the standing state. */
+export async function sendFriendRequest({ uid, message = '', getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await usersHeaders(getAccessToken)) }
+  const response = await fetchImpl(`/api/users/${encodeURIComponent(uid)}/friend-request`, {
+    method: 'POST', headers, body: JSON.stringify({ message }),
+  })
+  return usersJson(response)
+}
+
+/** Answer a request addressed to me: accept forms the mutual friendship; decline only flips the record. */
+export async function respondFriendRequest({ uid, accept, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await usersHeaders(getAccessToken)) }
+  const response = await fetchImpl(`/api/users/${encodeURIComponent(uid)}/friend-request/respond`, {
+    method: 'POST', headers, body: JSON.stringify({ accept: Boolean(accept) }),
+  })
+  return usersJson(response)
+}
+
+/** Withdraw my own pending request to this person. */
+export async function cancelFriendRequest({ uid, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await usersHeaders(getAccessToken)) }
+  const response = await fetchImpl(`/api/users/${encodeURIComponent(uid)}/friend-request/cancel`, {
+    method: 'POST', headers, body: '{}',
   })
   return usersJson(response)
 }

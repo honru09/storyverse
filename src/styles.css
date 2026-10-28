@@ -1045,6 +1045,40 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .profile-connection-follow:active{transform:scale(.96)}
 .profile-connection-follow.is-following{background:var(--profile-pill-off);color:var(--profile-ink-strong)}
 .profile-connection-follow:disabled{opacity:.6;cursor:default}
+/* 好友区 (FRIENDS): the tab row reuses the message centre's chip
+   grammar; rows reuse .profile-connection-row, actions reuse the
+   follow pill — only the state chip, the quiet text button, the
+   request note and the search/compose furniture are new. */
+.friends-tabs{display:flex;gap:6px;margin:2px 0 6px}
+.friends-tab{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:38px;padding:6px 10px;border:1px solid var(--profile-edge);border-radius:999px;background:var(--profile-chip);color:var(--profile-dim);font-size:14px;font-weight:600;cursor:pointer}
+.friends-tab.is-active{background:var(--profile-action-bg);color:var(--pill-ink);border-color:transparent}
+.friend-state-actions{display:inline-flex;align-items:center;gap:8px;flex:none}
+.friend-state-chip{flex:none;font-size:12.5px;color:var(--profile-dim);white-space:nowrap}
+.friend-text-btn{flex:none;border:0;background:none;padding:6px 4px;color:var(--profile-dim);font-size:13px;cursor:pointer}
+.friend-text-btn:disabled{opacity:.6;cursor:default}
+.friend-request-block{border-bottom:1px solid var(--profile-chip)}
+.friend-request-block:last-child{border-bottom:0}
+.friend-request-block .profile-connection-row{border-bottom:0}
+.friend-request-message{margin:0 0 10px 62px;font-size:13.5px;line-height:1.5;color:var(--profile-dim)}
+.friend-compose{display:flex;align-items:center;gap:8px;margin-top:12px}
+.friend-compose input{flex:1;min-width:0;height:42px;padding:0 14px;border:1px solid var(--profile-edge);border-radius:999px;background:var(--profile-chip);color:var(--profile-ink-strong);font-size:14px;outline:none}
+.friend-compose input::placeholder{color:var(--profile-placeholder)}
+.friend-compose-send{flex:none;height:42px;padding:0 18px;border:0;border-radius:999px;background:var(--profile-action-bg);color:var(--pill-ink);font-size:14px;font-weight:700;cursor:pointer}
+.friend-compose-send:disabled{opacity:.6;cursor:default}
+.friends-search-modes{display:inline-flex;gap:4px;padding:3px;border-radius:999px;background:var(--profile-chip);margin-bottom:12px}
+.friends-search-modes button{border:0;border-radius:999px;background:transparent;color:var(--profile-dim);font-size:13.5px;font-weight:600;padding:7px 16px;cursor:pointer}
+.friends-search-modes button.is-active{background:var(--profile-action-bg);color:var(--pill-ink)}
+.friends-search-bar{display:flex;align-items:center;gap:8px}
+.friends-search-bar input{flex:1;min-width:0;height:44px;padding:0 16px;border:1px solid var(--profile-edge);border-radius:999px;background:var(--profile-chip);color:var(--profile-ink-strong);font-size:15px;outline:none}
+.friends-search-bar input::placeholder{color:var(--profile-placeholder)}
+.friends-search-bar button{flex:none;display:inline-flex;align-items:center;gap:6px;height:44px;padding:0 18px;border:0;border-radius:999px;background:var(--profile-action-bg);color:var(--pill-ink);font-size:14.5px;font-weight:700;cursor:pointer}
+.friends-search-bar button:disabled{opacity:.55;cursor:default}
+.friends-search-note{margin:10px 2px 0;font-size:12.5px;line-height:1.55;color:var(--profile-dim)}
+.profile-friend-btn{flex:none;display:inline-flex;align-items:center;gap:6px;height:48px;padding:0 18px;border:0;border-radius:999px;background:var(--profile-chip);color:var(--profile-ink-strong);font-size:14.5px;font-weight:700;cursor:pointer;transition:transform 160ms var(--ease-press-ui)}
+.profile-friend-btn:active{transform:scale(.96)}
+.profile-friend-btn.is-quiet{color:var(--profile-dim);font-weight:600}
+.profile-friend-btn:disabled{opacity:.6;cursor:default}
+.profile-friend-chip{flex:none;display:inline-flex;align-items:center;height:48px;padding:0 18px;border-radius:999px;background:var(--profile-chip);color:var(--profile-dim);font-size:14.5px;font-weight:600}
 .ryan-actions{display:flex;align-items:center;justify-content:center;margin-top:12px}
 .ryan-actions .btn-pill-white{width:200px;height:50px;font-size:16px}
 .ryan-menu{margin:8px 0 0 auto;width:200px;padding:6px;display:grid;background:var(--profile-panel);border:1px solid var(--profile-edge-2);border-radius:16px;box-shadow:var(--profile-shadow);animation:ryan-rise 220ms var(--ease-sheet) both}

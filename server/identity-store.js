@@ -10,7 +10,16 @@ import { loadFirestore } from './firebase-app.js'
  * display name — and hold only a salted password hash. Every method is
  * async; the memory implementation exists for tests and explicitly-
  * configured local development only.
+ *
+ * The people search reads this store through two narrow projections
+ * that keep account secrets inside the layer that owns them:
+ * `listUserSummaries` exposes only the public (username, uid) pair,
+ * and `listUidsByRecoveryEmail` answers an exact address lookup with
+ * bare uids — the address itself, like the password hash, never
+ * crosses into the social service at all.
  */
+const normalizeAddress = (value) => typeof value === 'string' ? value.trim().toLowerCase() : ''
+
 export function createMemoryIdentityStore() {
   const codes = new Map()
   const sessions = new Map()
@@ -30,6 +39,16 @@ export function createMemoryIdentityStore() {
     },
     async getUser(key) { return users.get(key) ?? null },
     async putUser(key, record) { users.set(key, record) },
+    async listUserSummaries() {
+      return [...users.values()].map((record) => ({ username: record.username, uid: record.uid }))
+    },
+    async listUidsByRecoveryEmail(email) {
+      const target = normalizeAddress(email)
+      if (!target) return []
+      return [...users.values()]
+        .filter((record) => record?.uid && normalizeAddress(record.recoveryEmail) === target)
+        .map((record) => record.uid)
+    },
   }
 }
 
@@ -54,6 +73,19 @@ export function createFirestoreIdentityStore(loadDb) {
     },
     getUser: (key) => read('site_users', key),
     async putUser(key, record) { await (await db()).collection('site_users').doc(key).set(record) },
+    async listUserSummaries() {
+      const snapshot = await (await db()).collection('site_users').get()
+      return snapshot.docs.map((doc) => {
+        const record = doc.data()
+        return { username: record.username, uid: record.uid }
+      })
+    },
+    async listUidsByRecoveryEmail(email) {
+      const target = normalizeAddress(email)
+      if (!target) return []
+      const snapshot = await (await db()).collection('site_users').where('recoveryEmail', '==', target).get()
+      return snapshot.docs.map((doc) => doc.data()?.uid).filter(Boolean)
+    },
   }
 }
 

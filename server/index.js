@@ -608,7 +608,39 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         await social.heartbeat(identity)
         return sendJson(response, 200, { ok: true })
       }
-      const userMatch = pathname.match(/^\/api\/users\/([^/]+)(?:\/(profile|connections|portrait|picture|follow|unfollow|report))?$/)
+      if (pathname === '/api/users/search' && request.method === 'GET') {
+        // Finding people is a signed-in act: name mode reads public
+        // names only; email mode is an exact lookup whose payload
+        // never contains the address (see social.searchPeople).
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再找朋友。', 'auth-required')
+          throw error
+        }
+        const params = new URL(request.url, 'http://localhost').searchParams
+        return sendJson(response, 200, await social.searchPeople(identity, {
+          q: params.get('q') || '',
+          email: params.get('email') || '',
+          limit: params.get('limit'),
+          offset: params.get('offset'),
+        }))
+      }
+      if (pathname === '/api/me/friends' && request.method === 'GET') {
+        // The caller's own 好友区： friend list, incoming requests,
+        // outgoing requests with their states — all derived from the
+        // request/friendship records, nothing invented.
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再看好友。', 'auth-required')
+          throw error
+        }
+        return sendJson(response, 200, await social.friends(identity))
+      }
+      const userMatch = pathname.match(/^\/api\/users\/([^/]+)(?:\/(profile|connections|portrait|picture|follow|unfollow|report|friend-request\/respond|friend-request\/cancel|friend-request))?$/)
       if (userMatch) {
         const uid = decodeURIComponent(userMatch[1])
         const action = userMatch[2]
@@ -687,6 +719,42 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             throw error
           }
           return sendJson(response, 200, await social.reportUser(identity, uid))
+        }
+        if (action === 'friend-request' && request.method === 'POST') {
+          let identity
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) {
+              throw new ApiError(401, '请先登录，再加好友。', 'auth-required')
+            }
+            throw error
+          }
+          return sendJson(response, 200, await social.sendFriendRequest(identity, uid, await readAuthJson(request)))
+        }
+        if (action === 'friend-request/respond' && request.method === 'POST') {
+          let identity
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) {
+              throw new ApiError(401, '请先登录，再处理好友申请。', 'auth-required')
+            }
+            throw error
+          }
+          return sendJson(response, 200, await social.respondFriendRequest(identity, uid, await readAuthJson(request)))
+        }
+        if (action === 'friend-request/cancel' && request.method === 'POST') {
+          let identity
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) {
+              throw new ApiError(401, '请先登录，再取消申请。', 'auth-required')
+            }
+            throw error
+          }
+          return sendJson(response, 200, await social.cancelFriendRequest(identity, uid))
         }
       }
       if (pathname === '/api/plaza/publish' && request.method === 'POST') {

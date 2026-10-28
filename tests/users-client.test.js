@@ -1,10 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  cancelFriendRequest,
+  fetchFriends,
   fetchUserProfile,
   followUser,
   publicDisplayName,
   publicHandle,
+  respondFriendRequest,
+  searchPeople,
+  sendFriendRequest,
   sendPresenceHeartbeat,
   userPortraitPath,
 } from '../src/users.js'
@@ -122,6 +127,53 @@ test('a 409 from the profile editor surfaces as a conflict with the server messa
       fetchImpl: async () => jsonResponse(409, { error: '这个用户名已经被占用了，换一个试试。' }),
     }),
     (error) => error.code === 'conflict' && /已经被占用/.test(error.message),
+  )
+})
+
+test('friend client calls hit the friend routes with the credential and bodies intact', async () => {
+  const calls = []
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, options })
+    if (url.startsWith('/api/users/search')) return jsonResponse(200, { mode: url.includes('email=') ? 'email' : 'name', people: [{ uid: 'username:b' }], total: 1 })
+    if (url === '/api/me/friends') return jsonResponse(200, { friends: [], incoming: [], outgoing: [], counts: { friends: 0, incomingPending: 0 } })
+    return jsonResponse(200, { state: 'pending-out' })
+  }
+  const getAccessToken = async () => 'tok-f'
+
+  const found = await searchPeople({ q: 'b', getAccessToken, fetchImpl })
+  assert.equal(calls[0].url, '/api/users/search?q=b')
+  assert.equal(calls[0].options.headers.Authorization, "Bearer " + "tok-f")
+  assert.equal(found.people[0].uid, 'username:b')
+
+  const byEmail = await searchPeople({ email: 'pal@example.com', getAccessToken, fetchImpl })
+  assert.equal(calls[1].url, '/api/users/search?email=pal%40example.com')
+  assert.equal(byEmail.mode, 'email')
+
+  const box = await fetchFriends({ getAccessToken, fetchImpl })
+  assert.equal(calls[2].url, '/api/me/friends')
+  assert.deepEqual(box.counts, { friends: 0, incomingPending: 0 })
+
+  const sent = await sendFriendRequest({ uid: 'username:b', message: '你好', getAccessToken, fetchImpl })
+  assert.equal(calls[3].url, '/api/users/username%3Ab/friend-request')
+  assert.deepEqual(JSON.parse(calls[3].options.body), { message: '你好' })
+  assert.equal(sent.state, 'pending-out')
+
+  await respondFriendRequest({ uid: 'username:b', accept: true, getAccessToken, fetchImpl })
+  assert.equal(calls[4].url, '/api/users/username%3Ab/friend-request/respond')
+  assert.deepEqual(JSON.parse(calls[4].options.body), { accept: true })
+
+  await cancelFriendRequest({ uid: 'username:b', getAccessToken, fetchImpl })
+  assert.equal(calls[5].url, '/api/users/username%3Ab/friend-request/cancel')
+})
+
+test('a 429 surfaces the throttle message instead of the generic failure', async () => {
+  await assert.rejects(
+    () => searchPeople({
+      email: 'probe@example.com',
+      getAccessToken: async () => 'tok-f',
+      fetchImpl: async () => jsonResponse(429, { error: '用邮箱找人太频繁了，请稍后再试。' }),
+    }),
+    (error) => /太频繁/.test(error.message),
   )
 })
 

@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { ApiError, sanitizeSettingText } from './gemini.js'
 import { avatarAppearanceText } from '../src/avatar.js'
 import { CUSTOM_GENRE_ID } from '../src/story-engine.js'
-import { createSocialStore, pictureSourceFor } from './social-store.js'
+import { createSocialStore, pictureSourceFor, friendshipKeyFor } from './social-store.js'
+import { emailCodeUid, normalizeEmailAddress, validEmailAddress } from './email-code.js'
 import { createPlazaStore } from './plaza-store.js'
 import { createAvatarStore, collectionFromRecord, imageSlotFor } from './avatar-store.js'
 import { normalizedStoredImage } from './portrait-image.js'
@@ -46,17 +47,30 @@ export const HANDLE_PATTERN = /^[a-z0-9_]{3,20}$/
 /**
  * The message centre's three categories (NOTIFY-SETTINGS §36). 互动 is
  * ONE bucket for everything another person does that concerns the
- * reader — its item `kind` is an open enum ('follow' today; 'like',
- * 'comment' and 'friend_request' arrive with their own batches and
- * slot into the same category, the same list shape and the same
- * read watermark, which is kept per user × category, never per kind).
+ * reader — its item `kind` is an open enum ('follow', 'friend_request'
+ * and 'friend_accepted' today; 'like' and 'comment' arrive with their
+ * own batches and slot into the same category, the same list shape and
+ * the same read watermark, which is kept per user × category, never per kind).
  * 公告 is official-only. 系统 is the account's own security events,
  * written by the account routes at the moment the action succeeds —
  * never invented, never back-filled.
  */
 export const NOTIFY_CATEGORIES = ['activity', 'announcements', 'system']
-export const NOTIFY_ACTIVITY_KINDS = ['follow', 'like', 'comment', 'friend_request']
+export const NOTIFY_ACTIVITY_KINDS = ['follow', 'like', 'comment', 'friend_request', 'friend_accepted']
 const NOTIFY_ITEM_CAP = 50
+
+/**
+ * Friends (FRIENDS batch): requests are application-based — one
+ * directional record per (from, to) pair with a status, and accepting
+ * writes the single mutual friendship record. A request may carry one
+ * short note from the sender. Declines never notify the sender (the
+ * state only changes in their own outgoing list); acceptances do,
+ * through the 互动 category like every other person-event.
+ */
+export const FRIEND_MESSAGE_MAX = 50
+export const PEOPLE_SEARCH_LIMIT = 20
+const EMAIL_SEARCH_WINDOW_MS = 15 * 60 * 1000
+const EMAIL_SEARCH_MAX = 10
 
 const WORLD_ART_IDS = new Set(['mist', 'cultivation', 'neon', 'city', 'court', 'frontier', CUSTOM_GENRE_ID])
 const clip = (value, length) => typeof value === 'string' ? value.trim().slice(0, length) : ''
@@ -206,6 +220,90 @@ export function createSocialService({
   }
 
   /**
+   * One person, resolved for a viewer: the same identity layers the
+   * profile payload itself uses (stored record → layered fallback →
+   * avatar name), the resolved picture, and the viewer's follow state
+   * towards them. Every people list on the site — 粉丝 / 关注， search
+   * results, friend lists — renders rows built here, so a person is
+   * the same person everywhere. The payload never carries an email:
+   * resolution inputs may include one (an email-shaped stored name)
+   * and the guards in publicDisplayName / publicHandle strip it.
+   */
+  async function resolvedPerson(personUid, viewerIdentity) {
+    const [personRecord, personAvatar, personPublications] = await Promise.all([
+      profileRecordOf(personUid),
+      avatarProfileOf(personUid),
+      visiblePublicationsOf(personUid),
+    ])
+    const fallback = publicIdentityFor(personUid, personPublications, viewerIdentity)
+    const merged = identityFromRecord(personRecord, fallback)
+    const avatarName = personAvatar ? sanitizeSettingText(clip(personAvatar.name, 40)).trim() : ''
+    const viewerUid = viewerIdentity?.uid || ''
+    return {
+      uid: personUid,
+      displayName: publicDisplayName([merged.displayName, avatarName]),
+      handle: publicHandle(merged.handle),
+      picture: await pictureFor(personUid, personRecord, personAvatar),
+      isSelf: Boolean(viewerUid) && viewerUid === personUid,
+      isFollowing: viewerUid && viewerUid !== personUid && backend
+        ? Boolean(await backend.getFollow(viewerUid, personUid))
+        : false,
+    }
+  }
+
+  /**
+   * The relationship between two accounts, from the viewer's side:
+   * 'friends' (a friendship record exists), 'pending-out' (the viewer
+   * asked, still waiting), 'pending-in' (they asked the viewer), or
+   * 'none'. Resolved request records (declined / cancelled) read as
+   * 'none' here — the state machine keeps them for the lists, not for
+   * the relationship.
+   */
+  async function friendStateBetween(viewerUid, targetUid) {
+    if (!backend || !viewerUid || !targetUid || viewerUid === targetUid) return 'none'
+    if (await backend.getFriendship(viewerUid, targetUid)) return 'friends'
+    const [mine, theirs] = await Promise.all([
+      backend.getFriendRequest(viewerUid, targetUid),
+      backend.getFriendRequest(targetUid, viewerUid),
+    ])
+    if (mine?.status === 'pending') return 'pending-out'
+    if (theirs?.status === 'pending') return 'pending-in'
+    return 'none'
+  }
+
+  async function personWithFriendState(personUid, viewerIdentity) {
+    const row = await resolvedPerson(personUid, viewerIdentity)
+    row.friendState = viewerIdentity ? await friendStateBetween(viewerIdentity.uid, personUid) : 'none'
+    return row
+  }
+
+  const friendshipRecordFor = (a, b, at) => {
+    const [uidA, uidB] = [a, b].sort()
+    return { uidA, uidB, createdAt: at }
+  }
+
+  // The email people-search throttle: per account, in-process (the
+  // deployment is single-instance, the same posture as the auth
+  // channels' ledgers). Name search stays unthrottled — it only reads
+  // public names; an exact-address lookup is the enumeration risk.
+  const searchAttempts = new Map()
+  const searchWindowCount = (key, windowMs) => {
+    const entry = searchAttempts.get(key)
+    return !entry || now() - entry.firstAt >= windowMs ? 0 : entry.count
+  }
+  const searchBump = (key, windowMs) => {
+    const at = now()
+    const entry = searchAttempts.get(key)
+    if (!entry || at - entry.firstAt >= windowMs) searchAttempts.set(key, { count: 1, firstAt: at })
+    else entry.count += 1
+    if (searchAttempts.size > 1024) {
+      for (const [key2, value] of searchAttempts) {
+        if (at - value.firstAt >= windowMs) searchAttempts.delete(key2)
+      }
+    }
+  }
+
+  /**
    * Account-level existence: the account registry itself, not any
    * footprint the account may have left. Username accounts live in the
    * identity store (`site_users`, keyed by the normalised name the uid
@@ -309,6 +407,230 @@ export function createSocialService({
         })
       }
       return { reported: true }
+    },
+
+    /**
+     * Send a friend request. Idempotent by state: already friends or
+     * already waiting returns the standing state untouched. Asking
+     * someone who is already asking YOU completes the handshake
+     * instead — a request in return is consent in any reading of it —
+     * so the pair lands in the same accepted state an explicit 同意
+     * would produce. A resolved record (declined / cancelled) may be
+     * asked again: the new ask replaces it with a fresh pending one.
+     */
+    async sendFriendRequest(identity, targetUid, body) {
+      if (!backend) throw new ApiError(503, '好友功能尚未配置。')
+      const target = clip(targetUid, 512)
+      if (!target) throw NOT_FOUND()
+      if (target === identity.uid) throw new ApiError(400, '不能给自己发好友申请。')
+      if (!(await exists(target, identity))) throw NOT_FOUND()
+      const input = body && typeof body === 'object' ? body : {}
+      const message = sanitizeSettingText(clip(input.message, 200)).trim()
+      if (charCount(message) > FRIEND_MESSAGE_MAX) {
+        throw new ApiError(400, `留言最多 ${FRIEND_MESSAGE_MAX} 个字。`)
+      }
+      return serialise(`friend:${friendshipKeyFor(identity.uid, target)}`, async () => {
+        if (await backend.getFriendship(identity.uid, target)) return { state: 'friends' }
+        const mine = await backend.getFriendRequest(identity.uid, target)
+        if (mine?.status === 'pending') return { state: 'pending-out' }
+        const theirs = await backend.getFriendRequest(target, identity.uid)
+        const at = new Date(now()).toISOString()
+        if (theirs?.status === 'pending') {
+          await backend.putFriendRequest({ ...theirs, status: 'accepted', updatedAt: at })
+          await backend.putFriendship(friendshipRecordFor(identity.uid, target, at))
+          return { state: 'friends' }
+        }
+        await backend.putFriendRequest({
+          id: mine?.id || `fr-${randomUUID()}`,
+          fromUid: identity.uid,
+          toUid: target,
+          message,
+          status: 'pending',
+          createdAt: at,
+          updatedAt: at,
+        })
+        return { state: 'pending-out' }
+      })
+    },
+
+    /**
+     * Answer a request addressed to the caller. 同意 writes the mutual
+     * friendship; 拒绝 only flips the record — the sender is never
+     * notified of a decline (their outgoing list simply shows the new
+     * state). Re-answering with the same answer is idempotent; the
+     * opposite answer after resolution is a conflict, not a rewrite.
+     */
+    async respondFriendRequest(identity, fromUid, body) {
+      if (!backend) throw new ApiError(503, '好友功能尚未配置。')
+      const from = clip(fromUid, 512)
+      if (!from) throw NOT_FOUND()
+      const accept = Boolean(body && typeof body === 'object' && body.accept === true)
+      return serialise(`friend:${friendshipKeyFor(identity.uid, from)}`, async () => {
+        const request = await backend.getFriendRequest(from, identity.uid)
+        if (!request) throw new ApiError(404, '这条好友申请已经不在了。')
+        if (request.status === 'accepted' && accept) return { state: 'friends' }
+        if (request.status === 'declined' && !accept) return { state: 'declined' }
+        if (request.status !== 'pending') throw new ApiError(409, '这条好友申请已经处理过了。')
+        const at = new Date(now()).toISOString()
+        if (accept) {
+          await backend.putFriendship(friendshipRecordFor(identity.uid, from, at))
+          await backend.putFriendRequest({ ...request, status: 'accepted', updatedAt: at })
+          return { state: 'friends' }
+        }
+        await backend.putFriendRequest({ ...request, status: 'declined', updatedAt: at })
+        return { state: 'declined' }
+      })
+    },
+
+    /** Withdraw my own pending request. Anything else is a no-op state read. */
+    async cancelFriendRequest(identity, targetUid) {
+      if (!backend) throw new ApiError(503, '好友功能尚未配置。')
+      const target = clip(targetUid, 512)
+      if (!target) throw NOT_FOUND()
+      return serialise(`friend:${friendshipKeyFor(identity.uid, target)}`, async () => {
+        const mine = await backend.getFriendRequest(identity.uid, target)
+        if (mine?.status === 'pending') {
+          await backend.putFriendRequest({ ...mine, status: 'cancelled', updatedAt: new Date(now()).toISOString() })
+        }
+        return { state: await friendStateBetween(identity.uid, target) }
+      })
+    },
+
+    /**
+     * The caller's own 好友区 in one payload: the friend list, the
+     * pending requests waiting on THEM (with the sender's note), and
+     * every request they sent with its standing state — the only place
+     * a decline is ever visible, and only to the person who asked.
+     */
+    async friends(identity) {
+      if (!backend) throw new ApiError(503, '好友功能尚未配置。')
+      const me = identity.uid
+      const [friendships, incoming, outgoing] = await Promise.all([
+        backend.listFriendships(me),
+        backend.listFriendRequestsByTo(me),
+        backend.listFriendRequestsByFrom(me),
+      ])
+      const byCreated = (a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+      const byUpdated = (a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''))
+      const friendRows = await Promise.all([...friendships].sort(byCreated).slice(0, 100).map(async (record) => {
+        const other = record.uidA === me ? record.uidB : record.uidA
+        const row = await resolvedPerson(other, identity)
+        return { ...row, friendState: 'friends', since: record.createdAt || null }
+      }))
+      const pendingIncoming = incoming.filter((record) => record.status === 'pending')
+      const incomingRows = await Promise.all([...pendingIncoming].sort(byCreated).slice(0, NOTIFY_ITEM_CAP).map(async (record) => ({
+        id: record.id,
+        message: record.message || '',
+        at: record.createdAt || null,
+        person: await resolvedPerson(record.fromUid, identity),
+      })))
+      const outgoingRows = await Promise.all([...outgoing].sort(byUpdated).slice(0, NOTIFY_ITEM_CAP).map(async (record) => ({
+        id: record.id,
+        status: record.status,
+        message: record.message || '',
+        at: record.updatedAt || record.createdAt || null,
+        person: await resolvedPerson(record.toUid, identity),
+      })))
+      return {
+        friends: friendRows,
+        incoming: incomingRows,
+        outgoing: outgoingRows,
+        counts: { friends: friendships.length, incomingPending: pendingIncoming.length },
+      }
+    },
+
+    /**
+     * Find people, two modes with deliberately different rules.
+     *
+     * Name mode is fuzzy over PUBLIC names only — the @handle and the
+     * display name, as resolved for the caller — gathered from the
+     * three places a public name can live: the account registry
+     * (username accounts), stored profile records, and plaza
+     * publication bylines. Paged, exact-handle matches first.
+     *
+     * Email mode is exact and enumeration-proof: the address itself
+     * never appears in the payload, a miss is indistinguishable from
+     * "no such account", and lookups are throttled per caller. Two
+     * kinds of account can be found this way: an email-code account
+     * (whose uid IS derived from the address — findable once it has
+     * any public footprint) and a username account that bound the
+     * address for recovery. Firebase accounts keep their addresses
+     * inside Firebase Auth and are not enumerable from here.
+     */
+    async searchPeople(identity, { q, email, limit, offset } = {}) {
+      if (!backend) throw new ApiError(503, '找朋友尚未配置。')
+      const me = identity.uid
+      const emailQuery = typeof email === 'string' ? normalizeEmailAddress(email) : ''
+      if (emailQuery) {
+        const key = `friend-email:${me}`
+        if (searchWindowCount(key, EMAIL_SEARCH_WINDOW_MS) >= EMAIL_SEARCH_MAX) {
+          throw new ApiError(429, '用邮箱找人太频繁了，请稍后再试。')
+        }
+        searchBump(key, EMAIL_SEARCH_WINDOW_MS)
+        if (!validEmailAddress(emailQuery)) return { mode: 'email', people: [], total: 0 }
+        const found = new Set()
+        const emailUid = emailCodeUid(emailQuery)
+        if (emailUid !== me && await exists(emailUid, identity)) found.add(emailUid)
+        if (identities && typeof identities.listUidsByRecoveryEmail === 'function') {
+          try {
+            // The identity store answers with bare uids: the bound
+            // address is matched inside the layer that owns it and
+            // never crosses into this service (RECOVERY pin).
+            for (const uid of await identities.listUidsByRecoveryEmail(emailQuery)) {
+              if (uid && uid !== me) found.add(uid)
+            }
+          } catch { /* a registry read failure reads as "not found", never as an oracle */ }
+        }
+        const people = await Promise.all([...found].map((uid) => personWithFriendState(uid, identity)))
+        return { mode: 'email', people, total: people.length }
+      }
+      const needle = clip(q, 40).trim().toLowerCase()
+      if (!needle) return { mode: 'name', people: [], total: 0 }
+      const candidates = new Set()
+      if (identities && typeof identities.listUserSummaries === 'function') {
+        try {
+          for (const user of await identities.listUserSummaries()) {
+            if (user?.uid && typeof user.username === 'string' && user.username.toLowerCase().includes(needle)) {
+              candidates.add(user.uid)
+            }
+          }
+        } catch { /* a failed source simply contributes nobody */ }
+      }
+      try {
+        for (const record of await backend.listProfileRecords()) {
+          if (!record?.uid) continue
+          const handleHit = typeof record.handle === 'string' && record.handle.toLowerCase().includes(needle)
+          const nameHit = typeof record.displayName === 'string' && record.displayName.toLowerCase().includes(needle)
+          if (handleHit || nameHit) candidates.add(record.uid)
+        }
+      } catch { /* a failed source simply contributes nobody */ }
+      if (plazaBackend) {
+        const publications = await plazaBackend.listPublications()
+        for (const record of publications) {
+          if (record?.authorUid && typeof record.authorName === 'string'
+            && record.authorName.toLowerCase().includes(needle)) {
+            candidates.add(record.authorUid)
+          }
+        }
+      }
+      candidates.delete(me)
+      const resolved = await Promise.all(
+        [...candidates].slice(0, 200).map((uid) => personWithFriendState(uid, identity)),
+      )
+      const matched = resolved.filter((row) => (
+        row.handle.toLowerCase().includes(needle) || row.displayName.toLowerCase().includes(needle)
+      ))
+      const rank = (row) => {
+        const handle = row.handle.toLowerCase()
+        if (handle === needle) return 0
+        if (handle.startsWith(needle)) return 1
+        if (row.displayName.toLowerCase().startsWith(needle)) return 2
+        return 3
+      }
+      matched.sort((a, b) => rank(a) - rank(b) || a.displayName.localeCompare(b.displayName))
+      const pageSize = Math.min(PEOPLE_SEARCH_LIMIT, Math.max(1, Number.parseInt(limit, 10) || PEOPLE_SEARCH_LIMIT))
+      const start = Math.max(0, Number.parseInt(offset, 10) || 0)
+      return { mode: 'name', people: matched.slice(start, start + pageSize), total: matched.length }
     },
 
     async profile(viewerIdentity, uid) {
@@ -415,6 +737,12 @@ export function createSocialService({
           isFollowing: viewerIdentity && backend
             ? Boolean(await backend.getFollow(viewerIdentity.uid, target))
             : false,
+          // The friend relationship rides the same viewer state, so a
+          // profile page can offer 加好友 / 申请中 / 同意申请 / 已是好友
+          // without a second round-trip.
+          friendState: viewerIdentity && !isSelf
+            ? await friendStateBetween(viewerIdentity.uid, target)
+            : 'none',
         },
       }
       if (isSelf) {
@@ -453,28 +781,10 @@ export function createSocialService({
         : await backend.listFollowsByFollowee(target)
       const ordered = [...records].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       const page = ordered.slice(0, 100)
-      const viewerUid = viewerIdentity?.uid || ''
-      const people = await Promise.all(page.map(async (record) => {
-        const personUid = kind === 'following' ? record.followeeUid : record.followerUid
-        const [personRecord, personAvatar, personPublications] = await Promise.all([
-          profileRecordOf(personUid),
-          avatarProfileOf(personUid),
-          visiblePublicationsOf(personUid),
-        ])
-        const fallback = publicIdentityFor(personUid, personPublications, viewerIdentity)
-        const merged = identityFromRecord(personRecord, fallback)
-        const avatarName = personAvatar ? sanitizeSettingText(clip(personAvatar.name, 40)).trim() : ''
-        return {
-          uid: personUid,
-          displayName: publicDisplayName([merged.displayName, avatarName]),
-          handle: publicHandle(merged.handle),
-          picture: await pictureFor(personUid, personRecord, personAvatar),
-          isSelf: Boolean(viewerUid) && viewerUid === personUid,
-          isFollowing: viewerUid && viewerUid !== personUid
-            ? Boolean(await backend.getFollow(viewerUid, personUid))
-            : false,
-        }
-      }))
+      const people = await Promise.all(page.map((record) => resolvedPerson(
+        kind === 'following' ? record.followeeUid : record.followerUid,
+        viewerIdentity,
+      )))
       return { kind: kind === 'following' ? 'following' : 'followers', people, total: records.length }
     },
 
@@ -710,9 +1020,10 @@ export function createSocialService({
      * The message centre payload: three categories, each with its
      * items and its unread count against the caller's per-category
      * read watermark. Every item is derived from a real record —
-     * 互动 from the follow edges pointing at the caller (later kinds
-     * join the same list), 公告 from the announcements collection,
-     * 系统 from the caller's own account events. A follow edge stored
+     * 互动 from the follow edges pointing at the caller plus the
+     * friend-request records (pending incoming requests, acceptances
+     * of the caller's own requests), 公告 from the announcements
+     * collection, 系统 from the caller's own account events. A follow edge stored
      * before edges carried timestamps has no `at`: it is listed (the
      * followers list is the present truth) but it never counts as
      * unread — an unknown age is not a new event, and no time is
@@ -721,35 +1032,70 @@ export function createSocialService({
     async notifications(identity) {
       if (!backend) throw new ApiError(503, '消息服务尚未配置。')
       const byNewest = (a, b) => String(b.at || '').localeCompare(String(a.at || ''))
-      const [edges, announcementRecords, eventRecords, readMarks] = await Promise.all([
+      const [edges, announcementRecords, eventRecords, readMarks, incomingRequests, outgoingRequests] = await Promise.all([
         backend.listFollowsByFollowee(identity.uid),
         backend.listAnnouncements(),
         backend.listAccountEvents(identity.uid),
         Promise.all(NOTIFY_CATEGORIES.map((category) => backend.getNotifyRead(identity.uid, category))),
+        backend.listFriendRequestsByTo(identity.uid),
+        backend.listFriendRequestsByFrom(identity.uid),
       ])
-      const activityItems = await Promise.all([...edges]
+      const followItems = await Promise.all([...edges]
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
         .slice(0, NOTIFY_ITEM_CAP)
         .map(async (record) => {
-        const [personRecord, personAvatar, personPublications] = await Promise.all([
-          profileRecordOf(record.followerUid),
-          avatarProfileOf(record.followerUid),
-          visiblePublicationsOf(record.followerUid),
-        ])
-        const fallback = publicIdentityFor(record.followerUid, personPublications, identity)
-        const merged = identityFromRecord(personRecord, fallback)
-        const avatarName = personAvatar ? sanitizeSettingText(clip(personAvatar.name, 40)).trim() : ''
-        return {
-          id: `follow:${record.followerUid}`,
-          kind: 'follow',
-          actorUid: record.followerUid,
-          displayName: publicDisplayName([merged.displayName, avatarName]),
-          handle: publicHandle(merged.handle),
-          picture: await pictureFor(record.followerUid, personRecord, personAvatar),
-          at: typeof record.createdAt === 'string' && record.createdAt ? record.createdAt : null,
-        }
+          const person = await resolvedPerson(record.followerUid, identity)
+          return {
+            id: `follow:${record.followerUid}`,
+            kind: 'follow',
+            actorUid: record.followerUid,
+            displayName: person.displayName,
+            handle: person.handle,
+            picture: person.picture,
+            at: typeof record.createdAt === 'string' && record.createdAt ? record.createdAt : null,
+          }
         }))
-      activityItems.sort(byNewest)
+      // Friend events join 互动 from the same real records the 好友区
+      // reads: a request still waiting on the caller (with the note
+      // they sent), and an acceptance of a request the caller sent.
+      // A decline writes NO item anywhere — the sender only sees the
+      // state change in their own outgoing list, by design.
+      const friendRequestItems = await Promise.all(incomingRequests
+        .filter((record) => record.status === 'pending')
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        .slice(0, NOTIFY_ITEM_CAP)
+        .map(async (record) => {
+          const person = await resolvedPerson(record.fromUid, identity)
+          return {
+            id: `friend-request:${record.fromUid}`,
+            kind: 'friend_request',
+            actorUid: record.fromUid,
+            displayName: person.displayName,
+            handle: person.handle,
+            picture: person.picture,
+            message: record.message || '',
+            at: record.createdAt || null,
+          }
+        }))
+      const friendAcceptedItems = await Promise.all(outgoingRequests
+        .filter((record) => record.status === 'accepted')
+        .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
+        .slice(0, NOTIFY_ITEM_CAP)
+        .map(async (record) => {
+          const person = await resolvedPerson(record.toUid, identity)
+          return {
+            id: `friend-accepted:${record.toUid}`,
+            kind: 'friend_accepted',
+            actorUid: record.toUid,
+            displayName: person.displayName,
+            handle: person.handle,
+            picture: person.picture,
+            at: record.updatedAt || record.createdAt || null,
+          }
+        }))
+      const activityItems = [...followItems, ...friendRequestItems, ...friendAcceptedItems]
+        .sort(byNewest)
+        .slice(0, NOTIFY_ITEM_CAP)
       const announcementItems = [...announcementRecords]
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
         .slice(0, NOTIFY_ITEM_CAP)

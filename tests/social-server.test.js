@@ -168,7 +168,7 @@ test('profile payload: identity, avatar, counts, worlds, publications — and no
   assert.equal(profile.publications.length, 1)
   assert.equal(profile.publications[0].authorUid, author.uid)
   assert.equal(profile.publications[0].avatar.hasPortrait, true, 'publication portrait readiness follows the live profile')
-  assert.deepEqual(profile.viewerState, { isSelf: false, isFollowing: false })
+  assert.deepEqual(profile.viewerState, { isSelf: false, isFollowing: false, friendState: 'none' })
 
   const text = JSON.stringify(profile)
   for (const forbidden of ['email', 'passwordHash', 'salt', 'reporters', 'hiddenReason']) {

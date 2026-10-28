@@ -85,7 +85,9 @@ import {
 import {
 } from "./profile-boards.js";
 import {
+  cancelFriendRequest,
   checkHandleAvailable,
+  fetchFriends,
   fetchNotifications,
   fetchUserConnections,
   fetchUserProfile,
@@ -95,6 +97,9 @@ import {
   publicDisplayName as profileDisplayName,
   publicHandle as profileHandle,
   reportUser,
+  respondFriendRequest,
+  searchPeople,
+  sendFriendRequest,
   sendPresenceHeartbeat,
   unfollowUser,
   updateMyProfile,
@@ -3403,7 +3408,7 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
         <div className="notify-empty">
           <img className="empty-art" src="/art/empty-messages-512.webp" alt="" loading="lazy" />
           <p>
-            {tab === "activity" && "还没有互动消息——关注、点赞和评论都会记在这里。"}
+            {tab === "activity" && "还没有互动消息——关注、好友申请和评论都会记在这里。"}
             {tab === "announcements" && "暂无公告。"}
             {tab === "system" && "暂无系统消息。密码重设、恢复邮箱变更这类账号动态会记在这里。"}
           </p>
@@ -3426,8 +3431,17 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
                     <span className="notify-row-copy">
                       <span className="notify-row-text">
                         <strong>{item.displayName}</strong>
-                        {item.kind === "follow" ? " 关注了你" : " 与你有了新的互动"}
+                        {item.kind === "follow"
+                          ? " 关注了你"
+                          : item.kind === "friend_request"
+                            ? " 想加你为好友"
+                            : item.kind === "friend_accepted"
+                              ? " 和你成为了好友"
+                              : " 与你有了新的互动"}
                       </span>
+                      {item.kind === "friend_request" && item.message ? (
+                        <span className="notify-row-body">「{item.message}」</span>
+                      ) : null}
                       {item.at && <small>{notifyTime(item.at)}</small>}
                     </span>
                   </button>
@@ -6356,6 +6370,299 @@ function ProfileConnectionRow({ person, account, busyUid, onToggleFollow, onOpen
   );
 }
 
+// ——— FRIENDS section pieces ———
+// One person row across the friend surfaces (friend list, request
+// lists, search results): the same face-anchored row grammar as the
+// 粉丝/关注 lists, with a caller-supplied trailing action.
+function FriendPersonRow({ person, trailing = null, onOpenProfile }) {
+  const portrait = person.picture?.kind === "avatar";
+  return (
+    <div className="profile-connection-row">
+      <button
+        type="button"
+        className="profile-connection-main"
+        onClick={() => onOpenProfile?.(person.uid)}
+        aria-label={`打开 ${person.displayName} 的主页`}
+      >
+        <span className={`nav-face-frame is-person ${portrait ? "is-portrait" : ""}`} aria-hidden="true">
+          <img className="nav-face-img" src={person.picture?.url || "/default-avatar.svg"} alt="" loading="lazy" />
+        </span>
+        <span className="profile-connection-copy">
+          <strong>{person.displayName}</strong>
+          {person.handle && person.displayName.toLowerCase() !== person.handle.toLowerCase() && <small>@{person.handle}</small>}
+        </span>
+      </button>
+      {trailing}
+    </div>
+  );
+}
+
+const FRIEND_OUTGOING_COPY = {
+  pending: "等待对方确认",
+  accepted: "已成为好友",
+  declined: "对方这次没有通过",
+  cancelled: "已取消",
+};
+
+function FriendsPanel({ authClient, onOpenProfile }) {
+  // The 好友区 on my own page (FRIENDS batch). Progressive disclosure:
+  // the first paint is the friend list itself plus two counts — the
+  // request lists and the people search live one tap away in the tab
+  // row, and 找朋友 is a single entry line in the section head.
+  const getToken = useCallback(() => authClient.getAccessToken(), [authClient]);
+  const [data, setData] = useState(null);
+  const [loadError, setLoadError] = useState("");
+  const [tab, setTab] = useState("friends");
+  const [busyUid, setBusyUid] = useState("");
+  const [note, setNote] = useState("");
+  const [searchMode, setSearchMode] = useState("name");
+  const [searchText, setSearchText] = useState("");
+  const [searchResult, setSearchResult] = useState(null);
+  const [searchError, setSearchError] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [composingUid, setComposingUid] = useState("");
+  const [draft, setDraft] = useState("");
+
+  const reload = useCallback(() => {
+    setLoadError("");
+    fetchFriends({ getAccessToken: getToken })
+      .then((next) => setData(next))
+      .catch(() => setLoadError("好友没能打开，请稍后再试。"));
+  }, [getToken]);
+  useEffect(() => { reload(); }, [reload]);
+
+  const pendingCount = data?.counts?.incomingPending || 0;
+
+  const act = async (person, action) => {
+    if (busyUid) return;
+    setBusyUid(person.uid);
+    setNote("");
+    try {
+      if (action === "send") {
+        const result = await sendFriendRequest({ uid: person.uid, message: draft.trim(), getAccessToken: getToken });
+        setComposingUid("");
+        setDraft("");
+        setNote(result.state === "friends" ? "你们已经是好友了。" : "好友申请已发出。");
+        setSearchResult((current) => current ? {
+          ...current,
+          people: current.people.map((row) => (row.uid === person.uid ? { ...row, friendState: result.state || "pending-out" } : row)),
+        } : current);
+      } else if (action === "accept") {
+        await respondFriendRequest({ uid: person.uid, accept: true, getAccessToken: getToken });
+        setNote(`你和 ${person.displayName} 已经是好友了。`);
+      } else if (action === "decline") {
+        await respondFriendRequest({ uid: person.uid, accept: false, getAccessToken: getToken });
+        setNote("已婉拒这条申请。");
+      } else if (action === "cancel") {
+        await cancelFriendRequest({ uid: person.uid, getAccessToken: getToken });
+        setNote("申请已取消。");
+        setSearchResult((current) => current ? {
+          ...current,
+          people: current.people.map((row) => (row.uid === person.uid ? { ...row, friendState: "none" } : row)),
+        } : current);
+      }
+      reload();
+    } catch (failure) {
+      setNote(failure?.message || "操作没能完成，请稍后再试。");
+    } finally { setBusyUid(""); }
+  };
+
+  const runSearch = async () => {
+    const value = searchText.trim();
+    if (!value || searching) return;
+    setSearching(true);
+    setSearchError("");
+    setSearchResult(null);
+    try {
+      const result = await searchPeople({
+        ...(searchMode === "email" ? { email: value } : { q: value }),
+        getAccessToken: getToken,
+      });
+      setSearchResult(result);
+    } catch (failure) {
+      setSearchError(failure?.message || "没能搜到，请稍后再试。");
+    } finally { setSearching(false); }
+  };
+
+  // The action a search row offers, per the standing relationship.
+  const searchAction = (person) => {
+    if (person.isSelf) return <span className="friend-state-chip">这是你</span>;
+    if (person.friendState === "friends") return <span className="friend-state-chip">已是好友</span>;
+    if (person.friendState === "pending-in") {
+      return (
+        <button type="button" className="profile-connection-follow" disabled={busyUid === person.uid} onClick={() => void act(person, "accept")}>
+          同意申请
+        </button>
+      );
+    }
+    if (person.friendState === "pending-out") {
+      return (
+        <span className="friend-state-actions">
+          <span className="friend-state-chip">申请中</span>
+          <button type="button" className="friend-text-btn" disabled={busyUid === person.uid} onClick={() => void act(person, "cancel")}>取消</button>
+        </span>
+      );
+    }
+    return (
+      <button
+        type="button"
+        className="profile-connection-follow"
+        disabled={busyUid === person.uid}
+        onClick={() => { setComposingUid(person.uid); setDraft(""); }}
+      >
+        加好友
+      </button>
+    );
+  };
+
+  return (
+    <section className="profile-sec friends-sec" aria-label="好友" data-enter>
+      <div className="profile-sec-head">
+        <h2 className="profile-sec-title">好友{data ? <small>{data.counts.friends} 人</small> : null}</h2>
+        <button type="button" className="profile-sec-more" onClick={() => setTab("search")}>找朋友 ›</button>
+      </div>
+      <div className="friends-tabs" role="tablist" aria-label="好友分区">
+        {[
+          { id: "friends", label: "好友" },
+          { id: "requests", label: "申请", badge: pendingCount },
+          { id: "search", label: "找朋友" },
+        ].map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === entry.id}
+            className={`friends-tab ${tab === entry.id ? "is-active" : ""}`}
+            onClick={() => setTab(entry.id)}
+          >
+            {entry.label}
+            {entry.badge > 0 && <span className="notify-tab-badge" aria-label={`${entry.badge} 条待处理`}>{entry.badge > 99 ? "99+" : entry.badge}</span>}
+          </button>
+        ))}
+      </div>
+      {note && <p className="ryan-note" role="status">{note}</p>}
+      {loadError ? (
+        <p className="profile-line-empty" role="alert">{loadError}</p>
+      ) : !data ? (
+        <p className="profile-line-empty" role="status">正在打开好友…</p>
+      ) : tab === "friends" ? (
+        data.friends.length === 0 ? (
+          <p className="profile-line-empty">还没有好友。去找朋友，把认识的人加进来。</p>
+        ) : (
+          <div className="profile-connection-list">
+            {data.friends.map((person) => (
+              <FriendPersonRow key={person.uid} person={person} onOpenProfile={onOpenProfile} />
+            ))}
+          </div>
+        )
+      ) : tab === "requests" ? (
+        <>
+          {data.incoming.length === 0 && data.outgoing.length === 0 && (
+            <p className="profile-line-empty">还没有好友申请。</p>
+          )}
+          {data.incoming.length > 0 && (
+            <div className="profile-connection-list" aria-label="收到的申请">
+              {data.incoming.map((entry) => (
+                <div key={entry.id} className="friend-request-block">
+                  <FriendPersonRow
+                    person={entry.person}
+                    onOpenProfile={onOpenProfile}
+                    trailing={(
+                      <span className="friend-state-actions">
+                        <button type="button" className="profile-connection-follow" disabled={busyUid === entry.person.uid} onClick={() => void act(entry.person, "accept")}>同意</button>
+                        <button type="button" className="friend-text-btn" disabled={busyUid === entry.person.uid} onClick={() => void act(entry.person, "decline")}>拒绝</button>
+                      </span>
+                    )}
+                  />
+                  {entry.message && <p className="friend-request-message">「{entry.message}」</p>}
+                </div>
+              ))}
+            </div>
+          )}
+          {data.outgoing.length > 0 && (
+            <div className="profile-connection-list" aria-label="我发出的申请">
+              {data.outgoing.map((entry) => (
+                <FriendPersonRow
+                  key={entry.id}
+                  person={entry.person}
+                  onOpenProfile={onOpenProfile}
+                  trailing={(
+                    <span className="friend-state-actions">
+                      <span className="friend-state-chip">{FRIEND_OUTGOING_COPY[entry.status] || entry.status}</span>
+                      {entry.status === "pending" && (
+                        <button type="button" className="friend-text-btn" disabled={busyUid === entry.person.uid} onClick={() => void act(entry.person, "cancel")}>取消</button>
+                      )}
+                    </span>
+                  )}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="friends-search">
+          <div className="friends-search-modes" role="group" aria-label="查找方式">
+            <button type="button" className={searchMode === "name" ? "is-active" : ""} aria-pressed={searchMode === "name"} onClick={() => setSearchMode("name")}>按用户名</button>
+            <button type="button" className={searchMode === "email" ? "is-active" : ""} aria-pressed={searchMode === "email"} onClick={() => setSearchMode("email")}>按邮箱</button>
+          </div>
+          <div className="friends-search-bar">
+            <input
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Enter") void runSearch(); }}
+              placeholder={searchMode === "email" ? "输入对方的完整邮箱" : "输入用户名或 @ID 的一部分"}
+              aria-label={searchMode === "email" ? "按邮箱找人" : "按用户名找人"}
+              inputMode={searchMode === "email" ? "email" : "search"}
+            />
+            <button type="button" disabled={searching || !searchText.trim()} onClick={() => void runSearch()}>
+              <Icon name="search" size={17} />
+              搜索
+            </button>
+          </div>
+          <p className="friends-search-note">
+            {searchMode === "email"
+              ? "邮箱是精确查找：找到就显示对方的主页卡片，邮箱本身不会出现在这里。"
+              : "按用户名或显示名模糊查找，点头像可以先看看对方的主页。"}
+          </p>
+          {searchError ? (
+            <p className="profile-line-empty" role="alert">{searchError}</p>
+          ) : searching ? (
+            <p className="profile-line-empty" role="status">正在找…</p>
+          ) : searchResult ? (
+            searchResult.people.length === 0 ? (
+              <p className="profile-line-empty">{searchResult.mode === "email" ? "没有找到这个邮箱对应的账号。" : "没有找到符合的人，换个关键词试试。"}</p>
+            ) : (
+              <div className="profile-connection-list">
+                {searchResult.people.map((person) => (
+                  <div key={person.uid} className="friend-request-block">
+                    <FriendPersonRow person={person} onOpenProfile={onOpenProfile} trailing={searchAction(person)} />
+                    {composingUid === person.uid && (
+                      <div className="friend-compose">
+                        <input
+                          value={draft}
+                          maxLength={50}
+                          onChange={(event) => setDraft(event.target.value)}
+                          placeholder="说一句打个招呼（可不填，最多 50 字）"
+                          aria-label="好友申请留言"
+                        />
+                        <button type="button" className="friend-compose-send" disabled={busyUid === person.uid} onClick={() => void act(person, "send")}>发送</button>
+                        <button type="button" className="friend-text-btn" onClick={() => setComposingUid("")}>取消</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {searchResult.total > searchResult.people.length && (
+                  <p className="profile-line-empty">只列出前 {searchResult.people.length} 人，换个更准的关键词能缩小范围。</p>
+                )}
+              </div>
+            )
+          ) : null}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ——— PROFILE-ENRICH (§35) section pieces ———
 // One book standing in the profile's mini-shelf: the same cover
 // sources and seeded tilt as the shelf page, a slimmer footprint.
@@ -6664,6 +6971,14 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   const [connections, setConnections] = useState(null);
   const [connectionsError, setConnectionsError] = useState("");
   const [connectionBusyUid, setConnectionBusyUid] = useState("");
+  // The friend relationship with this page's owner (FRIENDS batch):
+  // seeded from the payload's viewerState.friendState, then driven by
+  // the actions taken here — the server stays the source of truth on
+  // every fresh load.
+  const [friendState, setFriendState] = useState("none");
+  const [friendBusy, setFriendBusy] = useState(false);
+  const [friendComposing, setFriendComposing] = useState(false);
+  const [friendDraft, setFriendDraft] = useState("");
   const getToken = useCallback(() => authClient.getAccessToken(), [authClient]);
   const { animate } = useMotionPolicy("profile");
   const pageRef = useRef(null);
@@ -6757,6 +7072,11 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
     );
   }, [profile, animate, windowForm]);
   useEffect(() => { setPictureSrc(profile?.picture?.url || ""); }, [profile?.picture?.url]);
+  useEffect(() => {
+    setFriendState(profile?.viewerState?.friendState || "none");
+    setFriendComposing(false);
+    setFriendDraft("");
+  }, [profile?.uid, profile?.viewerState?.friendState]);
 
   // The name-list behind the counts (PROFILE-FIX C3): fetched when the
   // reader taps 粉丝 / 关注; rows carry the viewer's follow state.
@@ -6909,6 +7229,37 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
     }
   };
 
+  // Friend actions from this person's page (FRIENDS batch): ask (with
+  // the optional note drafted in the compose row), accept an ask they
+  // sent me, or withdraw my own pending ask. Each lands on the state
+  // the server reports back.
+  const actOnFriend = async (action) => {
+    if (friendBusy) return;
+    if (!account.user) { onOpenAccount(); return; }
+    setFriendBusy(true);
+    setNote("");
+    try {
+      if (action === "send") {
+        const result = await sendFriendRequest({ uid, message: friendDraft.trim(), getAccessToken: getToken });
+        setFriendState(result.state || "pending-out");
+        setFriendComposing(false);
+        setFriendDraft("");
+        setNote(result.state === "friends" ? "你们已经是好友了。" : "好友申请已发出。");
+      } else if (action === "accept") {
+        const result = await respondFriendRequest({ uid, accept: true, getAccessToken: getToken });
+        setFriendState(result.state || "friends");
+        setNote("你们已经是好友了。");
+      } else if (action === "cancel") {
+        const result = await cancelFriendRequest({ uid, getAccessToken: getToken });
+        setFriendState(result.state || "none");
+        setNote("申请已取消。");
+      }
+    } catch (failure) {
+      if (failure?.code === "auth-required") onOpenAccount();
+      else setNote(failure?.message || "操作没能完成，请稍后再试。");
+    } finally { setFriendBusy(false); }
+  };
+
   // Swipe-to-close (PROFILE-FEEL B5, window form): the grab zone at
   // the sheet's top drags the sheet with the finger; past the
   // threshold (or a fast flick) the release completes the close
@@ -7059,9 +7410,45 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
             <button type="button" className="profile-share-btn" onClick={() => setShareOpen(true)} aria-label="分享主页">
               <Icon name="share" size={18} />
             </button>
+            {friendState === "friends" ? (
+              <span className="profile-friend-chip">已是好友</span>
+            ) : friendState === "pending-in" ? (
+              <button type="button" className="profile-friend-btn" disabled={friendBusy} onClick={() => void actOnFriend("accept")}>
+                同意好友申请
+              </button>
+            ) : friendState === "pending-out" ? (
+              <button type="button" className="profile-friend-btn is-quiet" disabled={friendBusy} onClick={() => void actOnFriend("cancel")}>
+                申请中 · 取消
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="profile-friend-btn"
+                aria-expanded={friendComposing}
+                onClick={() => {
+                  if (!account.user) { onOpenAccount(); return; }
+                  setFriendComposing((open) => !open);
+                }}
+              >
+                <Icon name="users" size={16} /> 加好友
+              </button>
+            )}
           </>
         )}
       </div>
+      {!isSelf && friendComposing && friendState === "none" && (
+        <div className="friend-compose">
+          <input
+            value={friendDraft}
+            maxLength={50}
+            onChange={(event) => setFriendDraft(event.target.value)}
+            placeholder="说一句打个招呼（可不填，最多 50 字）"
+            aria-label="好友申请留言"
+          />
+          <button type="button" className="friend-compose-send" disabled={friendBusy} onClick={() => void actOnFriend("send")}>发送申请</button>
+          <button type="button" className="friend-text-btn" onClick={() => setFriendComposing(false)}>取消</button>
+        </div>
+      )}
       {note && <p className="ryan-note" role="status">{note}</p>}
 
       {connectionsKind ? (
@@ -7255,6 +7642,9 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
             </div>
           )}
         </section>
+      )}
+      {isSelf && !windowForm && (
+        <FriendsPanel authClient={authClient} onOpenProfile={onOpenProfile} />
       )}
       {isSelf && !windowForm && (
         <section className="profile-sec profile-settings-entry" aria-label="设置">
