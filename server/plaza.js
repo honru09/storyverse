@@ -81,6 +81,10 @@ function summaryOf(record) {
     // Older records predate the field and read as finished.
     lineStatus: record.lineStatus === 'serializing' ? 'serializing' : 'finished',
     premise: clip(record.snapshot?.worldBible?.premise, 120),
+    // The owner's own blurb, when the published snapshot carries one
+    // (EDIT-BOOK): surfaces prefer it over the premise as the book's
+    // introduction. Empty string on every pre-synopsis publication.
+    synopsis: clip(record.snapshot?.synopsis, 300),
     publishedAt: record.publishedAt,
     completedAt: record.lineStatus === 'serializing' ? null : (record.completedAt || record.publishedAt),
     // The story's own generated cover, resolved live by the identity

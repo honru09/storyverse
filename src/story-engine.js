@@ -1820,6 +1820,75 @@ export function updateLorebook(story, entries) {
 }
 
 /*
+ * 本书简介 (the owner's blurb, EDIT-BOOK batch, DESIGN §29): a short
+ * reader-facing introduction the owner writes for their own book. It
+ * lives on the story record itself (`story.synopsis`) so it rides the
+ * ordinary library sync like every other story field — no separate
+ * channel. It is presentation text only: generation never reads it, so
+ * editing it can never rewrite or invalidate a chapter.
+ *
+ * A book that predates the field has no stored synopsis; every display
+ * falls back to the world bible's premise — the text those surfaces
+ * already showed as the book's introduction before the field existed —
+ * and the first explicit save materialises the owner's own words.
+ * Saving an empty text clears the field back to that fallback.
+ */
+export const SYNOPSIS_MAX = 300
+
+export function synopsisOf(story) {
+  const own = typeof story?.synopsis === 'string' ? story.synopsis.trim() : ''
+  if (own) return own
+  const premise = typeof story?.worldBible?.premise === 'string' ? story.worldBible.premise.trim() : ''
+  return premise
+}
+
+export function updateSynopsis(story, text) {
+  validateStory(story)
+  const cleaned = typeof text === 'string' ? text.trim() : ''
+  if (cleaned.length > SYNOPSIS_MAX) {
+    throw new RangeError(`简介最多 ${SYNOPSIS_MAX} 字`)
+  }
+  const current = typeof story.synopsis === 'string' ? story.synopsis : ''
+  if (cleaned === current) return story
+  const next = { ...story, updatedAt: now() }
+  if (cleaned) next.synopsis = cleaned
+  else delete next.synopsis
+  return next
+}
+
+/*
+ * 章节改名 (renaming a chapter, EDIT-BOOK batch, DESIGN §29): the
+ * chapter title is metadata, not prose, so — unlike 编辑正文 — it is
+ * NOT bound by the frontier rule: any chapter that exists may be
+ * renamed at any time, including long-sealed ones. The helper touches
+ * nothing else: chapter ids, order, paragraphs and summaries are
+ * carried through byte-identical, and the story revision deliberately
+ * does NOT advance (chapterKey binds to the revision, and a rename
+ * must not retire a pre-generated next chapter whose context never
+ * included the old title anyway). The updatedAt bump is what the
+ * cloud library sync keys on, so a rename propagates like any edit.
+ */
+export const CHAPTER_TITLE_MAX = 30
+
+export function renameChapterTitle(story, index, title) {
+  validateStory(story)
+  if (story.readOnly === true) return story
+  if (!Number.isInteger(index) || index < 0 || index >= story.chapters.length) {
+    throw new RangeError('这一章还没有写出来，没法改名。')
+  }
+  const cleaned = typeof title === 'string' ? title.trim() : ''
+  if (!cleaned) throw new RangeError('章节标题不能为空。')
+  if (cleaned.length > CHAPTER_TITLE_MAX) {
+    throw new RangeError(`章节标题最多 ${CHAPTER_TITLE_MAX} 字。`)
+  }
+  if (cleaned === story.chapters[index].title) return story
+  const next = clone(story)
+  next.chapters[index] = { ...next.chapters[index], title: cleaned }
+  next.updatedAt = now()
+  return next
+}
+
+/*
  * 文风预设 (style presets): the owner's per-story directing dial for the
  * generation instructions. A preset is a bounded instruction block the
  * server appends to its system prompt for every chapter generated AFTER
@@ -2797,6 +2866,11 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
   }))
   return {
     title: redactLine(story.title),
+    // The owner's blurb rides the snapshot (redacted like every other
+    // string) so a re-publish can refresh the plaza detail's 简介；
+    // absent when the owner never wrote one — the detail then falls
+    // back to the premise, as it did before the field existed.
+    ...(typeof story.synopsis === 'string' && story.synopsis.trim() ? { synopsis: redactLine(story.synopsis) } : {}),
     genreId: genre.id,
     genreTemplateId,
     worldName: worldNameOf(genre, safeConfig),

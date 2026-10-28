@@ -311,7 +311,13 @@ function validateStory(story, prefix) {
   if (story.readerIndex !== undefined && (!Number.isInteger(story.readerIndex) || story.readerIndex < 0)) {
     errors.push(`${prefix}.readerIndex must be a non-negative integer`)
   }
-  validateOptionalFields(story, prefix, ['author', 'createdAt', 'updatedAt', 'status', 'genreTemplateId', 'previousSeasonId'], 'string', errors)
+  validateOptionalFields(story, prefix, ['author', 'createdAt', 'updatedAt', 'status', 'genreTemplateId', 'previousSeasonId', 'synopsis'], 'string', errors)
+  // 本书简介 (EDIT-BOOK): an optional owner-written blurb; the bound
+  // mirrors SYNOPSIS_MAX in src/story-engine.js (this storage layer
+  // stays dependency-free, like the lorebook limits above).
+  if (typeof story.synopsis === 'string' && story.synopsis.length > 300) {
+    errors.push(`${prefix}.synopsis must be at most 300 characters`)
+  }
   validateOptionalFields(story, prefix, ['bookmarked', 'readOnly', 'isDemo'], 'boolean', errors)
   // Per-story generated cover: only the state and a version live on the
   // story; the image itself stays on the server under the owner's account.

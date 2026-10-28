@@ -176,6 +176,14 @@ button.chapter-item:disabled {
   background: var(--surface);
   overflow: hidden;
 }
+.chapter-directory-edit {
+  display: grid;
+  gap: 12px;
+  margin-top: 1rem;
+}
+.chapter-directory-edit .field-label {
+  margin-bottom: 0;
+}
 .chapter-directory-list button {
   display: flex;
   align-items: center;

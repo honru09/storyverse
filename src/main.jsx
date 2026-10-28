@@ -161,6 +161,11 @@ import {
   updateLorebook,
   updateStylePreset,
   updateWorldBible,
+  CHAPTER_TITLE_MAX,
+  SYNOPSIS_MAX,
+  renameChapterTitle,
+  synopsisOf,
+  updateSynopsis,
   createMergedStory,
   createStory,
   finishEndlessLine,
@@ -2993,12 +2998,33 @@ function ReadingDialog({ title, children, onClose }) {
   );
 }
 
-function ChapterDirectory({ story, index, readOnly, onSelect, onClose }) {
+function ChapterDirectory({ story, index, readOnly, onSelect, onClose, onRenameChapters }) {
   // A running endless line has no total to enumerate: list the chapters
   // that exist plus the one being written, never an unbounded range.
   const total = mapTotalFor(totalChaptersFor(story), story.chapters?.length || 0, index);
   const last = lastAccessibleIndex(story, readOnly);
   const listRef = useRef(null);
+  // 编辑目录 (EDIT-BOOK): renaming titles in place, offered only on the
+  // owner's own copy. Drafts cover the chapters that exist; unwritten
+  // slots have no title to rename and drop out of the edit list.
+  const writtenChapters = Array.isArray(story.chapters) ? story.chapters : [];
+  const [editing, setEditing] = useState(false);
+  const [drafts, setDrafts] = useState([]);
+  const [editError, setEditError] = useState("");
+  const beginEdit = () => {
+    setDrafts(writtenChapters.map((chapter) => chapter.title));
+    setEditError("");
+    setEditing(true);
+  };
+  const saveEdit = () => {
+    const error = onRenameChapters ? onRenameChapters(drafts) : "目录没能保存，请再试一次。";
+    if (error) {
+      setEditError(error);
+      return;
+    }
+    setEditError("");
+    setEditing(false);
+  };
   // A season runs 24 chapters and a long book 100, at 56px a row: opening
   // the directory at scroll position zero strands the reader far from the
   // chapter they are on. Center the current row inside the dialog's own
@@ -3037,16 +3063,60 @@ function ChapterDirectory({ story, index, readOnly, onSelect, onClose }) {
   return (
     <ReadingDialog title="章节目录" onClose={onClose}>
       <p>{story.title}</p>
-      <div className="directory-starmap">
-        <b>剧情星图</b>
-        <StoryMap
-          total={total}
-          generated={story.chapters?.length || 0}
-          current={index}
-          onSelect={onSelect}
-        />
-      </div>
-      <div className="chapter-directory-list" ref={listRef}>
+      {!editing && (
+        <div className="directory-starmap">
+          <b>剧情星图</b>
+          <StoryMap
+            total={total}
+            generated={story.chapters?.length || 0}
+            current={index}
+            onSelect={onSelect}
+          />
+        </div>
+      )}
+      {editing ? (
+        <div className="chapter-directory-edit">
+          <p className="field-hint">只改标题：顺序和正文一个字都不会动，已经定稿的章节也可以改名。</p>
+          {writtenChapters.map((chapter, position) => (
+            <label className="field-label" key={chapter.id || position}>
+              第 {position + 1} 章
+              <input
+                value={drafts[position] ?? ""}
+                aria-label={`第 ${position + 1} 章标题`}
+                onChange={(event) =>
+                  setDrafts((list) => list.map((title, itemIndex) => (itemIndex === position ? event.target.value : title)))
+                }
+              />
+            </label>
+          ))}
+          {editError && (
+            <p className="intervention-error" role="alert">
+              {editError}
+            </p>
+          )}
+          <div className="settings-inline-actions">
+            <Button onClick={saveEdit}>保存目录</Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setEditError("");
+                setEditing(false);
+              }}
+            >
+              取消
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {!readOnly && onRenameChapters && writtenChapters.length > 0 && (
+            <div className="settings-inline-actions">
+              <Button variant="secondary" onClick={beginEdit}>
+                编辑目录
+              </Button>
+            </div>
+          )}
+          <div className="chapter-directory-list" ref={listRef}>
         {Array.from({ length: total }, (_, chapterIndex) => {
           const available = chapterIndex <= last;
           const chapter = story.chapters[chapterIndex];
@@ -3076,7 +3146,9 @@ function ChapterDirectory({ story, index, readOnly, onSelect, onClose }) {
             </button>
           );
         })}
-      </div>
+          </div>
+        </>
+      )}
     </ReadingDialog>
   );
 }
@@ -3265,8 +3337,44 @@ function ProseEditor({ chapter, onClose, onSave }) {
 // generated after the edit; chapters that already exist never change.
 // The lorebook shown here is the owner's private material (imported or
 // hand-written): it appears in no public snapshot, ever.
-function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete }) {
+function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSynopsis, onSaveChapterTitles }) {
   const [premise, setPremise] = useState(story.worldBible?.premise || "");
+  // 本书简介 (EDIT-BOOK): the editor opens on the effective synopsis —
+  // the owner's own words when set, otherwise the premise the surfaces
+  // have always shown as this book's introduction.
+  const [synopsis, setSynopsis] = useState(() => synopsisOf(story));
+  const [synopsisError, setSynopsisError] = useState("");
+  const [synopsisSaved, setSynopsisSaved] = useState(false);
+  // 章节目录 (EDIT-BOOK): titles are metadata — renaming is offered for
+  // every written chapter here and in the reader's directory drawer.
+  const tocChapters = Array.isArray(story.chapters) ? story.chapters : [];
+  const [tocEditing, setTocEditing] = useState(false);
+  const [tocTitles, setTocTitles] = useState(() => tocChapters.map((chapter) => chapter.title));
+  const [tocError, setTocError] = useState("");
+  const saveSynopsis = () => {
+    const error = onSaveSynopsis ? onSaveSynopsis(synopsis) : "简介没能保存，请再试一次。";
+    if (error) {
+      setSynopsisError(error);
+      setSynopsisSaved(false);
+      return;
+    }
+    setSynopsisError("");
+    setSynopsisSaved(true);
+  };
+  const beginTocEdit = () => {
+    setTocTitles(tocChapters.map((chapter) => chapter.title));
+    setTocError("");
+    setTocEditing(true);
+  };
+  const saveToc = () => {
+    const error = onSaveChapterTitles ? onSaveChapterTitles(tocTitles) : "目录没能保存，请再试一次。";
+    if (error) {
+      setTocError(error);
+      return;
+    }
+    setTocError("");
+    setTocEditing(false);
+  };
   const [rules, setRules] = useState(() => [...(story.worldBible?.rules || [])]);
   const [endingAnchor, setEndingAnchor] = useState(story.worldBible?.endingAnchor || "");
   const [entries, setEntries] = useState(() =>
@@ -3302,6 +3410,34 @@ function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete }) {
       <p className="field-hint">
         这本书的世界设定都在这里。在这里改，只影响之后生成的章节——已经写好的章节，一个字都不会动。
       </p>
+      <div className="settings-section">
+        <h3>本书简介</h3>
+        <p className="field-hint">
+          这是这本书对外的介绍，写给还没打开它的人看。改动只落在你自己的书上；已经发布到广场的版本不会自动跟着变，重新发布一次即可同步。
+        </p>
+        <label className="field-label">
+          简介
+          <textarea
+            rows={4}
+            maxLength={SYNOPSIS_MAX}
+            value={synopsis}
+            aria-label="本书简介"
+            placeholder="用几句话介绍这本书：它讲什么、谁在里面、会往哪里走。"
+            onChange={(event) => { setSynopsis(event.target.value); setSynopsisSaved(false); }}
+          />
+        </label>
+        {synopsisError && (
+          <p className="intervention-error" role="alert">
+            {synopsisError}
+          </p>
+        )}
+        <div className="settings-inline-actions">
+          <Button variant="secondary" onClick={saveSynopsis}>
+            保存简介
+          </Button>
+          {synopsisSaved && !synopsisError && <span role="status">已保存。</span>}
+        </div>
+      </div>
       {story.kind === "merged" ? (
         <div className="settings-section settings-fusion">
           <h3>这本书的来历</h3>
@@ -3370,6 +3506,64 @@ function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete }) {
                 <li key={position}>{line}</li>
               ))}
             </ol>
+          </>
+        )}
+      </div>
+      <div className="settings-section">
+        <h3>章节目录</h3>
+        <p className="field-hint">
+          章节标题只是名字：随时可改，已经定稿的章节也能改；顺序和正文一个字都不会动。
+        </p>
+        {tocChapters.length === 0 ? (
+          <p className="field-hint">还没有写好的章节。</p>
+        ) : tocEditing ? (
+          <>
+            {tocChapters.map((chapter, position) => (
+              <label className="field-label" key={chapter.id || position}>
+                第 {position + 1} 章
+                <input
+                  value={tocTitles[position] ?? ""}
+                  aria-label={`第 ${position + 1} 章标题`}
+                  onChange={(event) =>
+                    setTocTitles((list) => list.map((title, index) => (index === position ? event.target.value : title)))
+                  }
+                />
+              </label>
+            ))}
+            {tocError && (
+              <p className="intervention-error" role="alert">
+                {tocError}
+              </p>
+            )}
+            <div className="settings-inline-actions">
+              <Button variant="secondary" onClick={saveToc}>
+                保存目录
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setTocError("");
+                  setTocEditing(false);
+                }}
+              >
+                取消
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <ol className="settings-outline">
+              {tocChapters.map((chapter, position) => (
+                <li key={chapter.id || position}>
+                  第 {position + 1} 章 · {chapter.title}
+                </li>
+              ))}
+            </ol>
+            <div className="settings-inline-actions">
+              <Button variant="secondary" onClick={beginTocEdit}>
+                编辑目录
+              </Button>
+            </div>
           </>
         )}
       </div>
@@ -3705,6 +3899,36 @@ function Reader({
     const next = updateStylePreset(updateLorebook(updateWorldBible(story, worldBible), lorebook), stylePreset);
     update(next);
     setSettingsOpen(false);
+  };
+  // 编辑简介 / 编辑目录 (EDIT-BOOK): presentation metadata on the
+  // owner's own copy — the synopsis and the chapter titles. Both land
+  // through the ordinary story update, so the cloud sync carries them
+  // like any other edit (it keys on updatedAt); plaza publications are
+  // publish-time snapshots and only follow on a re-publish. Handlers
+  // return a human error string (or null on success) so the calling
+  // section can keep its editor open on a validation failure.
+  const saveSynopsis = (text) => {
+    try {
+      const next = updateSynopsis(story, text);
+      if (next !== story) update(next);
+      return null;
+    } catch (failure) {
+      return failure.message || "简介没能保存，请再试一次。";
+    }
+  };
+  const saveChapterTitles = (titles) => {
+    try {
+      let next = story;
+      (Array.isArray(titles) ? titles : []).forEach((title, chapterIndex) => {
+        if (typeof title === "string" && title !== next.chapters[chapterIndex]?.title) {
+          next = renameChapterTitle(next, chapterIndex, title);
+        }
+      });
+      if (next !== story) update(next);
+      return null;
+    } catch (failure) {
+      return failure.message || "目录没能保存，请再试一次。";
+    }
   };
   // 生成控制 (frontier levers): this chapter may still be re-rolled or
   // edited by hand while it is the latest one written — no later chapter
@@ -4234,6 +4458,7 @@ function Reader({
           readOnly={readOnly}
           onSelect={goToChapter}
           onClose={() => setDirectoryOpen(false)}
+          onRenameChapters={readOnly ? undefined : saveChapterTitles}
         />
       )}
       {interveneOpen && !readOnly && (
@@ -4249,6 +4474,8 @@ function Reader({
           story={story}
           onClose={() => setSettingsOpen(false)}
           onSave={saveSettings}
+          onSaveSynopsis={saveSynopsis}
+          onSaveChapterTitles={saveChapterTitles}
           onFuse={() => { setSettingsOpen(false); onNavigate("merge", { storyId: story.id }); }}
           onDelete={onDeleteStory ? () => { setSettingsOpen(false); onDeleteStory(story); } : undefined}
         />
@@ -4343,7 +4570,7 @@ function storeBookMeta(book) {
     category: genre.label,
     tone: genre.color,
     symbol: genre.symbol,
-    note: book.worldBible?.premise || genre.description,
+    note: synopsisOf(book) || genre.description,
   };
 }
 
@@ -4936,6 +5163,15 @@ function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter,
           {detail.avatar?.appearance && <small>化身设定：{detail.avatar.appearance}</small>}
         </div>
       </section>
+
+      {detail.synopsis && (
+        <section className="plaza-panel">
+          <div className="plaza-panel-heading">
+            <h2>本书简介</h2>
+          </div>
+          <p className="plaza-prose">{detail.synopsis}</p>
+        </section>
+      )}
 
       <section className="plaza-panel">
         <div className="plaza-panel-heading">

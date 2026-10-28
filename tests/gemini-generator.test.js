@@ -75,8 +75,17 @@ test('chapter length target rides in the system instruction and the response sch
   // instruction — the model writes to ~0.88× the instructed midpoint
   // and ~46% of chapters fell below the instructed floor. The band
   // moved to 1750–2150 with an explicit floor rule, aiming the actual
-  // distribution back into 1500–2000. Asserted on the stubbed request,
-  // so no real generation is spent measuring it.
+  // distribution back into 1500–2000.
+  //
+  // The CHAPTER-AB re-measure (2026-10-28, CHAPTER-AB.md) then showed
+  // the floor rule did more than lift the floor: it pulled the writing
+  // ratio to ≈1.0× the instructed midpoint, so the 1750–2150 band
+  // overshot the product target (new-arm mean 1968.5, half the
+  // chapters past 2000). The band is therefore pulled back one notch —
+  // 1600–1950 with the floor sentence at 1550 — keeping the floor
+  // mechanism while re-centring the predicted distribution (mean
+  // ≈1750) on the 1500–2000 product target. Asserted on the stubbed
+  // request, so no real generation is spent measuring it.
   const current = story()
   let options
   const generator = createGeminiGenerator({
@@ -91,10 +100,11 @@ test('chapter length target rides in the system instruction and the response sch
     },
   })
   await generator.generate({ story: current, index: 0 })
-  assert.match(options.config.systemInstruction, /每章 1750–2150 字/)
-  assert.match(options.config.systemInstruction, /不足 1700 字视为本章未完成/)
+  assert.match(options.config.systemInstruction, /每章 1600–1950 字/)
+  assert.match(options.config.systemInstruction, /不足 1550 字视为本章未完成/)
+  assert.doesNotMatch(options.config.systemInstruction, /每章 1750–2150 字/)
   assert.doesNotMatch(options.config.systemInstruction, /每章 1500–2000 字/)
-  assert.match(JSON.stringify(options.config.responseJsonSchema), /全章 1750–2150 字/)
+  assert.match(JSON.stringify(options.config.responseJsonSchema), /全章 1600–1950 字/)
 })
 
 test('opening uses documented REST JSON schema and returns preserved chapter protocol plus world bible', async () => {
