@@ -64,21 +64,65 @@
 .account-theme-options button{flex:1;min-height:42px;padding:8px 10px;border:1px solid var(--line);border-radius:999px;background:var(--glass);color:var(--ink);font-size:14px;font-weight:600;cursor:pointer}
 .account-theme-options button.is-active{background:var(--selected-surface);border-color:var(--selected-border);color:var(--selected-text)}
 
-/* Welcome scene (PHONE-FIX §37 H, final wording — 简洁高级): the
-   sign-in ground is a dynamic starfield with depth (ParticleField's
+/* Welcome scene (PHONE-FIX §37 H, final wording — 简洁高级;
+   presentation rework): the signed-out surface is a FULL-SCREEN
+   scene, not a sheet. The overlay covers the whole viewport —
+   nothing of the shell behind it shows through or coexists — and
+   the ground is a dynamic starfield with depth (ParticleField's
    starfield mode: sparse, fine, slow stars flowing toward the
    viewer; a static star field when motion is off). On the sky sits
-   ONE centred glass window — brand lock at its top, the form and
-   every entry inside it, the honest footer as small print at its
-   foot. No mascot, no illustration, no orbit rings: the premium
-   feel comes from whitespace, hairline borders and glass. The sky
-   is deep navy in every theme, so the scene pins its own light ink
-   locally; shell themes change the world outside the sheet, never
-   the legibility inside it. */
-.account-scene { position: relative; margin: 0 -1.5rem -1.5rem; padding: 34px 18px 30px; border-radius: 23px; overflow: hidden; background: radial-gradient(130% 95% at 50% -10%, #0b1332 0%, #050a1e 56%, #03061a 100%); }
+   ONE glass window, centred on both axes — brand lock at its top,
+   the form and every entry inside it, the honest footer as small
+   print at its foot. No mascot, no illustration, no orbit rings:
+   the premium feel comes from whitespace, hairline borders and
+   glass. The sky is deep navy in every theme, so the scene pins
+   its own light ink locally; shell themes change the world outside
+   the scene, never the legibility inside it.
+   The scene's background stack also carries a faint FIXED star
+   speckle (the radial-gradient dots below): the flowing field is
+   deliberately sparse and centre-weighted, so on its own a given
+   frame can leave the sky around the window momentarily bare —
+   the speckle is the sky's base layer of distant stars, and the
+   canvas flow is the depth moving through it. */
+.account-overlay { position: fixed; inset: 0; z-index: 200; animation: account-scene-in 200ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) both; }
+.account-overlay-close { position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); right: 12px; z-index: 5; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid rgba(160,175,255,.25); border-radius: 50%; background: rgba(9,14,32,.45); color: #e8ecf9; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); cursor: pointer; }
+.account-scene { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; background-color: #03061a; background-image:
+  radial-gradient(circle at 5% 4%, rgba(235,240,255,.8) 0 1.2px, transparent 2px),
+  radial-gradient(circle at 11% 9%, rgba(196,215,255,.5) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 83% 3.5%, rgba(235,240,255,.7) 0 1.1px, transparent 1.9px),
+  radial-gradient(circle at 96% 8.5%, rgba(235,240,255,.65) 0 1.1px, transparent 1.9px),
+  radial-gradient(circle at 89% 10%, rgba(221,214,254,.45) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 4% 95%, rgba(196,215,255,.65) 0 1.1px, transparent 1.9px),
+  radial-gradient(circle at 10% 90%, rgba(235,240,255,.4) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 95% 94%, rgba(235,240,255,.75) 0 1.2px, transparent 2px),
+  radial-gradient(circle at 90% 89%, rgba(196,215,255,.45) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 2% 38%, rgba(221,214,254,.5) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 98% 42%, rgba(235,240,255,.55) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 50% 2%, rgba(196,215,255,.6) 0 1.1px, transparent 1.9px),
+  radial-gradient(circle at 46% 98%, rgba(235,240,255,.5) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 24% 3%, rgba(235,240,255,.45) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 76% 97%, rgba(221,214,254,.5) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 18% 22%, rgba(196,215,255,.4) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 33% 14%, rgba(235,240,255,.55) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 64% 12%, rgba(235,240,255,.4) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 82% 24%, rgba(196,215,255,.5) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 14% 58%, rgba(235,240,255,.35) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 86% 63%, rgba(221,214,254,.4) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 28% 78%, rgba(196,215,255,.45) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 70% 82%, rgba(235,240,255,.4) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 42% 30%, rgba(235,240,255,.3) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 58% 68%, rgba(196,215,255,.3) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 8% 72%, rgba(235,240,255,.5) 0 1px, transparent 1.7px),
+  radial-gradient(circle at 92% 74%, rgba(235,240,255,.45) 0 1px, transparent 1.7px),
+  radial-gradient(130% 95% at 50% -10%, #0b1332 0%, #050a1e 56%, #03061a 100%); }
 .account-scene .particle-field { z-index: 1; }
-.account-window { position: relative; z-index: 2; width: 100%; max-width: 430px; margin: 0 auto; display: grid; gap: 18px; padding: 28px 22px 24px; border: 1px solid rgba(160,175,255,.22); border-radius: 24px; background: rgba(9,14,32,.58); -webkit-backdrop-filter: blur(14px) saturate(1.15); backdrop-filter: blur(14px) saturate(1.15); box-shadow: 0 24px 60px -24px rgba(0,0,0,.65); scroll-margin-block: 20px; }
-@media (max-height: 620px) { .account-scene { padding-top: 20px; padding-bottom: 20px; } .account-window { padding-top: 20px; } .account-brand-logo { width: 40px; height: 40px; } .account-scene .account-brand-name { font-size: 28px; } }
+.account-window { position: relative; z-index: 2; flex: none; width: calc(100% - 40px); max-width: 430px; max-height: calc(100% - 96px); margin: auto; display: grid; gap: 18px; padding: 28px 22px 24px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(160,175,255,.3) transparent; border: 1px solid rgba(160,175,255,.22); border-radius: 24px; background: rgba(9,14,32,.58); -webkit-backdrop-filter: blur(14px) saturate(1.15); backdrop-filter: blur(14px) saturate(1.15); box-shadow: 0 24px 60px -24px rgba(0,0,0,.65); animation: account-window-in 240ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) both; }
+.account-scene .account-form input { scroll-margin-block: 14px; }
+@keyframes account-scene-in { from { opacity: 0; } }
+@keyframes account-window-in { from { opacity: 0; transform: translateY(10px); } }
+.app-shell[data-motion="off"] .account-overlay, .app-shell[data-motion="off"] .account-window { animation: none; }
+@media (prefers-reduced-motion: reduce) { .account-overlay, .account-window { animation: none; } }
+@media (max-height: 620px) { .account-window { max-height: calc(100% - 40px); padding-top: 20px; } .account-brand-logo { width: 40px; height: 40px; } .account-scene .account-brand-name { font-size: 28px; } }
 .account-brand-lock { display: grid; justify-items: center; text-align: center; }
 .account-brand-logo { width: 48px; height: 48px; }
 .account-scene .account-brand-name { margin: 10px 0 0; font-size: 34px; font-weight: 800; line-height: 1.15; letter-spacing: .14em; text-indent: .14em; color: #fff; }

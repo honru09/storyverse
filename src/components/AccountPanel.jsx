@@ -308,14 +308,16 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       <button className="account-quiet" type="button" disabled={busy} onClick={() => void run(() => client.signOut())}>{busy ? "正在处理…" : "退出账号"}</button>
     </> : <>
       {/* The welcome scene (PHONE-FIX §37 H, final wording): a dynamic
-          starfield with depth fills the sheet; on it sits ONE centred
-          glass window holding the brand lock, the form and every
-          entry — nothing else. The two earlier reference directions
-          (a minigame start screen, then a mascot/orbit composition)
-          were both dropped by the user; the tone is 简洁高级 —
-          restraint, whitespace, hairline borders, glass. Every entry
-          and behaviour inside the window is the panel that was always
-          here; only the container moved. */}
+          starfield with depth fills the whole screen — the panel is
+          mounted in a full-screen overlay (AccountSceneDialog), not
+          a sheet; on the sky sits ONE centred glass window holding
+          the brand lock, the form and every entry — nothing else.
+          The two earlier reference directions (a minigame start
+          screen, then a mascot/orbit composition) were both dropped
+          by the user; the tone is 简洁高级 — restraint, whitespace,
+          hairline borders, glass. Every entry and behaviour inside
+          the window is the panel that was always here; only the
+          container moved. */}
       <div className="account-scene">
         <ParticleField density="starfield" />
         <div className="account-window">

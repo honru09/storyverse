@@ -78,6 +78,34 @@ visual **exit 0（72 captures）**、新增 keepalive **6/6**。
 - 证据：login-default/login-register/login-error/login-reset/login-white/login-aurora/login-static/
   login-keyboard-after-390.png + login-default-after-360.png。
 
+### H 返修（呈现层，主助手亲看首版截图判定不合格后追加）
+
+首版把 scene 做成了 ReadingDialog sheet 的内衬——不合格点：sheet 标题栏「登录与注册」+拖拽条
+仍在、广场从 sheet 背后透出（不是全屏场景）；星空在截图里完全看不见（窗口几乎占满 sheet、
+星场投影又中心加权，窗口四周的天空带里没有星）。返修只动呈现，表单内容/行为/口径一字未改：
+
+- 挂载：未登录态改挂新增的 `AccountSceneDialog`——全屏 fixed overlay（role=dialog、
+  aria-label 沿用「登录与注册」），body 锁滚动 / Esc 关闭 / 关闭后焦点回触发钮；已登录
+  「我的账号」仍走 ReadingDialog。sheet 标题栏与拖拽条在登录面退役，✕ 改为场景右上角的
+  玻璃圆钮（44px）。焦点归还的捕获顺序是承重的：先记下触发元素、再把焦点移给 ✕——div
+  overlay 没有原生 dialog 的自动归焦，捕获晚了就会瞄准随自己一起卸载的 ✕（onboarding
+  「Escape 归焦」首跑实败、按此修、复跑 18/18）。
+- 几何：scene 升为全屏层（absolute inset 0），窗口 flex margin:auto 双轴居中——390×844
+  实测中心 cx=195、cy=422（±0/±30 断言）；窗口改为内部滚动容器，max-height = 100%−96，
+  顶/底各留 48px 天空带、左右各 20px；键盘高 520 时聚焦密码框完整可见（input y=234–286）。
+- 星可见性：scene 背景渐变栈加一层**固定星屑**（27 个 1–2px 径向点、四角定点），作天空的
+  远景基底，canvas 纵深流是其上的动层。理由：流场克制且中心加权，任意单帧四角可能暂空——
+  基底保证任何一帧窗口四周都有星（首版 TR 定点曾被 ✕ 钮盖住，已挪到钮外实测可见）。
+- 程序化证据（`phone-fix-shots/login-scene-run.mjs`、report-login-scene.json）：默认图四角
+  72×72 区域按「亮度 >90 的连通簇 ≤16px 且峰值 ≥110」计星点——TL 1 / TR 2 / BL 1 / BR 1，
+  合计 **5**；静态图同为 5；动/静两帧断言沿用（动 900ms 不一致、静 700ms 一致）；overlay 与
+  scene 矩形 = 视口全幅、边缘命中测试落 overlay 内、原生 dialog 数 0，全部断言过。
+  新截图：login-scene-after-390 / login-scene-static-after-390 / login-scene-error-after-390
+  （+ login-scene-keyboard-after-390）。
+- 回归：单元 663/663；onboarding 18/18；visual 72 捕获 exit 0；本 harness 全量 55/55、
+  与原 report-after 逐条比对零回退。**recovery 0/4 与基线 c318579 同值**——stash A/B 实证
+  （基线同四条、同错误），是本机环境下的既有失败、非本返修引入，如实记账不掩饰。
+
 ## I. 主页分享去重 + 文案预设
 
 ✔ 分享钮（氛围区 + 关注行各一处、同动作）开分享面板；「···」删复制链接项——本人菜单为空故

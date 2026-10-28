@@ -3129,6 +3129,54 @@ function ReadingDialog({ title, children, onClose }) {
   );
 }
 
+/**
+ * The signed-out account surface (PHONE-FIX §37 H, presentation
+ * rework): NOT a sheet. The starfield scene inside AccountPanel is a
+ * full-screen ground in its own right, so it gets a full-screen
+ * overlay instead of the ReadingDialog chrome — no title bar, no
+ * grabber, nothing of the shell (topbar, tab bar, the page behind)
+ * showing through or coexisting. The window floats centred on the
+ * sky; the only chrome is a glass ✕ in the scene's top-right corner.
+ * Housekeeping mirrors ReadingDialog (body scroll lock, Escape,
+ * focus restore to the trigger) so the surface behaves like the
+ * dialog it replaces in every way a caller can observe.
+ */
+function AccountSceneDialog({ children, onClose }) {
+  const closeRef = useRef(null);
+  useEffect(() => {
+    // Capture the trigger BEFORE moving focus to the close button:
+    // with autoFocus doing it during commit, an effect-time read of
+    // activeElement would capture the ✕ itself and the restore
+    // below would silently aim at a node that unmounts with us.
+    // (ReadingDialog gets away with the naive read because a native
+    // <dialog> restores focus on close by itself; a div overlay has
+    // no such mechanism, so the capture order is load-bearing.)
+    const trigger = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeRef.current?.focus({ preventScroll: true });
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    };
+    // Mount-once housekeeping, same contract as ReadingDialog.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div className="account-overlay" role="dialog" aria-modal="true" aria-label="登录与注册" data-lenis-prevent>
+      {children}
+      <button ref={closeRef} type="button" className="account-overlay-close" onClick={onClose} aria-label="关闭面板">
+        <Icon name="x" size={20} />
+      </button>
+    </div>
+  );
+}
+
 const NOTIFY_TABS = [
   { id: "activity", label: "互动", icon: "users" },
   { id: "announcements", label: "公告", icon: "megaphone" },
@@ -8961,7 +9009,16 @@ function App() {
           onOpenProfile={(uid) => { setNotificationsOpen(false); openProfile(uid); }}
         />
       </ReadingDialog>}
-      {accountOpen && <ReadingDialog title={account.user ? "我的账号" : "登录与注册"} onClose={() => setAccountOpen(false)}>
+      {accountOpen && !account.user && (
+        <AccountSceneDialog onClose={() => setAccountOpen(false)}>
+          <AccountPanel client={authClient} account={account} shellTheme={shellTheme} onShellThemeChange={changeShellTheme} onOpenHelp={() => { setAccountOpen(false); setHelpOpen(true); }} onOpenAvatar={() => { setAccountOpen(false); navigate("avatar"); }} onOpenProfile={() => { setAccountOpen(false); if (account.user?.uid) navigate("profile", { id: account.user.uid }); }} onContinue={() => {
+            setAccountOpen(false);
+            if (accountIntent === "forge") navigate("forge");
+            setAccountIntent(null);
+          }}/>
+        </AccountSceneDialog>
+      )}
+      {accountOpen && account.user && <ReadingDialog title="我的账号" onClose={() => setAccountOpen(false)}>
         <AccountPanel client={authClient} account={account} shellTheme={shellTheme} onShellThemeChange={changeShellTheme} onOpenHelp={() => { setAccountOpen(false); setHelpOpen(true); }} onOpenAvatar={() => { setAccountOpen(false); navigate("avatar"); }} onOpenProfile={() => { setAccountOpen(false); if (account.user?.uid) navigate("profile", { id: account.user.uid }); }} onContinue={() => {
           setAccountOpen(false);
           if (accountIntent === "forge") navigate("forge");
