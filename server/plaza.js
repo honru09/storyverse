@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { ApiError, sanitizeSettingText } from './gemini.js'
 import { findSettingViolation } from '../src/setting-guard.js'
-import { plazaSnapshot } from '../src/story-engine.js'
+import { plazaSnapshot, redactedTitleFor } from '../src/story-engine.js'
 import { PLAZA_REPORT_THRESHOLD, plazaGateFor, plazaTemplateNameFor, plazaWorldIntroFor, snapshotSourceViolation, WORLD_INTRO_VERSION } from '../src/plaza.js'
 import { emptyLibrary, validateLibrary } from '../src/persistence.js'
 import { avatarAppearanceText } from '../src/avatar.js'
@@ -435,6 +435,67 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         await backend.deletePublication(record.id)
         return { removed: true, id: record.id }
       })
+    },
+
+    /**
+     * Rename sync (TITLE-FLOW): a book's title is its name on every
+     * surface, so — unlike the synopsis, which stays a publish-time
+     * snapshot — a rename the owner saves to their cloud library is
+     * mirrored onto the book's plaza publication immediately. Only the
+     * title moves: the record's title, its snapshot's title and the
+     * baked world outline (re-composed with the new name, since the
+     * outline's premise filter keys on the title). The change leaves a
+     * trace in the server-only titleHistory (never copied out by
+     * summaryOf/detailOf). The mirrored title passes through the same
+     * redaction the publish-time snapshot used, rebuilt from the
+     * record's own safe config.
+     *
+     * Best-effort by contract: this runs after the library write that
+     * carries the rename has already succeeded, and it must never fail
+     * that write — every failure path reports { synced: false }.
+     * Owner-only by construction, like removeForStory.
+     */
+    async syncTitleForStory(identity, story) {
+      if (!backend || !story || typeof story.id !== 'string' || typeof story.title !== 'string') {
+        return { synced: false }
+      }
+      try {
+        return await serialise(`publish:${identity.uid}`, async () => {
+          const record = await findOwnPublication(identity.uid, story.id)
+          if (!record || record.status !== 'published') return { synced: false }
+          const safeConfig = record.snapshot?.config
+          if (!safeConfig) return { synced: false }
+          const nextTitle = redactedTitleFor(story, safeConfig).trim()
+          if (!nextTitle || nextTitle === record.title) return { synced: false }
+          const timestamp = now().toISOString()
+          const snapshot = { ...record.snapshot, title: nextTitle }
+          const next = {
+            ...record,
+            title: nextTitle,
+            snapshot,
+            worldIntro: plazaWorldIntroFor({
+              title: nextTitle,
+              worldName: record.worldName,
+              avatar: record.avatar,
+              worldBible: record.snapshot.worldBible,
+              beats: record.snapshot.beats,
+              synopsis: record.snapshot.synopsis,
+              chapterCount: record.chapterCount,
+              lineStatus: record.lineStatus,
+            }, plazaTemplateNameFor(snapshot)),
+            worldIntroVersion: WORLD_INTRO_VERSION,
+            titleHistory: [
+              ...(Array.isArray(record.titleHistory) ? record.titleHistory : []),
+              { from: record.title, to: nextTitle, at: timestamp },
+            ].slice(-10),
+            updatedAt: timestamp,
+          }
+          await backend.putPublication(next)
+          return { synced: true, id: record.id }
+        })
+      } catch {
+        return { synced: false }
+      }
     },
 
     async withdraw(identity, id) {

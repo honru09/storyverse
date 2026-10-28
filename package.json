@@ -8,7 +8,7 @@
     "api": "node --env-file-if-exists=.env server/index.js",
     "start": "node --env-file-if-exists=.env server/index.js",
     "test": "node --test tests/*.test.js",
-    "test:e2e": "node e2e/journey.cjs && node e2e/recovery.cjs && node e2e/gemini.cjs && node e2e/intervention.cjs && node e2e/cloud-library.cjs && node e2e/delete-book.cjs && node e2e/edit-book.cjs && node e2e/control.cjs",
+    "test:e2e": "node e2e/journey.cjs && node e2e/recovery.cjs && node e2e/gemini.cjs && node e2e/intervention.cjs && node e2e/cloud-library.cjs && node e2e/delete-book.cjs && node e2e/edit-book.cjs && node e2e/title-flow.cjs && node e2e/control.cjs",
     "test:onboarding": "node e2e/onboarding.cjs",
     "test:reader": "node e2e/reader.cjs",
     "build": "vite build",

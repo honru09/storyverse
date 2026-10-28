@@ -203,6 +203,12 @@ export const GENRES = [
 export const CUSTOM_GENRE_ID = 'custom'
 export const CUSTOM_WORLD_NAME_MAX = 40
 export const CUSTOM_WORLD_SETTING_MAX = 600
+// A hand-typed book title caps at the same 30 characters as a hand-renamed
+// chapter title (EDIT-BOOK §29 set that rule for titles a reader edits).
+// Derived titles (the forge suggestion, a fused line's 合流：… name) are
+// engine-composed and are NOT retroactively capped — the cap governs what
+// a person may type, in the forge's 书名 field and in the settings book.
+export const BOOK_TITLE_MAX = 30
 export const START_POINT_NAME_MAX = 30
 export const START_POINT_HOOK_MAX = 120
 // The avatar （化身） a story was opened with: only the id and the one-line
@@ -639,6 +645,11 @@ export const DEFAULT_DRAFT = {
   originIdentityId: '',
   customWorldName: '',
   customWorldSetting: '',
+  // 书名 (TITLE-FLOW): the book's own title, chosen by its creator. Empty
+  // means "not chosen" — createStory then falls back to the derived
+  // suggestion (titleFor). The world keeps its own name either way: the
+  // title and the world are separate facts from this batch on.
+  bookTitle: '',
   // Imported world material （外部导入）: lorebook entries attached to the
   // story (SillyTavern world-info / split text worlds). Owner-private —
   // stripped from every public snapshot. Empty for every pre-import save.
@@ -989,6 +1000,7 @@ const normalizeDraft = (draft = {}) => {
     originIdentityId: originIdentityById(input.originIdentityId)?.id || '',
     customWorldName: cleanBounded(input.customWorldName, CUSTOM_WORLD_NAME_MAX),
     customWorldSetting: cleanBounded(input.customWorldSetting, CUSTOM_WORLD_SETTING_MAX),
+    bookTitle: cleanBounded(input.bookTitle, BOOK_TITLE_MAX),
     lorebook: normalizeLorebookEntries(input.lorebook),
     stylePreset: stylePresetById(input.stylePreset)?.id || 'default',
     startPointName: cleanBounded(input.startPointName, START_POINT_NAME_MAX),
@@ -1051,6 +1063,18 @@ const titleFor = (config, genre) => {
   }
   if (name) return `${genre.title} · ${name}`
   return genre.title
+}
+
+/**
+ * The suggested book title for a draft (TITLE-FLOW): exactly what
+ * createStory will name the book when the creator never typed a title of
+ * their own. The forge shows it as the 书名 field's suggestion so the
+ * reader can see — before the book exists — what it will be called, and
+ * that the name is theirs to change.
+ */
+export function bookTitleSuggestionFor(draft = {}) {
+  const config = normalizeDraft(draft)
+  return titleFor(config, genreFor(config.genreId))
 }
 
 const OUTLINE_STAGE_SUFFIXES = ['', '——局势推进，代价初显', '——对手加压，旧线索翻面', '——筹码重组，立场见分晓']
@@ -1466,7 +1490,9 @@ export function createStory(draft = DEFAULT_DRAFT) {
   const timestamp = now()
   return {
     id: makeId(),
-    title: titleFor(config, genre),
+    // The creator's own title wins; the derived suggestion is only the
+    // fallback for a book whose creator never named it (TITLE-FLOW).
+    title: config.bookTitle || titleFor(config, genre),
     genreId: genre.id,
     // The server resolves the genre template from this top-level field first;
     // it is only present when the draft pinned one explicitly.
@@ -1885,6 +1911,35 @@ export function renameChapterTitle(story, index, title) {
   const next = clone(story)
   next.chapters[index] = { ...next.chapters[index], title: cleaned }
   next.updatedAt = now()
+  return next
+}
+
+/*
+ * 改书名 (renaming the book itself, TITLE-FLOW batch): the book's title
+ * is presentation metadata, exactly like the synopsis and the chapter
+ * titles — renaming rewrites no chapter, moves no id and does NOT
+ * advance the revision (a pre-generated next chapter never carried the
+ * title in its context). The updatedAt bump carries the rename through
+ * the ordinary cloud sync; the server then mirrors it onto the book's
+ * plaza publication, if it has one (see server/plaza.js
+ * syncTitleForStory). The config's bookTitle copy is kept in step so a
+ * later season roll-over inherits the CURRENT name, not the name the
+ * book was born with. A read-only copy (a plaza line on the shelf) is
+ * never renamed.
+ */
+export function renameBookTitle(story, title) {
+  validateStory(story)
+  if (story.readOnly === true) return story
+  const cleaned = typeof title === 'string' ? title.trim() : ''
+  if (!cleaned) throw new RangeError('书名不能为空。')
+  if (cleaned.length > BOOK_TITLE_MAX) {
+    throw new RangeError(`书名最多 ${BOOK_TITLE_MAX} 字。`)
+  }
+  if (cleaned === story.title) return story
+  const next = { ...story, title: cleaned, updatedAt: now() }
+  if (story.config && typeof story.config === 'object') {
+    next.config = { ...story.config, bookTitle: cleaned }
+  }
   return next
 }
 
@@ -2719,6 +2774,10 @@ const redactedSnapshotConfig = (config, name) => ({
   // lorebook entries or the persona — those stay in the owner's book.
   lorebook: [],
   persona: '',
+  // The creator's typed book title is likewise their own stock: a
+  // snapshot's name is its redacted story.title field, never this raw
+  // config copy (which may quote private literals verbatim).
+  bookTitle: '',
 })
 
 /*
@@ -2869,6 +2928,11 @@ const snapshotRedactor = (sourceConfig, safeConfig) => {
     for (const [key, value] of Object.entries(source)) {
       // World genres and the three merge enums are public controlled values.
       if (key === 'genreId' || key === 'sourceGenres' || key === 'merge') continue
+      // The book title is redacted as a whole from story.title (private
+      // literals inside it are scrubbed by the OTHER fields' mappings —
+      // the protagonist's name above all). Pairing the config's bookTitle
+      // copy with an alias would make the title scrub itself.
+      if (key === 'bookTitle') continue
       // The lorebook never reaches a snapshot at all (the snapshot config
       // strips it), and its trigger keys are short everyday words — folding
       // them into the literal redactor would mangle published prose.
@@ -3002,6 +3066,20 @@ export function publicSnapshot(story) {
  *      sanitized bible, minus everything an entrant must choose for
  *      themselves (their avatar, identity, spawn point, ability).
  */
+/**
+ * The public form of a story's CURRENT title against an existing
+ * snapshot's safe config (TITLE-FLOW): the same redaction plazaSnapshot
+ * applies at publish time, recomputed for a rename. The plaza service
+ * uses it to mirror a rename onto the stored publication without
+ * rebuilding the whole snapshot — private literals quoted in the new
+ * title are scrubbed by the same replacement table the original
+ * snapshot was built with.
+ */
+export function redactedTitleFor(story, safeConfig) {
+  const redact = snapshotRedactor(story?.config || {}, safeConfig || {})
+  return redact(typeof story?.title === 'string' ? story.title : '')
+}
+
 export function plazaSnapshot(story, { avatarName = '' } = {}) {
   validateStory(story)
   // A SHORT fused line never publishes (the gate says the same). A fused

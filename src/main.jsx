@@ -178,8 +178,11 @@ import {
   updateLorebook,
   updateStylePreset,
   updateWorldBible,
+  BOOK_TITLE_MAX,
   CHAPTER_TITLE_MAX,
   SYNOPSIS_MAX,
+  bookTitleSuggestionFor,
+  renameBookTitle,
   renameChapterTitle,
   synopsisOf,
   updateSynopsis,
@@ -2233,6 +2236,15 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
       : spawn?.hook
         ? `${draft.name || "未命名旅人"}，${spawn.hook}`
         : `${draft.name || "未命名旅人"}会在${spawnName}醒来。`;
+  // 书名 (TITLE-FLOW): the confirmation step names the book explicitly.
+  // The suggestion is exactly what createStory would derive; the field
+  // shows it as the placeholder so an untouched book still gets a sane
+  // name, and anything the reader types replaces it wholesale. The
+  // preview card above the field carries the EFFECTIVE title — never
+  // the bare world name, which is what used to make readers think the
+  // world name WAS the book title.
+  const bookTitleSuggestion = bookTitleSuggestionFor(draft);
+  const effectiveBookTitle = (draft.bookTitle || "").trim() || bookTitleSuggestion;
   const openShelf = shelfById(shelfId);
   // The custom-length input keeps its own text while typing (so a reader
   // can clear the field on the way to a new number); the draft only ever
@@ -2941,8 +2953,24 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
               </div>
               <div className="opening-preview opening-preview--summary">
                 <div className="opening-art opening-art--slim"><WorldArtwork genreId={world.id} eager /></div>
-                <h3>{world.name}</h3>
+                <h3>{effectiveBookTitle}</h3>
                 <p>{previewText}</p>
+              </div>
+              <div className="book-title-field">
+                <label className="field-label" htmlFor="forge-book-title">
+                  这本书的书名
+                  <input
+                    id="forge-book-title"
+                    type="text"
+                    maxLength={BOOK_TITLE_MAX}
+                    autoComplete="off"
+                    value={draft.bookTitle || ""}
+                    placeholder={bookTitleSuggestion}
+                    aria-label="这本书的书名"
+                    onChange={(event) => set({ bookTitle: event.target.value })}
+                  />
+                </label>
+                <p className="field-hint">书名可以和世界不一样。不改，就用上面这个建议名；开书以后也能在设定集里改。</p>
               </div>
               <div className="opening-details" aria-label="确认故事设定">
                 {isCustom ? (
@@ -3731,8 +3759,25 @@ function ProseEditor({ chapter, onClose, onSave }) {
 // generated after the edit; chapters that already exist never change.
 // The lorebook shown here is the owner's private material (imported or
 // hand-written): it appears in no public snapshot, ever.
-function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSynopsis, onSaveChapterTitles }) {
+function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSynopsis, onSaveBookTitle, onSaveChapterTitles }) {
   const [premise, setPremise] = useState(story.worldBible?.premise || "");
+  // 书名 (TITLE-FLOW): the book's own name, editable here next to the
+  // synopsis. Unlike the synopsis (a publish-time snapshot on the
+  // plaza), a saved rename is mirrored onto the publication by the
+  // server — the hint under the field says exactly that, in one line.
+  const [bookTitle, setBookTitle] = useState(story.title || "");
+  const [bookTitleError, setBookTitleError] = useState("");
+  const [bookTitleSaved, setBookTitleSaved] = useState(false);
+  const saveBookTitle = () => {
+    const error = onSaveBookTitle ? onSaveBookTitle(bookTitle) : "书名没能保存，请再试一次。";
+    if (error) {
+      setBookTitleError(error);
+      setBookTitleSaved(false);
+      return;
+    }
+    setBookTitleError("");
+    setBookTitleSaved(true);
+  };
   // 本书简介 (EDIT-BOOK): the editor opens on the effective synopsis —
   // the owner's own words when set, otherwise the premise the surfaces
   // have always shown as this book's introduction.
@@ -3804,6 +3849,34 @@ function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSyn
       <p className="field-hint">
         这本书的世界设定都在这里。在这里改，只影响之后生成的章节——已经写好的章节，一个字都不会动。
       </p>
+      <div className="settings-section">
+        <h3>书名</h3>
+        <p className="field-hint">
+          书架、主页和广场上显示的都是这个名字；改名会同步到已经发布的广场版本。
+        </p>
+        <label className="field-label">
+          书名
+          <input
+            type="text"
+            maxLength={BOOK_TITLE_MAX}
+            value={bookTitle}
+            aria-label="书名"
+            placeholder="给这本书起个名字"
+            onChange={(event) => { setBookTitle(event.target.value); setBookTitleSaved(false); }}
+          />
+        </label>
+        {bookTitleError && (
+          <p className="intervention-error" role="alert">
+            {bookTitleError}
+          </p>
+        )}
+        <div className="settings-inline-actions">
+          <Button variant="secondary" onClick={saveBookTitle}>
+            保存书名
+          </Button>
+          {bookTitleSaved && !bookTitleError && <span role="status">已保存。</span>}
+        </div>
+      </div>
       <div className="settings-section">
         <h3>本书简介</h3>
         <p className="field-hint">
@@ -4331,9 +4404,11 @@ function Reader({
   // owner's own copy — the synopsis and the chapter titles. Both land
   // through the ordinary story update, so the cloud sync carries them
   // like any other edit (it keys on updatedAt); plaza publications are
-  // publish-time snapshots and only follow on a re-publish. Handlers
-  // return a human error string (or null on success) so the calling
-  // section can keep its editor open on a validation failure.
+  // publish-time snapshots and only follow on a re-publish — the one
+  // exception is the book title itself (TITLE-FLOW, saveBookTitle
+  // below), which the server mirrors onto the publication at sync time.
+  // Handlers return a human error string (or null on success) so the
+  // calling section can keep its editor open on a validation failure.
   const saveSynopsis = (text) => {
     try {
       const next = updateSynopsis(story, text);
@@ -4341,6 +4416,19 @@ function Reader({
       return null;
     } catch (failure) {
       return failure.message || "简介没能保存，请再试一次。";
+    }
+  };
+  // 改书名 (TITLE-FLOW): the title is metadata like the synopsis, so it
+  // lands through the same story update — but unlike the synopsis, the
+  // server mirrors a rename onto the book's plaza publication when the
+  // sync carries it up (see server/plaza.js syncTitleForStory).
+  const saveBookTitle = (title) => {
+    try {
+      const next = renameBookTitle(story, title);
+      if (next !== story) update(next);
+      return null;
+    } catch (failure) {
+      return failure.message || "书名没能保存，请再试一次。";
     }
   };
   const saveChapterTitles = (titles) => {
@@ -4919,6 +5007,7 @@ function Reader({
           onClose={() => setSettingsOpen(false)}
           onSave={saveSettings}
           onSaveSynopsis={saveSynopsis}
+          onSaveBookTitle={saveBookTitle}
           onSaveChapterTitles={saveChapterTitles}
           onFuse={() => { setSettingsOpen(false); onNavigate("merge", { storyId: story.id }); }}
           onDelete={onDeleteStory ? () => { setSettingsOpen(false); onDeleteStory(story); } : undefined}
@@ -8754,6 +8843,7 @@ function App() {
           originIdentityId: payload.originIdentityId,
           customWorldName: payload.customWorldName,
           customWorldSetting: payload.customWorldSetting,
+          bookTitle: payload.bookTitle,
           lorebook: payload.lorebook,
           startPointName: payload.startPointName,
           startPointHook: payload.startPointHook,

@@ -491,7 +491,13 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           return sendJson(response, 200, { story: await library.getStory(identity, storyId) })
         }
         if (!part && request.method === 'PUT') {
-          return sendJson(response, 200, await library.putStory(identity, storyId, await readPlazaJson(request)))
+          const body = await readPlazaJson(request)
+          const result = await library.putStory(identity, storyId, body)
+          // Rename sync (TITLE-FLOW): if this save renamed a published
+          // book, its plaza publication takes the new title too. The
+          // mirror is best-effort and never fails the library write.
+          await plaza.syncTitleForStory(identity, body?.story)
+          return sendJson(response, 200, result)
         }
         if (!part && request.method === 'DELETE') {
           // Deleting a book deletes the whole book: its plaza publication
@@ -508,7 +514,12 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           return sendJson(response, 200, await library.remove(identity, storyId))
         }
         if (part === 'head' && request.method === 'PUT') {
-          return sendJson(response, 200, await library.putHead(identity, storyId, await readPlazaJson(request)))
+          const body = await readPlazaJson(request)
+          const result = await library.putHead(identity, storyId, body)
+          // Rename sync (TITLE-FLOW), same as the whole-story PUT above:
+          // the head carries the title and config the mirror needs.
+          await plaza.syncTitleForStory(identity, body?.story)
+          return sendJson(response, 200, result)
         }
         const chunkMatch = part?.match(/^chunks\/(\d+)$/)
         if (chunkMatch && request.method === 'PUT') {
