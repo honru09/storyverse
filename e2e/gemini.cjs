@@ -186,9 +186,10 @@ async function finishBook(page, requests, { total = 24, ending = '这一季，�
       const twoBooks = (await library(page)).stories;
       const partner = twoBooks.find(story => story.id !== original.id);
       await page.getByRole('button', { name: '我的世界', exact: true }).click();
-      // 合流 left the bottom bar in the migration batch: the home page's
-      // own 世界合流 entry is the way in now.
-      await page.getByRole('button', { name: '世界合流', exact: true }).click();
+      // 合流 left the bottom bar in the migration batch; the footer's
+      // generic entry retired in §40 ① — the continue card's
+      // contextual 与另一条线合流 entry is the way in now.
+      await page.getByRole('button', { name: '与另一条线合流', exact: true }).click();
       await page.getByRole('radiogroup', { name: '你的故事' }).getByRole('radio').filter({ hasText: original.title }).click();
       await page.getByRole('radiogroup', { name: '相遇的故事' }).getByRole('radio').filter({ hasText: partner.title }).click();
       await page.getByRole('button', { name: '开启合流故事', exact: true }).click();

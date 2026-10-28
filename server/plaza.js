@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { ApiError, sanitizeSettingText } from './gemini.js'
 import { findSettingViolation } from '../src/setting-guard.js'
 import { plazaSnapshot } from '../src/story-engine.js'
-import { PLAZA_REPORT_THRESHOLD, plazaGateFor, snapshotSourceViolation } from '../src/plaza.js'
+import { PLAZA_REPORT_THRESHOLD, plazaGateFor, plazaTemplateNameFor, plazaWorldIntroFor, snapshotSourceViolation, WORLD_INTRO_VERSION } from '../src/plaza.js'
 import { emptyLibrary, validateLibrary } from '../src/persistence.js'
 import { avatarAppearanceText } from '../src/avatar.js'
 import { usernameUid } from './username-auth.js'
@@ -103,6 +103,8 @@ function detailOf(record) {
     // bare summary, and emails never appear anywhere.
     authorUid: record.authorUid,
     worldBible: record.snapshot.worldBible,
+    worldIntro: record.worldIntro || null,
+    worldIntroVersion: record.worldIntroVersion || 0,
     beats: record.snapshot.beats,
     enterTemplate: record.snapshot.enterTemplate,
     snapshot: {
@@ -341,6 +343,21 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
             appearance: avatarAppearanceText(profile.appearance),
             hasPortrait: profile.portrait?.status === 'ready',
           },
+          // The composed public world outline (§40 ④), baked at
+          // publish time from the snapshot's already-public fields —
+          // the legacy refresh script re-bakes the same shape for
+          // records published before it existed.
+          worldIntro: plazaWorldIntroFor({
+            title: snapshot.title,
+            worldName: snapshot.worldName,
+            avatar: { name: profile.name, appearance: avatarAppearanceText(profile.appearance) },
+            worldBible: snapshot.worldBible,
+            beats: snapshot.beats,
+            synopsis: snapshot.synopsis,
+            chapterCount: snapshot.chapters.length,
+            lineStatus: gate.lineStatus,
+          }, plazaTemplateNameFor(snapshot)),
+          worldIntroVersion: WORLD_INTRO_VERSION,
           snapshot,
           status: 'published',
           reporters: existing?.reporters || [],

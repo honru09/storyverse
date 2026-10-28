@@ -158,6 +158,76 @@ export function plazaPublicPremise(detail, templateName = '') {
   return `${world}——${kind}。${avatarName}在这里走完了整条故事线；更完整的世界设定是作者的私有底稿，不随发布公开，留在这里的只有这条已经真实发生的故事。`
 }
 
+/**
+ * The public world introduction (DEDUP-FIX §40 ④): the detail page's
+ * 世界设定 used to print the raw snapshot premise — engine-assembled
+ * prose that could open with the book's TITLE stuffed in as the
+ * sentence subject ("《疯狂的王兴润》是一个…世界") and leak engine
+ * vocabulary (资产与负债 / 因果账目制约）. The public form is now a
+ * composed outline in plain words, three parts — 世界背景 / 核心规则 /
+ * 主角与主线 — built ONLY from fields that are already public on the
+ * detail payload:
+ *
+ *  - background: the world name + craft, plus the premise's own
+ *    world-describing sentences once title-subject stuffing and
+ *    engine-term sentences are cut;
+ *  - rules: the snapshot's rules with engine-vocabulary entries
+ *    filtered out (the redaction boundary does not move — these were
+ *    already the desensitised snapshot's rules);
+ *  - thread: the protagonist and the PUBLISHED beats only. The
+ *    bible's endingAnchor and outline are never read here: both
+ *    describe where the story has not gone yet, and printing them
+ *    would leak the unpublished future.
+ *
+ * Pure and total: any detail-shaped object yields a printable
+ * outline, so the one-time refresh script can bake the same text
+ * into stored publications.
+ */
+export const WORLD_INTRO_VERSION = 1
+const WORLD_INTRO_ENGINE_TERMS = ['资产与负债', '因果账目', '制约', '稳定度', '数值', '参数', '提示词', '回合制', '账目制', '世界线扰动值']
+export function plazaWorldIntroFor(detail, templateName = '') {
+  const world = detail?.worldName || '这个世界'
+  const avatarName = detail?.avatar?.name || '主角'
+  const title = typeof detail?.title === 'string' ? detail.title.trim() : ''
+  const rawPremise = typeof detail?.worldBible?.premise === 'string' ? detail.worldBible.premise.trim() : ''
+  const sentences = rawPremise
+    .split(/(?<=[。；;])/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((sentence) => !(title && sentence.startsWith(title)))
+    .filter((sentence) => !REDACTION_PLACEHOLDERS.some((marker) => sentence.includes(marker)))
+    .filter((sentence) => !WORLD_INTRO_ENGINE_TERMS.some((term) => sentence.includes(term)))
+  const backgroundBody = sentences.slice(0, 2).join('')
+  const background = `「${world}」——${templateName ? `${templateName}题材的世界` : '一个自成一体的世界'}。`
+    + (backgroundBody && !backgroundBody.startsWith(`「${world}」`) ? backgroundBody : '')
+
+  const rules = (Array.isArray(detail?.worldBible?.rules) ? detail.worldBible.rules : [])
+    .filter((rule) => typeof rule === 'string' && rule.trim())
+    .map((rule) => rule.trim())
+    .filter((rule) => !REDACTION_PLACEHOLDERS.some((marker) => rule.includes(marker)))
+    .filter((rule) => !WORLD_INTRO_ENGINE_TERMS.some((term) => rule.includes(term)))
+    .slice(0, 3)
+
+  const appearance = typeof detail?.avatar?.appearance === 'string' ? detail.avatar.appearance.trim() : ''
+  const synopsis = typeof detail?.synopsis === 'string' ? detail.synopsis.trim() : ''
+  const beats = Array.isArray(detail?.beats) ? detail.beats.filter((beat) => beat && typeof beat.title === 'string' && beat.title) : []
+  const status = plazaLineStatusFor(detail)
+  const count = Number(detail?.chapterCount) || beats.length
+  let thread
+  if (synopsis) {
+    thread = synopsis
+  } else {
+    const journey = beats.length
+      ? `故事从「${beats[0].title}」开始${beats.length > 1 ? `，一路走到「${beats[beats.length - 1].title}」` : ''}。`
+      : ''
+    const progress = status === 'serializing'
+      ? `这条线还在连载，已更新到第 ${count} 章。`
+      : `这条线已经完结，全 ${count} 章。`
+    thread = `${avatarName}${appearance ? `——${appearance}` : ''}，是这个世界的主角。${journey}${progress}`
+  }
+  return { background, rules, thread }
+}
+
 /** The line's publication status: a running endless line serialises; everything else is finished. */
 export function plazaLineStatusFor(source) {
   if (source?.lineStatus === 'serializing' || source?.lineStatus === 'finished') return source.lineStatus

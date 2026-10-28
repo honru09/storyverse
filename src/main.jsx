@@ -72,6 +72,8 @@ import {
   plazaMineIds,
   plazaMineRemember,
   plazaPublicPremise,
+  plazaWorldIntroFor,
+  WORLD_INTRO_VERSION,
   plazaReaderStory,
   plazaTemplateNameFor,
   publishToPlaza,
@@ -442,6 +444,14 @@ const Icon = ({ name, size = 18, stroke = 1.8, className = "" }) => {
         <path d="M7 15.6V19a1.8 1.8 0 0 0 3.6 0v-2.4" />
       </>
     ),
+    // The settings entry's cog (§40 ②): same 24-grid, same stroke —
+    // hub circle with eight short spokes.
+    gear: (
+      <>
+        <circle cx="12" cy="12" r="3.4" />
+        <path d="M12 2.9v2.9M12 18.2v2.9M2.9 12h2.9M18.2 12h2.9M5.6 5.6l2 2M16.4 16.4l2 2M18.4 5.6l-2 2M7.6 16.4l-2 2" />
+      </>
+    ),
   };
   return <svg {...common}>{paths[name] || paths.spark}</svg>;
 };
@@ -705,6 +715,28 @@ function MobileBottomNav({ view, onNavigate, onOpenProfile }) {
   );
 }
 
+/**
+ * The honest failure page for "open this book" (§40 ⓪): a requested
+ * book that cannot be resolved says so and offers a retry — it never
+ * falls through to the empty-shelf page, which is reserved for a
+ * library that is genuinely empty with nothing requested.
+ */
+function BookOpenError({ onRetry, onBack, backLabel }) {
+  return (
+    <div className="page page-reader page-enter">
+      <div className="sw-empty-page">
+        <div className="sw-empty-icon">
+          <Icon name="book" size={25} />
+        </div>
+        <h1>没能打开这本书</h1>
+        <p className="book-open-error-copy">这本书可能还没同步到这台设备，或者已经被删除。</p>
+        <Button icon="refresh" onClick={onRetry}>重试</Button>
+        <Button variant="ghost" onClick={onBack}>{backLabel}</Button>
+      </div>
+    </div>
+  );
+}
+
 function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, draft, account, onOpenAccount, authClient, avatar, onOpenAvatar, syncNote, onOpenHelp, onOpenLibrary }) {
   const genre = genreOf(activeStory);
   const activeTotal = activeStory ? totalChaptersFor(activeStory) : 6;
@@ -842,10 +874,10 @@ function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, dr
         </button>
       )}
 
+      {/* First rule (§40 ①): one fusion entry per screen — the
+          contextual one in the continue card above; the footer's old
+          generic 世界合流 stood down for duplicating it. */}
       <footer className="home-footer">
-        <button type="button" className="small-link" onClick={() => onNavigate("merge")}>
-          <Icon name="git" size={15} /> 世界合流
-        </button>
         <button type="button" className="small-link" onClick={onOpenLibrary}>
           <Icon name="book" size={15} /> 备份与恢复
         </button>
@@ -5508,6 +5540,12 @@ function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter,
   }
   const genre = genreById[detail.genreId] || GENRES[0];
   const templateName = plazaTemplateNameFor(detail) || genre.label;
+  // The composed public world outline (§40 ④); falls back to the
+  // detail's stored copy when the server baked one in at publish or
+  // refresh time — same composer either way, so the two never drift.
+  const worldIntro = detail.worldIntro && detail.worldIntroVersion === WORLD_INTRO_VERSION
+    ? detail.worldIntro
+    : plazaWorldIntroFor(detail, templateName);
   const beats = Array.isArray(detail.beats) ? detail.beats : [];
   const report = async () => {
     if (!account.user) { onOpenAccount(); return; }
@@ -5592,17 +5630,29 @@ function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter,
         </section>
       )}
 
-      <section className="plaza-panel">
+      <section className="plaza-panel plaza-world-intro">
         <div className="plaza-panel-heading">
           <h2>世界设定</h2>
-          <span className="plaza-chip is-mint">脱敏版</span>
         </div>
-        {/* N-04: the redactor swaps private values for placeholders
-            mid-sentence, which can leave the premise reading like a
-            broken sentence. When a placeholder survives in the text,
-            the panel speaks in an introduction voice composed from
-            public fields instead of showing the word-excavated raw. */}
-        <p className="plaza-prose">{plazaPublicPremise(detail, templateName)}</p>
+        {/* §40 ④: the public world setting is a composed outline in
+            plain words — 世界背景 / 核心规则 / 主角与主线 — never the
+            raw engine premise (which could stuff the book's title in
+            as a sentence subject and leak engine vocabulary). The
+            脱敏版 chip that used to sit in this heading is gone: the
+            note below already says it, and the first rule allows the
+            fact on the page once. */}
+        <h3 className="plaza-intro-head">世界背景</h3>
+        <p className="plaza-prose">{worldIntro.background}</p>
+        {worldIntro.rules.length > 0 && (
+          <>
+            <h3 className="plaza-intro-head">核心规则</h3>
+            <ul className="plaza-intro-rules">
+              {worldIntro.rules.map((rule) => <li key={rule}>{rule}</li>)}
+            </ul>
+          </>
+        )}
+        <h3 className="plaza-intro-head">主角与主线</h3>
+        <p className="plaza-prose">{worldIntro.thread}</p>
         <small className="plaza-note">发布时已脱敏：作者的私有设定与未公开分支不会出现在这里。</small>
       </section>
 
@@ -6065,7 +6115,7 @@ function ProfileShelfStoryBook({ story, authClient, account, onOpen }) {
       type="button"
       className="profile-shelf-book"
       style={{ "--tilt": `${shelfTiltFor(story)}deg` }}
-      onClick={() => onOpen(story)}
+      onClick={() => onOpen(story.id)}
       aria-label={`打开《${story.title || "未命名故事"}》`}
     >
       <span className="profile-shelf-cover">
@@ -6129,12 +6179,12 @@ function ProfileStoreCard({ publication, onOpen }) {
 }
 
 function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, onOpenAccount, onOpenLibrary, onOpenHelp, onOpenProfile, onNavigate }) {
-  // 设置 (NOTIFY-SETTINGS §36, user order 2026-10-28): everything
-  // settings-shaped gathers at the bottom of MY profile page —
+  // 设置 (NOTIFY-SETTINGS §36; window form DEDUP-FIX §40 ②, user
+  // order 2026-10-28): the groups live INSIDE the settings window —
   // appearance (theme + the motion switch that used to live in the
-  // topbar), account, data, about. Rows open the existing panels;
-  // nothing here re-implements them. Self + page form only — the
-  // parent gates it, and someone else's profile never renders it.
+  // topbar), account, data, about. The profile page itself keeps one
+  // entry row; this component is only the window's contents. Rows
+  // open the existing panels; nothing here re-implements them.
   const motion = useMotionSettings();
   const systemPaused = motion.reducedMotion || motion.saveData;
   const motionOn = motion.enabled && !systemPaused;
@@ -6150,11 +6200,7 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
     }
   };
   return (
-    <section className="profile-sec profile-settings" aria-label="设置">
-      <div className="profile-sec-head">
-        <h2 className="profile-sec-title">设置<small>都收在这里</small></h2>
-      </div>
-
+    <div className="profile-settings">
       <h3 className="settings-group-title">外观</h3>
       <div className="settings-card">
         <div className="settings-row settings-row-static">
@@ -6246,7 +6292,7 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
         </button>
       </div>
       <p className="settings-foot-note">阅读时的纸色、字号与翻页方式在阅读器里的「阅读设置」单独调，不在这里。</p>
-    </section>
+    </div>
   );
 }
 
@@ -6354,6 +6400,9 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   // below the skeleton/error returns changes the hook count when the
   // profile lands and crashes the page — React error #310.)
   const [shareOpen, setShareOpen] = useState(false);
+  // The settings window (§40 ②): the page carries one entry row; the
+  // groups themselves render inside a ReadingDialog.
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // The avatar on the stage (PROFILE-ENRICH §35): the main avatar by
   // default; a return visit restores the tile left selected.
   const [stageAvatarId, setStageAvatarId] = useState(() => profileViewState(uid)?.avatarId || "");
@@ -6382,6 +6431,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
     setMenuOpen(false);
     setReported(false);
     setEditOpen(false);
+    setSettingsOpen(false);
     setStageFailedFor("");
     setConnectionsKind(null);
     setConnections(null);
@@ -6806,7 +6856,10 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
       <>
       <section className="profile-sec profile-shelf" aria-label="书架">
         <div className="profile-sec-head">
-          <h2 className="profile-sec-title">书架<small>{(ownBooks || publications).length > 0 ? `共 ${(ownBooks || publications).length} 本` : ""}</small></h2>
+          {/* No count here: the stats row above already carries the
+              作品 number — the same figure twice on one screen is
+              first-rule noise (§40 ①). */}
+          <h2 className="profile-sec-title">书架</h2>
           {ownBooks && (
             <button type="button" className="profile-sec-more" onClick={() => onNavigate("home")}>全部 ›</button>
           )}
@@ -6868,7 +6921,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
             <img className="profile-empty-art" src="/art/empty-published-512.webp" alt="" loading="lazy" />
             <div className="profile-empty-copy">
               <p>暂无上架作品</p>
-              <small>{isSelf ? "一本书完结一季后，可以上架到书城" : "TA 还没有上架的书"}</small>
+              <small>{isSelf ? "完结的故事线可以发布，连载中的无限长线也能边写边发" : "TA 还没有上架的书"}</small>
             </div>
           </div>
         )}
@@ -6965,17 +7018,18 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
         </section>
       )}
       {isSelf && !windowForm && (
-        <ProfileSettings
-          account={account}
-          authClient={authClient}
-          shellTheme={shellTheme}
-          onShellThemeChange={onShellThemeChange}
-          onOpenAccount={onOpenAccount}
-          onOpenLibrary={onOpenLibrary}
-          onOpenHelp={onOpenHelp}
-          onOpenProfile={onOpenProfile}
-          onNavigate={onNavigate}
-        />
+        <section className="profile-sec profile-settings-entry" aria-label="设置">
+          <div className="settings-card">
+            <button type="button" className="settings-row settings-entry-row" onClick={() => setSettingsOpen(true)}>
+              <span className="settings-row-ic"><Icon name="gear" size={19} /></span>
+              <span className="settings-row-copy">
+                <strong>设置</strong>
+                <small>都收在这里</small>
+              </span>
+              <Icon name="chevron" size={16} />
+            </button>
+          </div>
+        </section>
       )}
       </>
       )}
@@ -7002,6 +7056,21 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
         onCopied={() => setNote("分享文案已复制。")}
         onCopyFailed={() => setNote("没能复制，请稍后再试。")}
       />
+    )}
+    {settingsOpen && isSelf && !windowForm && (
+      <ReadingDialog title="设置" onClose={() => setSettingsOpen(false)}>
+        <ProfileSettings
+          account={account}
+          authClient={authClient}
+          shellTheme={shellTheme}
+          onShellThemeChange={onShellThemeChange}
+          onOpenAccount={() => { setSettingsOpen(false); onOpenAccount(); }}
+          onOpenLibrary={() => { setSettingsOpen(false); onOpenLibrary(); }}
+          onOpenHelp={() => { setSettingsOpen(false); onOpenHelp(); }}
+          onOpenProfile={(target) => { setSettingsOpen(false); onOpenProfile?.(target); }}
+          onNavigate={(next) => { setSettingsOpen(false); onNavigate(next); }}
+        />
+      </ReadingDialog>
     )}
     </>
   );
@@ -8270,10 +8339,15 @@ function App() {
   // once here so both the store shelf and the shared-reader route can
   // find the same story object.
   const [officialSample, setOfficialSample] = useState(null);
+  // Whether the one-shot sample lookup has settled at all: a shared
+  // reader route may only declare "book not found" once this is true,
+  // otherwise a slow sample fetch would flash a false error (§40 ⓪).
+  const [sampleSettled, setSampleSettled] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    fetchPlazaFeed()
-      .then(async ({ publications }) => {
+    (async () => {
+      try {
+        const { publications } = await fetchPlazaFeed();
         const official = publications.find((item) => item.official);
         if (!official || cancelled) return;
         const detail = await fetchPlazaDetail({ id: official.id });
@@ -8285,8 +8359,9 @@ function App() {
             status: plazaLineStatusFor(detail) === "serializing" ? "ongoing" : "complete",
           });
         }
-      })
-      .catch(() => {});
+      } catch { /* no sample: the store falls back to its placeholders */ }
+      finally { if (!cancelled) setSampleSettled(true); }
+    })();
     return () => { cancelled = true; };
   }, []);
   const readerExternal = pageRoute.shared
@@ -8300,18 +8375,42 @@ function App() {
     : pageRoute.plaza
       ? plazaLines[pageRoute.id]
       : library.stories.find((story) => story.id === pageRoute.id);
+  // A plaza reader route whose detail fetch failed must say so, not
+  // sit on "正在打开…" forever (§40 ⓪).
+  const [plazaRouteFailed, setPlazaRouteFailed] = useState(false);
+  const [plazaRetryTick, setPlazaRetryTick] = useState(0);
+  useEffect(() => { setPlazaRouteFailed(false); }, [pageRoute.id]);
   useEffect(() => {
     if (!pageRoute.plaza || !pageRoute.id || plazaLines[pageRoute.id]) return;
     let cancelled = false;
     fetchPlazaDetail({ id: pageRoute.id })
       .then((detail) => {
-        if (cancelled || !detail) return;
-        const story = plazaReaderStory(detail);
+        if (cancelled) return;
+        const story = detail ? plazaReaderStory(detail) : null;
         if (story) setPlazaLines((current) => ({ ...current, [pageRoute.id]: story }));
+        else setPlazaRouteFailed(true);
       })
-      .catch(() => {});
+      .catch(() => { if (!cancelled) setPlazaRouteFailed(true); });
     return () => { cancelled = true; };
-  }, [pageRoute.plaza, pageRoute.id, plazaLines]);
+  }, [pageRoute.plaza, pageRoute.id, plazaLines, plazaRetryTick]);
+  // Reader-miss grace (§40 ⓪): a requested book that does not resolve
+  // gets a short window for the cloud library to land before the route
+  // may call it missing — and once declared missing it shows an honest
+  // error, NEVER the empty-shelf page. The empty state is reserved for
+  // a library that is genuinely empty with no book requested.
+  const readerMiss = view === "reader" && !readerStory && !pageRoute.plaza
+    && (Boolean(pageRoute.id) || library.stories.length > 0);
+  // A shared route waits out the one-shot sample lookup first; every
+  // other miss starts its grace timer immediately.
+  const readerMissArmed = readerMiss && (!pageRoute.shared || sampleSettled);
+  const [readerMissSettled, setReaderMissSettled] = useState(false);
+  const [readerMissTick, setReaderMissTick] = useState(0);
+  useEffect(() => {
+    if (!readerMissArmed) { setReaderMissSettled(false); return undefined; }
+    setReaderMissSettled(false);
+    const timer = window.setTimeout(() => setReaderMissSettled(true), 1200);
+    return () => window.clearTimeout(timer);
+  }, [readerMissArmed, pageRoute.id, readerMissTick]);
   const { animate } = useMotionPolicy(view);
   // Shell theme switching (DESIGN §27): persist the device choice,
   // repaint the token attribute, and run the one-shot cross-fade veil —
@@ -8709,10 +8808,15 @@ function App() {
     setDeleteTarget(story);
   };
   const openOwnReader = (storyId = activeStory?.id, options = {}) => {
+    // Callers pass an id; one historical caller passed the whole story
+    // object, which serialised into the route as "[object Object]" and
+    // landed the reader on the empty-shelf page (DEDUP-FIX §40 ⓪).
+    // Normalise here so no caller can reintroduce that shape.
+    const id = typeof storyId === "string" ? storyId : storyId?.id;
     setShareRequest(Boolean(options.share));
-    if (storyId)
-      setLibrary((current) => ({ ...current, activeStoryId: storyId }));
-    navigate("reader", { storyId });
+    if (id)
+      setLibrary((current) => ({ ...current, activeStoryId: id }));
+    navigate("reader", { storyId: id });
   };
   const openCommunityBook = (book) => {
     setShareRequest(false);
@@ -8807,10 +8911,30 @@ function App() {
     );
   else if (view === "reader")
     page = route.plaza && !readerStory ? (
-      <div className="page page-plaza page-enter">
-        <p className="plaza-loading" role="status">正在打开这条故事线…</p>
-        <Button variant="secondary" onClick={() => navigate("plaza")}>回到广场</Button>
-      </div>
+      plazaRouteFailed ? (
+        <BookOpenError
+          onRetry={() => { setPlazaRouteFailed(false); setPlazaRetryTick((tick) => tick + 1); }}
+          onBack={() => navigate("plaza")}
+          backLabel="回到广场"
+        />
+      ) : (
+        <div className="page page-plaza page-enter">
+          <p className="plaza-loading" role="status">正在打开这条故事线…</p>
+          <Button variant="secondary" onClick={() => navigate("plaza")}>回到广场</Button>
+        </div>
+      )
+    ) : readerMiss ? (
+      readerMissSettled ? (
+        <BookOpenError
+          onRetry={() => { store.sync(); setReaderMissTick((tick) => tick + 1); }}
+          onBack={() => navigate(pageRoute.shared ? "plaza" : "home")}
+          backLabel={pageRoute.shared ? "回到广场" : "返回书架"}
+        />
+      ) : (
+        <div className="page page-plaza page-enter">
+          <p className="plaza-loading" role="status">正在打开这本书…</p>
+        </div>
+      )
     ) : (
       <Reader
         key={`${readerStory?.id || "empty"}:${readerExternal ? "shared" : route.plaza ? "plaza" : "own"}`}

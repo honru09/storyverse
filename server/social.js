@@ -5,6 +5,7 @@ import { CUSTOM_GENRE_ID } from '../src/story-engine.js'
 import { createSocialStore, pictureSourceFor } from './social-store.js'
 import { createPlazaStore } from './plaza-store.js'
 import { createAvatarStore, collectionFromRecord, imageSlotFor } from './avatar-store.js'
+import { normalizedStoredImage } from './portrait-image.js'
 import { createCoverStore } from './cover-store.js'
 import { createIdentityStore } from './identity-store.js'
 import { isOfficialUid, plazaSummaryOf } from './plaza.js'
@@ -654,10 +655,9 @@ export function createSocialService({
       }
       const image = await avatars.getImage(target, slot)
       if (!image?.image) return null
-      return {
-        buffer: Buffer.from(image.image, 'base64'),
-        contentType: image.contentType || 'image/jpeg',
-      }
+      // Same lazy top-band healing as the avatar service (§40 ③a):
+      // public tiles read through here.
+      return normalizedStoredImage(avatars, target, slot, image)
     },
 
     /** The resolved author identity + picture for plaza surfaces. */

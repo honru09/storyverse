@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { ApiError, sanitizeSettingText } from './gemini.js'
 import { dayKeyFor } from './usage.js'
 import { createAvatarStore, collectionFromRecord, imageSlotFor } from './avatar-store.js'
-import { transcodeCoverImage } from './cover-image.js'
+import { transcodePortraitImage, normalizedStoredImage } from './portrait-image.js'
 import {
   AVATAR_APPEARANCE_FIELDS,
   AVATAR_DESCRIPTION_MAX,
@@ -200,7 +200,7 @@ function providerConfigured(env) {
  * slots — see imageSlotFor), so painting one avatar never touches
  * another's portrait.
  */
-export function createAvatarService({ env = process.env, store, imageGenerate, transcode = transcodeCoverImage, now = () => new Date() } = {}) {
+export function createAvatarService({ env = process.env, store, imageGenerate, transcode = transcodePortraitImage, now = () => new Date() } = {}) {
   const backend = store === undefined ? createAvatarStore({ env }) : store
   const model = avatarImageModel(env)
   const limit = avatarDailyLimit(env)
@@ -487,9 +487,11 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
       const slot = imageSlotFor(collection, target.id, which)
       const record = await backend.getImage(identity.uid, slot)
       if (!record?.image) return null
+      // Legacy portraits heal a baked-in top band on first read (§40 ③a).
+      const healed = await normalizedStoredImage(backend, identity.uid, slot, record)
       return {
-        buffer: Buffer.from(record.image, 'base64'),
-        contentType: record.contentType || 'image/jpeg',
+        buffer: healed.buffer,
+        contentType: healed.contentType,
         version: record.version,
         updatedAt: record.updatedAt,
       }

@@ -268,9 +268,11 @@ async function runJourney(browser, width) {
     const twoBookLibrary = await library(page);
     const partnerId = twoBookLibrary.activeStoryId;
     await page.getByRole('button', { name: '我的世界', exact: true }).click();
-    // 合流 left the bottom bar in the migration batch: from home, its own
-    // 世界合流 entry opens the merge flow.
-    await page.getByRole('button', { name: '世界合流', exact: true }).click();
+    // 合流 left the bottom bar in the migration batch; the footer
+    // 世界合流 entry retired in the dedup batch (§40 ① — one fusion
+    // entry per screen): the continue card's contextual entry, bound
+    // to the active line, is the way in now.
+    await page.getByRole('button', { name: '与另一条线合流', exact: true }).click();
     await page.getByRole('heading', { name: '世界合流', exact: true }).waitFor();
     const originalTitle = publishedLibrary.stories.find(story => story.id === originalId).title;
     const partnerTitle = twoBookLibrary.stories.find(story => story.id === partnerId).title;

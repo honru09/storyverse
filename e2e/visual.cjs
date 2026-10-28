@@ -157,10 +157,12 @@ async function summonAndClick(page, makeLocator) {
         await capture('store');
         // 合流 is a contextual feature (DESIGN §26/§33): no nav entry
         // on mobile or desktop — the path is plaza → 我的世界 row →
-        // the home page's 世界合流 entry.
+        // the home continue card's 与另一条线合流 entry (the footer's
+        // generic 世界合流 retired in §40 ①: one fusion entry per
+        // screen, the contextual one wins).
         await nav('广场');
         await page.locator('.plaza-mine-row', { hasText: '我的世界' }).click();
-        await page.getByRole('button', { name: '世界合流', exact: true }).click();
+        await page.getByRole('button', { name: '与另一条线合流', exact: true }).click();
         await capture('merge');
         await page.getByRole('button', { name: '开启合流故事', exact: true }).click();
         await page.getByRole('button', { name: '阅读新书', exact: true }).waitFor();
