@@ -22,10 +22,23 @@ async function createBook(page, name) {
     await page.getByRole('button', { name: '我的世界', exact: true }).click();
   }
   await page.getByRole('navigation', { name: '移动端主导航' }).getByRole('button', { name: '造世', exact: true }).click();
-  await page.getByRole('button', { name: '继续', exact: true }).click();
-  await page.getByRole('button', { name: '继续', exact: true }).click();
-  await page.getByRole('button', { name: '继续', exact: true }).click();
-  await page.getByRole('button', { name: '继续', exact: true }).click();
+  // PHONE-FIX J keeps the forge view alive: after a finished creation it
+  // still shows that creation's confirmation screen instead of step one.
+  // A returning user taps the 题材 step chip to start over — do the same
+  // when the confirmation screen is what greets us.
+  const confirmHeading = page.getByRole('heading', { name: '确认你的故事', exact: true });
+  await confirmHeading.waitFor({ state: 'visible', timeout: 1500 }).catch(() => {});
+  if (await confirmHeading.isVisible()) {
+    await page.getByRole('button', { name: '第 1 步：题材', exact: true }).click();
+  }
+  // Walk forward until the protagonist form shows instead of counting
+  // taps: a wizard restarted from its kept-alive confirmation screen
+  // needs one tap less (its identity is already landed, so the merged
+  // identity/spawn screen advances in a single 继续）.
+  for (let taps = 0; taps < 6; taps++) {
+    if (await page.getByLabel('主角昵称（选填）').count()) break;
+    await page.getByRole('button', { name: '继续', exact: true }).click();
+  }
   await page.getByLabel('主角昵称（选填）').fill(name);
   await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByRole('button', { name: '进入第一章', exact: true }).click();
@@ -33,17 +46,15 @@ async function createBook(page, name) {
 }
 
 async function openBackup(page) {
-  const recoveryButton = page.getByRole('button', { name: '备份与恢复', exact: true });
-  if (await recoveryButton.isVisible()) {
-    await recoveryButton.click();
-  } else {
-    // The topbar shelf entry retired (NOTIFY-SETTINGS §36): backup now
-    // lives on the shelf page's own footer (and in 主页 → 设置 for
-    // signed-in readers). This suite runs signed out, so it goes to
-    // the shelf page directly.
-    await page.goto(`${targetUrl}#/home`, { waitUntil: 'domcontentloaded' });
-    await recoveryButton.click();
-  }
+  // '备份与恢复' has several legitimate homes (the storage alert carries
+  // its own, 主页 → 设置 has one for signed-in readers, the shelf page
+  // footer has one) and the kept-alive views hold more than one of them
+  // in the DOM at once, so an unscoped role lookup resolves to multiple
+  // buttons and strict mode refuses the click. Always take the shelf
+  // page footer's entry — the path a signed-out reader uses — scoped
+  // to the footer so the click is unambiguous in every storage state.
+  await page.goto(`${targetUrl}#/home`, { waitUntil: 'domcontentloaded' });
+  await page.locator('footer').getByRole('button', { name: '备份与恢复', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '书架与备份' });
   await dialog.waitFor();
   return dialog;
@@ -142,8 +153,14 @@ async function run(browser, name, action, init) {
     });
 
     await run(browser, 'quota failure keeps the story usable and exportable with honest save status', async page => {
+      // The save-failure alert is a short-lived toast raised by the
+      // first failed write, which happens during load / the creation
+      // steps — long before a post-creation wait would start. Arm the
+      // wait before creating the book so the toast cannot slip past.
+      const quotaAlert = page.getByRole('alert').filter({ hasText: '暂时无法保存' }).waitFor();
+      quotaAlert.catch(() => {});
       await createBook(page, '额度测试旅人');
-      await page.getByRole('alert').filter({ hasText: '暂时无法保存' }).waitFor();
+      await quotaAlert;
       await page.getByText('进度暂存于此页，请先备份', { exact: true }).waitFor();
       assert.equal(await page.getByText('进度已保存在本机', { exact: true }).count(), 0);
       await page.getByRole('button', { name: '下一章', exact: true }).click();
