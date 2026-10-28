@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import "../account.css";
 import { formatTokenCount } from "../usage-format.js";
 import { identifierKind } from "../auth/identifier.js";
+import ParticleField from "./ParticleField.jsx";
 
 function GoogleMark() {
   return <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M21.6 12.2c0-.7-.1-1.5-.2-2.2H12v4h5.4a4.6 4.6 0 0 1-2 3v2.6h3.2c1.9-1.8 3-4.3 3-7.4ZM12 22c2.7 0 5-.9 6.6-2.4L15.4 17c-.9.6-2 .9-3.4.9-2.6 0-4.9-1.8-5.7-4.2H3v2.6A10 10 0 0 0 12 22ZM6.3 13.7a6 6 0 0 1 0-3.4V7.7H3a10 10 0 0 0 0 8.6l3.3-2.6ZM12 6.1c1.5 0 2.8.5 3.8 1.5l2.9-2.8A9.7 9.7 0 0 0 12 2a10 10 0 0 0-9 5.7l3.3 2.6C7.1 7.9 9.4 6.1 12 6.1Z"/></svg>;
@@ -15,24 +16,37 @@ const SHELL_THEME_OPTIONS = [
   { id: "aurora", label: "极光" },
 ];
 
+/**
+ * The theme segments on their own (PHONE-FIX §37): the account sheet
+ * wraps them with a label and the explanatory note (ShellThemeControl
+ * below); the profile settings area seats the same control in a
+ * settings row, where the section footnote carries the explanation.
+ */
+export function ShellThemeSegments({ shellTheme, onShellThemeChange }) {
+  if (!onShellThemeChange) return null;
+  return (
+    <div className="account-theme-options" role="group" aria-label="外观主题">
+      {SHELL_THEME_OPTIONS.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          aria-pressed={shellTheme === option.id}
+          className={shellTheme === option.id ? "is-active" : ""}
+          onClick={() => onShellThemeChange(option.id)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function ShellThemeControl({ shellTheme, onShellThemeChange }) {
   if (!onShellThemeChange) return null;
   return (
     <div className="account-theme">
       <span className="account-theme-label">外观主题</span>
-      <div className="account-theme-options" role="group" aria-label="外观主题">
-        {SHELL_THEME_OPTIONS.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            aria-pressed={shellTheme === option.id}
-            className={shellTheme === option.id ? "is-active" : ""}
-            onClick={() => onShellThemeChange(option.id)}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+      <ShellThemeSegments shellTheme={shellTheme} onShellThemeChange={onShellThemeChange} />
       <p className="account-storage-note">只改界面外观；阅读时的纸色、字号在阅读设置里单独调，互不影响。</p>
     </div>
   );
@@ -293,7 +307,24 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       <button className="button button-primary account-primary" type="button" onClick={onContinue}>继续体验</button>
       <button className="account-quiet" type="button" disabled={busy} onClick={() => void run(() => client.signOut())}>{busy ? "正在处理…" : "退出账号"}</button>
     </> : <>
-      <p className="account-intro">从这里，进入你的故事。</p>
+      {/* The welcome scene (PHONE-FIX §37 H, final wording): a dynamic
+          starfield with depth fills the sheet; on it sits ONE centred
+          glass window holding the brand lock, the form and every
+          entry — nothing else. The two earlier reference directions
+          (a minigame start screen, then a mascot/orbit composition)
+          were both dropped by the user; the tone is 简洁高级 —
+          restraint, whitespace, hairline borders, glass. Every entry
+          and behaviour inside the window is the panel that was always
+          here; only the container moved. */}
+      <div className="account-scene">
+        <ParticleField density="starfield" />
+        <div className="account-window">
+          <div className="account-brand-lock">
+            <img className="account-brand-logo" src="/icon.svg" alt="" />
+            <p className="account-brand-name">织界</p>
+            <p className="account-brand-sub">STORYWEAVE</p>
+            <p className="account-intro">从这里，进入你的故事。</p>
+          </div>
       {!configured && <button className="account-guest" type="button" onClick={onContinue}>先不登录，继续体验 <span aria-hidden="true">→</span></button>}
       <button className="account-google" type="button" disabled={busy || !configured || !account.config?.providers?.google} onClick={() => void run(() => client.signInWithGoogle())}><GoogleMark/>使用 Google 继续</button>
       <div className="account-divider"><span>{usernameAvailable ? "或使用邮箱 / 用户名" : "或使用邮箱"}</span></div>
@@ -340,6 +371,8 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       {guestFooter && <p className="account-storage-note">{guestFooter}</p>}
       <ShellThemeControl shellTheme={shellTheme} onShellThemeChange={onShellThemeChange} />
       {onOpenHelp && <button className="account-avatar-entry" type="button" onClick={onOpenHelp}>帮助与常见问题 <span aria-hidden="true">→</span></button>}
+        </div>
+      </div>
     </>}
   </div>;
 }

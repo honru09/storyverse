@@ -34,7 +34,14 @@
    (RELIABILITY.md). Both overlays also render through a body portal,
    so no transformed ancestor can re-base their fixed positioning. */
 .generation-overlay{position:fixed;inset:0;height:100dvh;max-height:100dvh;z-index:60;display:grid;place-items:safe center;overflow-y:auto;overscroll-behavior:contain;padding:max(24px,env(safe-area-inset-top)) max(24px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(24px,env(safe-area-inset-left));background:rgba(4,8,20,.66);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:page-in var(--dur-sheet) var(--ease-out) both}
-.generation-card{width:min(100%,430px);padding:30px 26px 26px;border:1px solid var(--line);border-radius:var(--radius-sheet);background:rgba(10,20,48,.88);box-shadow:var(--shadow-raised);text-align:center}
+/* The weaving artwork under the wait (PHONE-FIX §37, assets batch
+   B): full-bleed threads-and-stardust painting, darkened by its own
+   scrim so the card's stage copy stays on a calm centre. */
+.generation-bg{position:absolute;inset:0;background:url("/art/waiting-weaving-1600.webp") center/cover no-repeat}
+.generation-overlay .particle-field{z-index:0}
+.generation-card{z-index:1}
+.generation-bg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,8,20,.58),rgba(4,8,20,.8))}
+.generation-card{position:relative;width:min(100%,430px);padding:30px 26px 26px;border:1px solid var(--line);border-radius:var(--radius-sheet);background:rgba(10,20,48,.88);box-shadow:var(--shadow-raised);text-align:center}
 .generation-orb{position:relative;width:64px;height:64px;margin:0 auto 20px;border-radius:50%;background:radial-gradient(circle at 35% 35%,rgba(110,231,255,.85),rgba(167,139,250,.55) 55%,rgba(240,166,255,.25));filter:blur(.4px);animation:orb-pulse 2s ease-in-out infinite}
 .generation-halo{position:absolute;inset:-14px;border-radius:50%;border:1px solid rgba(110,231,255,.45);animation:halo-breathe 2.6s ease-in-out infinite}
 @keyframes halo-breathe{0%,100%{transform:scale(.82);opacity:.25}50%{transform:scale(1.08);opacity:.8}}

@@ -14,6 +14,7 @@ import "./aurora.css";
 import AuroraBackground from "./components/AuroraBackground.jsx";
 import StoryMap, { StoryMapMini, generationState } from "./components/StoryMap.jsx";
 import GenerationOverlay from "./components/GenerationOverlay.jsx";
+import ParticleField, { burstFromElement, burstParticles } from "./components/ParticleField.jsx";
 import { installRipple } from "./motion/ripple.js";
 import AnimatedContent from "./components/react-bits/AnimatedContent.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
@@ -84,7 +85,7 @@ import {
   fetchNotifications,
   fetchUserConnections,
   fetchUserProfile,
-  fileToSquareJpeg,
+  bitmapRegionToSquareJpeg,
   followUser,
   markNotificationsRead,
   publicDisplayName as profileDisplayName,
@@ -110,7 +111,7 @@ import { acceptGeneratedChapter, acceptRerolledChapter, acceptRevisedChapter, ge
 import InterventionOverlay from "./components/InterventionOverlay.jsx";
 import WorldArtwork from "./components/WorldArtwork.jsx";
 import StoryCover from "./components/StoryCover.jsx";
-import AccountPanel, { ShellThemeControl } from "./components/AccountPanel.jsx";
+import AccountPanel, { ShellThemeSegments } from "./components/AccountPanel.jsx";
 import { createAuthClient } from "./auth/client.js";
 import ReadingPreferences from "./components/ReadingPreferences.jsx";
 import { createReadingPreferencesStore, getReaderAppearance } from "./reading-preferences.js";
@@ -390,6 +391,55 @@ const Icon = ({ name, size = 18, stroke = 1.8, className = "" }) => {
       <>
         <path d="M20 11a8 8 0 1 0 1 4" />
         <path d="M20 5v6h-6" />
+      </>
+    ),
+    // Settings / notice family (PHONE-FIX §37 G4): same 24-grid,
+    // same 1.8 stroke as every icon above — no emoji, no bare glyphs.
+    shield: (
+      <>
+        <path d="M12 3 5 5.8v5.4c0 4.4 2.9 7.6 7 9.3 4.1-1.7 7-4.9 7-9.3V5.8L12 3Z" />
+        <path d="m9.2 11.6 2 2 3.6-3.8" />
+      </>
+    ),
+    logout: (
+      <>
+        <path d="M14 4H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7" />
+        <path d="M10 12h10M17 8l4 4-4 4" />
+      </>
+    ),
+    database: (
+      <>
+        <ellipse cx="12" cy="5.5" rx="7.5" ry="2.8" />
+        <path d="M4.5 5.5v13c0 1.6 3.4 2.8 7.5 2.8s7.5-1.2 7.5-2.8v-13" />
+        <path d="M4.5 12c0 1.6 3.4 2.8 7.5 2.8s7.5-1.2 7.5-2.8" />
+      </>
+    ),
+    info: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v5" />
+        <path d="M12 7.8v.3" />
+      </>
+    ),
+    help: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M9.6 9.2A2.6 2.6 0 0 1 12 7.5c1.4 0 2.5 1 2.5 2.2 0 1.7-2.3 2-2.3 3.5" />
+        <path d="M12 16.8v.3" />
+      </>
+    ),
+    palette: (
+      <>
+        <path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-.9 2-1.9 0-1.2-1-1.7-1-2.8 0-1 .8-1.8 2-1.8h1.6A4.4 4.4 0 0 0 21 10.2C20.6 6.2 16.6 3 12 3Z" />
+        <circle cx="7.6" cy="10.4" r="1.15" />
+        <circle cx="10.4" cy="6.8" r="1.15" />
+        <circle cx="15.4" cy="7.4" r="1.15" />
+      </>
+    ),
+    megaphone: (
+      <>
+        <path d="M4 10v4a1.6 1.6 0 0 0 1.6 1.6H7L18 19V5L7.2 8.4H5.6A1.6 1.6 0 0 0 4 10Z" />
+        <path d="M7 15.6V19a1.8 1.8 0 0 0 3.6 0v-2.4" />
       </>
     ),
   };
@@ -1676,14 +1726,30 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
   // a fresh draft's untouched defaults render with a 「默认」 tag until
   // the reader actually taps a choice (or the summary restates them).
   const wasRestored = initialDraft?.restoredDraft === true;
-  const [pickedTemplate, setPickedTemplate] = useState(wasRestored);
+  // The template is the one pick a silent default can counterfeit
+  // (PHONE-FIX §37): the draft initializer fills the wall's first brick
+  // so generation always has a category, and merely opening the forge
+  // persists that fill — a restored draft carrying it is NOT a pick,
+  // and must not teleport the reader into that family on re-entry. A
+  // restored template counts as picked only when the draft carries
+  // the explicit marker (saved by the flow itself from now on) or when
+  // its id is anything but the silent default — only a deliberate tap
+  // or roll can have put it there.
+  const templateWasPicked = wasRestored && (
+    initialDraft?.templatePicked === true
+    || (Boolean(initialDraft?.genreTemplateId)
+      && initialDraft.genreTemplateId !== (templateWall[0]?.id || ""))
+  );
+  const [pickedTemplate, setPickedTemplate] = useState(templateWasPicked);
   const [pickedTrait, setPickedTrait] = useState(wasRestored);
   const [pickedTone, setPickedTone] = useState(wasRestored);
   const [pickedLength, setPickedLength] = useState(wasRestored);
-  // Step one's open shelf (two-level taxonomy): starts on the shelf of a
-  // restored pick with siblings, so a resumed draft lands on its own L2
-  // screen with the pick lit; otherwise the L1 shelf screen.
+  // Step one's open shelf (two-level taxonomy): a genuinely picked
+  // template resumes on its own L2 screen with the pick lit; every
+  // other entry — fresh, or restored-but-never-picked — starts on the
+  // L1 shelf screen with nothing pre-opened.
   const [shelfId, setShelfId] = useState(() => {
+    if (!templateWasPicked) return null;
     const shelf = shelfForTemplate(initialDraft?.genreTemplateId || "");
     return shelf && shelf.templateIds.length > 1 ? shelf.id : null;
   });
@@ -2080,12 +2146,17 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
       abilityId: abilityPick?.id || "",
       toneId,
       step,
+      // Whether the step-one template was EVER deliberately picked or
+      // rolled in this draft's life (§37): the restore funnel reads it
+      // back to tell a real pick from the silent default fill, which
+      // this very effect would otherwise persist as a counterfeit.
+      templatePicked: pickedTemplate,
       // The five-step flow stamps its drafts so the restore funnel can
       // tell current step numbers from seven/six-step ones (see
       // migratedDraftStep) instead of folding them a second time.
       flowVersion: 5,
     });
-  }, [draft, abilityName, abilityPick?.id, tone.name, toneId, step, onDraftChange]);
+  }, [draft, abilityName, abilityPick?.id, tone.name, toneId, step, pickedTemplate, onDraftChange]);
   useEffect(() => {
     scrollToTop();
     forgeRef.current
@@ -2109,7 +2180,10 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
       world,
       abilityOption: abilityPick || { id: "", name: "", desc: "" },
       toneOption: tone,
-    }, { engine, signal: controller.signal }); }
+    }, { engine, signal: controller.signal });
+      // The first chapter has landed (§37 G3 burst moment): one short
+      // sparkle as the wait surface lifts and the reader opens.
+      burstParticles(); }
     catch (failure) { if (!controller.signal.aborted) setError(failure.message || "暂时没能打开故事，草稿还在。"); }
     finally { if (operation.current === controller) { operation.current = null; setBusy(false); } }
   };
@@ -2161,19 +2235,22 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
         <main className="forge-main">
           {step === 1 && (
             <>
-              <div className="forge-section-heading">
-                <div>
-                  <h2 tabIndex={-1}>想写哪种故事？</h2>
-                  <p className="step-intro">先挑一个大类，再选具体的写法。题材只是分类——故事发生在哪个世界，下一步由你自己选。</p>
+              <div className="forge-ambient-wrap">
+                <ParticleField density="forge" />
+                <div className="forge-section-heading">
+                  <div>
+                    <h2 tabIndex={-1}>想写哪种故事？</h2>
+                    <p className="step-intro">先挑一个大类，再选具体的写法。题材只是分类——故事发生在哪个世界，下一步由你自己选。</p>
+                  </div>
                 </div>
-              </div>
-              <div className="random-combo-row random-combo-row--top">
+                <div className="random-combo-row random-combo-row--top">
                 <p>{rolled
                   ? <>已配好：<b>{rolled.template.fullName} · {rolled.world}</b>，以「{rolled.identity.name}」的身份{rolled.point ? <>，从「{rolled.point.name}」醒来</> : null}。不满意就再掷一次。</>
                   : <>没想好？<b>随机组合</b>一次配好题材、世界、身份和出生点。</>}</p>
                 <Button variant="secondary" icon="spark" className="random-combo-button" onClick={rollCombo}>
                   {rolled ? "再掷一次" : "随机组合"}
                 </Button>
+                </div>
               </div>
               {openShelf ? (
                 <>
@@ -2208,11 +2285,20 @@ function Forge({ onGenerate, initialDraft, onDraftChange, provider, authClient, 
                       <AnimatedContent key={shelf.id} className="shelf-brick-wrap" distance={8} delay={Math.min(index, 7) * 0.05}>
                         <button
                           type="button"
-                          className={`shelf-brick ${holdsPick ? "selected" : ""}`}
+                          className={`shelf-brick has-art ${holdsPick ? "selected" : ""}`}
                           aria-pressed={only ? holdsPick : undefined}
                           aria-label={only ? shelf.name : `${shelf.name}，${shelf.templateIds.length} 种写法`}
                           onClick={() => (only ? selectTemplate(only) : setShelfId(shelf.id))}
                         >
+                          <img
+                            className="shelf-brick-art"
+                            src={`/art/family-${shelf.id}-640.webp`}
+                            srcSet={`/art/family-${shelf.id}-640.webp 640w, /art/family-${shelf.id}-1122.webp 1122w`}
+                            sizes="(min-width: 700px) 40vw, 44vw"
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                          />
                           <strong>{shelf.name}</strong>
                           {holdsPick && !pickedTemplate
                             ? <span className="default-badge">默认</span>
@@ -3044,9 +3130,9 @@ function ReadingDialog({ title, children, onClose }) {
 }
 
 const NOTIFY_TABS = [
-  { id: "activity", label: "互动" },
-  { id: "announcements", label: "公告" },
-  { id: "system", label: "系统" },
+  { id: "activity", label: "互动", icon: "users" },
+  { id: "announcements", label: "公告", icon: "megaphone" },
+  { id: "system", label: "系统", icon: "sliders" },
 ];
 
 function notifyTime(iso) {
@@ -3143,6 +3229,7 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
               className={`notify-tab ${tab === entry.id ? "is-active" : ""}`}
               onClick={() => setTab(entry.id)}
             >
+              <Icon name={entry.icon} size={15} />
               {entry.label}
               {unread > 0 && <span className="notify-tab-badge" aria-label={`${unread} 条未读`}>{unread > 99 ? "99+" : unread}</span>}
             </button>
@@ -3157,11 +3244,14 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
       ) : !data ? (
         <p className="notify-empty" role="status">正在打开消息…</p>
       ) : items.length === 0 ? (
-        <p className="notify-empty">
-          {tab === "activity" && "还没有互动消息——关注、点赞和评论都会记在这里。"}
-          {tab === "announcements" && "暂无公告。"}
-          {tab === "system" && "暂无系统消息。密码重设、恢复邮箱变更这类账号动态会记在这里。"}
-        </p>
+        <div className="notify-empty">
+          <img className="empty-art" src="/art/empty-messages-512.webp" alt="" loading="lazy" />
+          <p>
+            {tab === "activity" && "还没有互动消息——关注、点赞和评论都会记在这里。"}
+            {tab === "announcements" && "暂无公告。"}
+            {tab === "system" && "暂无系统消息。密码重设、恢复邮箱变更这类账号动态会记在这里。"}
+          </p>
+        </div>
       ) : (
         <ul className="notify-list">
           {items.map((item) => {
@@ -4934,13 +5024,16 @@ function Store({ onNavigate, onOpenBook, onOpenOwn, publications, officialSample
 
   return (
     <div className="page page-store page-enter">
-      <header className="store-heading">
-        <h1>书城</h1>
-        <button className="small-link" onClick={onOpenOwn} aria-label="创建匿名分享">
-          分享 <Icon name="send" size={17} />
-        </button>
-      </header>
-      <p className="page-caption">{officialSample ? "官方示例与本机分享" : "试读占位与本机分享"}</p>
+      <div className="store-ambient-wrap">
+        <ParticleField density="faint" />
+        <header className="store-heading">
+          <h1>书城</h1>
+          <button className="small-link" onClick={onOpenOwn} aria-label="创建匿名分享">
+            分享 <Icon name="send" size={17} />
+          </button>
+        </header>
+        <p className="page-caption">{officialSample ? "官方示例与本机分享" : "试读占位与本机分享"}</p>
+      </div>
 
       <div className="store-toolbar">
         <div className="store-filters" role="group" aria-label="小说分类">
@@ -4988,7 +5081,7 @@ function Store({ onNavigate, onOpenBook, onOpenOwn, publications, officialSample
         </div>
       ) : (
         <div className="store-empty" role="status">
-          <Icon name="book" size={27} />
+          <img className="empty-art" src="/art/empty-store-512.webp" alt="" loading="lazy" />
           <h3>暂无{filter}故事</h3>
           <Button
             variant="secondary"
@@ -5177,21 +5270,24 @@ function PlazaFeed({ account, authClient, activeStory, stories, onNavigate, onOp
     : false;
   return (
     <div className="page page-plaza page-enter">
-      <header className="plaza-heading">
-        <h1>广场</h1>
-        {onlineCount >= 1 && (
-          <span className="plaza-online" role="status">
-            <span className="plaza-online-dot" aria-hidden="true" />
-            {onlineCount} 人在线
-          </span>
-        )}
-      </header>
-      {/* The value line takes a formal seat on the front door
-          (DESIGNER-QA #7, closed in §33): a cold visitor's first screen
-          carries one sentence worth remembering; the caption below it
-          keeps its explaining job. */}
-      <p className="plaza-value-line">这一次，<em>你是主角。</em></p>
-      <p className="page-caption">别人走完的世界，正等你走进去。</p>
+      <div className="plaza-ambient-wrap">
+        <ParticleField density="faint" />
+        <header className="plaza-heading">
+          <h1>广场</h1>
+          {onlineCount >= 1 && (
+            <span className="plaza-online" role="status">
+              <span className="plaza-online-dot" aria-hidden="true" />
+              {onlineCount} 人在线
+            </span>
+          )}
+        </header>
+        {/* The value line takes a formal seat on the front door
+            (DESIGNER-QA #7, closed in §33): a cold visitor's first screen
+            carries one sentence worth remembering; the caption below it
+            keeps its explaining job. */}
+        <p className="plaza-value-line">这一次，<em>你是主角。</em></p>
+        <p className="page-caption">别人走完的世界，正等你走进去。</p>
+      </div>
 
       {activeStory && (
         <button type="button" className="plaza-continue-card" onClick={() => onOpenStory(activeStory.id)}>
@@ -5286,7 +5382,7 @@ function PlazaFeed({ account, authClient, activeStory, stories, onNavigate, onOp
       {feed === null && !error && <p className="plaza-loading" role="status">正在打开广场…</p>}
       {feed !== null && feed.length === 0 && !error && (
         <div className="plaza-empty" role="status">
-          <Icon name="book" size={27} />
+          <img className="empty-art" src="/art/empty-plaza-512.webp" alt="" loading="lazy" />
           <h3>还没有人发布走完的故事线</h3>
           <p>第一条线，往往是自己的。用化身走完一季，它就会出现在这里。</p>
           <Button variant="secondary" icon="arrow" onClick={() => onNavigate("forge")}>去造世</Button>
@@ -5513,6 +5609,124 @@ function formatProfileDate(value) {
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
+/**
+ * The picture crop step (PHONE-FIX §37): after picking a file, the
+ * reader frames the square themselves — drag to position, slider to
+ * zoom — inside a viewport whose inscribed circle is dimmed outside,
+ * so what the round avatar will show is exactly what they see. The
+ * small round preview at the slider repeats the same transform.
+ * Confirming hands the chosen source rect to
+ * bitmapRegionToSquareJpeg; cancelling discards everything.
+ */
+function PictureCropper({ bitmap, url, busy, onCancel, onConfirm }) {
+  const viewRef = useRef(null);
+  const [viewSize, setViewSize] = useState(280);
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const dragRef = useRef(null);
+  useEffect(() => {
+    const measure = () => {
+      const rect = viewRef.current?.getBoundingClientRect();
+      if (rect?.width) setViewSize(rect.width);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+  const iw = bitmap.width;
+  const ih = bitmap.height;
+  const baseScale = Math.max(viewSize / iw, viewSize / ih);
+  const scale = baseScale * zoom;
+  const dispW = iw * scale;
+  const dispH = ih * scale;
+  const clampOffset = (next, forZoom = zoom) => {
+    const s = baseScale * forZoom;
+    const maxX = Math.max(0, (iw * s - viewSize) / 2);
+    const maxY = Math.max(0, (ih * s - viewSize) / 2);
+    return {
+      x: Math.min(maxX, Math.max(-maxX, next.x)),
+      y: Math.min(maxY, Math.max(-maxY, next.y)),
+    };
+  };
+  const onPointerDown = (event) => {
+    if (busy) return;
+    dragRef.current = { id: event.pointerId, sx: event.clientX, sy: event.clientY, ox: offset.x, oy: offset.y };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const onPointerMove = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.id !== event.pointerId) return;
+    setOffset(clampOffset({ x: drag.ox + event.clientX - drag.sx, y: drag.oy + event.clientY - drag.sy }));
+  };
+  const onPointerEnd = () => { dragRef.current = null; };
+  const confirm = () => {
+    const side = viewSize / scale;
+    const cx = Math.min(iw - side, Math.max(0, iw / 2 - offset.x / scale - side / 2));
+    const cy = Math.min(ih - side, Math.max(0, ih / 2 - offset.y / scale - side / 2));
+    onConfirm({ cx, cy, side });
+  };
+  const previewRatio = 46 / viewSize;
+  return (
+    <div className="profile-crop">
+      <div
+        className="profile-crop-view"
+        ref={viewRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerEnd}
+        onPointerCancel={onPointerEnd}
+      >
+        <img
+          src={url}
+          alt=""
+          draggable={false}
+          style={{
+            width: dispW,
+            height: dispH,
+            transform: `translate(-50%, -50%) translate(${offset.x}px, ${offset.y}px)`,
+          }}
+        />
+        <span className="profile-crop-circle" aria-hidden="true" />
+      </div>
+      <div className="profile-crop-controls">
+        <span className="profile-crop-preview" aria-hidden="true">
+          <img
+            src={url}
+            alt=""
+            draggable={false}
+            style={{
+              width: dispW * previewRatio,
+              height: dispH * previewRatio,
+              transform: `translate(-50%, -50%) translate(${offset.x * previewRatio}px, ${offset.y * previewRatio}px)`,
+            }}
+          />
+        </span>
+        <input
+          type="range"
+          min="1"
+          max="3"
+          step="0.01"
+          value={zoom}
+          disabled={busy}
+          aria-label="缩放"
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            setZoom(next);
+            setOffset((current) => clampOffset(current, next));
+          }}
+        />
+      </div>
+      <p className="profile-crop-hint">拖动调整位置，圆圈里就是头像最终的样子。</p>
+      <div className="profile-crop-actions">
+        <button type="button" onClick={onCancel} disabled={busy}>取消</button>
+        <button type="button" className="is-primary" onClick={confirm} disabled={busy}>
+          {busy ? "上传中…" : "使用这张"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
   const editable = profile.editable || {};
   // The name field starts from what the owner actually stored
@@ -5520,12 +5734,28 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
   // fallback would silently save the avatar's name (or, before the
   // email guard, the account email) as a deliberate display name.
   const [displayName, setDisplayName] = useState(editable.displayName || "");
+  const [bio, setBio] = useState(editable.bio || "");
+  const bioCount = [...bio].length;
+  const bioOverLimit = bioCount > 120;
   const [handle, setHandle] = useState(editable.handle || "");
   const [handleState, setHandleState] = useState(null);
   const [busy, setBusy] = useState(false);
   const [pictureBusy, setPictureBusy] = useState("");
   const [error, setError] = useState("");
   const fileRef = useRef(null);
+  // A picked picture waits here (decoded bitmap + object URL) while
+  // the reader frames it in the crop step; nothing is uploaded until
+  // they confirm the crop (§37).
+  const [crop, setCrop] = useState(null);
+  const cropRef = useRef(null);
+  cropRef.current = crop;
+  useEffect(() => () => {
+    const current = cropRef.current;
+    if (current) {
+      current.bitmap.close?.();
+      URL.revokeObjectURL(current.url);
+    }
+  }, []);
   const pictureKind = profile.picture?.kind || "default";
   const pictureStateLabel = pictureKind === "upload" ? "自定义图片" : pictureKind === "avatar" ? "化身立绘" : "默认头像";
 
@@ -5548,15 +5778,37 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
     } finally { setPictureBusy(""); }
   };
 
+  const closeCrop = () => {
+    const current = cropRef.current;
+    if (current) {
+      current.bitmap.close?.();
+      URL.revokeObjectURL(current.url);
+    }
+    setCrop(null);
+  };
+
   const onPickFile = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file || pictureBusy) return;
+    setError("");
+    try {
+      const bitmap = await createImageBitmap(file);
+      setCrop({ bitmap, url: URL.createObjectURL(file) });
+    } catch {
+      setError("这张图片读不出来，换一张试试。");
+    }
+  };
+
+  const confirmCrop = async (rect) => {
+    if (!crop || pictureBusy) return;
     setPictureBusy("upload");
     setError("");
     try {
-      const processed = await fileToSquareJpeg(file);
-      onSaved(await uploadMyPicture({ ...processed, getAccessToken: getToken }));
+      const processed = await bitmapRegionToSquareJpeg(crop.bitmap, rect);
+      const next = await uploadMyPicture({ ...processed, getAccessToken: getToken });
+      closeCrop();
+      onSaved(next);
     } catch (failure) {
       setError(failure?.message || "图片没能上传，请换一张试试。");
     } finally { setPictureBusy(""); }
@@ -5568,7 +5820,11 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
     setError("");
     try {
       const next = await updateMyProfile({
-        patch: { displayName: displayName.trim(), handle: handle.trim().toLowerCase() || null },
+        patch: {
+          displayName: displayName.trim(),
+          handle: handle.trim().toLowerCase() || null,
+          bio: bio.trim(),
+        },
         getAccessToken: getToken,
       });
       onSaved(next);
@@ -5587,12 +5843,25 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
       <div className="profile-edit-sheet">
         <span className="ryan-sheet-handle" aria-hidden="true" />
         <div className="profile-edit-heading">
-          <h2>编辑资料</h2>
+          <h2>{crop ? "裁剪头像" : "编辑资料"}</h2>
           <button type="button" className="profile-edit-close" onClick={onClose} aria-label="关闭">
             <Icon name="x" size={16} />
           </button>
         </div>
 
+        {crop ? (
+          <>
+            {error && <p className="profile-edit-error" role="alert">{error}</p>}
+            <PictureCropper
+              bitmap={crop.bitmap}
+              url={crop.url}
+              busy={pictureBusy === "upload"}
+              onCancel={closeCrop}
+              onConfirm={(rect) => void confirmCrop(rect)}
+            />
+          </>
+        ) : (
+        <>
         <div className="profile-edit-picture">
           <span className={`profile-edit-preview-frame${pictureKind === "avatar" ? " is-portrait" : ""}`}>
             <img className="profile-edit-preview" src={profile.picture?.url || "/default-avatar.svg"} alt="" />
@@ -5630,6 +5899,18 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
           />
         </label>
         <label className="profile-edit-field">
+          <span>个人简介</span>
+          <textarea
+            value={bio}
+            rows={3}
+            onChange={(event) => setBio(event.target.value)}
+            placeholder="写一句介绍自己"
+          />
+          <small className={`profile-edit-bio-count${bioOverLimit ? " is-over" : ""}`} aria-live="polite">
+            {bioCount}/120
+          </small>
+        </label>
+        <label className="profile-edit-field">
           <span>@用户名</span>
           <input
             value={handle}
@@ -5649,9 +5930,11 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
         </label>
 
         {error && <p className="profile-edit-error" role="alert">{error}</p>}
-        <button type="button" className="profile-edit-save" disabled={busy} onClick={() => void save()}>
+        <button type="button" className="profile-edit-save" disabled={busy || bioOverLimit} onClick={() => void save()}>
           {busy ? "保存中…" : "保存"}
         </button>
+        </>
+        )}
       </div>
     </div>
   );
@@ -5805,8 +6088,16 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
 
       <h3 className="settings-group-title">外观</h3>
       <div className="settings-card">
-        <ShellThemeControl shellTheme={shellTheme} onShellThemeChange={onShellThemeChange} />
+        <div className="settings-row settings-row-static">
+          <span className="settings-row-ic"><Icon name="palette" size={19} /></span>
+          <span className="settings-row-copy">
+            <strong>外观主题</strong>
+            <small>三套外观主题</small>
+          </span>
+          <ShellThemeSegments shellTheme={shellTheme} onShellThemeChange={onShellThemeChange} />
+        </div>
         <div className="settings-row settings-row-motion">
+          <span className="settings-row-ic"><Icon name="ripple" size={19} /></span>
           <span className="settings-row-copy">
             <strong>动态效果</strong>
             <small>{systemPaused ? "系统已要求减少动态效果，动效保持关闭" : motionOn ? "界面动效开启中" : "界面动效已暂停"}</small>
@@ -5828,24 +6119,27 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
       <h3 className="settings-group-title">账号</h3>
       <div className="settings-card">
         <button type="button" className="settings-row" onClick={onOpenAccount}>
+          <span className="settings-row-ic"><Icon name="shield" size={19} /></span>
           <span className="settings-row-copy">
             <strong>我的账号</strong>
             <small>用量、登录方式与恢复邮箱都在账号页里</small>
           </span>
           <Icon name="chevron" size={16} />
         </button>
+      </div>
+      <div className="settings-card settings-card-signout">
         <button type="button" className="settings-row settings-row-danger" onClick={() => void signOut()} disabled={signingOut}>
+          <span className="settings-row-ic"><Icon name="logout" size={19} /></span>
           <span className="settings-row-copy">
             <strong>{signingOut ? "正在退出…" : "退出登录"}</strong>
-            <small>退出不会删除本机书架</small>
           </span>
-          <Icon name="chevron" size={16} />
         </button>
       </div>
 
       <h3 className="settings-group-title">数据</h3>
       <div className="settings-card">
         <button type="button" className="settings-row" onClick={onOpenLibrary}>
+          <span className="settings-row-ic"><Icon name="database" size={19} /></span>
           <span className="settings-row-copy">
             <strong>书架备份与恢复</strong>
             <small>导出、导入与本机存储</small>
@@ -5857,6 +6151,7 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
       <h3 className="settings-group-title">关于</h3>
       <div className="settings-card">
         <div className="settings-row settings-row-static">
+          <span className="settings-row-ic"><Icon name="info" size={19} /></span>
           <span className="settings-row-copy">
             <strong>版本</strong>
           </span>
@@ -5865,6 +6160,7 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
           <span className="settings-row-value">织界 v0.3.0</span>
         </div>
         <button type="button" className="settings-row" onClick={() => onOpenProfile?.("username:storyweave")}>
+          <span className="settings-row-ic"><Icon name="spark" size={19} /></span>
           <span className="settings-row-copy">
             <strong>织界官方</strong>
             <small>官方账号与示例故事</small>
@@ -5872,6 +6168,7 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
           <Icon name="chevron" size={16} />
         </button>
         <button type="button" className="settings-row" onClick={onOpenHelp}>
+          <span className="settings-row-ic"><Icon name="help" size={19} /></span>
           <span className="settings-row-copy">
             <strong>帮助与常见问题</strong>
             <small>额度、找回、广场规则</small>
@@ -5881,6 +6178,90 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
       </div>
       <p className="settings-foot-note">阅读时的纸色、字号与翻页方式在阅读器里的「阅读设置」单独调，不在这里。</p>
     </section>
+  );
+}
+
+/**
+ * The share sheet's ready-made copy (§37 I): one plain pitch line +
+ * the person's @handle + the real profile URL — the same URL the old
+ * copy-link action used, never a re-invented one. The main avatar is
+ * named only when there is one. Own profile pitches in first person;
+ * someone else's stays neutral and names them. Written to be pasted
+ * as-is into any chat, and editable in the sheet before copying.
+ */
+function profileShareText({ profile, isSelf, shownName, shownHandle, url }) {
+  const avatarName = profile?.avatar?.name || "";
+  const tail = shownHandle ? ` 👉 @${shownHandle} ${url}` : ` ${url}`;
+  if (isSelf) {
+    return avatarName
+      ? `我在织界养了一个化身「${avatarName}」，陪我走进一个个故事世界。来看看我的主页${tail}`
+      : `我在织界走进一个个故事世界。来看看我的主页${tail}`;
+  }
+  return avatarName
+    ? `来看看 ${shownName} 的织界主页，TA 的化身「${avatarName}」陪 TA 走进一个个故事世界${tail}`
+    : `来看看 ${shownName} 的织界主页，TA 在织界走进一个个故事世界${tail}`;
+}
+
+/**
+ * The one share door (§37 I): a bottom sheet in the edit sheet's
+ * language. The copy is pre-written and editable; 复制分享文案 takes
+ * the whole text; 系统分享 appears only when navigator.share really
+ * exists — never as a decoration that does nothing.
+ */
+function ShareProfileSheet({ text, isSelf, onClose, onCopied, onCopyFailed }) {
+  const [value, setValue] = useState(text);
+  const [busy, setBusy] = useState(false);
+  const canSystemShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+  const copy = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await navigator.clipboard.writeText(value);
+      onCopied?.();
+      onClose();
+    } catch {
+      onCopyFailed?.();
+      setBusy(false);
+    }
+  };
+  const systemShare = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await navigator.share({ text: value });
+      onClose();
+    } catch {
+      /* The reader dismissed the system sheet — nothing to report. */
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="profile-edit-overlay" role="dialog" aria-modal="true" aria-label="分享主页">
+      <div className="profile-edit-sheet">
+        <span className="ryan-sheet-handle" aria-hidden="true" />
+        <div className="profile-edit-heading">
+          <h2>分享主页</h2>
+          <button type="button" className="profile-edit-close" onClick={onClose} aria-label="关闭">
+            <Icon name="x" size={16} />
+          </button>
+        </div>
+        <label className="profile-edit-field">
+          <span>分享文案</span>
+          <textarea value={value} rows={4} onChange={(event) => setValue(event.target.value)} />
+        </label>
+        <p className="profile-share-hint">改成你自己的话也行，链接留着——点开就到{isSelf ? "你的" : " TA 的"}主页。</p>
+        <div className="profile-share-actions">
+          <button type="button" className="profile-share-copy" disabled={busy || !value.trim()} onClick={() => void copy()}>
+            复制分享文案
+          </button>
+          {canSystemShare && (
+            <button type="button" className="profile-share-system" disabled={busy || !value.trim()} onClick={() => void systemShare()}>
+              系统分享
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -5900,6 +6281,10 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   const [reported, setReported] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [pictureSrc, setPictureSrc] = useState("");
+  // (Hoisted above the early returns with the other state: a hook
+  // below the skeleton/error returns changes the hook count when the
+  // profile lands and crashes the page — React error #310.)
+  const [shareOpen, setShareOpen] = useState(false);
   // The avatar on the stage (PROFILE-ENRICH §35): the main avatar by
   // default; a return visit restores the tile left selected.
   const [stageAvatarId, setStageAvatarId] = useState(() => profileViewState(uid)?.avatarId || "");
@@ -6084,7 +6469,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   const ownBooks = isSelf && Array.isArray(ownStories) ? ownStories : null;
   const worksCount = ownBooks ? ownBooks.length : (profile.counts?.works ?? publications.length);
 
-  const toggleFollow = async () => {
+  const toggleFollow = async (fromElement = null) => {
     if (busy) return;
     if (!account.user) { onOpenAccount(); return; }
     setBusy(true);
@@ -6093,6 +6478,9 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
       const result = following
         ? await unfollowUser({ uid, getAccessToken: getToken })
         : await followUser({ uid, getAccessToken: getToken });
+      // A follow landing is one of the three burst moments (§37 G3):
+      // a ≤1s sparkle from the button, only on follow, never on unfollow.
+      if (result.following) burstFromElement(fromElement);
       const next = {
         ...profile,
         counts: { ...profile.counts, followers: result.followers },
@@ -6132,15 +6520,8 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
     } finally { setConnectionBusyUid(""); }
   };
 
-  const shareProfile = async () => {
-    const url = `${window.location.origin}${window.location.pathname}#/profile/${encodeURIComponent(uid)}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      setNote("主页链接已复制。");
-    } catch {
-      setNote("没能复制链接，请稍后再试。");
-    }
-  };
+  const profileUrl = `${window.location.origin}${window.location.pathname}#/profile/${encodeURIComponent(uid)}`;
+  const shareText = profileShareText({ profile, isSelf, shownName, shownHandle, url: profileUrl });
 
   const reportThisUser = async () => {
     if (reported) return;
@@ -6154,11 +6535,6 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
       if (failure?.code === "auth-required") onOpenAccount();
       else setNote(failure?.message || "举报没能送出，请稍后再试。");
     }
-  };
-
-  const copyProfileLink = async () => {
-    setMenuOpen(false);
-    await shareProfile();
   };
 
   // Swipe-to-close (PROFILE-FEEL B5, window form): the grab zone at
@@ -6219,28 +6595,31 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
             </button>
           ) : <span aria-hidden="true" />}
           <span className="ryan-topbar-actions">
-            <button type="button" className="ryan-glyph-btn" onClick={() => void shareProfile()} aria-label="分享主页">
+            <button type="button" className="ryan-glyph-btn" onClick={() => setShareOpen(true)} aria-label="分享主页">
               <Icon name="share" size={20} />
             </button>
-            <button
-              type="button"
-              className="ryan-glyph-btn"
-              aria-label="更多操作"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((open) => !open)}
-            >
-              <Icon name="dots" size={20} />
-            </button>
-          </span>
-        </div>
-        {menuOpen && (
-          <div className="ryan-menu" role="menu">
+            {/* The ··· menu only exists while it has something in it:
+                with the duplicate copy-link item gone, its one job is
+                reporting someone else — on your own profile the button
+                itself retires (§37 I). */}
             {!isSelf && (
-              <button type="button" disabled={reported} onClick={() => void reportThisUser()}>
-                {reported ? "已举报" : "举报该用户"}
+              <button
+                type="button"
+                className="ryan-glyph-btn"
+                aria-label="更多操作"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((open) => !open)}
+              >
+                <Icon name="dots" size={20} />
               </button>
             )}
-            <button type="button" onClick={() => void copyProfileLink()}>复制主页链接</button>
+          </span>
+        </div>
+        {menuOpen && !isSelf && (
+          <div className="ryan-menu" role="menu">
+            <button type="button" disabled={reported} onClick={() => void reportThisUser()}>
+              {reported ? "已举报" : "举报该用户"}
+            </button>
           </div>
         )}
         <div className="profile-hero-id">
@@ -6256,8 +6635,18 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
             {profile.avatar?.name ? <span className="profile-main-chip">主化身 · {profile.avatar.name}</span> : null}
           </div>
           {shownHandle && !nameIsHandle && <p className="profile-hero-handle">@{shownHandle}</p>}
-          {profile.avatar?.description ? (
-            <p className="profile-hero-bio">{profile.avatar.description}</p>
+          {/* The hero line is the PERSON's own introduction (§37): the
+              stored bio, written in the same 编辑资料 sheet as the
+              name. The avatar's description used to be borrowed for
+              this slot; it describes the avatar, not the person, and
+              never belonged here. No bio: the owner gets a tappable
+              prompt, a visitor gets no line at all. */}
+          {profile.bio ? (
+            <p className="profile-hero-bio">{profile.bio}</p>
+          ) : isSelf ? (
+            <button type="button" className="profile-hero-bio is-placeholder" onClick={() => setEditOpen(true)}>
+              写一句介绍自己
+            </button>
           ) : null}
         </div>
       </header>
@@ -6291,11 +6680,11 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
               className={`btn-pill-white profile-follow-btn ${following ? "is-following" : ""}`}
               disabled={busy}
               aria-pressed={following}
-              onClick={() => void toggleFollow()}
+              onClick={(event) => void toggleFollow(event.currentTarget)}
             >
               {following ? "已关注" : "关注"}
             </button>
-            <button type="button" className="profile-share-btn" onClick={() => void shareProfile()} aria-label="分享主页">
+            <button type="button" className="profile-share-btn" onClick={() => setShareOpen(true)} aria-label="分享主页">
               <Icon name="share" size={18} />
             </button>
           </>
@@ -6371,7 +6760,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
                   ))}
               {isSelf && (
                 <button type="button" className="profile-shelf-new" onClick={() => onNavigate("forge")} aria-label="新建故事">
-                  <span className="profile-shelf-new-plus" aria-hidden="true">+</span>
+                  <span className="profile-shelf-new-plus" aria-hidden="true"><Icon name="plus" size={20} /></span>
                   开新书
                 </button>
               )}
@@ -6380,7 +6769,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           </>
         ) : (
           <div className="profile-empty">
-            <span className="profile-empty-ic"><Icon name="book" size={18} /></span>
+            <img className="profile-empty-art" src="/art/empty-shelf-512.webp" alt="" loading="lazy" />
             <div className="profile-empty-copy">
               <p>书架还是空的</p>
               <small>{isSelf ? "还没有属于自己的故事" : "TA 还没有公开的故事"}</small>
@@ -6407,7 +6796,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           </div>
         ) : (
           <div className="profile-empty">
-            <span className="profile-empty-ic"><Icon name="book" size={18} /></span>
+            <img className="profile-empty-art" src="/art/empty-published-512.webp" alt="" loading="lazy" />
             <div className="profile-empty-copy">
               <p>暂无上架作品</p>
               <small>{isSelf ? "一本书完结一季后，可以上架到书城" : "TA 还没有上架的书"}</small>
@@ -6446,6 +6835,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
                       loading="lazy"
                       onError={() => setStageFailedFor(stageAvatar.id)}
                     />
+                    <ParticleField density="dust" className="profile-stage-motes" />
                   </>
                 ) : (
                   <>
@@ -6495,7 +6885,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
             </>
           ) : (
             <div className="profile-empty">
-              <span className="profile-empty-ic"><Icon name="wand" size={18} /></span>
+              <img className="profile-empty-art" src="/art/empty-avatar-512.webp" alt="" loading="lazy" />
               <div className="profile-empty-copy">
                 <p>还没有化身</p>
                 <small>捏一个属于你的角色，陪你走过每个世界</small>
@@ -6533,6 +6923,15 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
             rememberProfile({ viewerUid, profile: next });
           }
         }}
+      />
+    )}
+    {shareOpen && (
+      <ShareProfileSheet
+        text={shareText}
+        isSelf={isSelf}
+        onClose={() => setShareOpen(false)}
+        onCopied={() => setNote("分享文案已复制。")}
+        onCopyFailed={() => setNote("没能复制，请稍后再试。")}
       />
     )}
     </>
@@ -6581,6 +6980,9 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
     try {
       const publication = await publishToPlaza({ story: selected, getAccessToken: () => authClient.getAccessToken() });
       plazaMineRemember(undefined, selected.id, publication);
+      // Publish landing is a burst moment (§37 G3) — the canvas is
+      // body-level, so it survives the navigation to the plaza.
+      burstParticles();
       onToast("已发布到广场。");
       onNavigate("plaza");
     } catch (failure) {
@@ -7550,6 +7952,80 @@ function App() {
   // Plaza sub-views (detail / publish / enter / plaza-read) all keep the
   // 广场 tab active in the sidebar and the bottom bar.
   const navView = pageRoute.plaza || view.startsWith("plaza") ? "plaza" : view;
+  // Page keep-alive (PHONE-FIX §37 J): the main tab views — plaza,
+  // home (the shelf), forge, store and my profile page — stay MOUNTED
+  // after their first visit, hidden rather than unmounted, so coming
+  // back is instant: component state (a forge run half-way through,
+  // the plaza feed and its 60s silent refresh, the profile SWR cache)
+  // and the window scroll position are exactly where they were left.
+  // The bound is deliberate: only these five views + the one profile
+  // WINDOW (SWR-cached, never stacked twice) are ever kept; the
+  // reader is NOT kept (item K) — it mounts fresh on every entry and
+  // unmounts on exit, its progress living in the reading store.
+  const KEEPALIVE_VIEWS = ["plaza", "home", "forge", "store", "profile"];
+  const isReaderTop = view === "reader" && !profileRoute;
+  const [visitedViews, setVisitedViews] = useState(() => new Set([view]));
+  useEffect(() => {
+    if (KEEPALIVE_VIEWS.includes(view)) {
+      setVisitedViews((current) => (current.has(view) ? current : new Set(current).add(view)));
+    }
+  }, [view]);
+  const visitedSet = new Set(visitedViews);
+  if (KEEPALIVE_VIEWS.includes(view)) visitedSet.add(view);
+  const pageCacheRef = useRef({});
+  const scrollPositionsRef = useRef({});
+  // Navigation itself scrolls (to top, or to a restored position) —
+  // the tracker must not record THOSE scrolls as the view's own
+  // position, or leaving a view would save 0 over the reader's real
+  // place. navigate() stamps this guard; the tracker sits out the
+  // 120ms that follow any navigation.
+  const scrollGuardRef = useRef(0);
+  useEffect(() => {
+    if (!KEEPALIVE_VIEWS.includes(view)) return undefined;
+    const onScroll = () => {
+      if (performance.now() - scrollGuardRef.current < 120) return;
+      scrollPositionsRef.current[view] = window.scrollY;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [view]);
+  // Idle prefetch (J2/J3): once the first screen is interactive, warm
+  // the surfaces a tab tap is likely to land on — the family wall art,
+  // the waiting painting, the empty-state art — and, when signed in,
+  // the viewer's own profile payload through the SWR cache. Guests
+  // prefetch NO private data. The store list is derived locally from
+  // the library + official sample, so it has no endpoint to warm.
+  const prefetchDoneRef = useRef(false);
+  useEffect(() => {
+    if (prefetchDoneRef.current || account.status === "loading") return undefined;
+    const idle = window.requestIdleCallback
+      ? window.requestIdleCallback.bind(window)
+      : (callback) => window.setTimeout(callback, 1200);
+    const cancelIdle = window.cancelIdleCallback
+      ? window.cancelIdleCallback.bind(window)
+      : (handle) => window.clearTimeout(handle);
+    const handle = idle(() => {
+      prefetchDoneRef.current = true;
+      const warm = [
+        ...["xuanzhen", "yanqing", "dushi", "lishi", "kehuan", "xuanyi", "fuben", "duanpian", "fanpai"]
+          .map((id) => `/art/family-${id}-640.webp`),
+        "/art/waiting-weaving-1600.webp",
+        "/art/empty-plaza-512.webp",
+        "/art/empty-store-512.webp",
+        "/art/empty-shelf-512.webp",
+        "/art/empty-published-512.webp",
+        "/art/empty-avatar-512.webp",
+        "/art/empty-messages-512.webp",
+      ];
+      for (const src of warm) { const image = new Image(); image.src = src; }
+      const uid = account.user?.uid || "";
+      if (uid) {
+        void loadProfile({ viewerUid: uid, uid, getAccessToken: () => authClient.getAccessToken() }).catch(() => {});
+      }
+    });
+    return () => cancelIdle(handle);
+  }, [account.status, account.user?.uid, authClient]);
   const [shellTheme, setShellThemeState] = useState(() => readShellTheme());
   const [helpOpen, setHelpOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -7833,10 +8309,19 @@ function App() {
     if (handledRouteRef.current === routeKey) return;
     handledRouteRef.current = routeKey;
     if (view !== "reader" && view !== "forge") {
-      const heading = sceneRef.current?.querySelector(".page h1");
+      const scope = sceneRef.current?.querySelector(`[data-keepalive="${view}"]`) || sceneRef.current;
+      const heading = scope?.querySelector(".page h1");
       heading?.setAttribute("tabindex", "-1");
       heading?.focus({ preventScroll: true });
-      scrollToTop();
+      // Keep-alive returns restore the scroll the view was left at
+      // (J1); a first visit still starts at the top.
+      const saved = KEEPALIVE_VIEWS.includes(view) ? scrollPositionsRef.current[view] : null;
+      scrollGuardRef.current = performance.now();
+      if (typeof saved === "number" && saved > 0) {
+        requestAnimationFrame(() => window.scrollTo(0, saved));
+      } else {
+        scrollToTop();
+      }
     }
   }, [view, pageRoute.id, readerStory?.title, profileRoute]);
   useEffect(() => {
@@ -7845,6 +8330,11 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [toast]);
   const navigate = (next, options = {}) => {
+    // Freeze the outgoing view's scroll position BEFORE anything
+    // scrolls, and arm the guard so the navigation's own scrolling
+    // is never recorded as a view position (J1).
+    if (KEEPALIVE_VIEWS.includes(view)) scrollPositionsRef.current[view] = window.scrollY;
+    scrollGuardRef.current = performance.now();
     const nextRoute = next === "reader"
       ? {
           view: next,
@@ -7869,7 +8359,7 @@ function App() {
     // underneath back to the top (PROFILE-FIX B2); every real page
     // change — including my own profile tab — keeps the scroll-to-top.
     const opensWindow = next === "profile" && Boolean(options.id) && options.id !== (account.user?.uid || "");
-    if (!opensWindow) scrollToTop();
+    if (!opensWindow && !KEEPALIVE_VIEWS.includes(next)) scrollToTop();
   };
   // Living publications follow their line (user order 2026-10-27): when a
   // published endless line gains a chapter — or is manually finished —
@@ -8414,26 +8904,37 @@ function App() {
         onOpenLibrary={() => setLibraryOpen(true)}
       />
     );
+  if (KEEPALIVE_VIEWS.includes(view)) pageCacheRef.current[view] = page;
   return (
     <div
       ref={sceneRef}
-      className={`app-shell ${profileRoute && !profileClosing ? "has-profile-window" : ""}`}
+      className={`app-shell ${profileRoute && !profileClosing ? "has-profile-window" : ""} ${isReaderTop ? "is-reader-top" : ""}`}
       data-view={view}
       data-motion={animate ? "on" : "off"}
     >
-      <AuroraBackground />
-      <Sidebar view={profileRoute ? "profile" : navView} onNavigate={navigate} onOpenProfile={openOwnProfile} />
+      {!isReaderTop && <AuroraBackground />}
+      {!isReaderTop && <Sidebar view={profileRoute ? "profile" : navView} onNavigate={navigate} onOpenProfile={openOwnProfile} />}
       <main className="main-shell">
-        <Topbar onNavigate={navigate} account={account} unreadCount={notifyUnread} onOpenNotifications={() => setNotificationsOpen(true)} onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }} />
-        {warning && (
+        {!isReaderTop && <Topbar onNavigate={navigate} account={account} unreadCount={notifyUnread} onOpenNotifications={() => setNotificationsOpen(true)} onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }} />}
+        {warning && !isReaderTop && (
           <div className="sw-storage-warning" role="alert">
             <Icon name="lock" size={14} />
             <span>{warning}</span>
             <button onClick={() => setLibraryOpen(true)}>备份与恢复</button>
           </div>
         )}
-        <MobileBottomNav view={view === "reader" ? "reader" : profileRoute ? "profile" : navView} onNavigate={navigate} onOpenProfile={openOwnProfile} />
-        {page}
+        {!isReaderTop && <MobileBottomNav view={profileRoute ? "profile" : navView} onNavigate={navigate} onOpenProfile={openOwnProfile} />}
+        {/* Keep-alive slots (J): every visited main view stays mounted
+            in its own slot, hidden while inactive. The reader (K) is
+            NOT slotted — it renders as a direct child of the shell's
+            main region, a sibling of the slots, never inside any
+            page's subtree, and unmounts on exit. */}
+        {KEEPALIVE_VIEWS.filter((slot) => visitedSet.has(slot)).map((slot) => (
+          <div key={slot} className="keepalive-view" data-keepalive={slot} hidden={isReaderTop || view !== slot}>
+            {view === slot && !isReaderTop ? page : pageCacheRef.current[slot] || null}
+          </div>
+        ))}
+        {!KEEPALIVE_VIEWS.includes(view) && page}
       </main>
       {profileRoute && (
         <div className={`profile-window ${profileClosing ? "is-closing" : ""}`} role="dialog" aria-modal="true" aria-label="个人主页">

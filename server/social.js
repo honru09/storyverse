@@ -376,6 +376,11 @@ export function createSocialService({
         uid: target,
         displayName,
         handle,
+        // The owner's own one-line introduction (PHONE-FIX §37): a
+        // stored profile field like the display name — never borrowed
+        // from the avatar's description, which describes the avatar,
+        // not the person. Empty string when never written.
+        bio: record?.bio || '',
         picture,
         avatar: profile ? {
           name: sanitizeSettingText(clip(profile.name, 40)).trim(),
@@ -419,6 +424,7 @@ export function createSocialService({
         payload.editable = {
           displayName: record?.displayName || '',
           handle: record?.handle || '',
+          bio: record?.bio || '',
           pictureKind: record?.pictureKind ?? null,
           hasUpload: backend ? Boolean(await backend.getPicture(target).catch(() => null)) : false,
           hasPortrait,
@@ -481,7 +487,7 @@ export function createSocialService({
         : { available: true, message: '这个用户名可以用。' }
     },
 
-    /** PUT /api/me/profile — display name, @handle and picture choice. */
+    /** PUT /api/me/profile — display name, @handle, bio and picture choice. */
     async saveMyProfile(identity, body) {
       if (!backend) throw new ApiError(503, '主页服务尚未配置。')
       const input = body && typeof body === 'object' ? body : {}
@@ -491,6 +497,7 @@ export function createSocialService({
           uid: identity.uid,
           displayName: existing?.displayName || '',
           handle: existing?.handle || '',
+          bio: existing?.bio || '',
           pictureKind: existing?.pictureKind ?? null,
           pictureVersion: existing?.pictureVersion || 0,
         }
@@ -498,6 +505,14 @@ export function createSocialService({
           const name = sanitizeSettingText(clip(input.displayName, 60)).trim()
           if (!name || charCount(name) > 20) throw new ApiError(400, '显示名要有 1–20 个字。')
           record.displayName = name
+        }
+        if ('bio' in input) {
+          // One short paragraph, same sanitising口径 as every other
+          // owner-written text; clearing it (empty string) is a
+          // legitimate save, unlike the display name.
+          const bio = sanitizeSettingText(clip(input.bio, 400)).trim()
+          if (charCount(bio) > 120) throw new ApiError(400, '简介最多 120 个字。')
+          record.bio = bio
         }
         if ('handle' in input) {
           const handle = input.handle === null ? '' : clip(input.handle, 64).toLowerCase()
@@ -557,6 +572,7 @@ export function createSocialService({
           uid: identity.uid,
           displayName: existing?.displayName || '',
           handle: existing?.handle || '',
+          bio: existing?.bio || '',
           pictureKind: 'upload',
           pictureVersion: (existing?.pictureVersion || 0) + 1,
           updatedAt: new Date(now()).toISOString(),

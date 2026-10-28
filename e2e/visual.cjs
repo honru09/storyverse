@@ -78,7 +78,10 @@ async function summonAndClick(page, makeLocator) {
             toolbarSingleRow: !toolbarRows.length || Math.max(...toolbarRows.map(row => row.top)) < Math.min(...toolbarRows.map(row => row.bottom)),
             creationActionVisible: (() => {
               const button = document.querySelector('.forge-actions .button');
-              if (!button || window.innerWidth >= 1050) return true;
+              // §37 J: the forge stays mounted (kept alive, hidden) while
+              // the reader is open — a hidden forge has no action to
+              // obscure, so only a RENDERED button is measured.
+              if (!button || !button.getClientRects().length || window.innerWidth >= 1050) return true;
               const rect = button.getBoundingClientRect();
               // §33: the forge band sits flush on the bottom nav (its
               // bottom edge is the nav's top edge, innerHeight - 62)

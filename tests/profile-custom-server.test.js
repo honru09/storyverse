@@ -134,8 +134,9 @@ test('a fresh user has the default avatar picture, an editable block, and no pic
   const profile = await getProfile(base, user.uid, user.token)
   assert.deepEqual(profile.picture, { kind: 'default', url: '/default-avatar.svg' })
   assert.deepEqual(profile.editable, {
-    displayName: '', handle: '', pictureKind: null, hasUpload: false, hasPortrait: false,
+    displayName: '', handle: '', bio: '', pictureKind: null, hasUpload: false, hasPortrait: false,
   })
+  assert.equal(profile.bio, '', 'a fresh user has an empty bio, never a borrowed avatar description')
   const picture = await fetch(`${base}/api/users/${encodeURIComponent(user.uid)}/picture`)
   assert.equal(picture.status, 404, 'the default asset is a static file, not served by the picture route')
 })
@@ -164,6 +165,41 @@ test('profile record CRUD: the record wins over every fallback, for every viewer
   const after = await getProfile(base, author.uid, reader.token)
   assert.equal(after.handle, 'record_author')
   assert.equal(after.displayName, '夜行者')
+})
+
+test('bio: a stored introduction is public, editable, capped and survives a picture upload', async (t) => {
+  const { base } = await startServer(t)
+  const author = await register(base, 'bio_author')
+  const reader = await register(base, 'bio_reader')
+
+  const saved = await putProfile(base, author.token, { bio: '白天修服务器，夜里追更。' })
+  assert.equal(saved.status, 200)
+  const { profile: mine } = await saved.json()
+  assert.equal(mine.bio, '白天修服务器，夜里追更。')
+  assert.equal(mine.editable.bio, '白天修服务器，夜里追更。')
+
+  const seen = await getProfile(base, author.uid, reader.token)
+  assert.equal(seen.bio, '白天修服务器，夜里追更。', 'a visitor reads the same bio the owner saved')
+
+  // 120 chars is the cap: exactly 120 saves, 121 is refused.
+  assert.equal((await putProfile(base, author.token, { bio: '字'.repeat(120) })).status, 200)
+  const tooLong = await putProfile(base, author.token, { bio: '字'.repeat(121) })
+  assert.equal(tooLong.status, 400)
+  assert.match((await tooLong.json()).error, /120/)
+
+  // A picture upload rewrites the profile record — the bio must ride along.
+  const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')
+  const upload = await fetch(`${base}/api/me/profile/picture`, {
+    method: 'POST', headers: authed(author.token),
+    body: JSON.stringify({ image: png.toString('base64'), contentType: 'image/png' }),
+  })
+  assert.equal(upload.status, 200)
+  const afterUpload = await getProfile(base, author.uid, reader.token)
+  assert.equal(afterUpload.bio, '字'.repeat(120), 'the bio survives a picture upload')
+
+  // Clearing is a legitimate save.
+  assert.equal((await putProfile(base, author.token, { bio: '' })).status, 200)
+  assert.equal((await getProfile(base, author.uid, reader.token)).bio, '')
 })
 
 test('profile validation: name length, handle shape, login still required', async (t) => {

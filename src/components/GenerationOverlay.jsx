@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import ParticleField from "./ParticleField.jsx";
 
 const STEP_SETS = {
   story: ["正在铺设这个世界的规则…", "正在唤醒你的主角…", "正在写下第一幕…"],
@@ -42,6 +43,8 @@ export default function GenerationOverlay({ kind = "story", onCancel }) {
   const slow = elapsed >= SLOW_HINT_SECONDS;
   return createPortal(
     <div className="generation-overlay" role="alertdialog" aria-modal="false" aria-label="正在生成故事">
+      <span className="generation-bg" aria-hidden="true" />
+      <ParticleField density="waiting" />
       <div className="generation-card">
         <div className="generation-orb" aria-hidden="true"><span className="generation-halo" /></div>
         <h2>{kind === "merge" ? "两个世界正在相遇" : "你的故事正在成形"}</h2>

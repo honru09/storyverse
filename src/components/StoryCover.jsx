@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import WorldArtwork from "./WorldArtwork.jsx";
-import { coverStateOf, fetchCoverObjectUrl } from "../cover.js";
+import { coverStateOf, fallbackCoverVariantFor, fetchCoverObjectUrl } from "../cover.js";
 
 /**
  * A story's own painting when one exists, the shared world artwork
@@ -57,6 +57,28 @@ export default function StoryCover({ story, genreId = "mist", sources, eager = f
       <span className={`world-art story-cover-pending-wrap ${className}`} aria-hidden="true">
         <WorldArtwork genreId={genreId} sources={sources} eager={eager} {...(sizes ? { sizes } : {})} />
         <span className="story-cover-pending-chip">封面生成中</span>
+      </span>
+    );
+  }
+  // No painting of its own and no world painting that depicts this
+  // story's world (custom / unknown world): a genre-flavoured stock
+  // painting beats a wrong world (§37). Unmapped templates keep the
+  // world artwork — a guessy match is worse than an honest generic.
+  const variant = fallbackCoverVariantFor(story);
+  if (variant) {
+    return (
+      <span className={`world-art story-cover-fallback ${className}`} aria-hidden="true">
+        <img
+          src={`/art/cover-${variant}-640.webp`}
+          srcSet={`/art/cover-${variant}-640.webp 640w, /art/cover-${variant}-1122.webp 1122w`}
+          sizes={sizes || "(min-width: 1050px) 310px, (min-width: 700px) 40vw, 44vw"}
+          alt=""
+          width="1122"
+          height="1496"
+          loading={eager ? "eager" : "lazy"}
+          fetchPriority={eager ? "high" : "auto"}
+          decoding="async"
+        />
       </span>
     );
   }

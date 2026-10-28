@@ -63,3 +63,47 @@
 .account-theme-options{display:flex;gap:8px}
 .account-theme-options button{flex:1;min-height:42px;padding:8px 10px;border:1px solid var(--line);border-radius:999px;background:var(--glass);color:var(--ink);font-size:14px;font-weight:600;cursor:pointer}
 .account-theme-options button.is-active{background:var(--selected-surface);border-color:var(--selected-border);color:var(--selected-text)}
+
+/* Welcome scene (PHONE-FIX §37 H, final wording — 简洁高级): the
+   sign-in ground is a dynamic starfield with depth (ParticleField's
+   starfield mode: sparse, fine, slow stars flowing toward the
+   viewer; a static star field when motion is off). On the sky sits
+   ONE centred glass window — brand lock at its top, the form and
+   every entry inside it, the honest footer as small print at its
+   foot. No mascot, no illustration, no orbit rings: the premium
+   feel comes from whitespace, hairline borders and glass. The sky
+   is deep navy in every theme, so the scene pins its own light ink
+   locally; shell themes change the world outside the sheet, never
+   the legibility inside it. */
+.account-scene { position: relative; margin: 0 -1.5rem -1.5rem; padding: 34px 18px 30px; border-radius: 23px; overflow: hidden; background: radial-gradient(130% 95% at 50% -10%, #0b1332 0%, #050a1e 56%, #03061a 100%); }
+.account-scene .particle-field { z-index: 1; }
+.account-window { position: relative; z-index: 2; width: 100%; max-width: 430px; margin: 0 auto; display: grid; gap: 18px; padding: 28px 22px 24px; border: 1px solid rgba(160,175,255,.22); border-radius: 24px; background: rgba(9,14,32,.58); -webkit-backdrop-filter: blur(14px) saturate(1.15); backdrop-filter: blur(14px) saturate(1.15); box-shadow: 0 24px 60px -24px rgba(0,0,0,.65); scroll-margin-block: 20px; }
+@media (max-height: 620px) { .account-scene { padding-top: 20px; padding-bottom: 20px; } .account-window { padding-top: 20px; } .account-brand-logo { width: 40px; height: 40px; } .account-scene .account-brand-name { font-size: 28px; } }
+.account-brand-lock { display: grid; justify-items: center; text-align: center; }
+.account-brand-logo { width: 48px; height: 48px; }
+.account-scene .account-brand-name { margin: 10px 0 0; font-size: 34px; font-weight: 800; line-height: 1.15; letter-spacing: .14em; text-indent: .14em; color: #fff; }
+.account-scene .account-brand-sub { margin: 6px 0 0; font-size: 11px; font-weight: 700; letter-spacing: .42em; text-indent: .42em; color: #5eead4; }
+.account-scene .account-intro { margin: 12px 0 0; color: rgba(203,213,245,.88); font-size: 14px; }
+.account-scene .account-google { min-height: 52px; border-radius: 999px; border-color: rgba(160,175,255,.32); background: rgba(8,14,34,.5); color: #f2f5ff; box-shadow: none; }
+.account-scene .account-divider { color: rgba(203,213,245,.65); }
+.account-scene .account-divider::before, .account-scene .account-divider::after { background: rgba(160,175,255,.22); }
+.account-scene .account-tabs { border: 1px solid rgba(160,175,255,.18); background: rgba(8,14,34,.5); }
+.account-scene .account-tabs button { color: rgba(203,213,245,.78); }
+.account-scene .account-form label { color: #e8ecf9; }
+.account-scene .account-form input { border-color: rgba(160,175,255,.3); background: rgba(8,14,34,.55); color: #f2f5ff; }
+.account-scene .account-form input::placeholder { color: rgba(196,205,235,.45); }
+.account-scene .account-password { border-color: rgba(160,175,255,.3); background: rgba(8,14,34,.55); }
+.account-scene .account-password input { background: transparent; }
+.account-scene .account-password button { color: #8ecbff; }
+.account-scene .account-primary { min-height: 54px; border: 0; border-radius: 999px; background: linear-gradient(120deg, #38bdf8, #818cf8); color: #06122b; font-size: 16px; font-weight: 700; box-shadow: 0 12px 30px -8px rgba(56,150,255,.55); }
+.account-scene .account-links button, .account-scene .account-quiet { color: #8ecbff; }
+.account-scene .account-guest { min-height: 48px; border: 1px solid rgba(160,175,255,.4); border-radius: 999px; background: rgba(8,14,34,.35); color: #e8ecf9; }
+.account-scene .account-storage-note { color: rgba(203,213,245,.74); }
+.account-scene .account-message { background: rgba(139,124,240,.22); color: #e3e9ff; }
+.account-scene .account-message.is-error { background: rgba(229,72,77,.2); color: #ffb9bd; }
+.account-scene .account-recovery-note { background: rgba(229,72,77,.16); color: #ffd9db; }
+.account-scene .account-reset-heading { color: #fff; }
+.account-scene .account-theme { border-top-color: rgba(160,175,255,.22); }
+.account-scene .account-theme-label { color: rgba(203,213,245,.85); }
+.account-scene .account-theme-options button { border-color: rgba(160,175,255,.3); background: rgba(8,14,34,.45); color: #dbe4ff; }
+.account-scene .account-avatar-entry { border-color: rgba(160,175,255,.3); background: rgba(8,14,34,.4); color: #e8ecf9; }

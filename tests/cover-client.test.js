@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import {
   coverPayloadFor,
   coverStateOf,
+  fallbackCoverVariantFor,
   fetchCoverMeta,
   fetchCoverObjectUrl,
   requestCoverImage,
@@ -135,4 +136,31 @@ test('fetchCoverObjectUrl caches per version and revokes the replaced painting',
   assert.equal(next, 'blob:cover-2')
   assert.deepEqual(revoked, ['blob:cover-1'], 'the old painting is released on re-roll')
   assert.equal(await fetchCoverObjectUrl({ story: geminiStory(), fetchImpl, createObjectURL, revokeObjectURL }), null)
+})
+
+test('fallbackCoverVariantFor keeps the world painting whenever it depicts the world (§37)', () => {
+  // A known preset world: its own painting is the honest fallback,
+  // even when the template would map to a variant.
+  assert.equal(fallbackCoverVariantFor(geminiStory()), null)
+  assert.equal(fallbackCoverVariantFor(geminiStory({ genreId: 'city', genreTemplateId: 'scifi' })), null)
+  assert.equal(fallbackCoverVariantFor(geminiStory({ genreId: 'cultivation', genreTemplateId: 'urban' })), null)
+})
+
+test('fallbackCoverVariantFor maps custom and unknown worlds by template flavour (§37)', () => {
+  const custom = (genreTemplateId) => geminiStory({ genreId: 'custom', genreTemplateId })
+  assert.equal(fallbackCoverVariantFor(custom('xuanhuan')), 'eastern')
+  assert.equal(fallbackCoverVariantFor(custom('gaowu')), 'eastern')
+  assert.equal(fallbackCoverVariantFor(custom('lishi')), 'eastern')
+  assert.equal(fallbackCoverVariantFor(custom('urban')), 'urban')
+  assert.equal(fallbackCoverVariantFor(custom('campus')), 'urban')
+  assert.equal(fallbackCoverVariantFor(custom('scifi')), 'scifi')
+  assert.equal(fallbackCoverVariantFor(custom('wuxianliu')), 'scifi')
+  // Unknown world ids fall through the same mapping.
+  assert.equal(fallbackCoverVariantFor(geminiStory({ genreId: 'atlantis', genreTemplateId: 'xianxia' })), 'eastern')
+  // Unmapped flavours stay on the world artwork — no guessy matches.
+  assert.equal(fallbackCoverVariantFor(custom('horror')), null)
+  assert.equal(fallbackCoverVariantFor(custom('guize-guatan')), null)
+  assert.equal(fallbackCoverVariantFor(custom('zhihu-short')), null)
+  assert.equal(fallbackCoverVariantFor(custom('')), null)
+  assert.equal(fallbackCoverVariantFor(null), null)
 })

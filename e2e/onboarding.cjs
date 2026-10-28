@@ -246,8 +246,13 @@ async function runOnboarding(browser, width) {
     });
 
     await step('creation draft survives leaving, returning and reloading', async () => {
-      // Step one opens on the family shelves; the default template's
-      // family is already open. Continuing keeps the default pick.
+      // Step one opens on the family shelves with NO family drilled
+      // into and nothing pre-picked (PHONE-FIX §37): the shelf wall is
+      // what greets a fresh visit — no 「换个家族」 back-link, no
+      // template wall. Continuing untouched still keeps the default
+      // pick, exactly as before.
+      await page.getByRole('button', { name: /玄幻修真/ }).first().waitFor();
+      assert.equal(await page.getByRole('button', { name: '换个家族' }).count(), 0, 'a fresh forge visit must not open inside a family');
       await page.getByRole('button', { name: '继续', exact: true }).click();
       await page.getByRole('heading', { name: '故事发生在哪个世界？', exact: true }).waitFor();
       await page.locator('.world-grid').getByRole('button', { name: /沉潮港/ }).click();
@@ -322,7 +327,14 @@ async function runOnboarding(browser, width) {
       assert.equal(savedAtFive.draft.step, 5);
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.getByRole('heading', { name: '确认你的故事', exact: true }).waitFor();
-      assert.deepEqual((await readLibrary(page)).draft, savedAtFive.draft);
+      // The draft round-trips through a reload unchanged — except the
+      // restoredDraft marker (§37 A1), which the forge legitimately
+      // flips when it re-restores the draft on mount and writes the
+      // draft back; with the forge kept alive in its slot (J) that
+      // write-back now lands before this read. It is an internal
+      // marker, not draft content, so it is stripped from both sides.
+      const stripMarker = (draft) => { const { restoredDraft, ...rest } = draft || {}; return rest; };
+      assert.deepEqual(stripMarker((await readLibrary(page)).draft), stripMarker(savedAtFive.draft));
       await noOverflow(page, 'restored draft');
     });
 

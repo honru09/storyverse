@@ -138,30 +138,50 @@ export async function checkHandleAvailable({ handle, getAccessToken, fetchImpl =
   return usersJson(response)
 }
 
+/** A canvas JPEG blob as the `{ image, contentType }` upload payload. */
+async function jpegBlobToUploadPayload(blob) {
+  if (!blob) throw new Error('这张图片读不出来，换一张试试。')
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let binary = ''
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000))
+  }
+  return { image: btoa(binary), contentType: 'image/jpeg' }
+}
+
+/**
+ * Draw one square region of a decoded bitmap (`{ cx, cy, side }` in
+ * source pixels) to at most `size` px and return the upload payload.
+ * The crop step the picture editor offers (PHONE-FIX §37): the reader
+ * frames the shot themselves instead of the old silent centre crop.
+ * Pure canvas work — the upload endpoint only ever sees a small JPEG,
+ * exactly as before, so the server needs no change.
+ */
+export async function bitmapRegionToSquareJpeg(bitmap, { cx, cy, side }, size = 512) {
+  const out = Math.max(1, Math.min(Math.round(side), size))
+  const canvas = document.createElement('canvas')
+  canvas.width = out
+  canvas.height = out
+  const context = canvas.getContext('2d')
+  context.drawImage(bitmap, cx, cy, side, side, 0, 0, out, out)
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86))
+  return jpegBlobToUploadPayload(blob)
+}
+
 /**
  * Center-crop a picked image file to a square and shrink it to at most
  * `size` px, returning `{ image, contentType }` ready for
- * uploadMyPicture. Pure canvas work — the upload endpoint only ever
- * sees a small JPEG.
+ * uploadMyPicture.
  */
 export async function fileToSquareJpeg(file, size = 512) {
   const bitmap = await createImageBitmap(file)
   try {
     const side = Math.min(bitmap.width, bitmap.height)
-    const out = Math.max(1, Math.min(side, size))
-    const canvas = document.createElement('canvas')
-    canvas.width = out
-    canvas.height = out
-    const context = canvas.getContext('2d')
-    context.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, out, out)
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86))
-    if (!blob) throw new Error('这张图片读不出来，换一张试试。')
-    const bytes = new Uint8Array(await blob.arrayBuffer())
-    let binary = ''
-    for (let index = 0; index < bytes.length; index += 0x8000) {
-      binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000))
-    }
-    return { image: btoa(binary), contentType: 'image/jpeg' }
+    return await bitmapRegionToSquareJpeg(
+      bitmap,
+      { cx: (bitmap.width - side) / 2, cy: (bitmap.height - side) / 2, side },
+      size,
+    )
   } finally {
     bitmap.close?.()
   }

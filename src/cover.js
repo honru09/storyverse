@@ -42,6 +42,41 @@ export function withCoverState(story, patch) {
   return { ...story, cover: next }
 }
 
+/** World ids that have a shared painting of their own (WorldArtwork's set). */
+export const WORLD_ART_IDS = ['mist', 'cultivation', 'neon', 'city', 'court', 'frontier', 'custom']
+
+/**
+ * Genre-flavoured fallback paintings (PHONE-FIX §37, assets batch B).
+ * The mapping is deliberately short — only templates whose flavour is
+ * unambiguous are listed. Horror, rules-horror, supernatural suspense,
+ * short-form and villain-led lines can live in too many kinds of
+ * worlds to pin to one painting; they are NOT mapped, on purpose.
+ */
+const FALLBACK_VARIANT_TEMPLATES = {
+  eastern: ['xuanhuan', 'xianxia', 'gaowu', 'lishi', 'romance-ancient'],
+  urban: ['urban', 'campus', 'romance-modern'],
+  scifi: ['scifi', 'wuxianliu'],
+}
+
+/**
+ * Which fallback painting a coverless story wears, or null for the
+ * shared world artwork. The world painting stays the fallback whenever
+ * it actually depicts the story's world (a known preset world). The
+ * variant only steps in where the world painting says nothing about
+ * THIS story: a reader-written custom world (its shared artwork is a
+ * generic emblem) or an unknown world id (WorldArtwork would silently
+ * substitute the mist painting — a mismatch, not a fallback).
+ */
+export function fallbackCoverVariantFor(story) {
+  const worldId = story?.genreId || story?.config?.genreId || ''
+  if (worldId && worldId !== 'custom' && WORLD_ART_IDS.includes(worldId)) return null
+  const templateId = story?.genreTemplateId || story?.config?.genreTemplateId || ''
+  for (const [variant, templateIds] of Object.entries(FALLBACK_VARIANT_TEMPLATES)) {
+    if (templateIds.includes(templateId)) return variant
+  }
+  return null
+}
+
 /** The slim payload the cover endpoint paints from — no chapters, no prose. */
 export function coverPayloadFor(story) {
   const text = (value, limit) => typeof value === 'string' ? value.slice(0, limit) : ''
