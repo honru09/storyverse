@@ -864,7 +864,9 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .plaza-card-cover{position:relative;display:block;width:100%;aspect-ratio:16/8;padding:0;border:0;background:#0a1430;text-align:left;overflow:hidden}
 .plaza-card-cover .world-art{position:absolute;inset:0}
 .plaza-cover-shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(6,13,31,0) 30%,rgba(6,13,31,.78));pointer-events:none}
-.plaza-cover-title{position:absolute;left:16px;right:16px;bottom:12px;color:#fff;font-size:18px;font-weight:700;text-shadow:0 2px 14px rgba(0,0,0,.55)}
+.plaza-cover-title{position:absolute;left:16px;right:16px;bottom:12px;color:#fff;font-size:18px;font-weight:700;text-shadow:0 2px 14px rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plaza-cover-title.is-md{font-size:15px}
+.plaza-cover-title.is-sm{font-size:12.5px}
 .plaza-card-body{padding:14px 16px 16px}
 /* The card byline (COVER-FIX): the author's place — an editorial
    line, not a pill. Letterspaced label, the author's display name,
@@ -894,7 +896,9 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .plaza-detail-cover{position:relative;margin-top:16px;border-radius:var(--radius-card);overflow:hidden;aspect-ratio:16/9;background:#0a1430}
 .plaza-detail-cover .world-art{position:absolute;inset:0}
 .plaza-detail-cover-copy{position:absolute;left:18px;right:18px;bottom:14px;color:#fff}
-.plaza-detail-cover-copy h1{margin:0;font-size:23px;text-shadow:0 2px 16px rgba(0,0,0,.6)}
+.plaza-detail-cover-copy h1{margin:0;font-size:23px;text-shadow:0 2px 16px rgba(0,0,0,.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plaza-detail-cover-copy h1.is-md{font-size:20px}
+.plaza-detail-cover-copy h1.is-sm{font-size:16.5px}
 .plaza-detail-cover-copy p{margin:6px 0 0;font-size:12.5px;opacity:.92}
 .plaza-panel{margin-top:14px;padding:16px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 .plaza-panel h2{margin:0 0 10px;font-size:15.5px}

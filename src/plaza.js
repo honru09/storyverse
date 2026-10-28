@@ -258,6 +258,21 @@ export function plazaLineStatusFor(source) {
 }
 
 /**
+ * Cover-title size tier (LOGIN-SKY addendum, user wording: a book
+ * title laid over a cover NEVER wraps — 「拒绝出现这种换行」). The
+ * rendered string is 《title》 on one line: short titles keep the
+ * surface's full size (lg), longer ones step down (md, then sm),
+ * and past the smallest tier the CSS ellipsis takes the tail.
+ * Length counts the title's own characters (code points).
+ */
+export function plazaTitleTierFor(title) {
+  const length = [...String(title ?? '')].length
+  if (length <= 8) return 'lg'
+  if (length <= 14) return 'md'
+  return 'sm'
+}
+
+/**
  * The length line for a story or publication: 「第 1 季 · 全 24 章」/
  * 「长线 · 全 100 章」/「全 37 章」 for finished lines — real fields only —
  * and 「连载中 · 已更 N 章」 for a living endless publication, where N is

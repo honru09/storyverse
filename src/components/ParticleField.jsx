@@ -63,39 +63,108 @@ function makeParticles(width, height, density) {
 const STAR_COLORS = ["235,240,255", "196,215,255", "221,214,254"];
 
 /**
- * The login starfield (PHONE-FIX §37, item H, final wording): stars
- * with depth drifting steadily toward the viewer — far ones small
- * and slow, near ones larger and faster, flowing past without end.
- * Deliberately sparse and slow ("简洁高级"): fine points, wide
- * spacing, no threads, no colour noise. Performance follows the G1
- * contract (count capped and width-scaled, DPR ≤ 2, pause off-view /
- * hidden tab). One deliberate exception to the G1 gate: when motion
- * is off this layer still renders — as a STATIC star field, stars
- * present but frozen — because the login ground is the starfield
- * itself, not an ornament on top of it.
+ * The login starfield (LOGIN-SKY batch, user-worded via reference
+ * video; supersedes the PHONE-FIX §37 warp field): a deep-black sky
+ * filled edge to edge with FINE points — several hundred 1px-class
+ * stars, dim, evenly spread, layered by depth (far = smaller and
+ * darker, near = a touch larger and brighter, drifting a touch
+ * faster) — with a handful of bright stars carrying four-point
+ * cross flares, breathing slowly. The whole field flows very
+ * slowly; a single frame's displacement is sub-pixel to a few
+ * pixels per second. Deliberately NOT the old centre-weighted warp:
+ * the user asked for a filled sky, not a tunnel. Performance
+ * follows the G1 contract (counts capped and area-scaled, DPR ≤ 2,
+ * pause off-view / hidden tab). One deliberate exception to the G1
+ * gate, kept from §37: when motion is off this layer still renders
+ * — as a STATIC star field, stars present but frozen — because the
+ * login ground is the starfield itself, not an ornament on top.
  */
 function makeStars(width, height) {
-  const scale = Math.min(1.3, Math.max(0.6, width / 390));
-  const count = Math.min(90, Math.round(64 * scale));
-  return Array.from({ length: count }, (_, index) => ({
-    // Position in a centred, normalised star space; z is depth
-    // (1 = far away, →0 = at the viewer's eye).
-    nx: Math.random() * 2 - 1,
-    ny: Math.random() * 2 - 1,
-    z: 0.12 + Math.random() * 0.88,
-    color: STAR_COLORS[index % STAR_COLORS.length],
-    alpha: 0.35 + Math.random() * 0.45,
-  }));
+  // Density: roughly one fine star per 1250 css px², floored so a
+  // small phone still reads "filled", capped so a desktop sky stays
+  // cheap. 390×844 → ~263 stars.
+  const area = width * height;
+  const count = Math.min(460, Math.max(150, Math.round(area / 1250)));
+  return Array.from({ length: count }, (_, index) => {
+    // Depth 0 = far, 1 = near; the power curve keeps most stars far
+    // and faint, a minority nearer and brighter.
+    const depth = Math.pow(Math.random(), 1.35);
+    return {
+      x: Math.random() * width,
+      y: Math.random() * height,
+      depth,
+      radius: 0.55 + depth * 1.05,
+      alpha: 0.2 + depth * 0.55,
+      // Slow downward drift with a slight leftward lean; near stars
+      // drift a little faster (parallax), far ones barely move.
+      vx: -(0.15 + depth * 0.55),
+      vy: 0.5 + depth * 2.3,
+      twinklePhase: Math.random() * Math.PI * 2,
+      twinkleSpeed: 0.35 + Math.random() * 1.0,
+      color: STAR_COLORS[index % STAR_COLORS.length],
+    };
+  });
 }
 
-function projectStar(star, width, height) {
-  const spread = 1 / Math.max(0.06, star.z);
-  return {
-    x: width / 2 + (star.nx * width * 0.5 * spread) / 2.4,
-    y: height / 2 + (star.ny * height * 0.5 * spread) / 2.4,
-    radius: Math.min(2.1, 0.35 + (1 - star.z) * 1.9),
-    alpha: star.alpha * Math.min(1, 1.35 - star.z * 0.55),
-  };
+function makeBrightStars(width, height) {
+  // 5–9 cross-flared bright stars, scaled by area (390×844 → 7).
+  const area = width * height;
+  const count = Math.min(9, Math.max(5, Math.round(area / 48000)));
+  const margin = 34;
+  return Array.from({ length: count }, (_, index) => {
+    const core = 1.4 + Math.random() * 0.8;
+    return {
+      x: margin + Math.random() * Math.max(1, width - margin * 2),
+      y: margin + Math.random() * Math.max(1, height - margin * 2),
+      core,
+      spike: core * (6 + Math.random() * 2.5),
+      // Same slow drift family as the near fine stars.
+      vx: -0.45,
+      vy: 1.6,
+      breathPhase: Math.random() * Math.PI * 2,
+      breathSpeed: (Math.PI * 2) / (3.5 + Math.random() * 3.5),
+      alpha: 0.72 + Math.random() * 0.23,
+      color: STAR_COLORS[index % STAR_COLORS.length],
+      sprite: null,
+    };
+  });
+}
+
+/**
+ * One bright star, pre-rendered once per resize: a soft halo, four
+ * gradient spikes (the cross flare) and a hot core. Breathing then
+ * costs one drawImage with a varying alpha per frame.
+ */
+function renderBrightSprite(star) {
+  const size = Math.ceil((star.spike + star.core * 3) * 2);
+  const sprite = document.createElement("canvas");
+  sprite.width = size;
+  sprite.height = size;
+  const context = sprite.getContext("2d");
+  if (!context) return null;
+  const c = size / 2;
+  const halo = context.createRadialGradient(c, c, 0, c, c, star.core * 3);
+  halo.addColorStop(0, `rgba(${star.color},0.32)`);
+  halo.addColorStop(1, `rgba(${star.color},0)`);
+  context.fillStyle = halo;
+  context.fillRect(0, 0, size, size);
+  context.lineWidth = 1;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const gradient = context.createLinearGradient(c, c, c + dx * star.spike, c + dy * star.spike);
+    gradient.addColorStop(0, `rgba(${star.color},0.85)`);
+    gradient.addColorStop(1, `rgba(${star.color},0)`);
+    context.strokeStyle = gradient;
+    context.beginPath();
+    context.moveTo(c, c);
+    context.lineTo(c + dx * star.spike, c + dy * star.spike);
+    context.stroke();
+  }
+  context.fillStyle = `rgba(255,255,255,0.95)`;
+  context.beginPath();
+  context.arc(c, c, star.core, 0, Math.PI * 2);
+  context.fill();
+  star.sprite = sprite;
+  return sprite;
 }
 
 export default function ParticleField({ density = "hero", className = "" }) {
@@ -115,10 +184,12 @@ export default function ParticleField({ density = "hero", className = "" }) {
       let width = 0;
       let height = 0;
       let stars = [];
+      let brightStars = [];
       let raf = 0;
       let running = false;
       let inView = true;
       let last = 0;
+      let elapsed = 0;
       const resize = () => {
         const rect = parent.getBoundingClientRect();
         const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -128,35 +199,57 @@ export default function ParticleField({ density = "hero", className = "" }) {
         canvas.height = Math.round(height * dpr);
         context.setTransform(dpr, 0, 0, dpr, 0, 0);
         stars = makeStars(width, height);
+        brightStars = makeBrightStars(width, height);
+        for (const star of brightStars) renderBrightSprite(star);
         canvas.dataset.starCount = String(stars.length);
+        canvas.dataset.brightStarCount = String(brightStars.length);
         if (!active) drawFrame(0, true);
       };
       const drawFrame = (dt, still = false) => {
         context.clearRect(0, 0, width, height);
         for (const star of stars) {
           if (!still) {
-            // Slow approach: depth closes at a near-constant gentle
-            // rate; near stars (small z) sweep past faster because
-            // their projection grows as 1/z.
-            star.z -= dt * 0.028;
-            if (star.z <= 0.06) {
-              star.z = 1;
-              star.nx = Math.random() * 2 - 1;
-              star.ny = Math.random() * 2 - 1;
-            }
+            star.x += star.vx * dt;
+            star.y += star.vy * dt;
+            if (star.y > height + 2) { star.y = -2; star.x = Math.random() * width; }
+            if (star.y < -2) { star.y = height + 2; star.x = Math.random() * width; }
+            if (star.x > width + 2) { star.x = -2; star.y = Math.random() * height; }
+            if (star.x < -2) { star.x = width + 2; star.y = Math.random() * height; }
           }
-          const point = projectStar(star, width, height);
-          if (point.x < -4 || point.x > width + 4 || point.y < -4 || point.y > height + 4) continue;
-          context.fillStyle = `rgba(${star.color},${point.alpha.toFixed(3)})`;
+          const twinkle = still ? 1 : 0.78 + 0.22 * Math.sin(elapsed * star.twinkleSpeed + star.twinklePhase);
+          context.fillStyle = `rgba(${star.color},${(star.alpha * twinkle).toFixed(3)})`;
           context.beginPath();
-          context.arc(point.x, point.y, point.radius, 0, Math.PI * 2);
+          context.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
           context.fill();
+          // Near stars carry a hot core: a smaller, denser centre
+          // point, so the closest layer reads as distinct stars
+          // rather than haze.
+          if (star.depth > 0.5) {
+            context.fillStyle = `rgba(255,255,255,${Math.min(0.92, star.alpha * twinkle * 1.5).toFixed(3)})`;
+            context.beginPath();
+            context.arc(star.x, star.y, star.radius * 0.5, 0, Math.PI * 2);
+            context.fill();
+          }
+        }
+        for (const star of brightStars) {
+          if (!star.sprite) continue;
+          if (!still) {
+            star.x += star.vx * dt;
+            star.y += star.vy * dt;
+            if (star.y - star.sprite.height / 2 > height) { star.y = -star.sprite.height / 2; star.x = 34 + Math.random() * Math.max(1, width - 68); }
+            if (star.x + star.sprite.width / 2 < 0) { star.x = width + star.sprite.width / 2; star.y = 34 + Math.random() * Math.max(1, height - 68); }
+          }
+          const breath = still ? 0.85 : 0.7 + 0.3 * Math.sin(elapsed * star.breathSpeed + star.breathPhase);
+          context.globalAlpha = Math.max(0, Math.min(1, star.alpha * breath));
+          context.drawImage(star.sprite, star.x - star.sprite.width / 2, star.y - star.sprite.height / 2);
+          context.globalAlpha = 1;
         }
       };
       const draw = (now) => {
         if (!running) return;
         const dt = Math.min(0.05, last ? (now - last) / 1000 : 0.016);
         last = now;
+        elapsed += dt;
         drawFrame(dt);
         raf = requestAnimationFrame(draw);
       };

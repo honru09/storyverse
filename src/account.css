@@ -116,18 +116,32 @@
   radial-gradient(circle at 92% 74%, rgba(235,240,255,.45) 0 1px, transparent 1.7px),
   radial-gradient(130% 95% at 50% -10%, #0b1332 0%, #050a1e 56%, #03061a 100%); }
 .account-scene .particle-field { z-index: 1; }
-.account-window { position: relative; z-index: 2; flex: none; width: calc(100% - 40px); max-width: 430px; max-height: calc(100% - 96px); margin: auto; display: grid; gap: 18px; padding: 28px 22px 24px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(160,175,255,.3) transparent; border: 1px solid rgba(160,175,255,.22); border-radius: 24px; background: rgba(9,14,32,.58); -webkit-backdrop-filter: blur(14px) saturate(1.15); backdrop-filter: blur(14px) saturate(1.15); box-shadow: 0 24px 60px -24px rgba(0,0,0,.65); animation: account-window-in 240ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) both; }
+.account-window { position: relative; z-index: 2; flex: none; width: calc(100% - 40px); max-width: 430px; max-height: 58.5vh; max-height: 58.5dvh; margin: auto; display: grid; gap: 7px; padding: 16px 20px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(160,175,255,.3) transparent; border: 1px solid rgba(160,175,255,.22); border-radius: 24px; background: rgba(9,14,32,.58); -webkit-backdrop-filter: blur(14px) saturate(1.15); backdrop-filter: blur(14px) saturate(1.15); box-shadow: 0 24px 60px -24px rgba(0,0,0,.65); animation: account-window-in 240ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) both; }
+/* LOGIN-SKY: the window is about HALF the screen (user wording:
+   "大概一半的样子，不是大半个屏幕") so the starfield is the picture
+   and the glass is a compact card floating on it. Login/code keep
+   their natural height under the ~58.5dvh cap — at 390×844 the
+   tightened login view fits whole, no internal scroll. Register
+   and reset carry more fields: they may GROW taller, capped at
+   ~70dvh, and only scroll past that cap (the chosen option of the
+   two the batch allowed). */
+.account-window[data-mode="register"], .account-window[data-mode="reset"] { max-height: 70vh; max-height: 70dvh; }
 .account-scene .account-form input { scroll-margin-block: 14px; }
 @keyframes account-scene-in { from { opacity: 0; } }
 @keyframes account-window-in { from { opacity: 0; transform: translateY(10px); } }
 .app-shell[data-motion="off"] .account-overlay, .app-shell[data-motion="off"] .account-window { animation: none; }
 @media (prefers-reduced-motion: reduce) { .account-overlay, .account-window { animation: none; } }
-@media (max-height: 620px) { .account-window { max-height: calc(100% - 40px); padding-top: 20px; } .account-brand-logo { width: 40px; height: 40px; } .account-scene .account-brand-name { font-size: 28px; } }
-.account-brand-lock { display: grid; justify-items: center; text-align: center; }
-.account-brand-logo { width: 48px; height: 48px; }
-.account-scene .account-brand-name { margin: 10px 0 0; font-size: 34px; font-weight: 800; line-height: 1.15; letter-spacing: .14em; text-indent: .14em; color: #fff; }
-.account-scene .account-brand-sub { margin: 6px 0 0; font-size: 11px; font-weight: 700; letter-spacing: .42em; text-indent: .42em; color: #5eead4; }
-.account-scene .account-intro { margin: 12px 0 0; color: rgba(203,213,245,.88); font-size: 14px; }
+@media (max-height: 620px) { .account-window { padding-top: 14px; } .account-brand-logo { width: 34px; height: 34px; } .account-scene .account-brand-name { font-size: 22px; } }
+/* LOGIN-SKY: the brand lock goes horizontal — mark on the left,
+   name / sub / intro stacked in one copy column — so the lock
+   costs ~66px of the half-height window instead of ~147px, with
+   every word of the old lock still present. */
+.account-brand-lock { display: flex; align-items: center; gap: 13px; text-align: left; }
+.account-brand-copy { display: grid; min-width: 0; }
+.account-brand-logo { width: 38px; height: 38px; flex: none; }
+.account-scene .account-brand-name { margin: 0; font-size: 24px; font-weight: 800; line-height: 1.15; letter-spacing: .14em; color: #fff; }
+.account-scene .account-brand-sub { margin: 2px 0 0; font-size: 10.5px; font-weight: 700; line-height: 1.3; letter-spacing: .42em; color: #5eead4; }
+.account-scene .account-intro { margin: 3px 0 0; color: rgba(203,213,245,.88); font-size: 12.5px; line-height: 1.4; }
 .account-scene .account-google { min-height: 52px; border-radius: 999px; border-color: rgba(160,175,255,.32); background: rgba(8,14,34,.5); color: #f2f5ff; box-shadow: none; }
 .account-scene .account-divider { color: rgba(203,213,245,.65); }
 .account-scene .account-divider::before, .account-scene .account-divider::after { background: rgba(160,175,255,.22); }
@@ -148,6 +162,25 @@
 .account-scene .account-recovery-note { background: rgba(229,72,77,.16); color: #ffd9db; }
 .account-scene .account-reset-heading { color: #fff; }
 .account-scene .account-theme { border-top-color: rgba(160,175,255,.22); }
+/* LOGIN-SKY density pass (scene scope only — the signed-in panel
+   in its dialog keeps the roomier base metrics): every login-view
+   essential (brand lock, Google, tabs, two fields, submit, forgot
+   link, guest entry) fits the ~half-height window at 390×844 with
+   no internal scroll. Ancillary rows (storage note, theme, help)
+   keep their order below the fold of the smaller window. */
+.account-scene .account-google { min-height: 44px; }
+.account-scene .account-divider { font-size: 11px; line-height: 1.3; }
+.account-scene .account-tabs button { min-height: 30px; }
+.account-scene .account-form { gap: 7px; }
+.account-scene .account-form label { gap: 4px; font-size: 13px; line-height: 1.35; }
+.account-scene .account-form input { min-height: 44px; padding: 10px 14px; }
+.account-scene .account-password button { min-height: 40px; }
+.account-scene .account-primary { min-height: 44px; }
+.account-scene .account-links { margin-top: -5px; }
+.account-scene .account-links button { min-height: 32px; }
+.account-scene .account-guest { min-height: 38px; }
+.account-scene .account-storage-note { line-height: 1.55; }
+.account-scene .account-theme { margin-top: 2px; padding-top: 12px; }
 .account-scene .account-theme-label { color: rgba(203,213,245,.85); }
 .account-scene .account-theme-options button { border-color: rgba(160,175,255,.3); background: rgba(8,14,34,.45); color: #dbe4ff; }
 .account-scene .account-avatar-entry { border-color: rgba(160,175,255,.3); background: rgba(8,14,34,.4); color: #e8ecf9; }

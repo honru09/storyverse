@@ -320,12 +320,14 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
           container moved. */}
       <div className="account-scene">
         <ParticleField density="starfield" />
-        <div className="account-window">
+        <div className="account-window" data-mode={activeMode}>
           <div className="account-brand-lock">
             <img className="account-brand-logo" src="/icon.svg" alt="" />
-            <p className="account-brand-name">织界</p>
-            <p className="account-brand-sub">STORYWEAVE</p>
-            <p className="account-intro">从这里，进入你的故事。</p>
+            <div className="account-brand-copy">
+              <p className="account-brand-name">织界</p>
+              <p className="account-brand-sub">STORYWEAVE</p>
+              <p className="account-intro">从这里，进入你的故事。</p>
+            </div>
           </div>
       {!configured && <button className="account-guest" type="button" onClick={onContinue}>先不登录，继续体验 <span aria-hidden="true">→</span></button>}
       <button className="account-google" type="button" disabled={busy || !configured || !account.config?.providers?.google} onClick={() => void run(() => client.signInWithGoogle())}><GoogleMark/>使用 Google 继续</button>

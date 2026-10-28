@@ -14,6 +14,7 @@ import {
 import {
   enterDraftFor,
   plazaCardIntroFor,
+  plazaTitleTierFor,
   plazaGateFor,
   plazaLengthLabel,
   plazaMineForget,
@@ -292,4 +293,14 @@ test('card intro (COVER-FIX): a serializing fallback drops its progress tail too
   })
   assert.equal(line, '王兴润，是这个世界的主角。')
   assert.ok(!line.includes('第 3 章'))
+})
+
+test('cover title tier (LOGIN-SKY addendum): length steps the size down, never wraps', () => {
+  assert.equal(plazaTitleTierFor('短标题一二三四五'), 'lg') // exactly 8 chars
+  assert.equal(plazaTitleTierFor('疯狂的王兴润 · 王兴润'), 'md') // the user's real case, 12 chars
+  assert.equal(plazaTitleTierFor('一二三四五六七八九十一二三四'), 'md') // 14 chars, top of md
+  assert.equal(plazaTitleTierFor('一二三四五六七八九十一二三四五'), 'sm') // 15 chars
+  assert.equal(plazaTitleTierFor('雾海之上的第十三座钟楼与失落的航线 · 王兴润'), 'sm') // 23 chars
+  assert.equal(plazaTitleTierFor(''), 'lg')
+  assert.equal(plazaTitleTierFor(undefined), 'lg')
 })

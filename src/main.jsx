@@ -64,6 +64,7 @@ import {
   fetchPlazaDetail,
   fetchPlazaFeed,
   plazaCardIntroFor,
+  plazaTitleTierFor,
   plazaGateFor,
   plazaLengthLabel,
   plazaPortraitPath,
@@ -5308,7 +5309,7 @@ function PlazaCard({ publication, own, lead = false, onOpen, onRead, onEnter, on
       >
         <PublicationArtwork publication={publication} genreId={genre.id} />
         <span className="plaza-cover-shade" aria-hidden="true" />
-        <span className="plaza-cover-title">《{publication.title}》</span>
+        <span className={`plaza-cover-title is-${plazaTitleTierFor(publication.title)}`}>《{publication.title}》</span>
       </button>
       <div className="plaza-card-body">
         <div className="plaza-byline">
@@ -5644,7 +5645,7 @@ function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter,
         <PublicationArtwork publication={detail} genreId={genre.id} eager />
         <span className="plaza-cover-shade" aria-hidden="true" />
         <div className="plaza-detail-cover-copy">
-          <h1>《{detail.title}》</h1>
+          <h1 className={`is-${plazaTitleTierFor(detail.title)}`}>《{detail.title}》</h1>
           <p>{detail.worldName} × {templateName} · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"}</p>
           {detail.merged && Array.isArray(detail.sourceTitles) && detail.sourceTitles.length === 2 && (
             <span className="plaza-badge is-fused">由《{detail.sourceTitles[0]}》×《{detail.sourceTitles[1]}》融合而来</span>
