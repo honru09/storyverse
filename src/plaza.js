@@ -228,6 +228,29 @@ export function plazaWorldIntroFor(detail, templateName = '') {
   return { background, rules, thread }
 }
 
+/**
+ * The one introduction line a plaza card shows under its byline
+ * (COVER-FIX): the author's own synopsis first — it is the book's
+ * real blurb. Without one, the world intro's thread segment, composed
+ * WITHOUT the avatar's appearance string (an attribute list is a spec
+ * sheet, not an introduction; it lives on the detail page's avatar
+ * panel) and with the progress tail trimmed (the card's meta row
+ * already carries status and chapter count). '' when there is
+ * nothing honest to show — never an attribute string standing in
+ * for an introduction.
+ */
+export function plazaCardIntroFor(detail) {
+  const synopsis = typeof detail?.synopsis === 'string' ? detail.synopsis.trim() : ''
+  if (synopsis) return synopsis
+  const intro = plazaWorldIntroFor({
+    ...detail,
+    avatar: { name: typeof detail?.avatar?.name === 'string' ? detail.avatar.name : '' },
+  })
+  return intro.thread
+    .replace(/这条线(还在连载，已更新到第 \d+ 章|已经完结，全 \d+ 章)。$/, '')
+    .trim()
+}
+
 /** The line's publication status: a running endless line serialises; everything else is finished. */
 export function plazaLineStatusFor(source) {
   if (source?.lineStatus === 'serializing' || source?.lineStatus === 'finished') return source.lineStatus

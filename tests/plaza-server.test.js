@@ -486,3 +486,57 @@ test('a running endless line publishes as a living publication and flips to fini
   assert.equal(finished.chapterCount, 6)
   assert.ok(finished.completedAt)
 })
+
+test('byline @ID (COVER-FIX): a username author’s feed/detail carry the login name as authorHandle', async (t) => {
+  const { base } = await startPlazaServer(t)
+  const token = await register(base, 'byline_author')
+  const avatar = await makeAvatar(base, token)
+  const story = completedLine(avatar.id)
+  const { publication } = await (await publish(base, token, story)).json()
+
+  const feed = (await (await fetch(`${base}/api/plaza`)).json()).publications
+  assert.equal(feed[0].authorHandle, 'byline_author', 'feed byline @ID is the username')
+  const detail = (await (await fetch(`${base}/api/plaza/${publication.id}`)).json()).publication
+  assert.equal(detail.authorHandle, 'byline_author', 'detail byline @ID is the username')
+})
+
+test('byline @ID (COVER-FIX): a claimed profile handle wins over the uid fallback', async () => {
+  const plazaStore = createMemoryPlazaStore()
+  await plazaStore.putPublication({
+    id: 'pub-byline-fixture',
+    status: 'published',
+    authorUid: 'firebase-uid-42',
+    authorName: '发布时的名字',
+    sourceStoryId: 'story-42',
+    title: '署名样例',
+    genreId: 'mist',
+    genreTemplateId: '',
+    worldName: '沉潮港',
+    merged: false,
+    sourceTitles: [],
+    storyLengthMode: 'season',
+    seasonNumber: 1,
+    chapterCount: 24,
+    totalChapters: 24,
+    lineStatus: 'finished',
+    publishedAt: '2026-10-28T00:00:00.000Z',
+    completedAt: '2026-10-28T00:00:00.000Z',
+    avatar: { name: '沈知遥', hasPortrait: false },
+    snapshot: {
+      worldBible: { premise: '雾港里的人靠潮汐记事。', rules: [], outline: [] },
+      beats: [], synopsis: '', config: {}, chapters: [], choices: [],
+    },
+  })
+  const socialStore = {
+    getProfileRecord: async () => ({ displayName: '记录上的作者', handle: 'claimed_id' }),
+    getPicture: async () => null,
+  }
+  const service = createPlazaService({
+    env: {}, store: plazaStore, avatarStore: null, socialStore, coverStore: null,
+  })
+  const feed = await service.feed()
+  assert.equal(feed.length, 1)
+  assert.equal(feed[0].authorName, '记录上的作者', 'the profile record name still wins')
+  assert.equal(feed[0].authorHandle, 'claimed_id', 'the claimed handle wins for the byline')
+  assert.equal(feed[0].coverUrl, null, 'no cover painted → null, surfaces fall back to world art')
+})

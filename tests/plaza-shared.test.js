@@ -13,6 +13,7 @@ import {
 } from '../src/story-engine.js'
 import {
   enterDraftFor,
+  plazaCardIntroFor,
   plazaGateFor,
   plazaLengthLabel,
   plazaMineForget,
@@ -261,4 +262,34 @@ test('own-publication mapping round-trips through storage', () => {
   assert.equal(plazaMineIds(storage).has('pub-9'), true)
   plazaMineForget(storage, 'pub-9')
   assert.equal(plazaMineIds(storage).has('pub-9'), false)
+})
+
+test('card intro (COVER-FIX): the author synopsis is the card line when one exists', () => {
+  const line = plazaCardIntroFor({
+    title: '某线', worldName: '诡市', synopsis: '王兴润成神之路！',
+    avatar: { name: '王兴润', appearance: '乌黑，利落短发，长风衣，皮鞋' },
+    chapterCount: 10, lineStatus: 'finished',
+  })
+  assert.equal(line, '王兴润成神之路！')
+})
+
+test('card intro (COVER-FIX): no synopsis → world-intro thread, no attribute string, no progress tail', () => {
+  const line = plazaCardIntroFor({
+    title: '某线', worldName: '诡市', synopsis: '',
+    avatar: { name: '王兴润', appearance: '乌黑，利落短发，长风衣，皮鞋' },
+    chapterCount: 10, lineStatus: 'finished',
+  })
+  assert.equal(line, '王兴润，是这个世界的主角。')
+  assert.ok(!line.includes('乌黑'), 'the appearance attribute string never tops a card')
+  assert.ok(!line.includes('全 10 章'), 'the meta row already carries the chapter count')
+})
+
+test('card intro (COVER-FIX): a serializing fallback drops its progress tail too', () => {
+  const line = plazaCardIntroFor({
+    title: '某线', worldName: '诡市',
+    avatar: { name: '王兴润', appearance: '乌黑，利落短发' },
+    chapterCount: 3, lineStatus: 'serializing', storyLengthMode: 'endless',
+  })
+  assert.equal(line, '王兴润，是这个世界的主角。')
+  assert.ok(!line.includes('第 3 章'))
 })

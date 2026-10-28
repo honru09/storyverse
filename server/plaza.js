@@ -10,6 +10,10 @@ import { createPlazaStore } from './plaza-store.js'
 import { createAvatarStore } from './avatar-store.js'
 import { createCoverStore } from './cover-store.js'
 import { createSocialStore, pictureSourceFor } from './social-store.js'
+// publicHandle is a hoisted pure helper; social.js already imports
+// from this module the same way, and neither side calls the other
+// during module evaluation.
+import { publicHandle } from './social.js'
 
 /**
  * The plaza service: publication of avatar lines (finished lines whole,
@@ -58,6 +62,10 @@ function summaryOf(record) {
     id: record.id,
     title: record.title,
     authorName: record.authorName,
+    // The author's public @ID for the card byline (COVER-FIX),
+    // resolved live by the identity pass below; '' when the author
+    // has none a card may show.
+    authorHandle: typeof record.authorHandle === 'string' ? record.authorHandle : '',
     // Official-sample flag, derived from the server-side author uid —
     // see OFFICIAL_USERNAMES above. Rides every summary surface (feed,
     // detail, author profiles) because they all pass through here.
@@ -212,12 +220,18 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
       } catch { /* keep the publish-time flag */ }
     }
     let authorName = record.authorName
+    // The byline's @ID: a handle claimed on the profile record wins;
+    // a username account's @ID is its login name, carried in the uid
+    // itself (the profile page resolves it the same way). Email-shaped
+    // values are credentials, never handles — publicHandle drops them.
+    let authorHandle = ''
     let pictureKind = 'default'
     let pictureUrl = '/default-avatar.svg'
     if (socialBackend) {
       try {
         const profileRecord = await socialBackend.getProfileRecord(record.authorUid)
         if (profileRecord?.displayName) authorName = profileRecord.displayName
+        authorHandle = publicHandle(profileRecord?.handle)
         const hasUpload = Boolean(await socialBackend.getPicture(record.authorUid))
         pictureKind = pictureSourceFor(profileRecord, { hasUpload, portraitReady })
         pictureUrl = pictureKind === 'default'
@@ -242,9 +256,13 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         }
       } catch { /* the world artwork remains the fallback */ }
     }
+    if (!authorHandle && typeof record.authorUid === 'string' && record.authorUid.startsWith('username:')) {
+      authorHandle = publicHandle(record.authorUid.slice('username:'.length))
+    }
     return {
       ...record,
       authorName,
+      authorHandle,
       coverUrl,
       avatar: { ...record.avatar, hasPortrait: portraitReady, pictureKind, pictureUrl },
     }

@@ -63,6 +63,7 @@ import {
   enterDraftFor,
   fetchPlazaDetail,
   fetchPlazaFeed,
+  plazaCardIntroFor,
   plazaGateFor,
   plazaLengthLabel,
   plazaPortraitPath,
@@ -5212,7 +5213,35 @@ function PlazaAvatarThumb({ publication, large = false }) {
   );
 }
 
-function PlazaLeadPortrait({ publication, onOpenProfile }) {
+// A publication's face — ONE chain on every surface that shows a
+// published line (COVER-FIX): the book's OWN generated cover first
+// (publication.coverUrl, resolved server-side from the cover store
+// under the publication id); the shared world artwork only when the
+// line has no cover, or when the cover image itself fails to load;
+// never skip the cover for any other reason.
+function PublicationArtwork({ publication, genreId, eager = false }) {
+  const coverUrl = typeof publication?.coverUrl === "string" && publication.coverUrl ? publication.coverUrl : null;
+  const [coverFailed, setCoverFailed] = useState(false);
+  useEffect(() => { setCoverFailed(false); }, [coverUrl]);
+  if (coverUrl && !coverFailed) {
+    return (
+      <span className="world-art publication-art" aria-hidden="true">
+        <img
+          src={coverUrl}
+          alt=""
+          width="768"
+          height="1052"
+          loading={eager ? "eager" : "lazy"}
+          decoding="async"
+          onError={() => setCoverFailed(true)}
+        />
+      </span>
+    );
+  }
+  return <WorldArtwork genreId={genreId} eager={eager} />;
+}
+
+function PlazaLeadPortrait({ publication, onOpenProfile, onFail }) {
   const [failed, setFailed] = useState(false);
   if (!publication.avatar?.hasPortrait || failed) return null;
   return (
@@ -5226,7 +5255,7 @@ function PlazaLeadPortrait({ publication, onOpenProfile }) {
         src={plazaPortraitPath(publication.id)}
         alt=""
         loading="lazy"
-        onError={() => setFailed(true)}
+        onError={() => { setFailed(true); onFail?.(); }}
       />
       <span className="plaza-lead-portrait-name">{publication.avatar?.name}</span>
     </button>
@@ -5236,51 +5265,77 @@ function PlazaLeadPortrait({ publication, onOpenProfile }) {
 function PlazaCard({ publication, own, lead = false, onOpen, onRead, onEnter, onOpenProfile }) {
   const genre = genreById[publication.genreId] || GENRES[0];
   const templateName = plazaTemplateNameFor(publication) || genre.label;
+  // The byline is the AUTHOR's place on the card (COVER-FIX): the
+  // author themselves — display name, @ID, official mark — never a
+  // second copy of the avatar's picture (the lead portrait column
+  // already carries the avatar, large) and never the avatar's name.
+  const authorHandle = typeof publication.authorHandle === "string" ? publication.authorHandle.trim() : "";
+  const showHandle = Boolean(authorHandle)
+    && authorHandle.toLowerCase() !== String(publication.authorName || "").toLowerCase();
+  const byline = (
+    <>
+      <span className="plaza-byline-label">作者</span>
+      <span className="plaza-byline-name">{publication.authorName}</span>
+      {showHandle && <span className="plaza-byline-handle">@{authorHandle}</span>}
+      {publication.official && <span className="plaza-byline-official">官方</span>}
+    </>
+  );
+  // Under the byline, the book's real introduction (lead cards only):
+  // the author's synopsis, else the world intro's thread — never the
+  // avatar's appearance attribute string (plazaCardIntroFor's rule).
+  const introLine = lead ? plazaCardIntroFor(publication) : "";
+  // The lead grid reserves its first column for the portrait; when
+  // the line's avatar has no portrait (or it fails to load) the grid
+  // must stand down, or the cover is squeezed into the empty column
+  // and the title wraps a character at a time (COVER-FIX, found by
+  // the fixture run — portrait-less lead card).
+  const [leadPortraitLost, setLeadPortraitLost] = useState(false);
+  const leadWithPortrait = lead && Boolean(publication.avatar?.hasPortrait) && !leadPortraitLost;
   return (
-    <article className={`plaza-card ${lead ? "plaza-card-lead" : ""}`}>
-      {lead && <PlazaLeadPortrait publication={publication} onOpenProfile={onOpenProfile} />}
+    <article className={`plaza-card ${leadWithPortrait ? "plaza-card-lead" : ""}`}>
+      {lead && (
+        <PlazaLeadPortrait
+          publication={publication}
+          onOpenProfile={onOpenProfile}
+          onFail={() => setLeadPortraitLost(true)}
+        />
+      )}
       <button
         type="button"
         className="plaza-card-cover"
         onClick={onOpen}
         aria-label={`查看《${publication.title}》详情`}
       >
-        <WorldArtwork genreId={genre.id} />
+        <PublicationArtwork publication={publication} genreId={genre.id} />
         <span className="plaza-cover-shade" aria-hidden="true" />
         <span className="plaza-cover-title">《{publication.title}》</span>
       </button>
       <div className="plaza-card-body">
-        <div className="plaza-avatar-row">
+        <div className="plaza-byline">
           {onOpenProfile && publication.authorUid ? (
             <button
               type="button"
-              className="plaza-author-link"
+              className="plaza-byline-link"
               onClick={() => onOpenProfile(publication.authorUid)}
               aria-label={`打开 ${publication.authorName} 的主页`}
             >
-              <PlazaAvatarThumb publication={publication} />
-              <span className="plaza-avatar-name">{publication.avatar?.name}</span>
-              <span className="plaza-author">作者 · {publication.authorName}</span>
+              {byline}
+              <Icon name="chevron" size={14} className="plaza-byline-chevron" />
             </button>
           ) : (
-            <>
-              <PlazaAvatarThumb publication={publication} />
-              <span className="plaza-avatar-name">{publication.avatar?.name}</span>
-              <span className="plaza-author">作者 · {publication.authorName}</span>
-            </>
+            <span className="plaza-byline-link is-static">{byline}</span>
           )}
           {own && <span className="plaza-own-chip">我发布的</span>}
         </div>
-        {lead && publication.avatar?.appearance && (
-          <p className="plaza-lead-appearance">{publication.avatar.name} · {publication.avatar.appearance}</p>
-        )}
+        {lead && introLine && <p className="plaza-lead-synopsis">{introLine}</p>}
         <div className="plaza-chips">
           <span className="plaza-chip">{publication.worldName}</span>
           <span className="plaza-chip-x" aria-hidden="true">×</span>
           <span className="plaza-chip">{templateName}</span>
         </div>
         <div className="plaza-meta">
-          {publication.official && <span className="plaza-badge is-official">官方示例</span>}
+          {/* No 官方示例 badge here: the byline above already carries
+              the official mark — one signal per card (first rule). */}
           <span className="plaza-badge">{plazaLineStatusFor(publication) === "serializing" ? "连载中" : "已完结"}</span>
           <span>{plazaLengthLabel(publication)}</span>
         </div>
@@ -5586,7 +5641,7 @@ function PlazaDetail({ id, account, authClient, onNavigate, onReadLine, onEnter,
       </div>
 
       <section className="plaza-detail-cover">
-        <WorldArtwork genreId={genre.id} />
+        <PublicationArtwork publication={detail} genreId={genre.id} eager />
         <span className="plaza-cover-shade" aria-hidden="true" />
         <div className="plaza-detail-cover-copy">
           <h1>《{detail.title}》</h1>
@@ -6059,15 +6114,13 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
   );
 }
 
-// A line's face on the bookshelf: its OWN generated cover when the plaza
-// payload carries one (resolved server-side from the cover store), the
-// shared world artwork only as the fallback for lines never painted.
+// A line's face on the profile shelf and store list: the shared
+// publication chain (PublicationArtwork) — its OWN generated cover
+// first, the shared world artwork only for lines never painted or
+// when the cover image itself fails to load.
 function ProfileCoverArt({ publication }) {
   const genre = genreById[publication.genreId] || GENRES[0];
-  if (publication.coverUrl) {
-    return <img className="profile-cover-img" src={publication.coverUrl} alt="" loading="lazy" />;
-  }
-  return <WorldArtwork genreId={genre.id} />;
+  return <PublicationArtwork publication={publication} genreId={genre.id} />;
 }
 
 function ProfileConnectionRow({ person, account, busyUid, onToggleFollow, onOpenProfile }) {
