@@ -123,21 +123,28 @@ test('face-anchor cropping: small round slots zoom portraits to the face', () =>
   const thumbBlock = main.slice(main.indexOf('function PlazaAvatarThumb'), main.indexOf('function PlazaLeadPortrait'))
   assert.match(thumbBlock, /pictureKind === "avatar"/)
   assert.match(thumbBlock, /plaza-avatar-frame/)
-  // The full figure has exactly one home: the profile's avatar stand.
+  // The full figure has exactly one home: the profile's avatar stage
+  // (PROFILE-ENRICH §35 supersedes the §33 stand: same class name, new
+  // stage geometry — spotlight, atmosphere, name plate).
   assert.match(profileBlock, /profile-avatar-stand/)
-  assert.match(css, /\.profile-avatar-stand-img\{[^}]*aspect-ratio:3\/4/)
+  assert.match(css, /\.profile-stage\{[^}]*height:384px/)
 })
 
-test('fan geometry: front cover left-anchored, fan fills the frame, edges peek', () => {
-  assert.match(main, /const STACK_STEP_PX = 18;/)
-  assert.doesNotMatch(main, /STACK_CARD_WIDTH_PCT/)
-  assert.match(main, /left: `\$\{index \* STACK_STEP_PX\}px`/)
-  assert.match(main, /width: cardWidth/)
+test('boards retired (PROFILE-ENRICH §35): the fan collage gives way to shelf / store / stage sections', () => {
+  // §27's 合集 fan geometry belonged to the boards the enriched
+  // profile replaces; the sections that replace it are pinned here so
+  // the retirement is a decision, not an accident.
+  assert.doesNotMatch(main, /STACK_STEP_PX/)
+  assert.match(profileBlock, /profile-shelf-row/)
+  assert.match(profileBlock, /profile-store-card|ProfileStoreCard/)
+  assert.match(profileBlock, /profile-stage/)
 })
 
 test('identity zero-wait: skeleton holds the header geometry, identity skips the stagger', () => {
   assert.match(profileBlock, /profile-skeleton/)
-  assert.match(css, /\.profile-skeleton-avatar\{width:136px;height:136px/)
+  // §35: the skeleton now holds the ambience hero's geometry (348px),
+  // superseding the §33 centred-face shapes.
+  assert.match(css, /\.profile-skeleton-hero\{height:348px/)
   const headerBlock = profileBlock.slice(profileBlock.indexOf('ryan-topbar'), profileBlock.indexOf('profile-shelf'))
   assert.doesNotMatch(headerBlock, /data-enter/)
 })

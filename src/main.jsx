@@ -78,9 +78,6 @@ import {
   withdrawPublication,
 } from "./plaza.js";
 import {
-  profileBoardsFor,
-  searchProfileLines,
-  sortProfileLines,
 } from "./profile-boards.js";
 import {
   checkHandleAvailable,
@@ -5487,111 +5484,6 @@ function ProfileCoverArt({ publication }) {
   return <WorldArtwork genreId={genre.id} />;
 }
 
-// Stack geometry (gate7, front-cover-led — like a physical stack of
-// books): the front card takes 62% of the tile width at full height, so
-// at the tile's 1.25 aspect its face lands within a few percent of the
-// covers' natural 3:4 and reads as an actual book cover, never a sliced
-// sliver. Each further cover is the same card stepped 14px right behind
-// the front one, showing only its edge (max 3 peeks, so at most 4 lines
-// are stacked). No borders or seams anywhere: cards separate only
-// through their own soft shadow, and the stack sits centered on the
-// tile's dark ground.
-// Fan geometry (final, DESIGN §27): the front cover anchors LEFT and
-// the fan fills the collage edge-to-edge — every card is as wide as the
-// space left after the peeks, and each card behind steps right by one
-// peek width, so only a coloured edge of it shows. Separation is carried
-// by the layer shadow alone (no light borders, per §15).
-const STACK_STEP_PX = 18;
-
-function ProfileBoardCollage({ board }) {
-  const lines = board.publications || [];
-  if (lines.length === 0) return <span className="profile-board-collage is-empty" aria-hidden="true" />;
-
-  if (lines.length === 1) {
-    const publication = lines[0];
-    const genre = genreById[publication.genreId] || GENRES[0];
-    const templateName = plazaTemplateNameFor(publication) || genre.label;
-    // The side tiles are narrow: the length label is split at its own
-    // separator so each tile leads with the short half ("全 24 章" /
-    // "第 1 季 · 已完结") instead of wrapping mid-phrase.
-    const lengthParts = plazaLengthLabel(publication).split(" · ");
-    const lengthLead = lengthParts.length > 1 ? lengthParts[lengthParts.length - 1] : lengthParts[0];
-    const lengthNote = plazaLineStatusFor(publication) === "serializing"
-      ? "连载中"
-      : lengthParts.length > 1 ? `${lengthParts.slice(0, -1).join(" · ")} · 已完结` : "已完结";
-    return (
-      <span className="profile-board-collage is-single" aria-hidden="true">
-        <span className="profile-board-main">
-          <ProfileCoverArt publication={publication} />
-        </span>
-        <span className="profile-board-side">
-          <span className="profile-board-tile">
-            <b>{lengthLead}</b>
-            <small>{lengthNote}</small>
-          </span>
-          <span className="profile-board-tile">
-            <b>{publication.worldName || genre.world}</b>
-            <small>{templateName}</small>
-          </span>
-        </span>
-      </span>
-    );
-  }
-
-  const cards = lines.slice(0, 4);
-  const cardWidth = `calc(100% - ${(cards.length - 1) * STACK_STEP_PX}px)`;
-  return (
-    <span className="profile-board-collage is-stack" aria-hidden="true">
-      {cards.map((publication, index) => (
-        <span
-          className="profile-board-stack-layer"
-          key={publication.id}
-          style={{
-            width: cardWidth,
-            left: `${index * STACK_STEP_PX}px`,
-            zIndex: cards.length - index,
-          }}
-        >
-          <ProfileCoverArt publication={publication} />
-        </span>
-      ))}
-    </span>
-  );
-}
-
-function ProfileBoardCard({ board, onOpen }) {
-  return (
-    <button
-      type="button"
-      className="profile-board-card"
-      onClick={() => onOpen(board)}
-      aria-label={`打开合集${board.title}，共 ${board.publications.length} 条故事线`}
-    >
-      <ProfileBoardCollage board={board} />
-      <span className="profile-board-copy">
-        <strong>{board.title}</strong>
-        <small>{board.publications.length} 条故事线</small>
-      </span>
-    </button>
-  );
-}
-
-function ProfileLineRow({ publication, onOpen }) {
-  const genre = genreById[publication.genreId] || GENRES[0];
-  const templateName = plazaTemplateNameFor(publication) || genre.label;
-  return (
-    <button type="button" className="profile-line-row" onClick={() => onOpen(publication)}>
-      <span className="profile-line-art"><ProfileCoverArt publication={publication} /></span>
-      <span className="profile-line-copy">
-        <strong>{publication.title}</strong>
-        <small>{publication.worldName || genre.world} × {templateName} · {plazaLengthLabel(publication)}{publication.official && <> · <span className="plaza-badge is-official">官方示例</span></>}</small>
-        <small>{formatProfileDate(publication.publishedAt)}发布</small>
-      </span>
-      <Icon name="chevron" size={16} />
-    </button>
-  );
-}
-
 function ProfileConnectionRow({ person, account, busyUid, onToggleFollow, onOpenProfile }) {
   const portrait = person.picture?.kind === "avatar";
   return (
@@ -5625,7 +5517,82 @@ function ProfileConnectionRow({ person, account, busyUid, onToggleFollow, onOpen
   );
 }
 
-function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onOpenDetail, onOpenProfile, onClose = null }) {
+// ——— PROFILE-ENRICH (§35) section pieces ———
+// One book standing in the profile's mini-shelf: the same cover
+// sources and seeded tilt as the shelf page, a slimmer footprint.
+// Own books come from the live library (drafts included, it is your
+// home); other people's books are their public lines.
+function ProfileShelfStoryBook({ story, authClient, account, onOpen }) {
+  const genre = genreOf(story);
+  return (
+    <button
+      type="button"
+      className="profile-shelf-book"
+      style={{ "--tilt": `${shelfTiltFor(story)}deg` }}
+      onClick={() => onOpen(story)}
+      aria-label={`打开《${story.title || "未命名故事"}》`}
+    >
+      <span className="profile-shelf-cover">
+        <StoryCover story={story} genreId={genre.id} sources={coverSources(story)} getAccessToken={() => authClient.getAccessToken()} authSignal={account.status} />
+      </span>
+      <span className="profile-shelf-name">{story.title || "未命名故事"}</span>
+      <span className="profile-shelf-meta">{shelfMetaFor(story)}</span>
+    </button>
+  );
+}
+
+function ProfileShelfPubBook({ publication, onOpen }) {
+  const serializing = plazaLineStatusFor(publication) === "serializing";
+  // The shelf meta is one short line: the length label already leads
+  // with 连载中 for serializing lines; finished lines drop the season
+  // segment (the store card below carries the full label).
+  const label = plazaLengthLabel(publication);
+  const meta = serializing
+    ? publication.storyLengthMode === "endless" && Number.isInteger(publication.chapterCount)
+      ? `连载中 · ${publication.chapterCount} 章`
+      : label
+    : `已完结 · ${label.split(" · ").pop()}`;
+  return (
+    <button
+      type="button"
+      className="profile-shelf-book"
+      style={{ "--tilt": `${shelfTiltFor(publication)}deg` }}
+      onClick={() => onOpen(publication)}
+      aria-label={`打开《${publication.title}》`}
+    >
+      <span className="profile-shelf-cover">
+        <ProfileCoverArt publication={publication} />
+      </span>
+      <span className="profile-shelf-name">{publication.title}</span>
+      <span className="profile-shelf-meta">{meta}</span>
+    </button>
+  );
+}
+
+// One listed book in the 上架区: a small horizontal card — cover, title,
+// a status chip (连载 / 完结), and the progress line under it.
+function ProfileStoreCard({ publication, onOpen }) {
+  const serializing = plazaLineStatusFor(publication) === "serializing";
+  const templateName = plazaTemplateNameFor(publication);
+  const meta = serializing
+    ? `${templateName ? `${templateName} · ` : ""}更新至第 ${publication.chapterCount} 章`
+    : `${templateName ? `${templateName} · ` : ""}${plazaLengthLabel(publication)}`;
+  return (
+    <button type="button" className="profile-store-card" onClick={() => onOpen(publication)} aria-label={`查看《${publication.title}》`}>
+      <span className="profile-store-art"><ProfileCoverArt publication={publication} /></span>
+      <span className="profile-store-copy">
+        <span className="profile-store-title-row">
+          <strong>{publication.title}</strong>
+          <span className={`profile-store-chip ${serializing ? "is-live" : ""}`}>{serializing ? "连载中" : "完结"}</span>
+        </span>
+        <small>{meta}</small>
+      </span>
+      <Icon name="chevron" size={16} />
+    </button>
+  );
+}
+
+function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onOpenDetail, onOpenProfile, onClose = null, ownStories = null, onOpenStory = null }) {
   // Two forms, one component (PROFILE-FIX §33): the WINDOW form (a
   // sheet over the current page, onClose set) for someone else's
   // profile, and the PAGE form (a bottom-nav tab) for your own. The
@@ -5637,16 +5604,14 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [segment, setSegment] = useState(() => profileViewState(uid)?.segment || "boards");
-  const [selectedBoardId, setSelectedBoardId] = useState(() => profileViewState(uid)?.boardId || "");
-  const [shelfQuery, setShelfQuery] = useState(() => profileViewState(uid)?.query || "");
-  const [sortMode, setSortMode] = useState(() => profileViewState(uid)?.sort || "newest");
-  const [sortOpen, setSortOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [reported, setReported] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [pictureSrc, setPictureSrc] = useState("");
-  const [standFailed, setStandFailed] = useState(false);
+  // The avatar on the stage (PROFILE-ENRICH §35): the main avatar by
+  // default; a return visit restores the tile left selected.
+  const [stageAvatarId, setStageAvatarId] = useState(() => profileViewState(uid)?.avatarId || "");
+  const [stageFailedFor, setStageFailedFor] = useState("");
   const [connectionsKind, setConnectionsKind] = useState(null);
   const [connections, setConnections] = useState(null);
   const [connectionsError, setConnectionsError] = useState("");
@@ -5660,7 +5625,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   // Data (PROFILE-FEEL A5): profiles load through the per-(viewer, uid)
   // cache — a cached payload renders on the first frame and revalidates
   // in the background, so the skeleton is a once-per-person sight, not
-  // an every-visit ritual. View state (segment / board / search / sort)
+  // an every-visit ritual. View state (scroll position, staged avatar)
   // restores from the session memory instead of resetting per visit.
   useEffect(() => {
     let live = true;
@@ -5668,19 +5633,15 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
     setProfile(cached);
     setError("");
     setNote("");
-    setSortOpen(false);
     setMenuOpen(false);
     setReported(false);
     setEditOpen(false);
-    setStandFailed(false);
+    setStageFailedFor("");
     setConnectionsKind(null);
     setConnections(null);
     setConnectionsError("");
     const remembered = profileViewState(uid);
-    setSegment(remembered?.segment || "boards");
-    setSelectedBoardId(remembered?.boardId || "");
-    setShelfQuery(remembered?.query || "");
-    setSortMode(remembered?.sort || "newest");
+    setStageAvatarId(remembered?.avatarId || "");
     restoredScrollForRef.current = "";
     loadProfile({ viewerUid, uid, getAccessToken: getToken })
       .then((next) => { if (live && next) setProfile(next); })
@@ -5692,10 +5653,11 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
     const unsubscribe = subscribeProfile({ viewerUid, uid }, (next) => { if (live) setProfile(next); });
     return () => { live = false; unsubscribe(); };
   }, [uid, getToken, viewerUid]);
-  // Persist the visit's view state as it changes (B4).
+  // Persist the visit's view state as it changes (B4): the scroll
+  // position (below) and which avatar stands on the stage.
   useEffect(() => {
-    rememberProfileViewState(uid, { segment, boardId: selectedBoardId, query: shelfQuery, sort: sortMode });
-  }, [uid, segment, selectedBoardId, shelfQuery, sortMode]);
+    rememberProfileViewState(uid, { avatarId: stageAvatarId });
+  }, [uid, stageAvatarId]);
   // Scroll memory: the window form scrolls its sheet column, the page
   // form scrolls the window; both restore where the visit left off.
   useEffect(() => {
@@ -5745,17 +5707,6 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
       { opacity: 1, y: 0, duration: 0.5, stagger: 0.055, ease: "power3.out", clearProps: "transform,opacity" },
     );
   }, [profile, animate, windowForm]);
-  // The segment's white pill slides between 合集 / 全部 (GSAP, transform
-  // only); with motion off it is set in place instantly.
-  useEffect(() => {
-    const pill = tabsRef.current?.querySelector("[data-segment-pill]");
-    if (!pill) return;
-    const xPercent = segment === "all" ? 100 : 0;
-    if (animate) gsap.to(pill, { xPercent, duration: 0.32, ease: "power3.out" });
-    else gsap.set(pill, { xPercent });
-  }, [segment, animate, profile]);
-  const tabsRef = useRef(null);
-
   useEffect(() => { setPictureSrc(profile?.picture?.url || ""); }, [profile?.picture?.url]);
 
   // The name-list behind the counts (PROFILE-FIX C3): fetched when the
@@ -5791,10 +5742,8 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
     return (
       <div className={rootClass} aria-busy="true">
         <div className="profile-skeleton" role="status" aria-label="正在打开主页">
-          <span className="profile-skeleton-avatar" />
-          <span className="profile-skeleton-line is-name" />
-          <span className="profile-skeleton-line is-handle" />
-          <span className="profile-skeleton-line is-counts" />
+          <span className="profile-skeleton-hero" />
+          <span className="profile-skeleton-stats" />
           <span className="profile-skeleton-action" />
           <span className="profile-skeleton-shelf" />
         </div>
@@ -5815,16 +5764,33 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   const nameIsHandle = Boolean(shownHandle) && shownName.toLowerCase() === shownHandle.toLowerCase();
   const nameTier = [...shownName].length <= 8 ? "full" : [...shownName].length <= 16 ? "mid" : "long";
   const publications = profile.publications || [];
-  const boards = profileBoardsFor(profile, sortMode);
-  const selectedBoard = boards.find((board) => board.id === selectedBoardId) || null;
-  const allLines = sortProfileLines(publications, sortMode);
-  const searchResults = searchProfileLines(publications, shelfQuery, sortMode);
-  const searching = shelfQuery.trim().length > 0;
-  const sortOptions = [
-    { id: "newest", label: "最新发布" },
-    { id: "oldest", label: "最早发布" },
-    { id: "title", label: "按标题" },
-  ];
+  // The avatar collection (PROFILE-ENRICH §35): the payload carries
+  // every avatar the person keeps; a payload cached before the field
+  // existed only knows the main one, so a single-entry collection is
+  // synthesised from it rather than rendering an empty 化身区 until
+  // the revalidation lands.
+  const collection = Array.isArray(profile.avatars) && profile.avatars.length > 0
+    ? profile.avatars
+    : profile.avatar
+      ? [{
+          id: "__main__",
+          name: profile.avatar.name,
+          description: profile.avatar.description,
+          appearance: profile.avatar.appearance,
+          isMain: true,
+          hasPortrait: profile.avatar.hasPortrait,
+          ...(profile.avatar.portraitUrl ? { portraitUrl: profile.avatar.portraitUrl } : {}),
+          ...(profile.avatar.currentWorld ? { currentWorld: profile.avatar.currentWorld } : {}),
+        }]
+      : [];
+  const mainAvatar = collection.find((item) => item.isMain) || collection[0] || null;
+  const stageAvatar = collection.find((item) => item.id === stageAvatarId) || mainAvatar;
+  // The shelf: your own live library on your own page (unpublished
+  // lines included — it is your home), the public lines on anyone
+  // else's. The works count follows the same source so the number
+  // and the row beneath it can never disagree.
+  const ownBooks = isSelf && Array.isArray(ownStories) ? ownStories : null;
+  const worksCount = ownBooks ? ownBooks.length : (profile.counts?.works ?? publications.length);
 
   const toggleFollow = async () => {
     if (busy) return;
@@ -5948,95 +5914,102 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           <span className="profile-window-grabber" />
         </div>
       )}
-      <div className="ryan-topbar">
-        {windowForm ? (
-          <button type="button" className="ryan-glyph-btn" onClick={onClose} aria-label="关闭主页">
-            <Icon name="x" size={22} />
-          </button>
-        ) : <span aria-hidden="true" />}
-        <span className="ryan-topbar-actions">
-          <button type="button" className="ryan-glyph-btn" onClick={() => void shareProfile()} aria-label="分享主页">
-            <Icon name="share" size={22} />
-          </button>
-          <button
-            type="button"
-            className="ryan-glyph-btn"
-            aria-label="更多操作"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
-          >
-            <Icon name="dots" size={22} />
-          </button>
-        </span>
-      </div>
-      {menuOpen && (
-        <div className="ryan-menu" role="menu">
-          {!isSelf && (
-            <button type="button" disabled={reported} onClick={() => void reportThisUser()}>
-              {reported ? "已举报" : "举报该用户"}
+      <header className="profile-hero">
+        {mainAvatar?.hasPortrait && mainAvatar?.portraitUrl ? (
+          <span className="profile-hero-bg" style={{ backgroundImage: `url("${mainAvatar.portraitUrl}")` }} aria-hidden="true" />
+        ) : null}
+        <span className="profile-hero-tint" aria-hidden="true" />
+        <span className="profile-hero-shade" aria-hidden="true" />
+        <div className="ryan-topbar">
+          {windowForm ? (
+            <button type="button" className="ryan-glyph-btn" onClick={onClose} aria-label="关闭主页">
+              <Icon name="x" size={22} />
             </button>
-          )}
-          <button type="button" onClick={() => void copyProfileLink()}>复制主页链接</button>
+          ) : <span aria-hidden="true" />}
+          <span className="ryan-topbar-actions">
+            <button type="button" className="ryan-glyph-btn" onClick={() => void shareProfile()} aria-label="分享主页">
+              <Icon name="share" size={22} />
+            </button>
+            <button
+              type="button"
+              className="ryan-glyph-btn"
+              aria-label="更多操作"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              <Icon name="dots" size={22} />
+            </button>
+          </span>
         </div>
-      )}
+        {menuOpen && (
+          <div className="ryan-menu" role="menu">
+            {!isSelf && (
+              <button type="button" disabled={reported} onClick={() => void reportThisUser()}>
+                {reported ? "已举报" : "举报该用户"}
+              </button>
+            )}
+            <button type="button" onClick={() => void copyProfileLink()}>复制主页链接</button>
+          </div>
+        )}
+        <div className="profile-hero-id">
+          <span className={`profile-hero-face${profile.picture?.kind === "avatar" ? " is-portrait" : ""}`}>
+            <img
+              src={pictureSrc || "/default-avatar.svg"}
+              alt=""
+              onError={() => { if (pictureSrc !== "/default-avatar.svg") setPictureSrc("/default-avatar.svg"); }}
+            />
+          </span>
+          <div className="profile-hero-name-row">
+            <h1 className="profile-hero-name" data-name-tier={nameTier}>{shownName}</h1>
+            {profile.avatar?.name ? <span className="profile-main-chip">主化身 · {profile.avatar.name}</span> : null}
+          </div>
+          {shownHandle && !nameIsHandle && <p className="profile-hero-handle">@{shownHandle}</p>}
+          {profile.avatar?.description ? (
+            <p className="profile-hero-bio">{profile.avatar.description}</p>
+          ) : null}
+        </div>
+      </header>
 
-      <div className="ryan-avatar-wrap">
-        <span className={`ryan-avatar-frame${profile.picture?.kind === "avatar" ? " is-portrait" : ""}`}>
-          <img
-            className="ryan-avatar"
-            src={pictureSrc || "/default-avatar.svg"}
-            alt=""
-            onError={() => { if (pictureSrc !== "/default-avatar.svg") setPictureSrc("/default-avatar.svg"); }}
-          />
-        </span>
+      <div className="profile-stats">
+        <div className="profile-stat">
+          <strong>{worksCount}</strong>
+          <span>作品</span>
+        </div>
+        <div className="profile-stat">
+          <strong>{profile.counts.publications}</strong>
+          <span>上架</span>
+        </div>
+        <button type="button" className="profile-stat is-button" onClick={() => setConnectionsKind("followers")} aria-label={`查看 ${profile.counts.followers} 位粉丝`}>
+          <strong>{profile.counts.followers}</strong>
+          <span>粉丝</span>
+        </button>
+        <button type="button" className="profile-stat is-button" onClick={() => setConnectionsKind("following")} aria-label={`查看关注的 ${profile.counts.following} 人`}>
+          <strong>{profile.counts.following}</strong>
+          <span>关注</span>
+        </button>
       </div>
-      <h1 className="ryan-name" data-name-tier={nameTier}>{shownName}</h1>
-      {shownHandle && !nameIsHandle && <p className="ryan-handle">@{shownHandle}</p>}
-      {profile.avatar?.description ? (
-        <p className="ryan-bio">{profile.avatar.description}</p>
-      ) : null}
-      <p className="ryan-counts">
-        <button type="button" className="ryan-count" onClick={() => setConnectionsKind("followers")} aria-label={`查看 ${profile.counts.followers} 位粉丝`}>
-          <strong>{profile.counts.followers}</strong> 粉丝
-        </button>
-        <span className="ryan-count-sep" aria-hidden="true">·</span>
-        <button type="button" className="ryan-count" onClick={() => setConnectionsKind("following")} aria-label={`查看关注的 ${profile.counts.following} 人`}>
-          <strong>{profile.counts.following}</strong> 关注
-        </button>
-      </p>
 
-      <div className="ryan-actions">
+      <div className="profile-actions">
         {isSelf ? (
           <button type="button" className="btn-pill-white" onClick={() => setEditOpen(true)}>编辑资料</button>
         ) : (
-          <button
-            type="button"
-            className={`btn-pill-white ${following ? "is-following" : ""}`}
-            disabled={busy}
-            aria-pressed={following}
-            onClick={() => void toggleFollow()}
-          >
-            {following ? "已关注" : "关注"}
-          </button>
+          <>
+            <button
+              type="button"
+              className={`btn-pill-white profile-follow-btn ${following ? "is-following" : ""}`}
+              disabled={busy}
+              aria-pressed={following}
+              onClick={() => void toggleFollow()}
+            >
+              {following ? "已关注" : "关注"}
+            </button>
+            <button type="button" className="profile-share-btn" onClick={() => void shareProfile()} aria-label="分享主页">
+              <Icon name="share" size={18} />
+            </button>
+          </>
         )}
       </div>
       {note && <p className="ryan-note" role="status">{note}</p>}
-
-      {profile.avatar?.hasPortrait && profile.avatar?.portraitUrl && !standFailed && (
-        <section className="profile-avatar-stand" aria-label={`${profile.avatar.name} 的全身像`}>
-          <img
-            className="profile-avatar-stand-img"
-            src={profile.avatar.portraitUrl}
-            alt=""
-            loading="lazy"
-            onError={() => setStandFailed(true)}
-          />
-          <p className="profile-avatar-stand-caption">
-            <strong>{profile.avatar.name}</strong>
-            {profile.avatar.appearance ? <span>{profile.avatar.appearance}</span> : null}
-          </p>
-        </section>
-      )}
 
       {connectionsKind ? (
         <section className="profile-connections" aria-label={connectionsKind === "followers" ? "粉丝名单" : "关注名单"}>
@@ -6080,168 +6053,167 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           )}
         </section>
       ) : (
-      <section className="profile-shelf" aria-label="主页书架" data-enter>
-        {publications.length > 0 ? (
+      <>
+      <section className="profile-sec profile-shelf" aria-label="书架">
+        <div className="profile-sec-head">
+          <h2 className="profile-sec-title">书架<small>{(ownBooks || publications).length > 0 ? `共 ${(ownBooks || publications).length} 本` : ""}</small></h2>
+          {ownBooks && ownBooks.length > 0 && (
+            <button type="button" className="profile-sec-more" onClick={() => onNavigate("home")}>全部 ›</button>
+          )}
+        </div>
+        {(ownBooks || publications).length > 0 ? (
           <>
-            <div className="profile-shelf-tabs" role="tablist" aria-label="书架视图" ref={tabsRef}>
-              <span className="profile-shelf-tabs-pill" data-segment-pill aria-hidden="true" />
-              <button
-                type="button"
-                role="tab"
-                aria-selected={segment === "boards"}
-                className={segment === "boards" ? "is-active" : ""}
-                onClick={() => { setSegment("boards"); setSelectedBoardId(""); setShelfQuery(""); }}
-              >
-                合集
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={segment === "all"}
-                className={segment === "all" ? "is-active" : ""}
-                onClick={() => { setSegment("all"); setSelectedBoardId(""); setShelfQuery(""); }}
-              >
-                全部
-              </button>
-            </div>
-
-            <div className="profile-shelf-tools">
-              <label className="profile-shelf-search">
-                <Icon name="search" size={19} />
-                <input
-                  value={shelfQuery}
-                  onChange={(event) => setShelfQuery(event.target.value)}
-                  placeholder="搜索故事线"
-                  aria-label="搜索这个主页的故事线"
-                />
-                {shelfQuery && (
-                  <button type="button" onClick={() => setShelfQuery("")} aria-label="清空搜索">
-                    <Icon name="x" size={14} />
-                  </button>
-                )}
-              </label>
-              <button
-                type="button"
-                className={`profile-shelf-tool ${sortOpen ? "is-active" : ""}`}
-                onClick={() => setSortOpen((open) => !open)}
-                aria-label="调整故事线排序"
-                aria-expanded={sortOpen}
-              >
-                <Icon name="sliders" size={24} />
-              </button>
+            <div className="profile-shelf-row">
+              {ownBooks
+                ? ownBooks.map((story) => (
+                    <ProfileShelfStoryBook
+                      key={story.id}
+                      story={story}
+                      authClient={authClient}
+                      account={account}
+                      onOpen={onOpenStory || (() => {})}
+                    />
+                  ))
+                : publications.map((publication) => (
+                    <ProfileShelfPubBook key={publication.id} publication={publication} onOpen={onOpenDetail} />
+                  ))}
               {isSelf && (
-                <button
-                  type="button"
-                  className="profile-shelf-tool"
-                  onClick={() => onNavigate("forge")}
-                  aria-label="新建故事"
-                >
-                  <Icon name="plus" size={26} />
+                <button type="button" className="profile-shelf-new" onClick={() => onNavigate("forge")} aria-label="新建故事">
+                  <span className="profile-shelf-new-plus" aria-hidden="true">+</span>
+                  开新书
                 </button>
               )}
-              {sortOpen && (
-                <div className="profile-sort-menu" role="menu" aria-label="故事线排序">
-                  {sortOptions.map((option) => (
-                    <button
-                      type="button"
-                      key={option.id}
-                      role="menuitemradio"
-                      aria-checked={sortMode === option.id}
-                      className={sortMode === option.id ? "is-active" : ""}
-                      onClick={() => { setSortMode(option.id); setSortOpen(false); }}
-                    >
-                      <span>{option.label}</span>
-                      {sortMode === option.id && <Icon name="check" size={15} />}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
-
-            {searching ? (
-              <div className="profile-line-list-wrap">
-                <div className="profile-list-heading">
-                  <h2>搜索结果</h2>
-                  <span>{searchResults.length} 条故事线</span>
-                </div>
-                {searchResults.length > 0 ? (
-                  <div className="profile-line-list">
-                    {searchResults.map((publication) => (
-                      <ProfileLineRow key={publication.id} publication={publication} onOpen={onOpenDetail} />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="profile-line-empty">没有找到匹配的故事线。</p>
-                )}
-              </div>
-            ) : selectedBoard ? (
-              <div className="profile-line-list-wrap">
-                <div className="profile-collection-heading">
-                  <button
-                    type="button"
-                    className="profile-back-chip"
-                    onClick={() => setSelectedBoardId("")}
-                    aria-label="返回全部合集"
-                  >
-                    <Icon name="chevron" size={15} className="rotate-180" />
-                    全部合集
-                  </button>
-                  <div>
-                    <h2>{selectedBoard.title}</h2>
-                    <p>{selectedBoard.publications.length} 条故事线</p>
-                  </div>
-                </div>
-                <div className="profile-line-list">
-                  {selectedBoard.publications.map((publication) => (
-                    <ProfileLineRow key={publication.id} publication={publication} onOpen={onOpenDetail} />
-                  ))}
-                </div>
-              </div>
-            ) : segment === "all" ? (
-              <div className="profile-line-list-wrap">
-                <div className="profile-list-heading">
-                  <h2>全部故事线</h2>
-                  <span>{allLines.length} 条</span>
-                </div>
-                <div className="profile-line-list">
-                  {allLines.map((publication) => (
-                    <ProfileLineRow key={publication.id} publication={publication} onOpen={onOpenDetail} />
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="profile-board-grid">
-                {boards.map((board) => (
-                  <ProfileBoardCard
-                    key={board.id}
-                    board={board}
-                    onOpen={(nextBoard) => {
-                      if (nextBoard.id === "all") {
-                        setSegment("all");
-                        setSelectedBoardId("");
-                      } else {
-                        setSelectedBoardId(nextBoard.id);
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-            )}
+            <div className="profile-shelf-plank" aria-hidden="true" />
           </>
         ) : (
-          <div className="profile-shelf-empty">
-            <h2>还没有发布故事线</h2>
-            <p>{isSelf
-              ? "走完一整季或一整条长线，就能把故事线发布到广场，书架上会按世界摆成合集。"
-              : "TA 还没有把走完的故事线发布到广场。"}</p>
+          <div className="profile-empty">
+            <span className="profile-empty-ic"><Icon name="book" size={18} /></span>
+            <div className="profile-empty-copy">
+              <p>书架还是空的</p>
+              <small>{isSelf ? "还没有属于自己的故事" : "TA 还没有公开的故事"}</small>
+            </div>
             {isSelf && (
-              <button type="button" className="btn-pill-white" onClick={() => onNavigate("forge")}>
-                去造世开一本新书
-              </button>
+              <button type="button" className="profile-empty-go" onClick={() => onNavigate("forge")}>去造世 ›</button>
             )}
           </div>
         )}
       </section>
+
+      <section className="profile-sec" aria-label="上架" data-enter>
+        <div className="profile-sec-head">
+          <h2 className="profile-sec-title">上架<small>书城在售</small></h2>
+          {isSelf && publications.length > 0 && (
+            <button type="button" className="profile-sec-more" onClick={() => onNavigate("plaza-publish")}>管理 ›</button>
+          )}
+        </div>
+        {publications.length > 0 ? (
+          <div className="profile-store-list">
+            {publications.map((publication) => (
+              <ProfileStoreCard key={publication.id} publication={publication} onOpen={onOpenDetail} />
+            ))}
+          </div>
+        ) : (
+          <div className="profile-empty">
+            <span className="profile-empty-ic"><Icon name="book" size={18} /></span>
+            <div className="profile-empty-copy">
+              <p>暂无上架作品</p>
+              <small>{isSelf ? "一本书完结一季后，可以上架到书城" : "TA 还没有上架的书"}</small>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {(collection.length > 0 || isSelf) && (
+        <section className="profile-sec" aria-label="化身" data-enter>
+          <div className="profile-sec-head">
+            <h2 className="profile-sec-title">化身<small>{isSelf ? "陪我走过每个世界" : "陪 TA 走过每个世界"}</small></h2>
+            {isSelf && (
+              <button type="button" className="profile-sec-more" onClick={onOpenAvatar}>全部 ›</button>
+            )}
+          </div>
+          {stageAvatar ? (
+            <>
+              <div className="profile-stage profile-avatar-stand">
+                {stageAvatar.hasPortrait && stageAvatar.portraitUrl && stageFailedFor !== stageAvatar.id ? (
+                  <>
+                    <span className="profile-stage-bg" style={{ backgroundImage: `url("${stageAvatar.portraitUrl}")` }} aria-hidden="true" />
+                    <span className="profile-stage-spot" aria-hidden="true" />
+                    <span className="profile-stage-floor" aria-hidden="true" />
+                    <img
+                      className="profile-stage-glow"
+                      src={stageAvatar.portraitUrl}
+                      alt=""
+                      aria-hidden="true"
+                      loading="lazy"
+                    />
+                    <img
+                      className="profile-stage-img"
+                      src={stageAvatar.portraitUrl}
+                      alt=""
+                      loading="lazy"
+                      onError={() => setStageFailedFor(stageAvatar.id)}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <span className="profile-stage-spot" aria-hidden="true" />
+                    <span className="profile-stage-floor" aria-hidden="true" />
+                    <span className="profile-stage-noface" aria-hidden="true">{[...(stageAvatar.name || "化")][0]}</span>
+                  </>
+                )}
+                <div className="profile-stage-plate">
+                  <div className="profile-stage-main">
+                    <p className="profile-stage-name">
+                      <strong>{stageAvatar.name}</strong>
+                      {stageAvatar.isMain && <span className="profile-main-badge">主化身</span>}
+                    </p>
+                    {stageAvatar.appearance ? <p className="profile-stage-desc">{stageAvatar.appearance}</p> : null}
+                  </div>
+                  {stageAvatar.currentWorld ? <span className="profile-stage-world">现驻 · {stageAvatar.currentWorld}</span> : null}
+                </div>
+              </div>
+              <div className="profile-avatar-row">
+                {collection.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`profile-avatar-tile${item.id === stageAvatar.id ? " is-selected" : ""}${item.isMain ? " is-main" : ""}`}
+                    onClick={() => setStageAvatarId(item.id)}
+                    aria-pressed={item.id === stageAvatar.id}
+                    aria-label={`把 ${item.name} 放上展台`}
+                  >
+                    <span className="profile-avatar-tile-img">
+                      {item.hasPortrait && item.portraitUrl ? (
+                        <img src={item.portraitUrl} alt="" loading="lazy" />
+                      ) : (
+                        <span className="profile-avatar-tile-letter" aria-hidden="true">{[...(item.name || "化")][0]}</span>
+                      )}
+                    </span>
+                    <span className="profile-avatar-tile-name">{item.name}</span>
+                  </button>
+                ))}
+                {isSelf && (
+                  <button type="button" className="profile-avatar-new" onClick={onOpenAvatar} aria-label="新建化身">
+                    <span className="profile-avatar-new-plus" aria-hidden="true">+</span>
+                    <span className="profile-avatar-tile-name">新建化身</span>
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="profile-empty">
+              <span className="profile-empty-ic"><Icon name="wand" size={18} /></span>
+              <div className="profile-empty-copy">
+                <p>还没有化身</p>
+                <small>捏一个属于你的角色，陪你走过每个世界</small>
+              </div>
+              <button type="button" className="profile-empty-go" onClick={onOpenAvatar}>去创建 ›</button>
+            </div>
+          )}
+        </section>
+      )}
+      </>
       )}
 
     </div>
@@ -8105,6 +8077,8 @@ function App() {
         onOpenAvatar={() => navigate("avatar")}
         onOpenDetail={openPlazaDetail}
         onOpenProfile={openProfile}
+        ownStories={library.stories}
+        onOpenStory={openOwnReader}
       />
     );
   else

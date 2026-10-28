@@ -163,7 +163,7 @@ test('profile payload: identity, avatar, counts, worlds, publications — and no
   assert.match(profile.avatar.appearance, /银灰/)
   assert.equal(profile.avatar.hasPortrait, true)
   assert.equal(profile.avatar.portraitUrl, `/api/users/${encodeURIComponent(author.uid)}/portrait`)
-  assert.deepEqual(profile.counts, { following: 0, followers: 0, publications: 1 })
+  assert.deepEqual(profile.counts, { works: 1, following: 0, followers: 0, publications: 1 })
   assert.deepEqual(profile.worlds, [{ worldId: 'cultivation', name: '青岚宗', coverRef: '/art/cultivation-640.webp' }])
   assert.equal(profile.publications.length, 1)
   assert.equal(profile.publications[0].authorUid, author.uid)
@@ -183,6 +183,59 @@ test('profile payload: identity, avatar, counts, worlds, publications — and no
   assert.equal(feed.publications[0].authorUid, author.uid)
   const detail = (await (await fetch(`${base}/api/plaza/${feed.publications[0].id}`)).json()).publication
   assert.equal(detail.authorUid, author.uid)
+})
+
+test('profile enrichment: avatar collection, per-avatar portraits, currentWorld (§35)', async (t) => {
+  const { base } = await startSocialServer(t)
+  const author = await register(base, 'social_enrich_author')
+  const main = await makeAvatar(base, author.token, '沈砚')
+  // A second avatar joins the collection and gets its own painting.
+  const created = await fetch(`${base}/api/avatars`, {
+    method: 'POST', headers: authed(author.token),
+    body: JSON.stringify({
+      profile: {
+        name: '雾银',
+        description: '沉默的同行者。',
+        appearance: { hairColor: 'black', hairStyle: 'long-straight', outfit: 'traveler-cloak', shoes: 'cloth-shoes', face: 'none', faceNote: '' },
+      },
+    }),
+  })
+  assert.equal(created.status, 200, 'second avatar created')
+  const second = (await created.json()).avatar
+  assert.ok(second?.id && second.id !== main.id)
+  for (const avatarId of [undefined, second.id]) {
+    const generated = await fetch(`${base}/api/avatar/generate`, {
+      method: 'POST', headers: authed(author.token),
+      body: JSON.stringify(avatarId ? { avatarId } : {}),
+    })
+    assert.equal(generated.status, 200, `generate ${avatarId || 'main'}`)
+  }
+  await publishLine(base, author.token, main.id)
+
+  const { profile } = await (await fetch(`${base}/api/users/${encodeURIComponent(author.uid)}/profile`)).json()
+  assert.equal(profile.counts.works, 1, 'works counts the public lines server-side')
+  assert.equal(profile.avatars.length, 2, 'the whole collection rides the payload')
+  const [mainRow, secondRow] = profile.avatars
+  assert.equal(mainRow.id, main.id)
+  assert.equal(mainRow.isMain, true)
+  assert.equal(mainRow.hasPortrait, true)
+  assert.match(mainRow.portraitUrl, new RegExp(`avatar=${encodeURIComponent(main.id)}&v=`), 'per-avatar portrait URL carries the avatar id')
+  assert.equal(mainRow.currentWorld, '青岚宗', 'residence derives from the newest public line that avatar walked')
+  assert.equal(secondRow.id, second.id)
+  assert.equal(secondRow.isMain, false)
+  assert.equal(secondRow.hasPortrait, true)
+  assert.equal(secondRow.currentWorld, undefined, 'an avatar with no public line has no residence — omitted, not invented')
+
+  // Each collection painting is served under its own id; a bogus id 404s.
+  const mainImage = await fetch(`${base}/api/users/${encodeURIComponent(author.uid)}/portrait?avatar=${encodeURIComponent(main.id)}`)
+  assert.equal(mainImage.status, 200)
+  const secondImage = await fetch(`${base}/api/users/${encodeURIComponent(author.uid)}/portrait?avatar=${encodeURIComponent(second.id)}`)
+  assert.equal(secondImage.status, 200)
+  const bogus = await fetch(`${base}/api/users/${encodeURIComponent(author.uid)}/portrait?avatar=no-such-avatar`)
+  assert.equal(bogus.status, 404, 'an unknown avatar id never falls back to the main painting')
+  // The bare route still serves the main painting (existing surfaces).
+  const bare = await fetch(`${base}/api/users/${encodeURIComponent(author.uid)}/portrait`)
+  assert.equal(bare.status, 200)
 })
 
 test('profile publications carry each story’s own cover URL once one is painted', async (t) => {
@@ -418,7 +471,7 @@ test('a registered account with no avatar and no publications still has a profil
   assert.equal(profile.handle, 'fresh_face')
   assert.equal(profile.avatar, null, 'no avatar record: the showcase stays absent, never fabricated')
   assert.deepEqual(profile.picture, { kind: 'default', url: '/default-avatar.svg' })
-  assert.deepEqual(profile.counts, { following: 0, followers: 0, publications: 0 })
+  assert.deepEqual(profile.counts, { works: 0, following: 0, followers: 0, publications: 0 })
   assert.deepEqual(profile.publications, [])
   assert.deepEqual(profile.worlds, [])
   // A username that was never registered is still a 404, as is any

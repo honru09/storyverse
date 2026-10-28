@@ -3,7 +3,7 @@ import { avatarAppearanceText } from '../src/avatar.js'
 import { CUSTOM_GENRE_ID } from '../src/story-engine.js'
 import { createSocialStore, pictureSourceFor } from './social-store.js'
 import { createPlazaStore } from './plaza-store.js'
-import { createAvatarStore } from './avatar-store.js'
+import { createAvatarStore, collectionFromRecord, imageSlotFor } from './avatar-store.js'
 import { createCoverStore } from './cover-store.js'
 import { createIdentityStore } from './identity-store.js'
 import { plazaSummaryOf } from './plaza.js'
@@ -162,6 +162,23 @@ export function createSocialService({
     }
   }
 
+  /**
+   * The owner's whole avatar collection (PROFILE-ENRICH §35): the
+   * profile page's 化身区 shows every avatar the person keeps, not
+   * only the main one. The store record normalises through
+   * collectionFromRecord (legacy single-avatar records included);
+   * stores that expose getCollection use it directly.
+   */
+  async function avatarCollectionOf(uid) {
+    if (!avatars) return null
+    try {
+      if (typeof avatars.getCollection === 'function') return await avatars.getCollection(uid)
+      return collectionFromRecord(await avatars.getProfile(uid))
+    } catch {
+      return null
+    }
+  }
+
   async function profileRecordOf(uid) {
     if (!backend) return null
     try {
@@ -280,12 +297,13 @@ export function createSocialService({
     async profile(viewerIdentity, uid) {
       const target = clip(uid, 512)
       if (!target) throw NOT_FOUND()
-      const [record, profile, publications, following, followers] = await Promise.all([
+      const [record, profile, publications, following, followers, collection] = await Promise.all([
         profileRecordOf(target),
         avatarProfileOf(target),
         visiblePublicationsOf(target),
         backend ? backend.listFollowsByFollower(target) : Promise.resolve([]),
         backend ? backend.listFollowsByFollowee(target) : Promise.resolve([]),
+        avatarCollectionOf(target),
       ])
       const isSelf = viewerIdentity?.uid === target
       if (!record && !profile && publications.length === 0 && !isSelf && !(await accountExists(target))) {
@@ -311,6 +329,33 @@ export function createSocialService({
         })
       }
       const hasPortrait = profile?.portrait?.status === 'ready'
+      // Where each avatar currently resides (PROFILE-ENRICH §35): the
+      // world of the newest public line that avatar walked, matched by
+      // the snapshot's avatar name (publications arrive newest-first).
+      // No public line, no residence — the field is omitted rather
+      // than invented.
+      const worldByAvatarName = new Map()
+      for (const publication of publications) {
+        const name = typeof publication.avatar?.name === 'string' ? publication.avatar.name.trim() : ''
+        if (name && publication.worldName && !worldByAvatarName.has(name)) {
+          worldByAvatarName.set(name, publication.worldName)
+        }
+      }
+      const mainAvatarId = collection?.mainId || null
+      const avatarSummaries = (collection?.avatars || []).map((item) => {
+        const ready = item?.portrait?.status === 'ready'
+        const name = sanitizeSettingText(clip(item.name, 40)).trim()
+        return {
+          id: item.id,
+          name,
+          description: sanitizeSettingText(clip(item.description, 300)).trim(),
+          appearance: avatarAppearanceText(item.appearance),
+          isMain: Boolean(mainAvatarId) && item.id === mainAvatarId,
+          hasPortrait: ready,
+          ...(ready ? { portraitUrl: `/api/users/${encodeURIComponent(target)}/portrait?avatar=${encodeURIComponent(item.id)}&v=${item.portrait?.version || 1}` } : {}),
+          ...(worldByAvatarName.get(name) ? { currentWorld: worldByAvatarName.get(name) } : {}),
+        }
+      })
       const payload = {
         uid: target,
         displayName,
@@ -322,8 +367,11 @@ export function createSocialService({
           appearance: avatarAppearanceText(profile.appearance),
           hasPortrait,
           ...(hasPortrait ? { portraitUrl: `/api/users/${encodeURIComponent(target)}/portrait` } : {}),
+          ...(worldByAvatarName.get(avatarName) ? { currentWorld: worldByAvatarName.get(avatarName) } : {}),
         } : null,
+        avatars: avatarSummaries,
         counts: {
+          works: publications.length,
           following: following.length,
           followers: followers.length,
           publications: publications.length,
@@ -525,12 +573,26 @@ export function createSocialService({
       return null
     },
 
-    /** The profile owner's current portrait painting (public: profiles are public). */
-    async portrait(uid) {
+    /**
+     * The profile owner's portrait painting (public: profiles are
+     * public). Without an avatar id this is the main avatar's current
+     * painting — the historic 'current' slot every existing surface
+     * reads. With one (PROFILE-ENRICH §35), it is that collection
+     * member's own current painting, resolved through imageSlotFor so
+     * the main avatar keeps its historic slot; an id that is not in
+     * the collection is a 404, never a silent swap to the main image.
+     */
+    async portrait(uid, avatarId) {
       if (!avatars) return null
       const target = clip(uid, 512)
       if (!target) return null
-      const image = await avatars.getImage(target, 'current')
+      let slot = 'current'
+      if (avatarId) {
+        const collection = await avatarCollectionOf(target)
+        if (!collection || !collection.avatars.some((item) => item.id === avatarId)) return null
+        slot = imageSlotFor(collection, avatarId, 'current')
+      }
+      const image = await avatars.getImage(target, slot)
       if (!image?.image) return null
       return {
         buffer: Buffer.from(image.image, 'base64'),

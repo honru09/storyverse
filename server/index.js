@@ -541,7 +541,10 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         const uid = decodeURIComponent(userMatch[1])
         const action = userMatch[2]
         if (action === 'portrait' && request.method === 'GET') {
-          const image = await social.portrait(uid)
+          // ?avatar=<id> serves that collection member's painting
+          // (PROFILE-ENRICH §35); without it, the main avatar's.
+          const avatarParam = new URL(request.url, 'http://localhost').searchParams.get('avatar')
+          const image = await social.portrait(uid, avatarParam || undefined)
           if (!image) throw new ApiError(404, '这位用户还没有立绘。')
           if (!response.destroyed && !response.writableEnded) {
             response.writeHead(200, {
