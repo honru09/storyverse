@@ -60,6 +60,19 @@ export async function unfollowUser({ uid, getAccessToken, fetchImpl = globalThis
   return usersJson(response)
 }
 
+/**
+ * The public name-list behind a profile's 粉丝/关注 counts. Rows are
+ * resolved server-side through the same identity layers as the
+ * profile payload; a signed-in viewer also gets their own follow
+ * state per row. `kind` is 'followers' | 'following'.
+ */
+export async function fetchUserConnections({ uid, kind = 'followers', getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = await usersHeaders(getAccessToken)
+  const response = await fetchImpl(`/api/users/${encodeURIComponent(uid)}/connections?kind=${kind === 'following' ? 'following' : 'followers'}`, { headers })
+  const result = await usersJson(response)
+  return { kind: result?.kind || kind, people: Array.isArray(result?.people) ? result.people : [], total: result?.total ?? 0 }
+}
+
 /** Public URL of a user's current avatar portrait (may 404 → hero fallback). */
 export const userPortraitPath = (uid) => `/api/users/${encodeURIComponent(uid)}/portrait`
 

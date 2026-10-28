@@ -314,3 +314,43 @@ test('presence: the 90-second window, counted on the service clock and in the pl
   const feedAfter = await (await fetch(`${base}/api/plaza`)).json()
   assert.equal(feedAfter.onlineCount, 1)
 })
+
+test('connections: the name-list behind the counts, with viewer follow state (PROFILE-FIX C3)', async (t) => {
+  const { base } = await startSocialServer(t)
+  const author = await register(base, 'conn_author')
+  const fan = await register(base, 'conn_fan')
+  const third = await register(base, 'conn_third')
+  const authorAvatar = await makeAvatar(base, author.token, '陆青禾')
+  await publishLine(base, author.token, authorAvatar.id)
+  for (const who of [fan, third]) {
+    const response = await fetch(`${base}/api/users/${author.uid}/follow`, { method: 'POST', headers: authed(who.token), body: '{}' })
+    assert.equal(response.status, 200, 'follow lands')
+  }
+  // The author's follower list: resolved names, newest first, and the
+  // viewer's own follow state rides each row.
+  const asThird = await (await fetch(`${base}/api/users/${author.uid}/connections?kind=followers`, { headers: authed(third.token) })).json()
+  assert.equal(asThird.kind, 'followers')
+  assert.equal(asThird.total, 2)
+  assert.deepEqual(asThird.people.map((person) => person.uid).sort(), [fan.uid, third.uid].sort())
+  const fanRow = asThird.people.find((person) => person.uid === fan.uid)
+  assert.equal(fanRow.isFollowing, false, 'third does not follow fan')
+  assert.equal(fanRow.isSelf, false)
+  const selfRow = asThird.people.find((person) => person.uid === third.uid)
+  assert.equal(selfRow.isSelf, true)
+  assert.ok(selfRow.displayName, 'rows carry a resolved public name')
+  assert.ok(selfRow.picture?.url, 'rows carry a picture')
+  assert.ok(!JSON.stringify(asThird).includes('@'), 'no email-shaped value leaks into the list')
+  // The fan's following list points back at the author, flagged as followed.
+  const fanFollowing = await (await fetch(`${base}/api/users/${fan.uid}/connections?kind=following`, { headers: authed(fan.token) })).json()
+  assert.equal(fanFollowing.total, 1)
+  assert.equal(fanFollowing.people[0].uid, author.uid)
+  assert.equal(fanFollowing.people[0].isFollowing, true)
+  assert.equal(fanFollowing.people[0].displayName, 'conn_author', 'identity resolves through the same layers as the profile payload (username accounts present their username)')
+  // Anonymous readers get the public list without viewer state.
+  const anon = await (await fetch(`${base}/api/users/${author.uid}/connections?kind=followers`)).json()
+  assert.equal(anon.total, 2)
+  assert.ok(anon.people.every((person) => person.isFollowing === false && person.isSelf === false))
+  // A ghost has no list.
+  const ghost = await fetch(`${base}/api/users/username%3Aghost/connections?kind=followers`)
+  assert.equal(ghost.status, 404)
+})

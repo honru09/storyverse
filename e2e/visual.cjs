@@ -80,7 +80,12 @@ async function summonAndClick(page, makeLocator) {
               const button = document.querySelector('.forge-actions .button');
               if (!button || window.innerWidth >= 1050) return true;
               const rect = button.getBoundingClientRect();
-              return rect.top >= 0 && rect.bottom < window.innerHeight - 78 && button.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+              // §33: the forge band sits flush on the bottom nav (its
+              // bottom edge is the nav's top edge, innerHeight - 62)
+              // and the button rests 10px above that inside the band
+              // padding — visible means above the nav line with the
+              // centre hit-test landing on the button itself.
+              return rect.top >= 0 && rect.bottom <= window.innerHeight - 62 && button.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
             })(),
           };
         });
@@ -147,15 +152,12 @@ async function summonAndClick(page, makeLocator) {
         await page.getByRole('button', { name: '我的世界', exact: true }).last().click();
         await nav('书城');
         await capture('store');
-        if (viewport.width < 1050) {
-          // 合流 left the bottom bar (2026-10-28): on mobile the path is
-          // plaza → 我的世界 row → the home page's 世界合流 entry.
-          await nav('广场');
-          await page.locator('.plaza-mine-row', { hasText: '我的世界' }).click();
-          await page.getByRole('button', { name: '世界合流', exact: true }).click();
-        } else {
-          await nav('世界合流');
-        }
+        // 合流 is a contextual feature (DESIGN §26/§33): no nav entry
+        // on mobile or desktop — the path is plaza → 我的世界 row →
+        // the home page's 世界合流 entry.
+        await nav('广场');
+        await page.locator('.plaza-mine-row', { hasText: '我的世界' }).click();
+        await page.getByRole('button', { name: '世界合流', exact: true }).click();
         await capture('merge');
         await page.getByRole('button', { name: '开启合流故事', exact: true }).click();
         await page.getByRole('button', { name: '阅读新书', exact: true }).waitFor();

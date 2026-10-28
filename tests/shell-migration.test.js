@@ -53,16 +53,29 @@ test('three shell themes: black default, white, and aurora preserved value-for-v
   assert.match(indexHtml, /theme-init\.js/)
 })
 
-test('profile wears the DESIGN §15 values under the black theme', () => {
-  const black = themeBlock('black')
-  for (const pin of [
-    '--profile-bg:#000000', '--profile-panel:#1b1b20', '--profile-chip:#26262b',
-    '--profile-dim:#a7a7ad', '--profile-ink:#f4f5f7', '--medal-bg:#1d1f24',
-    '--profile-edge:rgba(255,255,255,.08)', '--profile-shadow:0 8px 24px rgba(0,0,0,.35)',
-  ]) assert.ok(black.includes(pin), `black profile keeps ${pin}`)
+test('profile tokens are aliases of the shell tokens in every theme (PROFILE-FIX §33 C1)', () => {
+  // §27 parked the §15 refero values inside the theme blocks; §33
+  // retires the parallel family: each --profile-* token is now an
+  // alias of the shell token that plays the same role, so the profile
+  // can never drift from the shell palette again — and the black
+  // theme's paper is the shell's own --bg, not #000 beside #050507.
+  for (const id of ['black', 'white', 'aurora']) {
+    const block = themeBlock(id)
+    for (const pin of [
+      '--profile-bg:var(--bg)', '--profile-ink:var(--ink)', '--profile-dim:var(--dim)',
+      '--profile-panel:var(--surface-solid)', '--profile-chip:var(--glass-2)',
+      '--medal-bg:var(--glass-2)', '--profile-edge:var(--line)',
+      '--profile-shadow:var(--shadow-flat)', '--profile-action-bg:var(--ink)',
+      '--pill-ink:var(--bg)', '--sheet-bg:var(--surface-solid)', '--sheet-ink:var(--ink)',
+    ]) assert.ok(block.includes(pin), `${id} profile alias ${pin}`)
+    assert.doesNotMatch(block, /--profile-bg:#/, `${id} profile paper is an alias, not a hex`)
+  }
   // Profile rules consume the tokens, not hardcoded hexes.
   assert.match(css, /\.page-profile\{[^}]*background:var\(--profile-bg\)/)
   assert.doesNotMatch(css, /\.ryan-menu\{[^}]*background:#1b1b20/)
+  // The edit sheet wears the theme too: no hardcoded white paper left.
+  assert.match(css, /\.profile-edit-sheet\{[^}]*background:var\(--sheet-bg\)/)
+  assert.doesNotMatch(css, /\.profile-edit-sheet\{[^}]*background:#fff/)
 })
 
 test('shell theme never leaks into the reader (red line)', () => {
@@ -70,15 +83,23 @@ test('shell theme never leaks into the reader (red line)', () => {
   assert.doesNotMatch(readerCss, /shell-theme/)
 })
 
-test('profile is a window over the base page, closable back to place', () => {
+test('profile forms: mine is a tab page, another user\'s is a window closable back to place (§33)', () => {
+  // My profile renders as a page branch of the shell (A1)…
+  assert.match(main, /const ownProfilePage = /)
+  assert.match(main, /else if \(view === "profile"\)/)
+  assert.match(main, /is-page-form/)
+  // …and someone else's renders as the window over the base page.
   assert.match(main, /has-profile-window/)
-  assert.match(main, /className="profile-window"/)
+  assert.match(main, /className=\{`profile-window \$\{profileClosing \? "is-closing" : ""\}`\}/)
   assert.match(main, /profile-window-sheet/)
   assert.match(main, /const closeProfile = useCallback/)
-  assert.match(main, /onClose=\{closeProfile\}/)
-  // The base route is remembered; profile is not a page branch any more.
+  assert.match(main, /const requestCloseProfile = useCallback/)
+  assert.match(main, /onClose=\{requestCloseProfile\}/)
+  // The base route is remembered underneath the window.
   assert.match(main, /const \[baseRoute, setBaseRoute\]/)
-  assert.doesNotMatch(main, /else if \(view === "profile"\)/)
+  // The exit plays in reverse: closing keyframes exist for both layers.
+  assert.match(css, /@keyframes profile-window-down/)
+  assert.match(css, /\.profile-window\.is-closing \.profile-window-sheet\{animation:profile-window-down 320ms/)
   // The window CSS recedes the base page and sheets the profile in.
   assert.match(css, /\.app-shell\.has-profile-window \.main-shell\{transform:scale\(\.98\)/)
   assert.match(css, /\.profile-window-sheet\{[^}]*border-radius:26px 26px 0 0/)
@@ -94,6 +115,9 @@ test("another user's profile renders no create/plus entry (user order 2026-10-28
 
 test('face-anchor cropping: small round slots zoom portraits to the face', () => {
   assert.match(css, /\.plaza-avatar-frame\.is-portrait \.plaza-avatar-img\{transform:scale\(2\.05\);transform-origin:50% 14%\}/)
+  // The 32px author frame zooms harder (§33 D): a whole tiny figure in
+  // the circle is the failure this line exists to prevent.
+  assert.match(css, /\.plaza-avatar-frame:not\(\.is-large\)\.is-portrait \.plaza-avatar-img\{transform:scale\(3\.4\);transform-origin:50% 11%\}/)
   assert.match(css, /\.nav-face-frame\.is-portrait \.nav-face-img\{transform:scale\(2\.05\)/)
   assert.match(css, /\.home-avatar-face-frame \.avatar-portrait-img\{[^}]*transform:scale\(2\.05\)/)
   const thumbBlock = main.slice(main.indexOf('function PlazaAvatarThumb'), main.indexOf('function PlazaLeadPortrait'))

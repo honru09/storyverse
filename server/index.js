@@ -516,7 +516,7 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         await social.heartbeat(identity)
         return sendJson(response, 200, { ok: true })
       }
-      const userMatch = pathname.match(/^\/api\/users\/([^/]+)(?:\/(profile|portrait|picture|follow|unfollow|report))?$/)
+      const userMatch = pathname.match(/^\/api\/users\/([^/]+)(?:\/(profile|connections|portrait|picture|follow|unfollow|report))?$/)
       if (userMatch) {
         const uid = decodeURIComponent(userMatch[1])
         const action = userMatch[2]
@@ -556,6 +556,17 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             try { viewer = await auth.identity(request.headers.authorization) } catch { viewer = null }
           }
           return sendJson(response, 200, { profile: await social.profile(viewer, uid) })
+        }
+        if (action === 'connections' && request.method === 'GET') {
+          // The name-list behind a profile's 粉丝/关注 counts — public
+          // like the profile itself; a credential only adds the
+          // viewer's own follow state to each row.
+          let viewer = null
+          if (request.headers.authorization) {
+            try { viewer = await auth.identity(request.headers.authorization) } catch { viewer = null }
+          }
+          const kind = new URL(request.url, 'http://localhost').searchParams.get('kind') === 'following' ? 'following' : 'followers'
+          return sendJson(response, 200, await social.connections(viewer, uid, kind))
         }
         if ((action === 'follow' || action === 'unfollow') && request.method === 'POST') {
           let identity

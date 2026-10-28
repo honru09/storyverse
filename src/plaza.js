@@ -143,6 +143,21 @@ export function plazaTemplateNameFor(source) {
   return genreTemplateById(id)?.name || ''
 }
 
+// The premise a plaza detail may print (PERSONA-QA N-04): the raw
+// desensitised premise stands when it reads whole; when redaction
+// placeholders survive inside it — or it is empty — the panel falls
+// back to a composed introduction built only from public fields, so
+// the surface never shows a sentence with holes punched in it.
+export const REDACTION_PLACEHOLDERS = ['已隐去的设定', '某处目的地', '某所学校', '某个组织', '某种职业', '一位故人']
+export function plazaPublicPremise(detail, templateName = '') {
+  const raw = typeof detail?.worldBible?.premise === 'string' ? detail.worldBible.premise.trim() : ''
+  if (raw && !REDACTION_PLACEHOLDERS.some((marker) => raw.includes(marker))) return raw
+  const world = detail?.worldName || '这个世界'
+  const avatarName = detail?.avatar?.name || '主角'
+  const kind = templateName ? `${templateName}的世界` : '一个完整的世界'
+  return `${world}——${kind}。${avatarName}在这里走完了整条故事线；更完整的世界设定是作者的私有底稿，不随发布公开，留在这里的只有这条已经真实发生的故事。`
+}
+
 /** The line's publication status: a running endless line serialises; everything else is finished. */
 export function plazaLineStatusFor(source) {
   if (source?.lineStatus === 'serializing' || source?.lineStatus === 'finished') return source.lineStatus

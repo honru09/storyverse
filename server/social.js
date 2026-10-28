@@ -342,6 +342,50 @@ export function createSocialService({
       return payload
     },
 
+    /**
+     * The public name-list behind a profile's counts （粉丝 / 关注）:
+     * every row resolved through the same identity layers as the
+     * profile payload itself, so a name in the list is the name on
+     * that person's page. Rows carry the viewer's own follow state so
+     * the list can offer follow toggles without a second round-trip.
+     * Capped — a profile with more history than the cap still gets a
+     * truthful, most-recent-first page of it.
+     */
+    async connections(viewerIdentity, uid, kind) {
+      if (!backend) throw new ApiError(503, '关注服务尚未配置。')
+      const target = clip(uid, 512)
+      if (!target) throw NOT_FOUND()
+      if (!(await exists(target, viewerIdentity))) throw NOT_FOUND()
+      const records = kind === 'following'
+        ? await backend.listFollowsByFollower(target)
+        : await backend.listFollowsByFollowee(target)
+      const ordered = [...records].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      const page = ordered.slice(0, 100)
+      const viewerUid = viewerIdentity?.uid || ''
+      const people = await Promise.all(page.map(async (record) => {
+        const personUid = kind === 'following' ? record.followeeUid : record.followerUid
+        const [personRecord, personAvatar, personPublications] = await Promise.all([
+          profileRecordOf(personUid),
+          avatarProfileOf(personUid),
+          visiblePublicationsOf(personUid),
+        ])
+        const fallback = publicIdentityFor(personUid, personPublications, viewerIdentity)
+        const merged = identityFromRecord(personRecord, fallback)
+        const avatarName = personAvatar ? sanitizeSettingText(clip(personAvatar.name, 40)).trim() : ''
+        return {
+          uid: personUid,
+          displayName: publicDisplayName([merged.displayName, avatarName]),
+          handle: publicHandle(merged.handle),
+          picture: await pictureFor(personUid, personRecord, personAvatar),
+          isSelf: Boolean(viewerUid) && viewerUid === personUid,
+          isFollowing: viewerUid && viewerUid !== personUid
+            ? Boolean(await backend.getFollow(viewerUid, personUid))
+            : false,
+        }
+      }))
+      return { kind: kind === 'following' ? 'following' : 'followers', people, total: records.length }
+    },
+
     /** Availability of a @handle for the signed-in owner (editor feedback). */
     async checkHandle(identity, rawHandle) {
       const handle = clip(rawHandle, 64).toLowerCase()

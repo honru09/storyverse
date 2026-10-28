@@ -10,20 +10,26 @@ const navBlock = main.slice(main.indexOf('function MobileBottomNav'), main.index
 const shelfBlock = main.slice(main.indexOf('function LibrarySwitcher'), main.indexOf('function Stepper'))
 const storeBlock = main.slice(main.indexOf('function StoreRanking'), main.indexOf('function Merge'))
 
-test('bottom nav: three text items plus the profile face slot (user order 2026-10-28)', () => {
-  // The 2026-10-27 bar was four text items; the 2026-10-28 order moved
-  // 合流 out (contextual entries + the home page row) and gave the last
-  // slot to 我的主页 as a face entry. The three destinations stay
-  // text-only; the only icon allowed is the guest fallback in the
-  // profile slot.
+test('bottom nav: four icon+label slots, the profile slot is a page tab (PROFILE-FIX §33)', () => {
+  // The 2026-10-28 morning bar gave the last slot to 我的主页 as a face
+  // entry; the same day's PROFILE-FIX order superseded it: a tab is a
+  // place, not a person — four slots share ONE grammar (21px line icon
+  // over an 11px label), 合流 stays out (contextual entries only), and
+  // faces live on the profile itself and on author rows, never in the
+  // navigation chrome.
   assert.match(navBlock, /className="mobile-bottom-nav"/)
   for (const label of ['广场', '造世', '书城']) {
     assert.match(navBlock, new RegExp(`label: "${label}"`))
   }
+  for (const icon of ['spark', 'plus', 'book', 'user']) {
+    assert.match(navBlock, new RegExp(`icon: "${icon}"|name="${icon}"`))
+  }
   assert.doesNotMatch(navBlock, /label: "合流"/)
-  assert.match(navBlock, /bottom-nav-profile/)
-  assert.match(navBlock, /nav-face-frame/)
+  assert.doesNotMatch(navBlock, /bottom-nav-profile/)
+  assert.doesNotMatch(navBlock, /nav-face-frame/)
+  assert.doesNotMatch(navBlock, /faceSrc/)
   assert.match(navBlock, /aria-label="我的主页"/)
+  assert.match(navBlock, /<span>主页<\/span>/)
   // The reader still hides the bar entirely.
   assert.match(navBlock, /if \(view === "reader"\) return null/)
 })

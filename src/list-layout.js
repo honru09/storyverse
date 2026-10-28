@@ -59,6 +59,24 @@ export const coverInfoFor = (story) => {
   return season && !storyComplete(story) ? `${season} · ${progress}` : progress;
 };
 
+// Distinguisher for same-titled books (PERSONA-QA N-03): the auto
+// naming can stamp one title on several lines, and a picker that shows
+// two identical cards is a coin flip. The facts that actually differ —
+// world, protagonist, birth point — in that order, skipping empties
+// and anything equal to the title itself.
+export const storyDistinguisherFor = (story) => {
+  if (!story) return "";
+  const genre =
+    GENRES.find((item) => item.id === story.genreId) ||
+    GENRES.find((item) => item.id === story.config?.genreId);
+  const parts = [
+    String(story.config?.customWorldName || genre?.world || "").trim(),
+    String(story.config?.name || "").trim(),
+    String(story.config?.startPointName || "").trim(),
+  ].filter((part, index, list) => part && part !== String(story.title || "").trim() && list.indexOf(part) === index);
+  return parts.join(" · ");
+};
+
 // Ranking order is honest: most generated chapters first (the only
 // quantity the site actually has), title as a stable tiebreak. Entries
 // are store book objects; counts come from their snapshots.
