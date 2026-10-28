@@ -103,3 +103,36 @@ intervention 7/7。
   与样稿的差距在 CSS 路径内已收尽，无需预合成图兜底。
 - **回归**：单元全量 654/654；visual e2e exit 0（72 CAPTURE、零 fail/error）；
   本轮只动 styles.css 一个文件的 §35 展台块（bg/mask/::after 三处），其余表面未触碰。
+
+## 追补轮：右上角控件簇统一（TOPBAR-POLISH，2026-10-28，用户看图亲点「右上角三个按钮很突兀」）
+
+- **打回点**：主页截图右上角两层悬浮控件打架——壳层顶栏右侧三件（账号脸钮=
+  独立靛底胶囊、动效开关=裸字形、书架钮=裸字形）形态各异地浮在氛围图上，
+  主页氛围区自己的分享/更多又是两个独立玻璃圆，同区域两套语言叠加。
+- **改法（行为零变更）**：
+  1. 壳层 `.topbar-actions` 收成一个玻璃胶囊：`--glass` 底 + `--line` 1px 边 +
+     blur(10px) saturate(1.3) + 999 圆角 + padding 2 / gap 2（三主题共用壳令牌，
+     白主题自动走浅玻璃）。段内统一规格：击点恒 44px、图标 20px、描边 1.8。
+  2. 账号段退役独立形态：靛底（--soft-indigo）与圆角自成一体的旧样式被胶囊段
+     规则覆盖（透明底、999 圆角、hover --glass-2），脸图 26→28px 仍走脸锚。
+     **附带定案**：该钮历史上一直带着 UA 默认的 2px outset 边（无作者边框规则压它），
+     在靛底上读作描边、进胶囊后读作杂环——段规则补 `border:0`，唯一的边归胶囊。
+  3. 动效开关自绘 SVG 描边 2.2 → 1.8，与 Icon 家族同规格；登录态 users 图标
+     18→20；书架钮 ≥760 的文字段形态保留（F-02 口径不变），圆角并入 999。
+  4. 氛围区 `.ryan-topbar-actions` 收成同语言面板玻璃胶囊（--profile-panel 52% 底 +
+     ink 16% 边 + blur 8px，段 40px、图标 22→20），段自身去底去边；独立的关闭钮
+     保留同材料玻璃圆（补 1px 同色边）。`.ryan-topbar` 行高 44→46 容纳胶囊。
+- **量测（topbar-polish-shots/report.json，真 fixture）**：360/390/430 三档 ×
+  广场/主页：胶囊右缘距视口右界恒 16/20/20px 不溢出、品牌右缘与胶囊左缘最小
+  间隔 ≈79px 不相撞；顶栏段恒 44×44（账号段宽 44–50），氛围段恒 40×40；
+  document scrollWidth == clientWidth 三档全等。
+- **逐页抽查**：广场（胶囊静置于纯色顶栏）、造世、书城、书架与备份弹窗
+  （顶栏在弹窗下变暗、无错位）、阅读器（壳顶栏在 reader 视图不渲染，
+  reader-chrome 内 .topbar-actions 计数 = 0，呼出态顶/底坞与改前一致）——
+  证据图在 topbar-polish-shots/sweep-* 与 plaza-black-390.png。
+- **证据图（topbar-polish-shots/，不入库）**：主页黑/白/极光顶部特写
+  （profile-top-{black,white,aurora}-390.png）、广场全幅、before-after-black-390.png
+  （改前取 profile-enrich-shots/own-page-black-390.png 同位裁切），已逐张亲看。
+- **回归**：单元全量 654/654；visual e2e 72 捕获、failures 空、断图 0、
+  全部 hitTargets ≥44。本轮文件：src/styles.css、src/main.jsx（图标尺寸三处）、
+  src/motion/MotionProvider.jsx（描边一处）、DESIGN.md、本文。

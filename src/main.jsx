@@ -594,7 +594,7 @@ function Topbar({ onNavigate, onOpenLibrary, onOpenAccount, account, faceSrc, fa
                 <img className="nav-face-img" src={faceSrc} alt="" onError={() => setFaceFailed(true)} />
               </span>
             ) : <span>{letter}</span>
-          ) : <><Icon name="users" size={18}/><span>登录</span></>}
+          ) : <><Icon name="users" size={20}/><span>登录</span></>}
         </button>
         <MotionToggle />
         {/* F-02: the shelf/backup entry names itself in visible text
@@ -5923,12 +5923,12 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
         <div className="ryan-topbar">
           {windowForm ? (
             <button type="button" className="ryan-glyph-btn" onClick={onClose} aria-label="关闭主页">
-              <Icon name="x" size={22} />
+              <Icon name="x" size={20} />
             </button>
           ) : <span aria-hidden="true" />}
           <span className="ryan-topbar-actions">
             <button type="button" className="ryan-glyph-btn" onClick={() => void shareProfile()} aria-label="分享主页">
-              <Icon name="share" size={22} />
+              <Icon name="share" size={20} />
             </button>
             <button
               type="button"
@@ -5937,7 +5937,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen((open) => !open)}
             >
-              <Icon name="dots" size={22} />
+              <Icon name="dots" size={20} />
             </button>
           </span>
         </div>
