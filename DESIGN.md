@@ -642,3 +642,15 @@ colors:
 **K 阅读器顶层化**：改前挂载——Reader 与其他页同在 `<main>` 的 page 互斥渲染里，本身已是同级节点，但壳层 Topbar/Sidebar/BottomNav 在阅读时照常渲染（底栏只是组件内 return null、顶栏与侧栏实打实压在阅读器之上），加上他人主页窗口可叠在来源页上，用户感知即「阅读器是某个页面的第二层」。改后：view=reader 时壳层只渲染 Reader——AuroraBackground/Sidebar/Topbar/MobileBottomNav 全部不渲染（app-shell 加 is-reader-top）；Reader 仍是 main 的直接子节点、保活槽位的同级兄弟，绝不在任何页面子树内；进入阅读时 profileRoute 窗口随 route 变化天然收起（断言无窗口层共存）；退出沿既有出口路由回来源（广场线→广场详情、只读→书城、自有→书架），来源视图因 J 保活以原滚动恢复；阅读器内部（番茄 chrome、page-enter backwards、介入、阅读设置、逐屏/滚动）一字未动。reader/reader-chrome e2e 全过，导航断言按新结构写入 e2e/keepalive.cjs。
 
 **验收门禁**：单元 663 全绿、build 过；e2e journey 24/24、onboarding 18/18、reader 30、reader-chrome 46、visual exit 0（72 captures）、新增 keepalive 6/6；phone-fix-shots/ 断言 55/55（不入库，仅 public/art 入库）。期待变更三处（均已在测试内注明）：onboarding 草稿 deepEqual 剔除 restoredDraft 内部标记；visual 的 forge 动作可见性量测只认已渲染按钮（保活隐藏者不计）；onboarding A1 落点断言（上一轮已改）。本批只落本地，不部署；真机点验仍是阅读/登录两面的最终门。
+
+## 38. 前沿章定稿口径：打开才定稿（2026-10-28 FRONTIER-FIX 批次，回归 P2 / N-02 / F-30 定案）
+
+**口径变更（supersede §20 的「下一章落笔即锁定」）**：前沿章 = 读者**真正打开过**的最后一章，不是已写出的最后一章。故事新增字段 `openedThrough`（单调水位、随记录持久化）：读者经阅读导航（moveReadingPosition，一切阅读器内导航的唯一漏斗，含准备窗效应改走此路）落到第 N 章，水位推进到 N；第 N−1 章在这一刻才定稿。预生成照常提前落盘备章，但落盘不再移动前沿——前沿章的换一版 / 编辑正文在其后一章被打开之前一直可用。
+
+**旧档回退（写死）**：无 `openedThrough` 的存量记录，水位视同最后一章（= 旧行为逐字不变）；首次落字时播种在 `min(last, max(目标, last−1))`——预生成最多领先一章，末章之外都必然被打开过，播种在 last−1 保住已定稿历史不被回读解锁。
+
+**定稿前改前沿 ⇒ 预生成作废重排（写死）**：换一版在轮转时、编辑正在落盘时，都把 chapters 截断到前沿章为止并回退 chapterIndex——已落盘的下一章作为**可查的记录状态**被作废（章数变短、revision 轮转），随后由既有预生成机制按新文本重建。换版落盘另再轮转一次 revision 并回退 chapterIndex：在途预生成（按旧文本简报、按轮转后记录取键）到达即过期、被拒后按新文本重备。服务端 reroll 门改用共享 `isFrontierChapter` 判定（非前沿 409）。**介入交叉不动**：介入目标仍是实时 readerIndex 的下一未读章，replaceChapter/retractChapter 的末章规则不改，交叉处以介入口径为准。只读线无控制区、一切杠杆本就 no-op/403，不受影响；无限连载的前沿章同此口径（前沿是位置概念、与篇幅模式无关）。逐条销账与四路径证据见 FRONTIER-FIX.md。
+
+## 39. 用户名（@ID）不可变（2026-10-28 用户亲定）
+
+**口径（写死）**：用户名 = 注册时定下的 @ID——用户名账号的登录名（uid `username:<name>` 本身）、其他账号认领的 @handle——同时是登录凭据、主页 @ 标识与分享文案里的 @。一旦存在，任何更新入口都不许改：PUT /api/me/profile 提交与现值不同的 handle（改名与清空同罪）一律 **400**（选拒绝不选静默忽略：编辑器要把话说给用户听，且回带现值的客户端永不误伤）；没有 @ID 的账号首次认领仍走原格式 / 唯一性 / 不得影射他人登录名的校验，那是「定下」不是「改」。`checkHandle` 对已锁账号如实回「不能修改」。客户端编辑资料面：@ID 已存在时字段只读呈现并注明、保存不再带 handle 字段；未认领时照旧可填。显示名与简介照常可改，注册侧格式 / 唯一性校验不动。销账见 FRONTIER-FIX.md §5。

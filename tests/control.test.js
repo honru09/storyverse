@@ -28,8 +28,11 @@ import { emptyLibrary, validateLibrary } from '../src/persistence.js'
 // ---------------------------------------------------------------------------
 // 生成控制批次 (PERSONA-QA F-30): the director's levers — frontier re-roll,
 // owner prose editing, style presets — all fenced by the house rule: only
-// the latest generated chapter may be rewritten directly, and only while
-// no later chapter exists yet.
+// the frontier chapter may be rewritten directly. FRONTIER-FIX note: the
+// fixtures in this file carry no `openedThrough` watermark, so they
+// exercise the legacy fallback (frontier = latest chapter written, the
+// pre-watermark rule, unchanged for unopened records). The watermark
+// semantics themselves are covered in tests/frontier-fix.test.js.
 // ---------------------------------------------------------------------------
 
 const env = { GEMINI_API_KEY: 'test-key-never-used-on-network' }
@@ -80,8 +83,8 @@ test('(a) beginChapterReroll rotates the revision only on the frontier', () => {
   // chapter, so a pre-generation answer from the old telling is stale.
   assert.notEqual(chapterKey(rotated, 1), chapterKey(story, 1))
   assert.notEqual(chapterKey(rotated, 2), chapterKey(story, 2))
-  assert.throws(() => beginChapterReroll(story, 0), /只有最新章节/)
-  assert.throws(() => beginChapterReroll(story, 2), /只有最新章节/)
+  assert.throws(() => beginChapterReroll(story, 0), /只有正在读的这一章还能换一版/)
+  assert.throws(() => beginChapterReroll(story, 2), /只有正在读的这一章还能换一版/)
   const readOnly = { ...story, readOnly: true }
   assert.strictEqual(beginChapterReroll(readOnly, 1), readOnly)
 })

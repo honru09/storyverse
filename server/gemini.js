@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { acceptChapter, buildChapter, chapterKey, INTERVENTION_TEXT_MAX, outlineIndexFor, outlineLengthFor, queuedInterventionsFor, storyBeatPlan, storyLedgerFor, stylePresetOf, totalChaptersFor } from '../src/story-engine.js'
+import { acceptChapter, buildChapter, chapterKey, INTERVENTION_TEXT_MAX, isFrontierChapter, outlineIndexFor, outlineLengthFor, queuedInterventionsFor, storyBeatPlan, storyLedgerFor, stylePresetOf, totalChaptersFor } from '../src/story-engine.js'
 import { LOREBOOK_ENTRY_CONTENT_MAX, selectLorebookEntries } from '../src/lorebook.js'
 import { emptyLibrary, validateLibrary } from '../src/persistence.js'
 
@@ -150,20 +150,25 @@ function validatedRequest(request) {
     return { story, index, skeleton, key, revise: true }
   }
   if (reroll) {
-    // The frontier re-roll regenerates the LATEST chapter as a fresh
-    // telling of the same slot. The brief and context are the ones as of
-    // that slot — the chapters before it, its recorded interventions,
-    // the lorebook hits against the previous chapter's tail, the ledger
-    // up to it — so the preparation story drops the old telling entirely
-    // and the context assembly below sees exactly what a first
-    // generation of this chapter would have seen. The chapter's own
-    // interventions (landed when it was first written, plus any still
-    // queued for it) flip back to queued on this preparation copy only,
-    // so the landing machinery — the brief's intervention block, the
-    // marker, the ledger events — treats them as landing in the new
-    // telling, through the same assembly the revision path uses.
-    if (story.chapters.length === 0 || index !== story.chapters.length - 1) {
-      throw new ApiError(409, '只能为最新章节换一版。')
+    // The frontier re-roll regenerates the chapter the reader is
+    // standing on as a fresh telling of the same slot. The frontier is
+    // the shared engine's call (FRONTIER-FIX): the latest chapter the
+    // reader has OPENED — a pre-generated next chapter may already sit
+    // behind it in the record without locking it, and the context
+    // truncation below simply leaves that copy out of the brief. The
+    // brief and context are the ones as of the slot — the chapters
+    // before it, its recorded interventions, the lorebook hits against
+    // the previous chapter's tail, the ledger up to it — so the
+    // preparation story drops the old telling entirely and the context
+    // assembly below sees exactly what a first generation of this
+    // chapter would have seen. The chapter's own interventions (landed
+    // when it was first written, plus any still queued for it) flip
+    // back to queued on this preparation copy only, so the landing
+    // machinery — the brief's intervention block, the marker, the
+    // ledger events — treats them as landing in the new telling,
+    // through the same assembly the revision path uses.
+    if (!isFrontierChapter(story, index)) {
+      throw new ApiError(409, '只能为正在读的这一章换一版。')
     }
     const contextStory = clone(story)
     contextStory.chapters = story.chapters.slice(0, index)

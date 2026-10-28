@@ -481,6 +481,19 @@ export function createSocialService({
     async checkHandle(identity, rawHandle) {
       const handle = clip(rawHandle, 64).toLowerCase()
       if (!handle) return { available: true, message: '留空会用你的默认用户名。' }
+      // USERNAME-IMMUTABLE: once an @ID exists it cannot move, so the
+      // editor's feedback says so instead of quoting availability for
+      // a change the save would refuse anyway.
+      const existing = await profileRecordOf(identity.uid)
+      const loginName = identity.uid.startsWith('username:')
+        ? clip(identity.uid.slice('username:'.length), 40)
+        : ''
+      const effective = existing?.handle || loginName
+      if (effective) {
+        return handle === effective
+          ? { available: true, message: '这是你现在的用户名。' }
+          : { available: false, message: '用户名（@ID）定下后不能修改。' }
+      }
       const problem = await handleProblem(identity, handle)
       return problem
         ? { available: false, message: problem }
@@ -515,13 +528,28 @@ export function createSocialService({
           record.bio = bio
         }
         if ('handle' in input) {
-          const handle = input.handle === null ? '' : clip(input.handle, 64).toLowerCase()
-          if (handle && handle !== record.handle) {
-            const problem = await handleProblem(identity, handle)
+          const submitted = input.handle === null ? '' : clip(input.handle, 64).toLowerCase()
+          // USERNAME-IMMUTABLE (2026-10-28 user rule): the @ID is
+          // fixed the moment it exists — for a username account it IS
+          // the login name (carried by the uid, never duplicated into
+          // the record); for every other account it is the handle they
+          // claimed. An update that tries to move it — rename OR
+          // clear — is refused 400, loudly, rather than silently
+          // ignored: the editor surfaces the message, and a client
+          // round-tripping the current value never trips this. Only a
+          // first claim (no @ID yet) still goes through the usual
+          // shape / uniqueness / shadowing validation.
+          const loginName = identity.uid.startsWith('username:')
+            ? clip(identity.uid.slice('username:'.length), 40)
+            : ''
+          const effective = record.handle || loginName
+          if (submitted !== effective) {
+            if (effective) throw new ApiError(400, '用户名（@ID）定下后不能修改。')
+            const problem = await handleProblem(identity, submitted)
             if (problem === HANDLE_TAKEN_MESSAGE) throw new ApiError(409, problem)
             if (problem) throw new ApiError(400, problem)
+            record.handle = submitted
           }
-          record.handle = handle
         }
         if ('pictureKind' in input) {
           const kind = input.pictureKind

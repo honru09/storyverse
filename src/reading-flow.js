@@ -1,4 +1,4 @@
-import { acceptChapter, buildChapter, chapterKey, totalChaptersFor } from './story-engine.js'
+import { acceptChapter, advanceOpenedThrough, buildChapter, chapterKey, totalChaptersFor } from './story-engine.js'
 
 // Legacy default for short stories; every function below derives the real
 // total from the story's length mode via totalChaptersFor.
@@ -51,7 +51,11 @@ export function prepareReadingWindow(story, index = readerIndexFor(story)) {
 
 export function moveReadingPosition(story, index, readOnly = false) {
   if (!Number.isInteger(index) || index < 0 || index > lastAccessibleIndex(story, readOnly)) return story
-  return { ...story, readerIndex: index, updatedAt: new Date().toISOString() }
+  // Moving the reading position IS opening a chapter: the opened-through
+  // watermark advances with it (monotonic — see advanceOpenedThrough),
+  // which is the act that finalises the chapter before it (FRONTIER-FIX).
+  const opened = advanceOpenedThrough(story, index)
+  return { ...opened, readerIndex: index, updatedAt: new Date().toISOString() }
 }
 
 export function readingProgress(story) {

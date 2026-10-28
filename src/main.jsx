@@ -3647,7 +3647,7 @@ function ProseEditor({ chapter, onClose, onSave }) {
   return (
     <ReadingDialog title="编辑正文 · 本章" onClose={onClose}>
       <p className="field-hint">
-        这是最新章节，它的下一章还没有生成——现在改还来得及。改动保存后就是这本书的正文，后面的章节会接着你改过的文字往下写；下一章一旦生成，这一章就此定稿，再不能改。
+        这是你正在读的最新章节——现在改还来得及。改动保存后就是这本书的正文，后面的章节会接着你改过的文字往下写；翻开下一章，这一章就此定稿，再不能改。
       </p>
       {paragraphs.map((paragraph, position) => (
         <div className="prose-editor-row" key={position}>
@@ -4210,8 +4210,16 @@ function Reader({
     if (!story || readOnly) return;
     try {
       const prepared = prepareReadingWindow(story, index);
-      if (prepared !== story)
-        onUpdateStory?.({ ...prepared, readerIndex: index });
+      if (prepared !== story) {
+        // Landing the prepared window is also the reader standing on
+        // this chapter: route it through moveReadingPosition so the
+        // opened-through watermark advances with the position (the act
+        // that finalises the chapter before it, FRONTIER-FIX). The
+        // spread fallback is the degenerate unreachable-index case,
+        // kept so a materialisation landing is never lost.
+        const positioned = moveReadingPosition(prepared, index);
+        onUpdateStory?.(positioned === prepared ? { ...prepared, readerIndex: index } : positioned);
+      }
     } catch {
       setError("下一章暂时没能接上，你的阅读进度已经保留。可以再次尝试。");
     }
@@ -4676,7 +4684,7 @@ function Reader({
           {isFrontier && (
             <div className="frontier-actions">
               <p className="frontier-note">
-                这是最新章节，它的下一章还没有生成——现在还能亲手调度这一章。下一章一旦写下，这一章就此定稿。
+                这是你正在读的最新章节——现在还能亲手调度这一章。翻开下一章，这一章就此定稿。
               </p>
               {chapter.degraded && (
                 <p className="frontier-degraded">本章由备用通道生成</p>
@@ -5787,6 +5795,15 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
   const bioOverLimit = bioCount > 120;
   const [handle, setHandle] = useState(editable.handle || "");
   const [handleState, setHandleState] = useState(null);
+  // USERNAME-IMMUTABLE (2026-10-28 user rule): the @ID is fixed once
+  // it exists — the login name for username accounts (which the
+  // editable block never carried, so the field used to open blank and
+  // invite a divergent claim), the claimed handle for the rest. The
+  // resolved profile.handle is the effective @ID: when it is set, the
+  // field is a read-only display and saves stop sending handle at all
+  // (the server refuses a differing value with 400 regardless).
+  const lockedHandle = profile.handle || "";
+  const idLocked = Boolean(lockedHandle);
   const [busy, setBusy] = useState(false);
   const [pictureBusy, setPictureBusy] = useState("");
   const [error, setError] = useState("");
@@ -5867,12 +5884,13 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
     setBusy(true);
     setError("");
     try {
+      const patch = {
+        displayName: displayName.trim(),
+        bio: bio.trim(),
+      };
+      if (!idLocked) patch.handle = handle.trim().toLowerCase() || null;
       const next = await updateMyProfile({
-        patch: {
-          displayName: displayName.trim(),
-          handle: handle.trim().toLowerCase() || null,
-          bio: bio.trim(),
-        },
+        patch,
         getAccessToken: getToken,
       });
       onSaved(next);
@@ -5961,16 +5979,19 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
         <label className="profile-edit-field">
           <span>@用户名</span>
           <input
-            value={handle}
+            value={idLocked ? lockedHandle : handle}
             maxLength={20}
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
+            readOnly={idLocked}
             onChange={(event) => { setHandle(event.target.value); setHandleState(null); }}
-            onBlur={() => void checkHandle()}
+            onBlur={idLocked ? undefined : () => void checkHandle()}
             placeholder="小写字母、数字、下划线"
           />
-          {handleState && (
+          {idLocked ? (
+            <small className="profile-edit-handle-state">用户名是注册时定下的 @ID，不能修改。</small>
+          ) : handleState && (
             <small className={`profile-edit-handle-state ${handleState.available ? "is-ok" : "is-bad"}`}>
               {handleState.message}
             </small>
@@ -8483,12 +8504,13 @@ function App() {
     });
   }, [store, setLibrary, syncLivingPublication, authClient]);
   // The frontier re-roll. The rotation is landed FIRST (it retires any
-  // pre-generation answer computed from the old telling), then the pass
-  // runs over the same /api/generate endpoint and usage accounting as
-  // any other chapter. A failed pass leaves the old chapter standing —
-  // only its revision has moved on. If the next chapter lands while the
-  // pass is in flight, the accept refuses the swap and the caller hears
-  // about it: the chapter has locked, which is the house rule working.
+  // pre-generation computed from the old telling — in flight or already
+  // landed behind the frontier), then the pass runs over the same
+  // /api/generate endpoint and usage accounting as any other chapter. A
+  // failed pass leaves the old chapter standing — only its revision has
+  // moved on. If the reader opens the next chapter while the pass is in
+  // flight, the accept refuses the swap and the caller hears about it:
+  // the chapter has locked, which is the house rule working.
   const rerollChapter = useCallback(async (id, targetIndex) => {
     const source = store.getSnapshot().library.stories.find((book) => book.id === id);
     if (!source) throw new Error("这本书暂时找不到了。");

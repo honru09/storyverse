@@ -1,11 +1,17 @@
 // Generation-control batch e2e: the HTTP boundary is mocked exactly like
-// gemini.cjs (no network, no paid generation). Flow: open a Gemini book →
-// ch.2 prepared → stand on ch.2 while the ch.3 pre-generation is held at
-// a gate → re-roll ch.2 (frontier) → edit ch.2's prose → release the gate:
-// the stale ch.3 answer is discarded and the fresh ch.3 request carries
-// the edited tail → switch the style preset in the 设定集 → the next
-// request carries the preset in its story config. Ch.1 must stay
-// byte-identical throughout. Screenshots land in control-shots/.
+// gemini.cjs (no network, no paid generation). Flow (FRONTIER-FIX
+// semantics): open a Gemini book → stand on ch.2 while the ch.3
+// pre-generation LANDS in the record → ch.2 still offers its levers →
+// re-roll ch.2: the landed ch.3 is retired (the re-roll request itself
+// carries a record without it) and rebuilt from the new telling → edit
+// ch.2's prose: the rebuilt ch.3 is retired again and the fresh request
+// carries the edited tail → OPEN ch.3: ch.2 finalises and its levers
+// are gone → switch the style preset in the 设定集 → the next request
+// carries the preset in its story config. Ch.1 must stay byte-identical
+// throughout. Normal-generation mock answers carry the request story's
+// revision as a marker, so a stale pre-generation and its rebuilt
+// successor are distinguishable in the saved record. Screenshots land
+// in control-shots/.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -33,12 +39,6 @@ async function check(name, action) {
     failures.push(`${name}: ${error.message}`);
     console.error(`FAIL ${name}: ${error.message}`);
   }
-}
-
-function deferred() {
-  let resolve;
-  const promise = new Promise(done => { resolve = done; });
-  return { promise, resolve };
 }
 
 // The reader menu chrome is summoned by a tap in the middle of the
@@ -105,7 +105,7 @@ async function savedChapters(page, count) {
         ...buildChapter(story, index),
         title: `MOCK_CHAPTER_${index}`,
         paragraphs: [
-          `MOCK_CHAPTER_${index}：${story.config.name}看见一条纸鲸游过夜空。`,
+          `MOCK_CHAPTER_${index} rev ${story.revision}：${story.config.name}看见一条纸鲸游过夜空。`,
           '这些句子来自模拟模型响应，必须原样保存在书里。',
         ],
         summary: `模型第 ${index + 1} 章，${story.config.name}跟随纸鲸继续前进。`,
@@ -128,8 +128,6 @@ async function savedChapters(page, count) {
   page.on('pageerror', error => pageErrors.push(error.message));
   page.setDefaultTimeout(12000);
 
-  const thirdGate = deferred();
-  const thirdSeen = deferred();
   await context.route('**/api/status', route => route.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ configured: true, provider: 'gemini' }),
@@ -137,14 +135,6 @@ async function savedChapters(page, count) {
   await context.route('**/api/generate', async route => {
     const request = route.request().postDataJSON();
     requests.push(request);
-    if (request.mode !== 'reroll' && request.index === 2) {
-      // Every pre-generation attempt for chapter three is held in
-      // flight: navigating away and back legitimately re-requests (the
-      // earlier signal is aborted client-side), and chapter two must
-      // stay the frontier while the owner directs it.
-      thirdSeen.resolve();
-      await thirdGate.promise;
-    }
     try {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(resultFor(request)) });
     } catch {
@@ -155,7 +145,8 @@ async function savedChapters(page, count) {
 
   let firstChapterBefore;
   try {
-    // Open a Gemini book and stand on chapter two.
+    // Open a Gemini book and stand on chapter two; let the chapter
+    // three pre-generation land in the record while standing there.
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('navigation', { name: '移动端主导航' }).getByRole('button', { name: '造世', exact: true }).click();
     await page.getByRole('button', { name: '继续', exact: true }).click();
@@ -175,9 +166,12 @@ async function savedChapters(page, count) {
 
     await page.getByRole('button', { name: '下一章', exact: true }).click();
     await position(page, 2);
-    await thirdSeen.promise;
+    await savedChapters(page, 3);
 
-    await check('the frontier chapter offers 换一版 and 编辑正文； earlier chapters offered neither', async () => {
+    await check('with ch.3 already generated, ch.2 still offers 换一版 and 编辑正文； earlier chapters offered neither', async () => {
+      const story = await activeStory(page);
+      assert.equal(story.chapters.length, 3, 'chapter three has landed in the record');
+      assert.equal(story.openedThrough, 1, 'the reader has only opened through chapter two');
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await page.waitForTimeout(600);
       await page.getByRole('button', { name: '换一版', exact: true }).waitFor();
@@ -189,10 +183,14 @@ async function savedChapters(page, count) {
       assert.equal(await page.getByRole('button', { name: '编辑正文', exact: true }).count(), 0);
       await page.getByRole('button', { name: '下一章', exact: true }).click();
       await position(page, 2);
+      // Wandering back and forth moved nothing: ch.2 is still directable.
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.getByRole('button', { name: '换一版', exact: true }).waitFor();
     });
 
-    await check('re-roll replaces the frontier chapter and leaves chapter one untouched', async () => {
+    await check('re-roll replaces the frontier chapter and retires the landed ch.3, which is rebuilt', async () => {
       const secondBefore = structuredClone((await activeStory(page)).chapters[1]);
+      const staleThird = structuredClone((await activeStory(page)).chapters[2]);
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await page.getByRole('button', { name: '换一版', exact: true }).click();
       await page.getByRole('button', { name: '确认换掉这一版', exact: true }).click();
@@ -201,16 +199,26 @@ async function savedChapters(page, count) {
         const story = saved?.stories.find(item => item.id === saved.activeStoryId);
         return story?.chapters[1]?.title === 'REROLLED_CHAPTER_1';
       }, storageKey);
+      const rerollAt = requests.findIndex(request => request.mode === 'reroll');
+      assert.ok(rerollAt >= 0, 'a mode=reroll request was posted');
+      assert.equal(requests[rerollAt].index, 1);
+      assert.equal(requests[rerollAt].story.chapters.length, 2,
+        'the re-roll request itself carries a record whose stale ch.3 is already retired');
+      await page.locator('.intervention-overlay').waitFor({ state: 'detached', timeout: 20000 });
+      // The next chapter is rebuilt from the new telling.
+      await savedChapters(page, 3);
+      const rebuilt = requests.slice(rerollAt + 1).filter(request => request.mode !== 'reroll' && request.index === 2).at(-1);
+      assert.ok(rebuilt, 'a fresh chapter-three request followed the re-roll');
+      assert.equal(rebuilt.story.chapters[1].title, 'REROLLED_CHAPTER_1', 'it is briefed from the re-rolled chapter');
       const story = await activeStory(page);
       assert.notDeepEqual(story.chapters[1].paragraphs, secondBefore.paragraphs);
       assert.deepEqual(story.chapters[0], firstChapterBefore, 'chapter one is byte-identical');
-      const reroll = requests.find(request => request.mode === 'reroll');
-      assert.ok(reroll, 'a mode=reroll request was posted');
-      assert.equal(reroll.index, 1);
-      await page.locator('.intervention-overlay').waitFor({ state: 'detached', timeout: 20000 });
+      assert.ok(story.chapters[2].paragraphs[0].includes(`rev ${story.revision}`),
+        'the rebuilt ch.3 carries the post-re-roll revision marker, not the stale one');
+      assert.notEqual(story.chapters[2].paragraphs[0], staleThird.paragraphs[0]);
     });
 
-    await check('prose editing saves the owner\u2019s words into the chapter record', async () => {
+    await check('prose editing saves the owner’s words and retires the rebuilt ch.3 again', async () => {
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await page.getByRole('button', { name: '编辑正文', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: '编辑正文 · 本章' });
@@ -224,27 +232,38 @@ async function savedChapters(page, count) {
         return story?.chapters[1]?.paragraphs[0]?.includes(marker);
       }, { key: storageKey, marker: 'EDITED_TAIL' });
       assert.deepEqual((await activeStory(page)).chapters[0], firstChapterBefore);
+      // The edit retired the rebuilt chapter three: a fresh request
+      // goes out against a two-chapter record carrying the edited tail,
+      // and its answer is what lands.
+      await savedChapters(page, 3);
+      const fresh = requests.filter(request => request.mode !== 'reroll' && request.index === 2).at(-1);
+      assert.equal(fresh.story.chapters.length, 2, 'the fresh request was built on the truncated record');
+      assert.ok(fresh.story.chapters[1].paragraphs[0].includes('EDITED_TAIL'), 'the edited tail rides into the brief');
+      const story = await activeStory(page);
+      assert.ok(story.chapters[2].paragraphs[0].includes(`rev ${story.revision}`),
+        'the landed ch.3 is the post-edit rebuild');
     });
 
-    await check('releasing the gate discards the stale answers; the fresh request carries the edited tail', async () => {
-      thirdGate.resolve();
-      await savedChapters(page, 3);
-      const thirdRequests = requests.filter(request => request.mode !== 'reroll' && request.index === 2);
-      assert.ok(thirdRequests.length >= 2, 'superseded attempts were made and discarded');
-      assert.ok(
-        !thirdRequests[0].story.chapters[1].paragraphs[0].includes('EDITED_TAIL'),
-        'the first attempt predates the edit',
-      );
-      assert.ok(
-        thirdRequests.at(-1).story.chapters[1].paragraphs[0].includes('EDITED_TAIL'),
-        'the edited tail rides into the next chapter\u2019s brief',
-      );
-      assert.deepEqual((await activeStory(page)).chapters[0], firstChapterBefore);
+    await check('opening ch.3 finalises ch.2: its levers are gone, the frontier moved to ch.3', async () => {
+      await page.getByRole('button', { name: '下一章', exact: true }).click();
+      await position(page, 3);
+      const story = await activeStory(page);
+      assert.equal(story.openedThrough, 2, 'opening chapter three advanced the watermark');
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(400);
+      await page.getByRole('button', { name: '换一版', exact: true }).waitFor();
+      await page.getByRole('button', { name: '上一章', exact: true }).click();
+      await position(page, 2);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(400);
+      assert.equal(await page.getByRole('button', { name: '换一版', exact: true }).count(), 0);
+      assert.equal(await page.getByRole('button', { name: '编辑正文', exact: true }).count(), 0);
+      await page.screenshot({ path: path.join(shotsDir, '04-finalised-chapter.png') });
+      await page.getByRole('button', { name: '下一章', exact: true }).click();
+      await position(page, 3);
     });
 
     await check('switching the preset in the 设定集 rides into the next generation request', async () => {
-      await page.getByRole('button', { name: '下一章', exact: true }).click();
-      await position(page, 3);
       await savedChapters(page, 4);
       const fourth = requests.filter(request => request.mode !== 'reroll' && request.index === 3).at(-1);
       assert.equal(fourth.story.config.stylePreset ?? 'default', 'default');
@@ -277,7 +296,6 @@ async function savedChapters(page, count) {
     console.error(`FAIL suite: ${error.message}`);
     await page.screenshot({ path: path.join(artifactDir, 'control-failure.png'), fullPage: true }).catch(() => {});
   } finally {
-    thirdGate.resolve();
     await context.close();
     await browser.close();
   }

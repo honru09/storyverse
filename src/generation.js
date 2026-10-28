@@ -149,10 +149,12 @@ export async function requestChapterRevision(story, index, options = {}) {
 }
 
 // Apply a re-roll result to the current story: the frontier chapter is
-// swapped for a fresh telling of the same slot. If the next chapter has
-// landed in the meantime, the slot is no longer the frontier and the
-// engine refuses the swap whole — the chapter has locked, exactly as
-// the house rule promises.
+// swapped for a fresh telling of the same slot. If the reader has
+// opened the next chapter in the meantime, this chapter has finalised
+// — the slot is no longer the frontier and the engine refuses the swap
+// whole: the chapter has locked, exactly as the house rule promises.
+// (The next chapter merely LANDING — pre-generation — locks nothing;
+// see frontierChapterIndex in story-engine.js.)
 export function acceptRerolledChapter(story, result) {
   const index = result?.chapter?.index
   if (!Number.isInteger(index) || index < 0 || index >= totalChaptersFor(story)) throw new Error('章节格式不完整，请重试。')

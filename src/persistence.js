@@ -311,6 +311,13 @@ function validateStory(story, prefix) {
   if (story.readerIndex !== undefined && (!Number.isInteger(story.readerIndex) || story.readerIndex < 0)) {
     errors.push(`${prefix}.readerIndex must be a non-negative integer`)
   }
+  // 已打开水位 (FRONTIER-FIX): the highest chapter index the reader has
+  // ever opened; it decides which chapter is still the editable
+  // frontier. Absent on every pre-watermark save — those keep behaving
+  // as they always did until the first recorded open seeds the field.
+  if (story.openedThrough !== undefined && (!Number.isInteger(story.openedThrough) || story.openedThrough < 0)) {
+    errors.push(`${prefix}.openedThrough must be a non-negative integer`)
+  }
   validateOptionalFields(story, prefix, ['author', 'createdAt', 'updatedAt', 'status', 'genreTemplateId', 'previousSeasonId', 'synopsis'], 'string', errors)
   // 本书简介 (EDIT-BOOK): an optional owner-written blurb; the bound
   // mirrors SYNOPSIS_MAX in src/story-engine.js (this storage layer

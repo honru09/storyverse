@@ -141,27 +141,37 @@ test('a fresh user has the default avatar picture, an editable block, and no pic
   assert.equal(picture.status, 404, 'the default asset is a static file, not served by the picture route')
 })
 
-test('profile record CRUD: the record wins over every fallback, for every viewer', async (t) => {
+test('profile record CRUD: the record wins for the name; the @ID stays the login username', async (t) => {
   const { base } = await startServer(t)
   const author = await register(base, 'record_author')
   const reader = await register(base, 'record_reader')
 
-  const saved = await putProfile(base, author.token, { displayName: '夜行者', handle: 'night_walker' })
+  // USERNAME-IMMUTABLE (2026-10-28): a username account's @ID is its
+  // login name — claiming a different handle is refused outright
+  // (this test previously asserted the claim-and-clear behaviour the
+  // rule retired; the claim matrix for accounts without a login
+  // username lives in username-immutable.test.js).
+  const claim = await putProfile(base, author.token, { handle: 'night_walker' })
+  assert.equal(claim.status, 400)
+  assert.match((await claim.json()).error, /不能修改/)
+
+  const saved = await putProfile(base, author.token, { displayName: '夜行者' })
   assert.equal(saved.status, 200)
   const { profile: mine } = await saved.json()
   assert.equal(mine.displayName, '夜行者')
-  assert.equal(mine.handle, 'night_walker')
+  assert.equal(mine.handle, 'record_author', 'the @ID is the login username, never the refused claim')
   assert.equal(mine.editable.displayName, '夜行者')
-  assert.equal(mine.editable.handle, 'night_walker')
+  assert.equal(mine.editable.handle, '', 'the record never duplicates the login name')
 
   const seen = await getProfile(base, author.uid, reader.token)
   assert.equal(seen.displayName, '夜行者', 'a visitor sees the record name, not the login username')
-  assert.equal(seen.handle, 'night_walker')
+  assert.equal(seen.handle, 'record_author')
   assert.equal('editable' in seen, false, 'the editable block is owner-only')
 
-  // Clearing the handle falls back to the login username again.
+  // Round-tripping the login name is fine; clearing the @ID is not.
+  assert.equal((await putProfile(base, author.token, { handle: 'record_author' })).status, 200)
   const cleared = await putProfile(base, author.token, { handle: null })
-  assert.equal(cleared.status, 200)
+  assert.equal(cleared.status, 400)
   const after = await getProfile(base, author.uid, reader.token)
   assert.equal(after.handle, 'record_author')
   assert.equal(after.displayName, '夜行者')
@@ -210,40 +220,50 @@ test('profile validation: name length, handle shape, login still required', asyn
   assert.equal((await putProfile(base, user.token, { displayName: '一'.repeat(20) })).status, 200)
   assert.equal((await putProfile(base, user.token, { handle: 'Has Space' })).status, 400)
   assert.equal((await putProfile(base, user.token, { handle: 'ab' })).status, 400)
+  // USERNAME-IMMUTABLE: 'valid_user' is a username account, so ANY
+  // handle that is not its login name is refused as an @ID change —
+  // including this uppercase claim (lowercase normalisation on a
+  // first claim is covered in username-immutable.test.js).
   const upper = await putProfile(base, user.token, { handle: 'UPPER' })
-  assert.equal(upper.status, 200, 'handles normalize to lowercase, like login usernames')
-  assert.equal((await upper.json()).profile.handle, 'upper')
+  assert.equal(upper.status, 400)
+  assert.match((await upper.json()).error, /不能修改/)
   const anonymous = await fetch(`${base}/api/me/profile`, {
     method: 'PUT', headers: { ...ORIGIN, 'Content-Type': 'application/json' }, body: '{}',
   })
   assert.equal(anonymous.status, 401)
 })
 
-test('handle uniqueness: profile handles collide with each other and with login usernames', async (t) => {
+test('username accounts: the @ID is the login username at the HTTP boundary too', async (t) => {
+  // USERNAME-IMMUTABLE (2026-10-28) expectation change: this test used
+  // to run the claim-collision matrix over username accounts, which
+  // are exactly the accounts that may no longer claim at all. The
+  // collision / shadowing matrix for first claims (accounts without a
+  // login username) lives in username-immutable.test.js.
   const { base } = await startServer(t)
   const keeper = await register(base, 'gate_keeper')
   const first = await register(base, 'first_claim')
   const second = await register(base, 'second_claim')
 
-  assert.equal((await putProfile(base, first.token, { handle: 'shared_name' })).status, 200)
-  const clash = await putProfile(base, second.token, { handle: 'shared_name' })
-  assert.equal(clash.status, 409)
-  assert.match((await clash.json()).error, /已经被占用/)
+  const claim = await putProfile(base, first.token, { handle: 'shared_name' })
+  assert.equal(claim.status, 400)
+  assert.match((await claim.json()).error, /不能修改/)
 
-  const loginClash = await putProfile(base, second.token, { handle: 'gate_keeper' })
-  assert.equal(loginClash.status, 409, 'a handle may not shadow another account\u2019s login username')
+  const shadow = await putProfile(base, second.token, { handle: 'gate_keeper' })
+  assert.equal(shadow.status, 400, 'another account\u2019s login username is refused as an @ID change, before any shadowing check')
+  assert.match((await shadow.json()).error, /不能修改/)
 
-  // …but the owner of that login username may claim it as their handle.
+  // …but the owner of that login username may round-trip it freely.
   assert.equal((await putProfile(base, keeper.token, { handle: 'gate_keeper' })).status, 200)
 
   const check = await (await fetch(`${base}/api/me/handle?value=shared_name`, {
     headers: { Authorization: `Bearer ${second.token}` },
   })).json()
   assert.equal(check.available, false)
-  const free = await (await fetch(`${base}/api/me/handle?value=still_free`, {
+  assert.match(check.message, /不能修改/)
+  const own = await (await fetch(`${base}/api/me/handle?value=second_claim`, {
     headers: { Authorization: `Bearer ${second.token}` },
   })).json()
-  assert.equal(free.available, true)
+  assert.equal(own.available, true)
 })
 
 test('picture upload, serving and kind switching (upload → avatar → default → upload)', async (t) => {

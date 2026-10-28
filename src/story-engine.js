@@ -1947,37 +1947,94 @@ export function updateStylePreset(story, presetId) {
 /*
  * 阅读前沿 (the reading frontier): the ONE place where direct rewriting
  * is still allowed. Interventions steer from outside and only ever aim
- * at the next chapter; these levers are the owner's hands on the latest
- * chapter itself — re-rolling it （换一版） or editing its prose — and
- * they exist only while that chapter is still the last one written.
- * The moment a later chapter is generated, the frontier moves on and
- * the chapter behind it locks forever, exactly like every chapter
- * before it. The boundary is enforced at every layer (affordance,
- * request validation, accept), so a race — the next chapter landing
- * while a re-roll is in flight — resolves in favour of the lock: the
- * late re-roll is refused whole and the chapter stands as written.
+ * at the next chapter; these levers are the owner's hands on the chapter
+ * being read itself — re-rolling it （换一版） or editing its prose.
+ *
+ * 定稿口径 (FRONTIER-FIX, superseding the CONTROL batch's rule): a
+ * chapter finalises when the reader OPENS the next one — not when the
+ * next one is generated. The pre-generated next chapter may already be
+ * sitting in the record while its predecessor is still being directed;
+ * mere generation moves nothing. The boundary therefore hangs on a
+ * monotonic watermark, `story.openedThrough`: the highest chapter index
+ * the reader has ever opened, advanced by the reading-position writes
+ * (see advanceOpenedThrough) and never moved backwards — wandering back
+ * to re-read an old chapter re-opens nothing, exactly as the house rule
+ * （已发生的不可改写） demands. The frontier chapter is that watermark
+ * chapter: editable until the reader opens the chapter after it.
+ *
+ * Records written before the watermark existed carry no field; for
+ * them the frontier stays what it always was — the last chapter
+ * written — so no settled history silently unlocks on upgrade. The
+ * first recorded open on such a record seeds the watermark at the
+ * last-but-one chapter (see advanceOpenedThrough for why), from which
+ * point the new rule governs it like any other book.
+ *
+ * The boundary is enforced at every layer (affordance, request
+ * validation, accept), so a race — the reader opening the next chapter
+ * while a re-roll of this one is in flight — resolves in favour of the
+ * lock: the late re-roll is refused whole and the chapter stands as
+ * written.
  */
-export const frontierChapterIndex = (story) => {
+export const openedThroughIndex = (story) => {
   const count = Array.isArray(story?.chapters) ? story.chapters.length : 0
-  return count > 0 ? count - 1 : -1
+  if (count === 0) return -1
+  const last = count - 1
+  const opened = story?.openedThrough
+  return Number.isInteger(opened) && opened >= 0 ? Math.min(opened, last) : last
 }
+
+export const frontierChapterIndex = (story) => openedThroughIndex(story)
 
 export const isFrontierChapter = (story, index) =>
   Number.isInteger(index) && index >= 0 && index === frontierChapterIndex(story)
+
+// Advance the opened-through watermark as the reader genuinely opens a
+// chapter. Monotonic: a lower index (wandering back) changes nothing.
+// The first recorded open on a record that predates the field seeds the
+// watermark conservatively: preparation only ever runs one chapter
+// ahead of the reader, so every written chapter except possibly the
+// last was necessarily opened for the ones after it to exist — seeding
+// at last-but-one keeps that settled history locked while the possibly
+// unopened last chapter stays unfinalised until it is truly opened.
+export function advanceOpenedThrough(story, index) {
+  if (!story || typeof story !== 'object' || !Number.isInteger(index) || index < 0) return story
+  const count = Array.isArray(story.chapters) ? story.chapters.length : 0
+  if (count === 0) return story
+  const last = count - 1
+  const target = Math.min(index, last)
+  const current = story.openedThrough
+  if (Number.isInteger(current) && current >= 0) {
+    return target > current ? { ...story, openedThrough: target } : story
+  }
+  return { ...story, openedThrough: Math.min(last, Math.max(target, last - 1)) }
+}
 
 // Open a re-roll of the frontier chapter: the revision bump is the
 // mutation that makes the pass safe — it rotates the chapter key of the
 // slot AND of the not-yet-written next chapter, so a pre-generation
 // answer computed from the old telling can no longer land on top of
 // the new one (the same rotation the intervention queue performs).
+// A pre-generated copy of the next chapter may already have landed
+// behind the frontier (FRONTIER-FIX): it was computed from the telling
+// this pass is about to replace, so opening the re-roll retires it on
+// the spot — the chapters after the frontier drop out of the record
+// and the acceptance pointer rewinds with them, leaving the
+// preparation machinery to rebuild the next chapter from the new
+// telling. The retirement is plain record state (shorter chapters,
+// rotated revision), never a silent side effect. A failed pass leaves
+// the old chapter standing and simply costs that re-preparation.
 export function beginChapterReroll(story, index) {
   validateStory(story)
   if (story.readOnly === true) return story
   if (!isFrontierChapter(story, index)) {
-    throw new RangeError('只有最新章节还能换一版——下一章一旦生成，这一章就定稿了')
+    throw new RangeError('只有正在读的这一章还能换一版——翻开下一章，这一章就定稿了')
   }
   const next = clone(story)
   next.revision = (story.revision || 0) + 1
+  if (next.chapters.length > index + 1) {
+    next.chapters = next.chapters.slice(0, index + 1)
+    next.chapterIndex = Math.min(index + 1, totalChaptersFor(next) - 1)
+  }
   next.updatedAt = now()
   return next
 }
@@ -1985,9 +2042,10 @@ export function beginChapterReroll(story, index) {
 // Land a re-rolled chapter: swap the frontier slot for its fresh telling.
 // Unlike replaceChapter (the intervention revision), the slot being
 // swapped may be the chapter the reader is standing on — that is the
-// whole point of the frontier exception — but it must still be the LAST
-// chapter, carry the key the rotated story implies, and bear the id of
-// the current revision. The chapter's interventions (landed when it was
+// whole point of the frontier exception — but it must still be the
+// frontier chapter (the latest one the reader has opened), carry the
+// key the rotated story implies, and bear the id of the current
+// revision. The chapter's interventions (landed when it was
 // first written, plus any still queued for it) are marked applied,
 // because the fresh telling was generated with them in its brief — the
 // marker and ledger recomputation itself happens at generation time,
@@ -2003,6 +2061,18 @@ export function replaceFrontierChapter(story, chapter, key) {
   const next = clone(story)
   next.chapters = [...story.chapters.slice(0, index).map((item) => clone(item)), clone(chapter)]
   markInterventionsApplied(next, index)
+  // The swap rebuilds the record up to the slot: a copy of the next
+  // chapter that landed mid-pass (FRONTIER-FIX) drops out with it, so
+  // the acceptance pointer rewinds to the slot's successor — the same
+  // value acceptChapter would have left for this chapter count.
+  next.chapterIndex = Math.min(index + 1, totalChaptersFor(next) - 1)
+  // Landing the swap rotates the revision a second time (FRONTIER-FIX):
+  // a preparation fired while the pass was in flight is briefed on the
+  // OLD telling yet keyed to the rotated record, so without this bump
+  // its answer could land behind the new chapter and stand as the next
+  // chapter. The bump makes every pre-swap answer stale on arrival;
+  // the preparation machinery rebuilds it from the new telling.
+  next.revision = (story.revision || 0) + 1
   next.updatedAt = now()
   return next
 }
@@ -2011,7 +2081,11 @@ export function replaceFrontierChapter(story, chapter, key) {
 // become the chapter's canon verbatim: later generation reads its tail
 // context from the story record, so the model continues from the
 // owner's own words. The revision bump retires any in-flight
-// pre-generation of the next chapter, whose context predates the edit.
+// pre-generation of the next chapter, whose context predates the edit;
+// a pre-generated copy that has already LANDED behind the frontier is
+// retired with it (FRONTIER-FIX) — dropped from the record and rebuilt
+// from the edited tail, exactly as on a re-roll, never left standing
+// on prose the owner has since replaced.
 export const CHAPTER_PROSE_MAX_PARAGRAPHS = 64
 export const CHAPTER_PROSE_PARAGRAPH_MAX = 4000
 
@@ -2029,6 +2103,10 @@ export function updateChapterProse(story, index, paragraphs) {
   const next = clone(story)
   next.chapters[index] = { ...next.chapters[index], paragraphs: cleaned }
   next.revision = (story.revision || 0) + 1
+  if (next.chapters.length > index + 1) {
+    next.chapters = next.chapters.slice(0, index + 1)
+    next.chapterIndex = Math.min(index + 1, totalChaptersFor(next) - 1)
+  }
   next.updatedAt = now()
   return next
 }
