@@ -3165,12 +3165,14 @@ function ReadingDialog({ title, children, onClose }) {
 
 /**
  * The signed-out account surface (PHONE-FIX §37 H, presentation
- * rework): NOT a sheet. The starfield scene inside AccountPanel is a
- * full-screen ground in its own right, so it gets a full-screen
- * overlay instead of the ReadingDialog chrome — no title bar, no
- * grabber, nothing of the shell (topbar, tab bar, the page behind)
- * showing through or coexisting. The window floats centred on the
- * sky; the only chrome is a glass ✕ in the scene's top-right corner.
+ * rework; LOGIN-REDO §43 for the current composition): NOT a sheet.
+ * The starfield scene inside AccountPanel is a full-screen ground
+ * in its own right, so it gets a full-screen overlay instead of
+ * the ReadingDialog chrome — no title bar, no grabber, nothing of
+ * the shell (topbar, tab bar, the page behind) showing through or
+ * coexisting. The brand stands in the pure-black sky and the login
+ * card rises from the bottom edge; the only chrome is a glass ✕ in
+ * the scene's top-right corner.
  * Housekeeping mirrors ReadingDialog (body scroll lock, Escape,
  * focus restore to the trigger) so the surface behaves like the
  * dialog it replaces in every way a caller can observe.

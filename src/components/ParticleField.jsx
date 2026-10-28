@@ -60,12 +60,14 @@ function makeParticles(width, height, density) {
   return { threads, dust };
 }
 
-const STAR_COLORS = ["235,240,255", "196,215,255", "221,214,254"];
+/* All-white stars (LOGIN-REDO §43): the universe is pure black and
+   the stars pure white — depth is carried by alpha/size alone. */
+const STAR_COLORS = ["255,255,255"];
 
 /**
  * The login starfield (LOGIN-SKY batch, user-worded via reference
- * video; supersedes the PHONE-FIX §37 warp field): a deep-black sky
- * filled edge to edge with FINE points — several hundred 1px-class
+ * video; LOGIN-REDO §43 recoloured it): a PURE-BLACK sky filled
+ * edge to edge with FINE white points — several hundred 1px-class
  * stars, dim, evenly spread, layered by depth (far = smaller and
  * darker, near = a touch larger and brighter, drifting a touch
  * faster) — with a handful of bright stars carrying four-point

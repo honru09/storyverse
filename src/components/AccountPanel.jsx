@@ -5,7 +5,7 @@ import { identifierKind } from "../auth/identifier.js";
 import ParticleField from "./ParticleField.jsx";
 
 function GoogleMark() {
-  return <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M21.6 12.2c0-.7-.1-1.5-.2-2.2H12v4h5.4a4.6 4.6 0 0 1-2 3v2.6h3.2c1.9-1.8 3-4.3 3-7.4ZM12 22c2.7 0 5-.9 6.6-2.4L15.4 17c-.9.6-2 .9-3.4.9-2.6 0-4.9-1.8-5.7-4.2H3v2.6A10 10 0 0 0 12 22ZM6.3 13.7a6 6 0 0 1 0-3.4V7.7H3a10 10 0 0 0 0 8.6l3.3-2.6ZM12 6.1c1.5 0 2.8.5 3.8 1.5l2.9-2.8A9.7 9.7 0 0 0 12 2a10 10 0 0 0-9 5.7l3.3 2.6C7.1 7.9 9.4 6.1 12 6.1Z"/></svg>;
+  return <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path fill="#EA4335" d="M12 5.04c1.7 0 3.2.59 4.4 1.73l3.24-3.24C17.7 1.8 15.1.75 12 .75 7.4.75 3.4 3.4 1.5 7.3l3.8 2.95C6.2 7.4 8.9 5.04 12 5.04z"/><path fill="#4285F4" d="M23.25 12.27c0-.9-.08-1.55-.26-2.23H12v4.05h6.5c-.13 1.08-.83 2.7-2.4 3.8l3.68 2.85c2.2-2.03 3.47-5.02 3.47-8.47z"/><path fill="#FBBC05" d="M5.3 13.75A6.9 6.9 0 0 1 4.92 12c0-.61.14-1.2.36-1.75L1.5 8.3A11.2 11.2 0 0 0 .75 12c0 1.8.43 3.5 1.2 5.03l3.35-3.28z"/><path fill="#34A853" d="M12 23.25c3.05 0 5.6-1 7.47-2.72l-3.68-2.85c-1 .68-2.33 1.12-3.79 1.12-3.1 0-5.8-2.36-6.7-5.55l-3.8 2.95c1.88 3.9 5.9 7.05 10.5 7.05z"/></svg>;
 }
 
 // The SDK owns Firebase credentials and the session; the email-code session
@@ -307,36 +307,41 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       <button className="button button-primary account-primary" type="button" onClick={onContinue}>继续体验</button>
       <button className="account-quiet" type="button" disabled={busy} onClick={() => void run(() => client.signOut())}>{busy ? "正在处理…" : "退出账号"}</button>
     </> : <>
-      {/* The welcome scene (PHONE-FIX §37 H, final wording): a dynamic
-          starfield with depth fills the whole screen — the panel is
-          mounted in a full-screen overlay (AccountSceneDialog), not
-          a sheet; on the sky sits ONE centred glass window holding
-          the brand lock, the form and every entry — nothing else.
-          The two earlier reference directions (a minigame start
-          screen, then a mascot/orbit composition) were both dropped
-          by the user; the tone is 简洁高级 — restraint, whitespace,
-          hairline borders, glass. Every entry and behaviour inside
-          the window is the panel that was always here; only the
-          container moved. */}
+      {/* The welcome scene (LOGIN-REDO §43, user-picked design B,
+          supersedes the centred glass window of §37 H / §42): a PURE
+          BLACK universe — no navy, no glow — with the brand standing
+          directly in the starfield (mark, 织界 in large type, the
+          spaced tagline), and ONE near-black card rising from the
+          bottom edge to about half the screen, its top-right corner
+          cut by the signature 96px arc. The card holds, in order:
+          a welcome heading, the underline tabs, the form, the
+          forgot-password link row, and a foot row where Google is a
+          small square "other way" button and the guest entry a text
+          link; the honest footer, theme control and help entry stay
+          in the card's scroll tail, below the fold exactly as
+          before. Every entry and behaviour is the panel that was
+          always here; only the container and its colour language
+          changed (monochrome: white primary button, hairlines,
+          grey scale). On desktop ≥1024 the same language splits:
+          brand zone left ~55%, card full-height on the right with
+          the big arc moved to its top-left corner. */}
       <div className="account-scene">
         <ParticleField density="starfield" />
-        <div className="account-window" data-mode={activeMode}>
-          <div className="account-brand-lock">
-            <img className="account-brand-logo" src="/icon.svg" alt="" />
-            <div className="account-brand-copy">
-              <p className="account-brand-name">织界</p>
-              <p className="account-brand-sub">STORYWEAVE</p>
-              <p className="account-intro">从这里，进入你的故事。</p>
-            </div>
+        <div className="account-hero">
+          <img className="account-hero-logo" src="/icon.svg" alt="" />
+          <p className="account-hero-name">织界</p>
+          <p className="account-hero-tagline">从这里，进入你的故事。</p>
+        </div>
+        <div className="account-card" data-mode={activeMode}>
+          <div className="account-card-head">
+            <h3 className="account-card-title">{activeMode === "register" ? "加入织界" : activeMode === "reset" ? "重设密码" : "欢迎回来"}</h3>
+            <p className="account-card-sub">{activeMode === "register" ? "从这里，开始你的第一条故事线。" : activeMode === "reset" ? "跟着提示走，就能重新设置密码。" : "登录后，你的世界继续运转。"}</p>
           </div>
-      {!configured && <button className="account-guest" type="button" onClick={onContinue}>先不登录，继续体验 <span aria-hidden="true">→</span></button>}
-      <button className="account-google" type="button" disabled={busy || !configured || !account.config?.providers?.google} onClick={() => void run(() => client.signInWithGoogle())}><GoogleMark/>使用 Google 继续</button>
-      <div className="account-divider"><span>{usernameAvailable ? "或使用邮箱 / 用户名" : "或使用邮箱"}</span></div>
-      {activeMode !== "reset" ? <div className="account-tabs" role="group" aria-label="账号操作">
+      {activeMode !== "reset" && <div className="account-tabs" role="group" aria-label="账号操作">
         <button type="button" aria-pressed={activeMode === "login"} disabled={busy} onClick={() => changeMode("login")}>登录</button>
         <button type="button" aria-pressed={activeMode === "register"} disabled={busy} onClick={() => changeMode("register")}>注册</button>
         {codeAvailable && <button type="button" aria-pressed={activeMode === "code"} disabled={busy} onClick={() => changeMode("code")}>验证码</button>}
-      </div> : <h3 className="account-reset-heading">重设密码</h3>}
+      </div>}
       <form onSubmit={submit} className="account-form">
         {activeMode === "code"
           ? <label>邮箱<input type="email" name="email" autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} required maxLength={254} value={accountId} disabled={busy || !configured} onChange={(event) => changeAccountId(event.target.value)} placeholder="you@example.com"/></label>
@@ -371,10 +376,16 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
         {!configured && account.status !== "loading" && <button type="button" disabled={busy} onClick={() => void run(() => { client.stop(); return client.start(); })}>重新连接</button>}
         {configured && account.status === "error" && <button type="button" disabled={busy} onClick={() => void run(() => client.refreshUser())}>重试验证</button>}
       </div>
-      {configured && <button className="account-guest" type="button" onClick={onContinue}>先不登录，继续体验 <span aria-hidden="true">→</span></button>}
+      <div className="account-card-foot">
+        <div className="account-alt-row">
+          <span className="account-alt-label">其他方式</span>
+          <button className="account-google" type="button" aria-label="使用 Google 继续" title="使用 Google 继续" disabled={busy || !configured || !account.config?.providers?.google} onClick={() => void run(() => client.signInWithGoogle())}><GoogleMark/></button>
+          <button className="account-guest" type="button" onClick={onContinue}>先不登录，继续体验 <span aria-hidden="true">→</span></button>
+        </div>
       {guestFooter && <p className="account-storage-note">{guestFooter}</p>}
       <ShellThemeControl shellTheme={shellTheme} onShellThemeChange={onShellThemeChange} />
       {onOpenHelp && <button className="account-avatar-entry" type="button" onClick={onOpenHelp}>帮助与常见问题 <span aria-hidden="true">→</span></button>}
+      </div>
         </div>
       </div>
     </>}
