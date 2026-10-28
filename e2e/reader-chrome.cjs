@@ -1,19 +1,19 @@
 // Reader chrome (番茄 model) acceptance: immersive hairlines, tap zones,
 // tap-summoned menu, single-line labels at 360/390/430, settings-sheet
 // geometry. Isolated profiles only; all generation requests are blocked.
-const { chromium } = require('playwright');
+const { chromium, webkit } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const target = process.env.TARGET_URL || 'http://127.0.0.1:8899';
 const artifacts = process.env.PW_ARTIFACT_DIR || path.join(__dirname, '..', 'reader-chrome-shots');
 fs.mkdirSync(artifacts, { recursive: true });
-const report = { target, checks: [], failures: [], captures: [] };
+const report = { target, browser: process.env.PW_BROWSER || 'chromium', checks: [], failures: [], captures: [] };
 const key = 'storyweave:v2';
 const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).filter(Number.isFinite);
 
 (async () => {
-  const browser = await chromium.launch({ headless: process.env.PW_HEADLESS === 'true' });
+  const browser = await (process.env.PW_BROWSER === 'webkit' ? webkit : chromium).launch({ headless: process.env.PW_HEADLESS === 'true' });
   try {
     for (const width of widths) {
       const context = await browser.newContext({ viewport: { width, height: 844 }, locale: 'zh-CN', reducedMotion: 'reduce', isMobile: true, hasTouch: true });
@@ -90,6 +90,39 @@ const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).f
           if (width === 390) await capture('immersive');
         });
 
+        await check('prose margins are symmetric: line boxes fill the measure', async () => {
+          // READER-FIX3 follow-up (user screenshot + parent pixel
+          // measurement): full lines once stopped ~27px short of the
+          // right margin in WebKit — text-wrap:pretty stole a character
+          // from every line. Measured with line boxes (Range rects),
+          // never pixels: the article's own margins must match the
+          // token on both sides (<= 1pt), and the fullest line's ink
+          // must reach to within one character advance of the box's
+          // right edge (what remains is character quantization under
+          // left alignment, present in every engine).
+          const geo = await page.evaluate(() => {
+            const article = document.querySelector('.reader-article');
+            const box = article.getBoundingClientRect();
+            const lines = [];
+            document.querySelectorAll('.article-body p').forEach(p => {
+              const range = document.createRange();
+              range.selectNodeContents(p);
+              for (const r of range.getClientRects()) if (r.width > 0) lines.push({ left: r.left, right: r.right });
+            });
+            const probe = document.createElement('span');
+            probe.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap';
+            probe.textContent = '海';
+            article.appendChild(probe);
+            const advance = probe.getBoundingClientRect().width;
+            probe.remove();
+            return { vw: window.innerWidth, boxLeft: box.left, boxRight: box.right, advance,
+              minLeft: Math.min(...lines.map(l => l.left)), maxRight: Math.max(...lines.map(l => l.right)) };
+          });
+          assert.ok(Math.abs(geo.minLeft - geo.boxLeft) <= 1.34, `line boxes start at the box's left edge (${geo.minLeft} vs ${geo.boxLeft})`);
+          assert.ok(Math.abs(geo.boxLeft - (geo.vw - geo.boxRight)) <= 1.34, `box margins symmetric within 1pt (left ${geo.boxLeft}, right ${geo.vw - geo.boxRight})`);
+          assert.ok(geo.maxRight >= geo.boxRight - geo.advance - 0.5, `fullest line fills the measure to within one char (ink right ${geo.maxRight}, box right ${geo.boxRight}, advance ${geo.advance})`);
+        });
+
         await check('centre tap summons the chrome and the next one folds it away', async () => {
           await tap(0.5);
           await page.locator('.reader-chrome-top').waitFor({ state: 'visible' });
@@ -124,7 +157,11 @@ const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).f
         });
 
         await check('scrolling folds the chrome away', async () => {
-          await page.mouse.wheel(0, 320);
+          // Mobile WebKit has no mouse.wheel in Playwright: fall back
+          // to a programmatic scroll, which moves the same scroll
+          // position the fold listens to.
+          try { await page.mouse.wheel(0, 320); }
+          catch { await page.evaluate(() => window.scrollTo(0, window.scrollY + 320)); }
           await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
           await page.evaluate(() => window.scrollTo(0, 0));
         });
@@ -263,6 +300,13 @@ const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).f
           const focusCell = page.getByRole('button', { name: '专注', exact: true });
           assert.equal(await focusCell.getAttribute('aria-pressed'), 'true');
           await focusCell.click();
+          // Leaving focus does not by itself bring the hairlines back:
+          // the chrome is still summoned, and under the chrome-open
+          // rule (READER-FIX3 follow-up) the hairlines stay absent
+          // until the chrome folds.
+          assert.equal(await page.locator('.reader-status-top').isVisible(), false, 'hairlines stay hidden while the chrome is up');
+          await tap(0.5);
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
           await page.waitForFunction(() => {
             const line = document.querySelector('.reader-status-top');
             return line && getComputedStyle(line).visibility === 'visible';
@@ -367,6 +411,13 @@ const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).f
           await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
           const cells = await page.locator('.reader-chrome-grid button').count();
           assert.equal(cells, 4, 'read-only chrome has four cells (no intervene)');
+          const ghost = await page.evaluate(() => {
+            const line = sel => { const cs = getComputedStyle(document.querySelector(sel)); return { opacity: cs.opacity, visibility: cs.visibility }; };
+            return { top: line('.reader-status-top'), bottom: line('.reader-status-bottom') };
+          });
+          for (const [label, line] of [['top', ghost.top], ['bottom', ghost.bottom]]) {
+            assert.ok(line.opacity === '0' || line.visibility === 'hidden', `read-only chrome open: ${label} hairline fully absent, not covered (opacity ${line.opacity}, visibility ${line.visibility})`);
+          }
           const shot = path.join(artifacts, '390-readonly-chrome-open.png');
           await page.screenshot({ path: shot, fullPage: false });
           report.captures.push(shot);
@@ -436,20 +487,35 @@ const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).f
           await assertPinned('top');
         });
 
+        // html runs scroll-behavior:smooth and this context keeps
+        // motion on, so a programmatic scrollTo is an animation, not
+        // a jump: wait until scrollY settles before measuring, or the
+        // depth assertions race the glide (observed: 1289 of 3000 at
+        // the old fixed 250ms wait).
+        const settledScrollY = async () => {
+          let last = -1;
+          for (let i = 0; i < 50; i++) {
+            const y = await page.evaluate(() => window.scrollY);
+            if (y === last) return y;
+            last = y;
+            await page.waitForTimeout(120);
+          }
+          return last;
+        };
+
         await check('motion on: hairlines stay pinned three screens deep and at the chapter end', async () => {
           await page.evaluate(() => window.scrollTo(0, 3000));
-          await page.waitForTimeout(250);
-          const deepY = await page.evaluate(() => window.scrollY);
+          const deepY = await settledScrollY();
           assert.ok(deepY >= 3 * 844, `scrolled three screens deep (${deepY})`);
           await assertPinned('deep');
           await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-          await page.waitForTimeout(250);
+          await settledScrollY();
           await assertPinned('end');
         });
 
         await check('motion on: deep centre tap summons a fully in-viewport dock with single-line labels', async () => {
           await page.evaluate(() => window.scrollTo(0, 3000));
-          await page.waitForTimeout(250);
+          await settledScrollY();
           await page.touchscreen.tap(195, 422);
           await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
           await page.waitForTimeout(350);
@@ -458,6 +524,24 @@ const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).f
           assert.ok(box.y >= 844 - box.height - 2 && box.y + box.height <= 845, `dock fully inside the viewport (y ${box.y}, height ${box.height})`);
           const topBox = await page.locator('.reader-chrome-top').boundingBox();
           assert.ok(topBox && topBox.y >= -1 && topBox.y <= 2, `top bar hugs the viewport top (y ${topBox && topBox.y})`);
+          // READER-FIX3 follow-up (parent screenshot review): with the
+          // chrome summoned, the immersive hairlines must be entirely
+          // absent — hidden by state, not merely covered — and the
+          // chrome bars must paint fully opaque, so neither the
+          // hairline text nor the prose behind the bars can ghost
+          // through at the bars' edges.
+          const ghost = await page.evaluate(() => {
+            const line = sel => { const cs = getComputedStyle(document.querySelector(sel)); return { opacity: cs.opacity, visibility: cs.visibility }; };
+            const paint = sel => getComputedStyle(document.querySelector(sel)).backgroundColor;
+            return { top: line('.reader-status-top'), bottom: line('.reader-status-bottom'), barTop: paint('.reader-chrome-top'), barBottom: paint('.reader-chrome-bottom') };
+          });
+          for (const [label, line] of [['top', ghost.top], ['bottom', ghost.bottom]]) {
+            assert.ok(line.opacity === '0' || line.visibility === 'hidden', `chrome open: ${label} hairline fully absent, not covered (opacity ${line.opacity}, visibility ${line.visibility})`);
+          }
+          for (const [label, paint] of [['top', ghost.barTop], ['bottom', ghost.barBottom]]) {
+            const alpha = paint.startsWith('rgba') ? parseFloat(paint.split(',').pop()) : 1;
+            assert.equal(alpha, 1, `chrome open: ${label} bar paints fully opaque (${paint})`);
+          }
           const titleLine = await page.locator('.reader-chrome-title').evaluate(node => ({ sh: node.scrollHeight, ch: node.clientHeight }));
           assert.ok(titleLine.sh <= titleLine.ch + 1 && titleLine.ch <= 24, `chrome title is a single line (${titleLine.sh}/${titleLine.ch})`);
           const cells = await page.locator('.reader-chrome-grid button').evaluateAll(nodes => nodes.map(node => {

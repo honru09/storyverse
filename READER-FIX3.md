@@ -55,6 +55,8 @@
 | 3 | 正文又粗又大（图 2/3，图测 18px × 1.9、首段 550 通道） | `390-own-scroll-mid-immersive.png` | computed 15.98px / 字重 400（390 宽、倍率 1，流式值）；首段同为 400（`.article-lede` 550 已删）；四档实测 360→15.22 / 390→15.98 / 430→17.01 / 768→19.00px，每行字数 ≈21 / 21 / 22 / 38 |
 | 4 | 右侧粗黑滚动条（图 2/3） | `390-own-scroll-mid-immersive.png`（静止帧右缘无条） | 定性为 iOS 原生滚动指示：厚度 9 设备 px ≈ 3.0pt、仅滚动中出现（图 2 中段 / 图 3 底部）、静止的图 1 完全不存在；全仓主滚动区无 `::-webkit-scrollbar` 定制。不改代码 |
 | 5 | 顶栏对齐与构成（图 1） | `390-own-scroll-start-chrome.png`、`430-own-scroll-mid-chrome.png` | 标题改单行截断（容器单行、scrollHeight 不溢出，e2e 断言），返回键/标题/图标组共用同一垂直中心；图标组 44px 钮、2px 间距、右缘贴边（本地探针 rect 244/290/336 与用户图字形位置 261/306/352pt 成簇吻合，本就不坏，未动） |
+| 6 | 呼出态 chrome 半透明：沉浸细线与正文透印（**父代理截图亲验**，矩阵原图 `390-own-scroll-end-chrome.png`：顶栏上方有细线「‹ 第 1 章 · 雨幕备份 · 初声」淡影、顶栏下缘透出一行正文、底部坞下缘透出「第 1 / 24 章 · 本章 100%」与时钟淡影） | `390-own-scroll-end-chrome-v2.png`（及全部 *-chrome-v2 共 14 格，几何见 `matrix-manifest-v2.json`） | chrome 改纸面实色：computed background `rgb(255, 253, 246)`（alpha 恒 1、无 backdrop-filter）；呼出期间细线按状态不在场：全部 chrome 格实测 `opacity 0 / visibility hidden`（收起后恢复 1 / visible）；e2e 新增断言（reader-chrome motion-on 深滚呼出 + 只读呼出两处，Chromium 与 WebKit 双引擎、动效开启均过）；reader.cjs 的旧半透明断言（§24 口径）已按本条 supersede 改写为实色断言 |
+| 7 | 正文左右边距不对称、右侧多出约 27pt（**用户看图指出 + 父代理像素实测**：矩阵原图左内容边 22.5pt 合令牌，右内容边 max/p90 同为 340pt、正文被卡在 340pt 宽） | `390-own-scroll-mid-immersive-v2.png`、`390-own-scroll-start-immersive-v2.png`、`390-own-scroll-end-immersive-v2.png` | 根因 = `.reader-prose` 的 `text-wrap:pretty`：WebKit 的 pretty 为匀尾行从每行偷走一个字（实测满行恒 20 字、墨迹右缘 341.4px），已删除该声明；修复后盒边距两侧恒 22px（盒 22→368），最满行墨迹右缘 359.7px（距盒右缘 8.3px < 1 个字进 15.97px，为左对齐下的字形量化残差，两引擎同值）；e2e 新增行盒断言（360/390/430：盒左右边距差 ≤1pt、最满行填满至 1 字内），双引擎全过 |
 
 ## 验证层级（老实话）
 
@@ -63,3 +65,10 @@
 - WebKit：系统库已补齐并**真跑**（先后缺 libgstreamer / libevent / libavif 等与 libGLESv2，均 apt 装齐）。探针双向对照：基线 cb30dc8 在 WebKit 下同病（transform 单位矩阵、章末细线 top=−7825、坞锚文档外），修复版 WebKit 下 transform 恒 `none`、细线三处贴边、深滚呼出坞 (722, 844)；reader.cjs 全套在 WebKit 通过；26 格对照矩阵以 WebKit 出图。
 - 对照截图（修复后，动效开启）：`reader-fix3-shots/`（不入库）——WebKit 390×844 全状态矩阵 24 格 + 360/430 呼出抽查（见销账表），三张关键格已由本批逐张目检（章首呼出：顶栏单行 + 底坞五格；章末沉浸：细线钉顶 + 章末家具清线；章末呼出：滑杆 100% + 顶栏让位后正文不压条）。
 - **未验**：iOS 真机仍是最终裁判——根因与修复已在 Chromium 与 WebKit 两引擎实测成立（WebKit 与 iOS Safari 同引擎族），但真机观感（流式字号在用户机型上的实际密度、PingFang 字重观感、滑杆手感）只能等用户亲眼确认；本批不自称通过真机验收。
+
+## 收尾小修（2026-10-28，父代理亲看矩阵截图后追加，销账表第 6/7 条）
+
+- **改动落点**：`src/main.jsx`（Reader 根节点加 `data-chrome-open` 状态属性）、`src/reader-experience.css`（chrome 去 96% color-mix 与 backdrop-filter、改实色；`data-chrome-open` 时细线 `visibility:hidden;opacity:0`；`.reader-prose` 删除 `text-wrap:pretty` 并留根因注释）、`e2e/reader-chrome.cjs`（新增细线不在场 + 栏体 alpha=1 断言、边距行盒断言、引擎可选 `PW_BROWSER`、专注检查按新语义改写、motion-on 滚动改落稳等待、WebKit 无 mouse.wheel 时回退程序化滚动）、`e2e/reader.cjs`（半透明旧断言改实色断言、专注检查同口径改写）。
+- **e2e 实测（本轮全绿）**：reader-chrome 46/46（Chromium 与 WebKit 各一遍，含新增 3 档边距断言与两处透印断言）；reader 30/30（两引擎各一遍）。本轮初跑曾复现三处旧检查与新语义的冲突（两处专注检查等细线在 chrome 呼出期间恢复、motion-on 平滑滚动 250ms 竞速），均属检查口径问题、已按新定案改写并复跑通过，非产品回归。
+- **重拍**：全部 *-chrome 格 14 张 + 390 自有滚动沉浸三格，WebKit / DSF 2 / 动效开启，`-v2` 后缀存同目录，逐格几何（细线显隐、栏体底色、盒左右、墨迹右缘）见 `matrix-manifest-v2.json`；章末呼出与章中沉浸两格已逐张目检（无淡影、无透出、行宽回右缘）。
+- **诚实注记**：边距项的盒级对称是精确的（两侧恒 22px）；墨迹右缘在左对齐下仍有 ≤1 个字进的字形量化残差（390 宽实测 8.3px，两引擎同值），不是盒子缩进——若日后要墨迹级贴边，须动 textAlign 默认值（justify），属产品口径变更，不在本小修内。环境注记：本轮开工时 VM 刚重启、WebKit 系统库被基建 replay 清空，经本地 apt 缓存 deb 直装恢复（libgstreamer 等 46 包），WebKit 方得真跑。

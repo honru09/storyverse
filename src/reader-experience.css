@@ -12,8 +12,10 @@
    progress/clock line at the bottom. The article starts below the top
    hairline and the page reserves just enough tail room for the bottom
    hairline, so prose is never covered in any state. The tap-summoned
-   menu chrome is fixed and translucent; it overlays without reflowing
-   the prose. The top offset MUST live in the page's own padding, never
+   menu chrome is fixed and fully opaque paper; it overlays without
+   reflowing the prose, and while it is up the hairlines leave the
+   stage entirely (see the data-chrome-open rule below) instead of
+   ghosting through the bars. The top offset MUST live in the page's own padding, never
    in .reader-layout's margin: with padding-top:0 the layout margin
    collapses through and shifts the whole page box down by its full
    amount, and since the shell's page-in animation makes .page the
@@ -44,7 +46,17 @@
 .reader-status-back span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .reader-status-bottom{position:fixed;left:0;right:0;bottom:0;z-index:12;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px max(14px,env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 5px) max(14px,env(safe-area-inset-left));pointer-events:none;color:var(--reader-secondary);font-family:var(--font-ui);font-size:.6875rem;font-variant-numeric:tabular-nums;transition:opacity 160ms var(--ease-out);background:var(--reader-bg)}
 .page-reader[data-reader-focused="true"] .reader-status-top,.page-reader[data-reader-focused="true"] .reader-status-bottom{visibility:hidden;opacity:0}
-.reader-chrome{position:fixed;left:0;right:0;z-index:15;background:var(--reader-surface);background:color-mix(in srgb,var(--reader-surface) 96%,transparent);backdrop-filter:blur(20px) saturate(1.25);-webkit-backdrop-filter:blur(20px) saturate(1.25);color:var(--reader-text);font-family:var(--font-ui)}
+/* Summoned chrome and hairlines never share the stage (READER-FIX3
+   follow-up, parent screenshot review 2026-10-28): with the menu up,
+   the hairlines are gone outright — hidden by state, not covered by
+   the bars — so no ghost of the chapter line or the clock can print
+   through above or below the opaque chrome. */
+.page-reader[data-chrome-open="true"] .reader-status-top,.page-reader[data-chrome-open="true"] .reader-status-bottom{visibility:hidden;opacity:0}
+/* The chrome bars are solid paper, same discipline as the hairlines
+   and the FIX2 chapter-end actions: prose scrolling behind a bar must
+   never print through (a 96% mix + backdrop blur still ghosted the
+   line of prose sitting at the bars' edges). */
+.reader-chrome{position:fixed;left:0;right:0;z-index:15;background:var(--reader-surface);color:var(--reader-text);font-family:var(--font-ui)}
 .reader-chrome-top{top:0;display:flex;align-items:center;gap:6px;padding:calc(env(safe-area-inset-top) + 6px) max(10px,env(safe-area-inset-right)) 8px max(10px,env(safe-area-inset-left));border-bottom:1px solid var(--reader-border);animation:reader-chrome-down 180ms var(--ease-out)}
 .reader-chrome-bottom{bottom:0;padding:6px max(10px,env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 8px) max(10px,env(safe-area-inset-left));border-top:1px solid var(--reader-border);animation:reader-chrome-up 180ms var(--ease-out)}
 @keyframes reader-chrome-down{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
@@ -73,7 +85,14 @@
 .page-reader .reader-layout{margin-top:0}
 /* Chapter-title typography lives in reading-preferences.css (it scales
    with the reader's chosen font size); no second h1 rule may drift here. */
-.reader-prose{overflow-wrap:break-word;word-break:normal;line-break:strict;hyphens:auto;text-wrap:pretty}
+/* No text-wrap:pretty here (READER-FIX3 follow-up, user screenshot +
+   parent pixel measurement 2026-10-28): WebKit's pretty algorithm
+   rebalances CJK paragraphs by stealing a character from every line
+   to fatten the last one — at 390px every full line stopped at 20
+   chars (ink right edge 341px) while the measure runs to 368px, which
+   read as a phantom ~27px right inset. Greedy wrapping fills the
+   measure to within one character in both engines. */
+.reader-prose{overflow-wrap:break-word;word-break:normal;line-break:strict;hyphens:auto}
 .reader-prose p{scroll-margin-top:76px}
 .page-reader .choice-block{border-top:1px solid var(--reader-border);padding-top:1.5rem;margin-top:2rem;font-family:var(--font-ui);font-weight:400;text-align:left;letter-spacing:normal}
 .page-reader .choice-heading h2{font-size:1.25rem;line-height:1.5}

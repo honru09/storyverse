@@ -4161,7 +4161,7 @@ function Reader({
   const clockText = clock.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 
   return (
-    <div ref={readerRef} className="page page-reader page-enter" data-reader-focused={focused ? 'true' : 'false'} data-chrome-lift={chromeLift || undefined} onPointerDown={noteTapStart} onPointerUp={handleReaderTap} onPointerCancel={forgetTap} {...getReaderAppearance(preferences.settings, { inputMethod: preferences.inputMethod })}>
+    <div ref={readerRef} className="page page-reader page-enter" data-reader-focused={focused ? 'true' : 'false'} data-chrome-lift={chromeLift || undefined} data-chrome-open={chromeOpen || undefined} onPointerDown={noteTapStart} onPointerUp={handleReaderTap} onPointerCancel={forgetTap} {...getReaderAppearance(preferences.settings, { inputMethod: preferences.inputMethod })}>
       <div className="reader-status-top">
         <button
           type="button"

@@ -79,13 +79,15 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           const labels = await page.locator('.reader-chrome-grid button span').evaluateAll(nodes => nodes.map(node => ({ h: node.offsetHeight, sw: node.scrollWidth, cw: node.clientWidth })));
           assert.ok(labels.every(label => label.h <= 20 && label.sw <= label.cw + 1), 'chrome labels stay on one line at this width');
           const material = await page.locator('.reader-chrome-bottom').evaluate(node => { const style = getComputedStyle(node); return { backdropFilter: style.backdropFilter, backgroundColor: style.backgroundColor }; });
-          // Headless compositors report backdrop-filter as none even
-          // when the blur is declared; the translucency itself (alpha
-          // strictly between clear and opaque) is what can be proven
-          // here — the blur rides on the same declaration on device.
-          const alphaMatch = material.backgroundColor.match(/\/\s*([\d.]+)\)$/) || material.backgroundColor.match(/,\s*([\d.]+)\)$/);
+          // READER-FIX3 follow-up supersedes the §24 translucent
+          // chrome: at 96% the bars ghosted the hairline text and the
+          // prose line sitting at their edges (parent screenshot
+          // review). The bars are solid paper now — computed alpha
+          // exactly 1 and no backdrop filter at all.
+          const alphaMatch = material.backgroundColor.match(/\/\s*([\d.]+)\)$/) || material.backgroundColor.match(/rgba\([^)]*,\s*([\d.]+)\)$/);
           const alpha = alphaMatch ? Number(alphaMatch[1]) : 1;
-          assert.ok(alpha > 0.05 && alpha < 0.99, `the chrome floats translucent over the prose (alpha ${alpha})`);
+          assert.equal(alpha, 1, `the chrome is solid paper, never translucent (alpha ${alpha})`);
+          assert.equal(material.backdropFilter, 'none', 'no backdrop blur rides under the chrome');
           assert.ok(material.backgroundColor !== 'transparent', 'reader chrome must be a real surface');
           await tapReaderCenter();
           await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
@@ -253,10 +255,14 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           const focusCell = page.getByRole('button', { name:'专注', exact:true });
           assert.equal(await focusCell.getAttribute('aria-pressed'), 'true');
           await focusCell.click();
-          await page.waitForFunction(() => getComputedStyle(document.querySelector('.reader-status-top')).visibility === 'visible');
-          assert.equal(await page.locator('.reader-status-top').isVisible(), true, 'leaving focus restores the hairlines');
+          // The chrome is still summoned: under the chrome-open rule
+          // (READER-FIX3 follow-up) the hairlines stay absent until it
+          // folds — leaving focus alone does not restore them.
+          assert.equal(await page.locator('.reader-status-top').isVisible(), false, 'hairlines stay hidden while the chrome is up');
           await tapReaderCenter();
           await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
+          await page.waitForFunction(() => getComputedStyle(document.querySelector('.reader-status-top')).visibility === 'visible');
+          assert.equal(await page.locator('.reader-status-top').isVisible(), true, 'folding the chrome restores the hairlines');
         });
         await check('large-font chapter end remains reachable and nothing gates the next chapter', async () => {
           await page.getByRole('button', { name:'下一章', exact:true }).click();
