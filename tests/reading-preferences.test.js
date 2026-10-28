@@ -43,7 +43,7 @@ test("invalid values cannot inject CSS or escape supported size and spacing rang
     assert.equal(normalizeReadingPreferences({ fontSize }).fontSize, 18);
   }
   for (const lineHeight of [0, 1.5, 3, "1.8", null]) {
-    assert.equal(normalizeReadingPreferences({ lineHeight }).lineHeight, 2.05);
+    assert.equal(normalizeReadingPreferences({ lineHeight }).lineHeight, 1.9);
   }
   for (const theme of ["sepia", "dark", "url(https://example.test)", null, {}]) {
     assert.equal(normalizeReadingPreferences({ theme }).theme, "light");

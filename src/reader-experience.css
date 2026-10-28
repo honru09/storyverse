@@ -1,5 +1,12 @@
 /* Read mode shares the porcelain material system; prose stays on solid surfaces. */
 .app-shell[data-view="reader"] > .main-shell > .topbar{display:none}
+/* Reading is full-screen immersion in every form (own book, plaza
+   read-only line, shared snapshot): the shell's bottom bar must never
+   render over prose. The component already returns null for the reader
+   view; this rule is the shared-layer guarantee behind it — the plaza
+   reader once leaked the bar because the nav-highlight mapping fed the
+   bar "plaza" while the reader was open (user report 2026-10-28). */
+.app-shell[data-view="reader"] > .main-shell > .mobile-bottom-nav{display:none}
 /* Immersive chrome (番茄 model): nothing floats over the prose but two
    hairlines — the chapter line pinned to the top safe area and the
    progress/clock line at the bottom. The article starts below the top
@@ -15,10 +22,27 @@
    a real device, where motion is on). Padding keeps the page box
    coincident with the viewport under either anchoring. */
 .page-reader[data-reader-theme]{padding-top:calc(env(safe-area-inset-top) + 42px);padding-bottom:calc(54px + max(10px,env(safe-area-inset-bottom)));min-height:100vh;min-height:100dvh}
-.reader-status-top{position:fixed;top:0;left:0;right:0;z-index:12;display:flex;align-items:flex-start;padding:calc(env(safe-area-inset-top) + 4px) max(14px,env(safe-area-inset-right)) 4px max(12px,env(safe-area-inset-left));pointer-events:none;font-family:var(--font-ui);transition:opacity 160ms var(--ease-out)}
+/* Edge compensation (N-07): with the menu summoned at the chapter's
+   very top, the page lends the top bar its height (bar ≈ 59px + a
+   breath) so the chapter title is never under it; at the very bottom
+   it lends the bottom bar's height (bar ≈ 122px) as tail room and the
+   reader settles into it (see Reader's chromeLift effect). The top
+   padding eases with the bar's own entry; the bottom jumps, hidden
+   behind the bar sliding up. */
+.page-reader[data-reader-theme][data-chrome-lift="top"]{padding-top:calc(env(safe-area-inset-top) + 104px)}
+.page-reader[data-reader-theme][data-chrome-lift="bottom"]{padding-bottom:calc(178px + max(10px,env(safe-area-inset-bottom)))}
+.page-reader[data-reader-motion="on"]{transition:padding-top 180ms var(--ease-out)}
+@media(min-width:1050px){.page-reader[data-reader-theme][data-chrome-lift="top"]{padding-top:calc(env(safe-area-inset-top) + 110px)}}
+/* The hairlines sit on the reader's own paper colour, never transparent:
+   scrolled prose must not show through the status-bar strip or slide
+   under the clock into the home-indicator zone (user screenshot
+   2026-10-28: the first visible line was clipped by the iOS clock).
+   The colour is the page's own background, so the lines read as part
+   of the paper, not as bars. */
+.reader-status-top{position:fixed;top:0;left:0;right:0;z-index:12;display:flex;align-items:flex-start;padding:calc(env(safe-area-inset-top) + 4px) max(14px,env(safe-area-inset-right)) 4px max(12px,env(safe-area-inset-left));pointer-events:none;font-family:var(--font-ui);transition:opacity 160ms var(--ease-out);background:var(--reader-bg)}
 .reader-status-back{pointer-events:auto;display:inline-flex;align-items:center;gap:2px;min-height:30px;max-width:100%;padding:2px 8px 2px 2px;background:transparent;border:0;color:var(--reader-secondary);font:inherit;font-size:.75rem;cursor:pointer}
 .reader-status-back span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.reader-status-bottom{position:fixed;left:0;right:0;bottom:0;z-index:12;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px max(14px,env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 5px) max(14px,env(safe-area-inset-left));pointer-events:none;color:var(--reader-secondary);font-family:var(--font-ui);font-size:.6875rem;font-variant-numeric:tabular-nums;transition:opacity 160ms var(--ease-out)}
+.reader-status-bottom{position:fixed;left:0;right:0;bottom:0;z-index:12;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px max(14px,env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 5px) max(14px,env(safe-area-inset-left));pointer-events:none;color:var(--reader-secondary);font-family:var(--font-ui);font-size:.6875rem;font-variant-numeric:tabular-nums;transition:opacity 160ms var(--ease-out);background:var(--reader-bg)}
 .page-reader[data-reader-focused="true"] .reader-status-top,.page-reader[data-reader-focused="true"] .reader-status-bottom{visibility:hidden;opacity:0}
 .reader-chrome{position:fixed;left:0;right:0;z-index:15;background:var(--reader-surface);background:color-mix(in srgb,var(--reader-surface) 96%,transparent);backdrop-filter:blur(20px) saturate(1.25);-webkit-backdrop-filter:blur(20px) saturate(1.25);color:var(--reader-text);font-family:var(--font-ui)}
 .reader-chrome-top{top:0;display:flex;align-items:center;gap:6px;padding:calc(env(safe-area-inset-top) + 6px) max(10px,env(safe-area-inset-right)) 8px max(10px,env(safe-area-inset-left));border-bottom:1px solid var(--reader-border);animation:reader-chrome-down 180ms var(--ease-out)}
@@ -42,7 +66,8 @@
 .reader-chrome-grid button[aria-pressed="true"]{color:var(--reader-accent)}
 .reader-chrome-grid .reader-chrome-intervene{color:var(--reader-accent)}
 .page-reader .reader-layout{margin-top:0}
-.page-reader .reader-article h1{margin-bottom:1.75rem;font-size:clamp(1.625rem,6vw,2.25rem);letter-spacing:-.02em;line-height:1.5}
+/* Chapter-title typography lives in reading-preferences.css (it scales
+   with the reader's chosen font size); no second h1 rule may drift here. */
 .reader-prose{overflow-wrap:break-word;word-break:normal;line-break:strict;hyphens:auto;text-wrap:pretty}
 .reader-prose p{scroll-margin-top:76px}
 .page-reader .choice-block{border-top:1px solid var(--reader-border);padding-top:1.5rem;margin-top:2rem;font-family:var(--font-ui);font-weight:400;text-align:left;letter-spacing:normal}
@@ -54,6 +79,19 @@
 .page-reader .choice-result-copy h3{font-size:1rem}
 .page-reader .chapter-navigation,.page-reader .sw-next-action,.page-reader .reading-end{font-family:var(--font-ui);font-weight:400;text-indent:0;letter-spacing:normal}
 .reader-location-warning{font-size:.8125rem;color:var(--reader-secondary);max-width:40rem;margin:1rem auto}
+/* Chapter-end furniture speaks the paper's own language: the shell's
+   blue-violet gradient primary must never appear on a reading page
+   (user screenshot 2026-10-28: a gradient capsule under the prose).
+   Every primary action inside the reader takes the reading theme's
+   action token; the star map card sits on the theme surface with its
+   border, no glass, no shadow. */
+.page-reader .button-primary{background:var(--reader-action);color:var(--reader-action-text);box-shadow:none}
+.page-reader .reader-starmap{background:var(--reader-surface);border-color:var(--reader-border);box-shadow:none}
+.page-reader .reader-starmap-head b{color:var(--reader-text)}
+.page-reader .reader-starmap-head span{color:var(--reader-secondary)}
+/* The read-only note is a whisper, not a banner: small, secondary,
+   reader tokens (the shell's --dim once bled a blue-grey onto paper). */
+.page-reader .reader-readonly-note{color:var(--reader-secondary);font-size:.75rem;letter-spacing:.02em;margin:10px 0 0}
 .reading-tools{font-family:var(--font-ui);color:var(--reader-text)}
 .reading-tools-tabs{display:grid;grid-template-columns:1fr 1fr;padding:4px;border-radius:14px;background:var(--reader-soft)}
 .reading-tools-tabs.has-dossier{grid-template-columns:repeat(3,minmax(0,1fr))}

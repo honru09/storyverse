@@ -3743,6 +3743,31 @@ function Reader({
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, [chromeOpen]);
+  // Edge compensation (PERSONA-QA N-07): the summoned chrome overlays
+  // prose by design, but at the chapter's edges it would sit on the
+  // chapter title (top bar) or the end matter (bottom bar) with nowhere
+  // for them to go. When the menu opens while the reader is at the very
+  // top or bottom, the page lends the bars room — extra top padding at
+  // the top, extra bottom padding plus a settle scroll at the bottom.
+  // Mid-chapter opens get no compensation: the bars float over ordinary
+  // scrollback exactly as the model intends, and the reading position
+  // never jumps.
+  const [chromeLift, setChromeLift] = useState("");
+  useEffect(() => {
+    if (!chromeOpen) { setChromeLift(""); return; }
+    const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    setChromeLift(window.scrollY <= 2 ? "top" : window.scrollY >= maxY - 2 ? "bottom" : "");
+  }, [chromeOpen]);
+  // Runs after the lift padding has rendered: the added bottom room
+  // only creates headroom, so settle into it and the end matter rises
+  // clear of the bottom bar. The seek stamp keeps the chrome's own
+  // scroll-close watcher from reading this deliberate move as a
+  // reader scroll.
+  useEffect(() => {
+    if (chromeLift !== "bottom") return;
+    seekStamp.current = performance.now();
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
+  }, [chromeLift]);
   const [bookmarkVersion, setBookmarkVersion] = useState(0);
   const bookmarkAnchor = useRef(null);
   const requestedLocation = useRef(null);
@@ -4087,13 +4112,28 @@ function Reader({
   useEffect(() => { if (anySheetOpen) setChromeOpen(false); }, [anySheetOpen]);
   useEffect(() => { if (focused) setChromeOpen(false); }, [focused]);
   // Tap zones (番茄 model): left / right thirds turn one screen, the
-  // middle third toggles the chrome. A tap only counts when the finger
-  // barely moved and the page did not scroll under it — drags, scrolls,
-  // text selection and long-presses must never page or summon menus.
+  // middle third toggles the chrome. Zones are judged on the pointerup's
+  // viewport coordinates and the finger's own displacement — never on
+  // scrollY. The previous click-path guard (reject when scrollY moved
+  // >4px between pointerdown and click) silently ate real taps on iOS:
+  // momentum settle and scroll anchoring shift scrollY by far more than
+  // 4px between touchstart and the synthetic click everywhere except at
+  // the very top, where scrollY is clamped to 0 and cannot drift — the
+  // exact symptom the user reported (menu only summonable at the top).
+  // Finger displacement is the ground truth of tap intent: a scroll
+  // gesture moves the finger, a tap does not, however far the page
+  // itself glides underneath a stationary finger.
   const tapStart = useRef(null);
   const noteTapStart = (event) => {
-    tapStart.current = { x: event.clientX, y: event.clientY, scrollY: window.scrollY };
+    tapStart.current = {
+      x: event.clientX,
+      y: event.clientY,
+      at: performance.now(),
+      pointerId: event.pointerId,
+      interactive: Boolean(event.target.closest("button, a, input, textarea, select, summary, label, dialog, .reader-chrome")),
+    };
   };
+  const forgetTap = () => { tapStart.current = null; };
   const turnScreen = (direction) => {
     setChromeOpen(false);
     const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
@@ -4106,11 +4146,13 @@ function Reader({
   const handleReaderTap = (event) => {
     const start = tapStart.current;
     tapStart.current = null;
+    if (!start || start.pointerId !== event.pointerId) return;
     if (anySheetOpen || intervening || rerolling) return;
     if (window.getSelection && window.getSelection().toString()) return;
+    if (start.interactive) return;
     if (event.target.closest("button, a, input, textarea, select, summary, label, dialog, .reader-chrome")) return;
-    if (start && (Math.abs(event.clientX - start.x) > 12 || Math.abs(event.clientY - start.y) > 12
-      || Math.abs(window.scrollY - start.scrollY) > 4)) return;
+    if (Math.abs(event.clientX - start.x) > 12 || Math.abs(event.clientY - start.y) > 12) return;
+    if (performance.now() - start.at > 800) return;
     const zone = event.clientX / Math.max(1, window.innerWidth);
     if (zone < 1 / 3) turnScreen(-1);
     else if (zone > 2 / 3) turnScreen(1);
@@ -4119,7 +4161,7 @@ function Reader({
   const clockText = clock.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 
   return (
-    <div ref={readerRef} className="page page-reader page-enter" data-reader-focused={focused ? 'true' : 'false'} onPointerDown={noteTapStart} onClick={handleReaderTap} {...getReaderAppearance(preferences.settings, { inputMethod: preferences.inputMethod })}>
+    <div ref={readerRef} className="page page-reader page-enter" data-reader-focused={focused ? 'true' : 'false'} data-chrome-lift={chromeLift || undefined} onPointerDown={noteTapStart} onPointerUp={handleReaderTap} onPointerCancel={forgetTap} {...getReaderAppearance(preferences.settings, { inputMethod: preferences.inputMethod })}>
       <div className="reader-status-top">
         <button
           type="button"
@@ -7727,7 +7769,7 @@ function App() {
             <button onClick={() => setLibraryOpen(true)}>备份与恢复</button>
           </div>
         )}
-        <MobileBottomNav view={profileRoute ? "profile" : navView} onNavigate={navigate} onOpenProfile={openOwnProfile} faceSrc={faceSrc} facePortrait={facePortrait} />
+        <MobileBottomNav view={view === "reader" ? "reader" : profileRoute ? "profile" : navView} onNavigate={navigate} onOpenProfile={openOwnProfile} faceSrc={faceSrc} facePortrait={facePortrait} />
         {page}
       </main>
       {profileRoute && (

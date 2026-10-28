@@ -1,6 +1,6 @@
 export const READING_PREFERENCES_KEY = "storyweave:reading-preferences:v1";
 export const READER_FONT_SIZES = Object.freeze([14, 16, 18, 20, 22, 24, 26, 28, 30, 32]);
-export const READER_LINE_HEIGHTS = Object.freeze([1.6, 1.8, 2.05, 2.3]);
+export const READER_LINE_HEIGHTS = Object.freeze([1.6, 1.8, 1.9, 2.05, 2.3]);
 export const READER_THEMES = Object.freeze(["light", "warm", "green", "night", "oled", "system"]);
 export const READER_FONT_FAMILIES = Object.freeze({
   system: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
@@ -8,12 +8,12 @@ export const READER_FONT_FAMILIES = Object.freeze({
 });
 export const DEFAULT_READING_PREFERENCES = Object.freeze({
   fontSize: 18,
-  lineHeight: 2.05,
+  lineHeight: 1.9,
   theme: "light",
   fontFamily: "system",
   fontWeight: 400,
   margin: "standard",
-  paragraphSpacing: 1,
+  paragraphSpacing: 0.6,
   paragraphIndent: true,
   textAlign: "left",
   letterSpacing: 0,

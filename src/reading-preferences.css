@@ -103,14 +103,14 @@ body:has(.page-reader[data-reader-theme="oled"]) { background: #000000; }
 .page-reader[data-reader-theme] .reader-article {
   width: min(100%, var(--reader-measure, 38em)); color: var(--reader-text); background: var(--reader-bg);
   font-family: var(--reader-font-family); font-size: var(--reader-font-size, 1.125rem);
-  font-weight: var(--reader-font-weight, 400); line-height: var(--reader-line-height, 2.05);
+  font-weight: var(--reader-font-weight, 400); line-height: var(--reader-line-height, 1.9);
   font-optical-sizing: auto; letter-spacing: var(--reader-letter-spacing, 0);
   /* Font metrics and colors apply in one frame: no animated reading-position drift. */
   transition: none;
 }
 .page-reader[data-reader-theme] .reader-article h1 {
-  font-family: var(--reader-font-family); font-size: clamp(1.65rem, calc(var(--reader-font-size) * 1.45), 2.75rem);
-  font-weight: 650; line-height: 1.5; letter-spacing: -.015em; margin-bottom: 1.5em;
+  font-family: var(--reader-font-family); font-size: clamp(1.5rem, calc(var(--reader-font-size) * 1.3), 2.3rem);
+  font-weight: 600; line-height: 1.5; letter-spacing: -.015em; margin-bottom: 1.1em;
 }
 .page-reader[data-reader-theme] :is(.article-lede, .article-body p),
 .reading-preferences .reading-preferences-preview p {
@@ -193,7 +193,7 @@ body:has(.page-reader[data-reader-theme="oled"]) { background: #000000; }
 .reading-preview-label { display: block; margin-bottom: .5rem; color: var(--reader-secondary); font-size: .6875rem; font-weight: 600; }
 .reading-preferences .reading-preferences-preview p {
   color: var(--reader-text); font-family: var(--reader-font-family); font-size: var(--reader-font-size, 1.125rem);
-  font-weight: var(--reader-font-weight, 400); line-height: var(--reader-line-height, 2.05); letter-spacing: var(--reader-letter-spacing, 0);
+  font-weight: var(--reader-font-weight, 400); line-height: var(--reader-line-height, 1.9); letter-spacing: var(--reader-letter-spacing, 0);
 }
 .reading-preferences .reading-preferences-preview p:last-child { margin-bottom: 0; }
 .reading-toggle-row { position: relative; display: flex; align-items: center; justify-content: space-between; gap: .75rem; min-height: 54px; padding: .75rem; border-radius: .875rem; background: var(--preferences-surface); cursor: pointer; }

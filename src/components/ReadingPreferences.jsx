@@ -91,7 +91,7 @@ export default function ReadingPreferences({ value, onChange, storageWarning }) 
       <p>你停下脚步，听见了另一个世界的回声。</p>
     </section>
 
-    {options("lineHeight", "行间距", [{ value: 1.6, label: "密集" }, { value: 1.8, label: "紧凑" }, { value: 2.05, label: "舒适" }, { value: 2.3, label: "宽松" }])}
+    {options("lineHeight", "行间距", [{ value: 1.6, label: "密集" }, { value: 1.8, label: "紧凑" }, { value: 1.9, label: "舒适" }, { value: 2.05, label: "宽松" }, { value: 2.3, label: "疏朗" }])}
     {options("readingMode", "阅读方式", [{ value: "scroll", label: "上下滚动" }, { value: "page", label: "逐屏阅读" }])}
     {settings.readingMode === "page" && <p className="reading-preference-hint reading-font-note">用上一屏／下一屏阅读，保留少量内容重叠，也可以直接上下滚动。</p>}
     <label className="reading-toggle-row">

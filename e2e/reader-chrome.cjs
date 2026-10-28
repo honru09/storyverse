@@ -80,6 +80,13 @@ const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).f
           const bottomLine = await page.locator('.reader-status-bottom').innerText();
           assert.match(bottomLine, /本章 \d+%/, 'bottom hairline carries the in-chapter progress');
           assert.match(bottomLine, /\d{1,2}:\d{2}/, 'bottom hairline carries the clock');
+          const linePaint = await page.evaluate(() => {
+            const paint = sel => getComputedStyle(document.querySelector(sel)).backgroundColor;
+            return { top: paint('.reader-status-top'), bottom: paint('.reader-status-bottom') };
+          });
+          assert.notEqual(linePaint.top, 'rgba(0, 0, 0, 0)', 'top hairline is painted with the paper colour, never transparent');
+          assert.notEqual(linePaint.bottom, 'rgba(0, 0, 0, 0)', 'bottom hairline is painted with the paper colour, never transparent');
+          assert.equal(await page.locator('.mobile-bottom-nav').count(), 0, 'no shell bottom bar exists inside the reader');
           if (width === 390) await capture('immersive');
         });
 
@@ -132,6 +139,49 @@ const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).f
           await tap(0.08);
           const afterBack = await settleScroll();
           assert.ok(afterBack < afterForward - 300, `left tap turned a screen back (${afterForward} -> ${afterBack})`);
+        });
+
+        await check('deep in the chapter, taps still work: centre summons, sides turn', async () => {
+          await page.evaluate(() => window.scrollTo(0, 3000));
+          const deep = await settleScroll();
+          assert.ok(deep >= 3 * 844, `scrolled at least three screens deep (${deep})`);
+          await tap(0.5);
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
+          await tap(0.5);
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
+          const before = await settleScroll();
+          await tap(0.92);
+          const afterForward = await settleScroll();
+          assert.ok(afterForward > before + 300, `right tap turns a screen at depth (${before} -> ${afterForward})`);
+          await tap(0.08);
+          const afterBack = await settleScroll();
+          assert.ok(afterBack < afterForward - 300, `left tap turns a screen back at depth (${afterForward} -> ${afterBack})`);
+          await page.evaluate(() => window.scrollTo(0, 0));
+          await settleScroll();
+        });
+
+        await check('a tap survives scroll drift under a still finger; a drag never summons', async () => {
+          await page.evaluate(() => window.scrollTo(0, 1200));
+          await settleScroll();
+          const pair = (dy, drift) => page.evaluate(({ dy, drift }) => {
+            const el = document.querySelector('.reader-article');
+            const options = { bubbles: true, clientX: Math.round(innerWidth / 2), clientY: 422, pointerId: 7 };
+            el.dispatchEvent(new PointerEvent('pointerdown', options));
+            if (drift) window.scrollBy(0, drift);
+            el.dispatchEvent(new PointerEvent('pointerup', { ...options, clientY: 422 + dy }));
+          }, { dy, drift });
+          // Momentum settle moves scrollY under a stationary finger:
+          // that is a tap, however far the page glides (the iOS failure
+          // this guards — the old click guard ate it beyond the top).
+          await pair(0, 12);
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
+          await pair(0, 0);
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
+          await pair(-122, 0);
+          await page.waitForTimeout(200);
+          assert.equal(await chromeCount(), 0, 'a vertical drag is not a tap');
+          await page.evaluate(() => window.scrollTo(0, 0));
+          await settleScroll();
         });
 
         await check('chrome slider seeks inside the chapter', async () => {
@@ -216,7 +266,111 @@ const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).f
           assert.equal(await page.locator('.reader-status-top').isVisible(), true, 'hairlines return after focus');
           assert.deepEqual(errors, []);
         });
+
+        await check('summoned chrome never covers the title line or the end matter (N-07)', async () => {
+          await page.evaluate(() => window.scrollTo(0, 0));
+          await settleScroll();
+          await tap(0.5);
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
+          await page.waitForTimeout(400);
+          const topGeo = await page.evaluate(() => {
+            const bar = document.querySelector('.reader-chrome-top').getBoundingClientRect();
+            const h1 = document.querySelector('.reader-article h1').getBoundingClientRect();
+            const first = document.querySelector('[data-reading-paragraph="0"]').getBoundingClientRect();
+            return { barBottom: bar.bottom, h1Top: h1.top, firstTop: first.top };
+          });
+          assert.ok(topGeo.barBottom <= topGeo.h1Top + 1, `top bar clears the chapter title (${topGeo.barBottom} <= ${topGeo.h1Top})`);
+          assert.ok(topGeo.barBottom <= topGeo.firstTop + 1, 'top bar clears the first prose line');
+          if (width === 390) await capture('chrome-open-lifted');
+          await tap(0.5);
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
+          await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+          await settleScroll();
+          await tap(0.5);
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
+          await page.waitForTimeout(400);
+          const bottomGeo = await page.evaluate(() => {
+            const bar = document.querySelector('.reader-chrome-bottom').getBoundingClientRect();
+            const nav = document.querySelector('.chapter-navigation').getBoundingClientRect();
+            const footer = document.querySelector('.article-footer')?.getBoundingClientRect();
+            return { barTop: bar.top, endBottom: Math.max(nav.bottom, footer ? footer.bottom : 0) };
+          });
+          assert.ok(bottomGeo.barTop >= bottomGeo.endBottom - 1, `bottom bar clears the end matter (${bottomGeo.barTop} >= ${bottomGeo.endBottom})`);
+          await tap(0.5);
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
+          await page.evaluate(() => window.scrollTo(0, 0));
+          await settleScroll();
+        });
       } catch (error) { report.failures.push({ width, error: error.stack }); console.error(error); await capture('failure').catch(() => {}); }
+      finally { await context.close(); }
+    }
+
+    // Read-only form (a shared snapshot of the same fixture book): the
+    // plaza reader once leaked the shell bottom bar because the nav
+    // highlight mapping fed the bar "plaza" while reading. Lock the
+    // whole form down: no bar, painted hairlines, tap zones at depth.
+    {
+      const width = 390;
+      const context = await browser.newContext({ viewport: { width, height: 844 }, locale: 'zh-CN', reducedMotion: 'reduce', isMobile: true, hasTouch: true });
+      const page = await context.newPage();
+      const errors = [];
+      page.on('pageerror', error => errors.push(error.message));
+      await page.route('**/api/generate', route => route.fulfill({ status: 503, json: { error: 'Test safety guard' } }));
+      const check = async (name, work) => { await work(); report.checks.push({ width, name }); console.log(`PASS ${width} ${name}`); };
+      try {
+        await page.goto(target);
+        await page.locator('button').filter({ hasText: '你的书架、化身与草稿都在这里' }).click();
+        await page.getByRole('button', { name: '开启第一本书', exact: true }).click();
+        for (let i = 0; i < 5; i++) await page.getByRole('button', { name: '继续', exact: true }).click();
+        await page.getByRole('button', { name: '预设体验', exact: true }).click();
+        await page.getByRole('button', { name: '进入第一章', exact: true }).click();
+        await page.locator('[data-reading-paragraph]').first().waitFor();
+        await page.evaluate(key => {
+          const library = JSON.parse(localStorage.getItem(key));
+          const book = library.stories.find(story => story.id === library.activeStoryId);
+          book.chapters[0].paragraphs = Array.from({ length: 22 }, (_, i) => `第${i + 1}段，海风穿过长街。年轻的旅人放慢脚步，听见远处的钟声。` + '他记得那片海，也记得故乡的名字。'.repeat(9));
+          const snapshot = { ...book, id: 'public-fixture-reader', readOnly: true, readerIndex: 0 };
+          library.publications = [{ id: 'publication-fixture-reader', storyId: book.id, snapshot, createdAt: new Date().toISOString() }];
+          localStorage.setItem(key, JSON.stringify(library));
+        }, key);
+        await page.goto(`${target}/#/shared/publication-fixture-reader`);
+        await page.reload();
+        await page.locator('[data-reading-paragraph="21"]').waitFor();
+        await page.locator('.reader-readonly-note').waitFor();
+
+        await check('read-only reader: no shell bottom bar, note is quiet, hairlines painted', async () => {
+          assert.equal(await page.locator('.mobile-bottom-nav').count(), 0, 'no shell bottom bar inside the read-only reader');
+          const note = await page.locator('.reader-readonly-note').evaluate(node => {
+            const cs = getComputedStyle(node);
+            const secondary = getComputedStyle(document.querySelector('.reader-status-top')).color;
+            return { fontSize: parseFloat(cs.fontSize), color: cs.color, secondary };
+          });
+          assert.ok(note.fontSize <= 12.5, `read-only note stays a whisper (${note.fontSize}px)`);
+          const geo = await page.evaluate(() => {
+            const top = document.querySelector('.reader-status-top').getBoundingClientRect();
+            const bottom = document.querySelector('.reader-status-bottom').getBoundingClientRect();
+            return { lineTop: top.top, bottomBottom: bottom.bottom, viewportH: window.innerHeight };
+          });
+          assert.ok(geo.lineTop <= 2 && geo.bottomBottom >= geo.viewportH - 2, 'hairlines pinned in the read-only reader');
+        });
+
+        await check('read-only reader: tap zones work three screens deep', async () => {
+          await page.evaluate(() => window.scrollTo(0, 3000));
+          await page.waitForTimeout(250);
+          const deep = await page.evaluate(() => window.scrollY);
+          assert.ok(deep >= 3 * 844, `scrolled three screens deep (${deep})`);
+          await page.touchscreen.tap(195, 422);
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
+          const cells = await page.locator('.reader-chrome-grid button').count();
+          assert.equal(cells, 4, 'read-only chrome has four cells (no intervene)');
+          const shot = path.join(artifacts, '390-readonly-chrome-open.png');
+          await page.screenshot({ path: shot, fullPage: false });
+          report.captures.push(shot);
+          await page.touchscreen.tap(195, 422);
+          await page.locator('.reader-chrome-bottom').waitFor({ state: 'detached' });
+          assert.deepEqual(errors, []);
+        });
+      } catch (error) { report.failures.push({ width, error: error.stack }); console.error(error); }
       finally { await context.close(); }
     }
 

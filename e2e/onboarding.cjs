@@ -374,7 +374,7 @@ async function runOnboarding(browser, width) {
       for (let step = 0; step < 5; step += 1) {
         await dialog.getByRole('button', { name: '放大字号', exact: true }).click();
       }
-      await assertAppearance(page, { fontSize: 32, lineHeight: 2.05, theme: 'light' });
+      await assertAppearance(page, { fontSize: 32, lineHeight: 1.9, theme: 'light' });
       assert.equal(await dialog.getByRole('button', { name: '放大字号', exact: true }).isDisabled(), true);
       await noOverflow(page, 'maximum reading size');
       await sizes.getByRole('radio', { name: '特大', exact: true }).click();
@@ -436,7 +436,7 @@ async function runOnboarding(browser, width) {
       await assertAppearance(page, { fontSize: 22, lineHeight: 1.8, theme: 'warm' });
       assert.equal(await page.locator('.page-reader').getAttribute('data-reader-motion'), 'off');
       await dialog.getByRole('button', { name: '恢复默认', exact: true }).click();
-      await assertAppearance(page, { fontSize: 18, lineHeight: 2.05, theme: 'light' });
+      await assertAppearance(page, { fontSize: 18, lineHeight: 1.9, theme: 'light' });
       await closeReaderSheetWithEscape(page, dialog);
       assert.equal(await readRawLibrary(page), originalStoryRaw);
       await noOverflow(page, 'restored reader');

@@ -33,6 +33,7 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           const rect = el.getBoundingClientRect();
           const options = { bubbles: true, clientX: Math.round(window.innerWidth / 2), clientY: Math.round(Math.min(window.innerHeight / 2, Math.max(80, rect.top + 140))) };
           el.dispatchEvent(new PointerEvent('pointerdown', options));
+          el.dispatchEvent(new PointerEvent('pointerup', options));
           el.dispatchEvent(new MouseEvent('click', options));
         });
       };
@@ -170,7 +171,7 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
         await check('advanced layout is live, persisted and resettable', async () => {
           const dialog = await openSettings();
           const lineHeightBefore = await page.locator('.reader-article').evaluate(node => parseFloat(getComputedStyle(node).lineHeight));
-          await dialog.getByRole('group', { name:'行间距', exact:true }).getByRole('radio', { name:'宽松', exact:true }).click();
+          await dialog.getByRole('group', { name:'行间距', exact:true }).getByRole('radio', { name:'疏朗', exact:true }).click();
           const fontPx = await page.locator('.reader-article').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
           const lineHeightAfter = await page.locator('.reader-article').evaluate(node => parseFloat(getComputedStyle(node).lineHeight));
           assert.ok(Math.abs(lineHeightAfter - fontPx * 2.3) < 1.5, `line height follows the tapped option (${lineHeightBefore} -> ${lineHeightAfter})`);

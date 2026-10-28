@@ -40,6 +40,7 @@ async function toggleChrome(page) {
     const rect = el.getBoundingClientRect();
     const options = { bubbles: true, clientX: Math.round(window.innerWidth / 2), clientY: Math.round(Math.min(window.innerHeight / 2, Math.max(80, rect.top + 140))) };
     el.dispatchEvent(new PointerEvent('pointerdown', options));
+    el.dispatchEvent(new PointerEvent('pointerup', options));
     el.dispatchEvent(new MouseEvent('click', options));
   });
 }
