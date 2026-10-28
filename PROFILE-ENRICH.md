@@ -75,3 +75,31 @@ empty-own-390.png、stage-main-390.png、stage-second-390.png、shelf-closeup-39
 2026-10-28 本地真服务（AUTH_ENABLED=false, PORT=8899）+ xvfb 四套全过：
 visual（exit 0，72 CAPTURE、零 fail/error）、journey 24/24、onboarding 18/18、
 intervention 7/7。
+
+## 返修轮：展台融合质感（2026-10-28，父代理亲验打回 → 定点返修）
+
+- **打回理由**：父代理亲看 stage-main-390.png 与 own-page-black-bottom-390.png 定案——
+  立绘浅色底仍是一块边缘笔直的亮矩形嵌在深色展台卡里（有内嵌、有暗角，但读感与用户
+  已批准样稿的「人物立于光池、四边沉入黑暗」不符）。用户当初否掉旧主页的头号原因正是
+  这块浅色矩形，本处不达标整批不上。
+- **根因（像素实测）**：旧 mask 为 radial-gradient(88% 96% at 50% 46%, #000 55% →
+  transparent 84%)——椭圆比图框还大：上边中点 alpha 恒 1、左右边中点约 0.94，笔直亮边
+  必然在。基线测量（两张展台特写，DSF1）：左右边亮度阶跃 ≈96、上边 ≈134–144、
+  过渡带仅 9px。另：暗角层 ::before 在图片之下（z1 < img z2），压不到图本身。
+- **修法（仅 src/styles.css §35 展台块，标记未动）**：
+  1. mask 换双层交集（mask-composite: intersect / -webkit source-in）：径向光池
+     radial-gradient(52% 52% at 50% 40%, #000 48% → transparent 98%)——椭圆完全收进
+     图框内，脸与躯干保持实心、四边中点 alpha 先归零；线性层
+     linear-gradient(180deg, transparent 0 → #000 13% / 88% → transparent 100%)
+     补椭圆够不到的顶部短净空与底部地面线。glow 层同 mask 保持轮廓一致。
+  2. ::after 改为压在图上的全幅边缘沉降层（径向 color-mix(var(--bg) 55%) 沉四边四角，
+     白主题 32%；原底部 112px 渐变以 calc 形式原样保留），pointer-events:none。
+  3. 氛围层 brightness .30 → .27，光池边缘沉得更深。
+- **结果（同尺复量 + 执行者逐张亲看）**：旧矩形边界处阶跃左右 96 → 4、上边
+  134–144 → 12；顶带（y=12%）亮区宽度从整幅 247px 收至约 135px（只剩头部轮廓）；
+  脸部区平均亮度 192/176（两化身）保持清晰。重拍图 stage-main / stage-second /
+  own-page-black-bottom / other-window-black-390（harness 全量重跑 59/59）逐张亲看判定：
+  **矩形边已不可辨认**——亮区呈椭圆光池向四边渐隐、人物保持明亮，名牌行不受影响；
+  与样稿的差距在 CSS 路径内已收尽，无需预合成图兜底。
+- **回归**：单元全量 654/654；visual e2e exit 0（72 CAPTURE、零 fail/error）；
+  本轮只动 styles.css 一个文件的 §35 展台块（bg/mask/::after 三处），其余表面未触碰。
