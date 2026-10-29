@@ -95,6 +95,9 @@ export const AVATAR_APPEARANCE_FIELDS = [
 
 const optionById = (options, id) => options.find((item) => item.id === id) || null
 
+// Kept for reference only (FINAL-FIX R-07): profiles created before
+// the unpicked-means-unspecified change carry these values baked in
+// as explicit picks. Nothing fills new profiles from it any more.
 export const DEFAULT_APPEARANCE = Object.freeze({
   hairColor: 'black',
   hairStyle: 'long-straight',
@@ -105,17 +108,28 @@ export const DEFAULT_APPEARANCE = Object.freeze({
 })
 
 /**
- * Normalise an appearance object against the fixed vocabulary. Unknown
- * ids fall back to the default for that field rather than failing the
- * whole profile — a reader's saved look must never be lost to one stale
- * option. Returns null only when the input is not an object at all.
+ * Normalise an appearance object against the fixed vocabulary.
+ *
+ * A field the reader never picked stays null (FINAL-FIX R-07): it used
+ * to be filled from DEFAULT_APPEARANCE, which silently rewrote the
+ * reader's own words — a description that said 「短发」 came back as
+ * long straight hair, a long coat and boots, because the untouched
+ * chips had "defaults". Unpicked now means UNSPECIFIED everywhere
+ * downstream: the text and prompt composers skip the field, and the
+ * portrait prompt states outright that unspecified aspects follow the
+ * written description. An id outside the vocabulary also normalises
+ * to null (unspecified) rather than failing the whole profile — a
+ * reader's saved look must never be lost to one stale option. Returns
+ * null only when the input is not an object at all. Profiles saved
+ * before this change carry their baked-in defaults as explicit picks;
+ * they keep rendering exactly as before.
  */
 export function normalizeAppearance(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null
-  const result = { ...DEFAULT_APPEARANCE }
+  const result = {}
   for (const field of AVATAR_APPEARANCE_FIELDS) {
     const picked = optionById(field.options, input[field.key])
-    if (picked) result[field.key] = picked.id
+    result[field.key] = picked ? picked.id : null
   }
   result.faceNote = typeof input.faceNote === 'string' ? input.faceNote.trim().slice(0, AVATAR_FACE_NOTE_MAX) : ''
   return result
@@ -123,7 +137,8 @@ export function normalizeAppearance(input) {
 
 /** The one-line Chinese appearance a story carries in its config. */
 export function avatarAppearanceText(appearance) {
-  const look = normalizeAppearance(appearance) || DEFAULT_APPEARANCE
+  const look = normalizeAppearance(appearance)
+  if (!look) return ''
   const parts = []
   for (const field of AVATAR_APPEARANCE_FIELDS) {
     const picked = optionById(field.options, look[field.key])
@@ -135,7 +150,8 @@ export function avatarAppearanceText(appearance) {
 
 /** The English appearance fragments the portrait prompt paints from. */
 export function avatarAppearancePrompt(appearance) {
-  const look = normalizeAppearance(appearance) || DEFAULT_APPEARANCE
+  const look = normalizeAppearance(appearance)
+  if (!look) return ''
   const parts = []
   for (const field of AVATAR_APPEARANCE_FIELDS) {
     const picked = optionById(field.options, look[field.key])
@@ -155,7 +171,10 @@ export function validateAvatarProfile(input) {
   const name = typeof input.name === 'string' ? input.name.trim().slice(0, AVATAR_NAME_MAX) : ''
   if (!name) return { error: '先给化身取个名字。' }
   const description = typeof input.description === 'string' ? input.description.trim().slice(0, AVATAR_DESCRIPTION_MAX) : ''
-  const appearance = normalizeAppearance(input.appearance ?? DEFAULT_APPEARANCE)
+  // No appearance payload at all is a valid profile: every field
+  // unpicked, the written description leads (FINAL-FIX R-07). A payload
+  // that IS present but not an object still fails, as before.
+  const appearance = input.appearance === undefined ? normalizeAppearance({}) : normalizeAppearance(input.appearance)
   if (!appearance) return { error: '化身的样子没能读懂，请重新选一次。' }
   return {
     profile: {

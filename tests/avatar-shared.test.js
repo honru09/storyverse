@@ -26,13 +26,25 @@ test('validateAvatarProfile requires a name and bounds the text', () => {
   assert.equal(profile.appearance.hairColor, 'silver')
 })
 
-test('normalizeAppearance falls back per-field and rejects non-objects', () => {
+test('normalizeAppearance keeps unpicked fields unspecified and rejects non-objects (FINAL-FIX R-07)', () => {
+  // Policy change, pinned deliberately: unpicked and unknown ids used
+  // to fall back to a baked-in default look (black / long-straight /
+  // coat / boots), which then outranked the reader's own written
+  // description in the portrait prompt — the R-07 field failure. They
+  // now normalise to null = unspecified, and only an explicit pick
+  // produces a descriptor.
   assert.equal(normalizeAppearance(null), null)
   assert.equal(normalizeAppearance('look'), null)
   const look = normalizeAppearance({ hairColor: 'not-a-color', hairStyle: 'ponytail', faceNote: 'y'.repeat(90) })
-  assert.equal(look.hairColor, 'black', 'unknown ids fall back to the default, never lose the profile')
+  assert.equal(look.hairColor, null, 'an unknown id is unspecified, never a silent default')
   assert.equal(look.hairStyle, 'ponytail')
   assert.equal(look.faceNote.length, 60)
+  const blank = normalizeAppearance({})
+  assert.deepEqual(
+    [blank.hairColor, blank.hairStyle, blank.outfit, blank.shoes, blank.face],
+    [null, null, null, null, null],
+    'a profile with nothing picked carries no look at all',
+  )
 })
 
 test('avatarAppearanceText composes the Chinese look line from real picks only', () => {
@@ -40,6 +52,26 @@ test('avatarAppearanceText composes the Chinese look line from real picks only',
   assert.equal(text, '银灰，利落短发，现代街头，运动鞋，雀斑，左耳有痣')
   const plain = avatarAppearanceText({ hairColor: 'black', hairStyle: 'long-straight', outfit: 'coat', shoes: 'boots', face: 'none', faceNote: '' })
   assert.ok(!plain.includes('无特别标记'), 'the none face pick contributes nothing')
+})
+
+test('unpicked parts contribute nothing to the look line or the prompt (FINAL-FIX R-07)', () => {
+  // The field case: a description that says 短发 with only the hair
+  // colour picked must not grow long-straight hair, a coat and boots
+  // out of untouched defaults.
+  assert.equal(avatarAppearanceText({ hairStyle: 'short' }), '利落短发')
+  assert.equal(avatarAppearanceText({}), '')
+  assert.equal(avatarAppearanceText(null), '')
+  assert.equal(avatarAppearancePrompt({}), '')
+  assert.equal(avatarAppearancePrompt(null), '')
+  const prompt = avatarAppearancePrompt({ hairStyle: 'short' })
+  assert.match(prompt, /short hair/)
+  assert.ok(!/long straight|long coat|boots/.test(prompt), 'no default garment leaks into the prompt')
+  // A profile saved WITHOUT an appearance payload validates to an
+  // all-unspecified look instead of the old defaults.
+  const { profile, error } = validateAvatarProfile({ name: '只写描述的人', description: '短发，穿旧夹克。' })
+  assert.equal(error, undefined)
+  assert.equal(profile.appearance.hairStyle, null)
+  assert.equal(avatarAppearanceText(profile.appearance), '')
 })
 
 test('avatarAppearancePrompt paints English fragments and skips the empty face', () => {

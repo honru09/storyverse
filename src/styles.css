@@ -791,6 +791,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .avatar-version{color:var(--dim);font-size:12px}
 .avatar-editor{display:flex;flex-direction:column;gap:16px;min-width:0}
 .avatar-fields{display:flex;flex-direction:column;gap:16px}
+.avatar-fields-hint{margin:0;font-size:12.5px;line-height:1.6;color:var(--ink-soft)}
 .avatar-presets{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .avatar-preset{display:flex;flex-direction:column;gap:5px;padding:13px 14px;border:1px solid var(--line);border-radius:16px;background:var(--glass);color:var(--ink);text-align:left;transition:transform var(--dur-press) var(--ease-press),border-color var(--dur-state) var(--ease-out)}
 .avatar-preset:active{transform:scale(.97)}

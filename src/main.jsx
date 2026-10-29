@@ -44,7 +44,6 @@ import {
   AVATAR_APPEARANCE_FIELDS,
   AVATAR_LIMIT,
   AVATAR_PRESETS,
-  DEFAULT_APPEARANCE,
   avatarAppearanceText,
   avatarJourneys,
   avatarPortraitState,
@@ -1244,6 +1243,11 @@ function AvatarPortrait({ avatar, getAccessToken, which = "current", className =
 function AppearanceFields({ appearance, onPick, onFaceNote, disabled = false }) {
   return (
     <div className="avatar-fields">
+      {/* Unpicked is a real choice now (FINAL-FIX R-07): a part left
+          blank follows the written description instead of a hidden
+          default. The hint says so, and tapping a picked chip again
+          clears it back to blank. */}
+      <p className="avatar-fields-hint">每一项都可以不选——不选的样子，就按你在上面写下的描述来画。再点一次已选的项可以取消。</p>
       {AVATAR_APPEARANCE_FIELDS.map((field) => (
         <div className="form-block" key={field.key}>
           <span className="field-label">{field.label}</span>
@@ -1255,7 +1259,7 @@ function AppearanceFields({ appearance, onPick, onFaceNote, disabled = false }) 
                 className={`choice-chip ${appearance[field.key] === item.id ? "active" : ""}`}
                 aria-pressed={appearance[field.key] === item.id}
                 disabled={disabled}
-                onClick={() => onPick(field.key, item.id)}
+                onClick={() => onPick(field.key, appearance[field.key] === item.id ? null : item.id)}
               >
                 {item.label}
                 {appearance[field.key] === item.id && <Icon name="check" size={13} />}
@@ -1301,7 +1305,10 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
   const seedForm = (target) => {
     setForm(target
       ? { id: target.id, name: target.name, description: target.description || "", appearance: { ...target.appearance } }
-      : { id: "", name: "", description: "", appearance: { ...DEFAULT_APPEARANCE } });
+      // A new avatar starts with NOTHING picked (FINAL-FIX R-07): the
+      // old all-defaults seed is what let untouched chips overwrite the
+      // reader's own written description.
+      : { id: "", name: "", description: "", appearance: { hairColor: null, hairStyle: null, outfit: null, shoes: null, face: null, faceNote: "" } });
     setConfirmDelete(false);
     setShowPrevious(false);
     setError("");

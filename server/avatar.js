@@ -151,6 +151,12 @@ export function buildAvatarPrompt(profile, { hasReference = false, lockPart = nu
     poster ? 'Backdrop: a poster-style graphic backdrop themed to the character\'s world and impression — bold flat colour-block shapes, graphic texture and thematic motifs. Never a plain empty background, and never a realistic photographed scene.' : '',
     poster ? 'Light and effects: strong rim light tracing the silhouette in a colour drawn from the backdrop, plus one genre effect painted into the image itself — drifting mist, electric arcs, sword-light streaks, floating embers or neon glow — matched to the character\'s world.' : '',
     'Face: the face sits in the UPPER part of the frame, fully visible, sharply detailed and clearly lit — never cropped by the frame edge, never turned fully away, never covered by hair, hands or effects.',
+    // The precedence rule for unpicked aspects (FINAL-FIX R-07): an
+    // appearance field the reader never chose is absent from this
+    // prompt — it must not be filled from any default look, and the
+    // reader's own written description (including the character name's
+    // story-config snapshot) is the only authority for it.
+    'Any aspect of the look NOT stated below — hair length or style, outfit, footwear, features — follows the character impression and any written description of this character, and nothing else: never substitute a generic default look for an unstated aspect.',
     look ? `Appearance: ${look}.` : '',
     faceNote ? `Facial detail: ${faceNote}.` : '',
     description ? `Character impression (mood and personality to express, not scenery): ${description}` : '',
