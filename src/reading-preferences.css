@@ -166,8 +166,16 @@ body:has(.page-reader[data-reader-theme="oled"]) { background: #000000; }
    that failed on the user's iPhone Safari (options looked tappable but the
    radio never changed). It stays fully transparent, so nothing renders
    differently; keyboard focus and the :checked + span styling are
-   unaffected because the input remains the span's previous sibling. */
-.reading-preference-option input, .reading-toggle-row input { position: absolute; inset: 0; z-index: 1; width: auto; height: auto; min-height: 0; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+   unaffected because the input remains the span's previous sibling.
+   The cover must be width/height:100%, NOT inset:0 with auto sizing:
+   WebKit keeps a radio/checkbox at its intrinsic size under auto sizing
+   (only Chromium stretches it), so on iOS the tap landed on the span and
+   died in label forwarding — the forwarded click reached the input but
+   WebKit fired no change and the radio never moved (READER-SETTINGS-FIX,
+   measured with real taps + elementFromPoint in WPE WebKit). Explicit
+   100% sizing gives the input a real box in every engine, so the
+   trusted tap hits the control itself and native activation fires. */
+.reading-preference-option input, .reading-toggle-row input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
 .reading-preference-option > span {
   display: flex; align-items: center; justify-content: center; gap: .4375rem; min-height: 44px; padding: .4375rem;
   border: 1px solid transparent; border-radius: .75rem; color: var(--preferences-secondary); background: var(--preferences-soft);

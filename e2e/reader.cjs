@@ -312,6 +312,69 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           await capture('directory-current');
           await close();
         });
+        // READER-SETTINGS-FIX regression (2026-10-29): every other
+        // settings check in this suite clicks the input element
+        // itself, which is exactly what a finger never touches. On
+        // WebKit the option input kept its intrinsic size under
+        // inset:0 + auto sizing, so a real tap landed on the visible
+        // span and died in label forwarding — the forwarded click
+        // reached the input but WebKit fired no change, and on the
+        // user's iPhone the whole panel was look-only. This check
+        // therefore taps the VISIBLE spans at their real coordinates
+        // and pins the hit layer: elementFromPoint on a chip must be
+        // the input itself in every engine.
+        await check('settings respond to real taps on the visible chips (WebKit forwarding regression)', async () => {
+          const realTap = async (locator) => {
+            await locator.scrollIntoViewIfNeeded();
+            const box = await locator.boundingBox();
+            assert.ok(box, 'tap target has a box');
+            const x = Math.round(box.x + box.width / 2), y = Math.round(box.y + box.height / 2);
+            if (width < 700) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y);
+            await page.waitForTimeout(300);
+            return { x, y };
+          };
+          const articleFont = () => page.locator('.reader-article').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+          const dialog = await openSettings();
+          // Font size by real tap, with the hit-layer invariant.
+          const bigSpan = dialog.locator('.reading-font-options label', { hasText: '大' }).locator('span').first();
+          const fontPoint = await realTap(bigSpan);
+          assert.equal(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, fontPoint), 'INPUT',
+            'a tap on the visible chip lands on its input, never on the span (label forwarding is dead in WebKit)');
+          assert.ok(Math.abs((await articleFont()) - fluidPx(1.25)) < 0.75, 'real tap on the 大 chip grows the prose at once');
+          assert.equal(JSON.parse(await page.evaluate(key => localStorage.getItem(key), prefKey)).fontScale, 1.25);
+          // The panel stays changeable under three reader themes in a row.
+          for (const [label, theme] of [['夜间', 'night'], ['暖色', 'warm'], ['浅色', 'light']]) {
+            await realTap(dialog.locator('.reading-theme-options label', { hasText: label }).locator('span').first());
+            assert.equal(await page.locator('.page-reader').getAttribute('data-reader-theme'), theme, `real tap switches the theme to ${theme}`);
+          }
+          // Reading mode by real tap, then another change while in page mode.
+          await realTap(dialog.locator('label', { hasText: '逐屏阅读' }).locator('span').first());
+          assert.equal(await page.locator('.page-reader').getAttribute('data-reader-mode'), 'page');
+          await realTap(dialog.locator('.reading-font-options label', { hasText: '特大' }).locator('span').first());
+          assert.ok(Math.abs((await articleFont()) - fluidPx(1.5)) < 0.75, 'font size still responds by real tap in page mode');
+          // The keep-awake switch shares the same input-cover rule.
+          const pref = () => page.evaluate(key => JSON.parse(localStorage.getItem(key)), prefKey);
+          await realTap(dialog.locator('.reading-switch'));
+          assert.equal((await pref()).keepAwake, true, 'real tap flips the keep-awake switch on');
+          await realTap(dialog.locator('.reading-switch'));
+          assert.equal((await pref()).keepAwake, false, 'real tap flips the keep-awake switch back off');
+          await close();
+          // Persistence across a chapter turn and a settings re-open.
+          const chapterNow = Number((await page.locator('.reader-status-back span').textContent()).match(/\d+/)[0]);
+          await openChrome();
+          const next = page.locator('.reader-chrome-chapter-nav', { hasText: '下一章' });
+          if (await next.isEnabled()) {
+            await next.click();
+            await page.waitForTimeout(400);
+            assert.ok(Number((await page.locator('.reader-status-back span').textContent()).match(/\d+/)[0]) > chapterNow, 'moved to the next chapter');
+            assert.ok(Math.abs((await articleFont()) - fluidPx(1.5)) < 0.75, 'the tapped font size survives the chapter turn');
+          }
+          const reopened = await openSettings();
+          assert.ok(await reopened.getByRole('radio', { name: '特大', exact: true }).isChecked(), 'the tapped preset is still selected after re-opening settings');
+          await reopened.getByRole('button', { name: '恢复默认', exact: true }).click();
+          assert.ok(Math.abs((await articleFont()) - fluidPx(1)) < 0.75, 'reset returns the prose to the default size');
+          await close();
+        });
       } catch(error) { report.failures.push({ width, error:error.stack }); console.error(error); await capture('failure').catch(()=>{}); }
       finally { await context.close(); }
     }
