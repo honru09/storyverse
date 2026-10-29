@@ -303,7 +303,7 @@ test('card intro (COVER-FIX): no synopsis → world-intro thread, no attribute s
     avatar: { name: '王兴润', appearance: '乌黑，利落短发，长风衣，皮鞋' },
     chapterCount: 10, lineStatus: 'finished',
   })
-  assert.equal(line, '王兴润，是这个世界的主角。')
+  assert.equal(line, '王兴润是这个世界的主角。')
   assert.ok(!line.includes('乌黑'), 'the appearance attribute string never tops a card')
   assert.ok(!line.includes('全 10 章'), 'the meta row already carries the chapter count')
 })
@@ -314,15 +314,20 @@ test('card intro (COVER-FIX): a serializing fallback drops its progress tail too
     avatar: { name: '王兴润', appearance: '乌黑，利落短发' },
     chapterCount: 3, lineStatus: 'serializing', storyLengthMode: 'endless',
   })
-  assert.equal(line, '王兴润，是这个世界的主角。')
+  assert.equal(line, '王兴润是这个世界的主角。')
   assert.ok(!line.includes('第 3 章'))
 })
 
-test('cover title tier (LOGIN-SKY addendum): length steps the size down, never wraps', () => {
-  assert.equal(plazaTitleTierFor('短标题一二三四五'), 'lg') // exactly 8 chars
+test('cover title tier: length steps the size down, never wraps (widened one step, FINAL-FIX N6)', () => {
+  // The old steps (lg ≤8 / md ≤14 at 18/15/12.5px) ellipsised a plain
+  // six-character title on a 390px two-column store cover. Tiers,
+  // sizes and store-cover insets moved together; the single-line rule
+  // itself is unchanged.
+  assert.equal(plazaTitleTierFor('短标题一二三四五'), 'lg') // 8 chars
+  assert.equal(plazaTitleTierFor('一二三四五六七八九十'), 'lg') // 10 chars, top of lg
   assert.equal(plazaTitleTierFor('疯狂的王兴润 · 王兴润'), 'md') // the user's real case, 12 chars
-  assert.equal(plazaTitleTierFor('一二三四五六七八九十一二三四'), 'md') // 14 chars, top of md
-  assert.equal(plazaTitleTierFor('一二三四五六七八九十一二三四五'), 'sm') // 15 chars
+  assert.equal(plazaTitleTierFor('一二三四五六七八九十一二三四五六七八'), 'md') // 18 chars, top of md
+  assert.equal(plazaTitleTierFor('一二三四五六七八九十一二三四五六七八九'), 'sm') // 19 chars
   assert.equal(plazaTitleTierFor('雾海之上的第十三座钟楼与失落的航线 · 王兴润'), 'sm') // 23 chars
   assert.equal(plazaTitleTierFor(''), 'lg')
   assert.equal(plazaTitleTierFor(undefined), 'lg')

@@ -34,6 +34,7 @@ import {
   storyDistinguisherFor,
 } from "./list-layout.js";
 import {
+  coverRequestInFlight,
   coverStateOf,
   requestCoverImage,
   shouldAutoRequestCover,
@@ -2545,11 +2546,17 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                             decoding="async"
                           />
                           <strong>{shelf.name}</strong>
+                          {/* One sublabel form for every brick (FINAL-FIX
+                              N5): the count line is always there; the
+                              默认 badge and the selected check overlay
+                              it instead of replacing it, so the grid
+                              never mixes three label grammars. */}
+                          <span className="shelf-brick-count">{shelf.templateIds.length} 种写法</span>
                           {holdsPick && !pickedTemplate
                             ? <span className="default-badge">默认</span>
                             : holdsPick
                               ? <span className="selected-mark"><Icon name="check" size={13} /></span>
-                              : !only && <span className="shelf-brick-count">{shelf.templateIds.length} 种写法</span>}
+                              : null}
                         </button>
                       </AnimatedContent>
                     );
@@ -9994,8 +10001,15 @@ function WriteDesk({ story, onUpdateStory, onNavigate }) {
           <>
             <ol className="write-chapter-list">
               {chapters.map((chapter, index) => {
-                const words = manualChapterWordCount(chapter);
                 const isCurrent = index === selected;
+                // One counting source per screen (FINAL-FIX R-16): the
+                // chapter being edited shows the editor's own live
+                // count (draftWords — the same number over the
+                // textarea), so the list and the editor can never
+                // disagree mid-autosave; other rows count their saved
+                // prose with the engine's counter, which is the same
+                // whitespace-stripped measure.
+                const words = isCurrent ? draftWords : manualChapterWordCount(chapter);
                 return (
                   <li key={chapter.id} className={`write-chapter-row ${isCurrent ? "is-current" : ""}`}>
                     <button
@@ -10076,6 +10090,28 @@ function App() {
   const account = useSyncExternalStore(authClient.subscribe, authClient.getSnapshot);
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountIntent, setAccountIntent] = useState(null);
+  // The post-login hand-off (FINAL-FIX N4): the account sheet used to
+  // stay open after a successful sign-in, swapping the login scene for
+  // the account view whose first block is the recovery-binding form —
+  // the first thing a reader saw after logging in was homework, and
+  // whatever they were doing waited behind it. When the sheet was
+  // opened while signed OUT and a user lands, it now closes itself
+  // and resumes the interrupted intent. The binding reminder is not
+  // deleted: opening the sheet while already signed in still shows it
+  // — account housekeeping lives in the account sheet, it just no
+  // longer ambushes the sign-in.
+  const accountOpenedSignedOut = useRef(false);
+  useEffect(() => {
+    if (accountOpen && !account.user) accountOpenedSignedOut.current = true;
+    if (accountOpen && account.user && accountOpenedSignedOut.current) {
+      accountOpenedSignedOut.current = false;
+      setAccountOpen(false);
+      if (accountIntent === "forge") navigate("forge");
+      setAccountIntent(null);
+    }
+    if (!accountOpen) accountOpenedSignedOut.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountOpen, account.user]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifyUnread, setNotifyUnread] = useState(0);
   useEffect(() => { void authClient.start(); return () => authClient.stop(); }, [authClient]);
@@ -10698,9 +10734,11 @@ function App() {
   }, [setLibrary]);
   const runCoverRequest = useCallback(async (id, { manual = false } = {}) => {
     const story = store.getSnapshot().library.stories.find((book) => book.id === id);
-    if (!story || coverStateOf(story).status === "pending") return;
+    // A live request is never doubled; an orphaned pending stamp
+    // (session died mid-flight, FINAL-FIX R-13) no longer blocks.
+    if (!story || coverRequestInFlight(story)) return;
     const previous = coverStateOf(story);
-    updateCoverState(id, { status: "pending" });
+    updateCoverState(id, { status: "pending", updatedAt: new Date().toISOString() });
     try {
       const { version } = await requestCoverImage({
         story,

@@ -300,7 +300,7 @@ export function plazaPublicPremise(detail, templateName = '') {
  * outline, so the one-time refresh script can bake the same text
  * into stored publications.
  */
-export const WORLD_INTRO_VERSION = 1
+export const WORLD_INTRO_VERSION = 2
 const WORLD_INTRO_ENGINE_TERMS = ['资产与负债', '因果账目', '制约', '稳定度', '数值', '参数', '提示词', '回合制', '账目制', '世界线扰动值']
 export function plazaWorldIntroFor(detail, templateName = '') {
   const world = detail?.worldName || '这个世界'
@@ -315,8 +315,18 @@ export function plazaWorldIntroFor(detail, templateName = '') {
     .filter((sentence) => !REDACTION_PLACEHOLDERS.some((marker) => sentence.includes(marker)))
     .filter((sentence) => !WORLD_INTRO_ENGINE_TERMS.some((term) => sentence.includes(term)))
   const backgroundBody = sentences.slice(0, 2).join('')
+  // When every premise sentence was filtered out (title-subject
+  // stuffing, engine terms), the background used to be the bare
+  // template sentence and nothing else — a label, not an introduction
+  // (FINAL-FIX N7, the official book's own page). The world's own
+  // catalogue description is the honest fallback: it is what the
+  // forge shows when the reader picks this world.
+  const worldDescription = !backgroundBody
+    ? (genreFor(detail?.genreId)?.description || '').trim()
+    : ''
   const background = `「${world}」——${templateName ? `${templateName}题材的世界` : '一个自成一体的世界'}。`
     + (backgroundBody && !backgroundBody.startsWith(`「${world}」`) ? backgroundBody : '')
+    + (worldDescription && !worldDescription.startsWith(`「${world}」`) ? worldDescription : '')
 
   const rules = (Array.isArray(detail?.worldBible?.rules) ? detail.worldBible.rules : [])
     .filter((rule) => typeof rule === 'string' && rule.trim())
@@ -325,7 +335,6 @@ export function plazaWorldIntroFor(detail, templateName = '') {
     .filter((rule) => !WORLD_INTRO_ENGINE_TERMS.some((term) => rule.includes(term)))
     .slice(0, 3)
 
-  const appearance = typeof detail?.avatar?.appearance === 'string' ? detail.avatar.appearance.trim() : ''
   const synopsis = typeof detail?.synopsis === 'string' ? detail.synopsis.trim() : ''
   // Bare-number beat titles (an early generation artifact) are not
   // titles at all — the composed thread must never say 故事从「3」开始.
@@ -342,7 +351,11 @@ export function plazaWorldIntroFor(detail, templateName = '') {
     const progress = status === 'serializing'
       ? `这条线还在连载，已更新到第 ${count} 章。`
       : `这条线已经完结，全 ${count} 章。`
-    thread = `${avatarName}${appearance ? `——${appearance}` : ''}，是这个世界的主角。${journey}${progress}`
+    // The avatar's appearance string never joins this sentence
+    // (FINAL-FIX N7): 「沈知遥——乌黑，长直发，长风衣…，是这个世界的主角」
+    // welded a spec sheet into the introduction. The look lives on
+    // the detail page's avatar panel; the thread names the person.
+    thread = `${avatarName}是这个世界的主角。${journey}${progress}`
   }
   return { background, rules, thread }
 }
@@ -386,8 +399,14 @@ export function plazaLineStatusFor(source) {
  */
 export function plazaTitleTierFor(title) {
   const length = [...String(title ?? '')].length
-  if (length <= 8) return 'lg'
-  if (length <= 14) return 'md'
+  // Widened one step (FINAL-FIX, designer N6): on a 390px phone the
+  // two-column store cover leaves ~137px of text width, and at the old
+  // lg size a six-character title already overflowed into an ellipsis
+  // — the single-line rule held, but ordinary titles paid for it. The
+  // tiers and the cover sizes moved together (16.5/14/12px, 12px
+  // insets on store covers): lg now covers ≤10 chars, md ≤18.
+  if (length <= 10) return 'lg'
+  if (length <= 18) return 'md'
   return 'sm'
 }
 

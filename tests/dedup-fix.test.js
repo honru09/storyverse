@@ -178,6 +178,39 @@ test('④ a serialising line reports live progress; the author synopsis leads wh
   assert.equal(withSynopsis.thread, '作者亲笔：这是一个关于讨债的故事。')
 })
 
+test('④ (FINAL-FIX N7) the thread names the person; the look never welds into it', () => {
+  const intro = plazaWorldIntroFor(geminiStyleDetail, '都市')
+  assert.ok(intro.thread.startsWith('王兴润是这个世界的主角。'), intro.thread)
+  assert.ok(!intro.thread.includes('眉眼锋利'), 'the appearance spec string stays on the avatar panel')
+  assert.ok(!intro.thread.includes('——'), 'no welded qualifier remains')
+})
+
+test('④ (FINAL-FIX N7) a fully-filtered premise falls back to the world description, not a bare label', () => {
+  // The official book's live shape: its premise sentences all open
+  // with the book's own title or carry engine terms, so the composed
+  // background used to be exactly one template sentence.
+  const officialShape = {
+    title: '沉潮港纪事',
+    genreId: 'mist',
+    worldName: '沉潮港',
+    avatar: { name: '沈知遥', appearance: '乌黑，长直发，长风衣，长靴，眼下泪痣' },
+    chapterCount: 24,
+    lineStatus: 'finished',
+    worldBible: {
+      premise: '沉潮港纪事是一个被潮水围住的世界，资产与负债决定每个人的位置。',
+      rules: ['潮汐钟响时，记忆会被改写一小段。'],
+    },
+    beats: [
+      { number: 1, title: '守夜日志与逆流的潮声', state: '开局' },
+      { number: 24, title: '终局的锁芯与倒流之潮', state: '收束' },
+    ],
+  }
+  const intro = plazaWorldIntroFor(officialShape, '玄幻')
+  assert.ok(intro.background.includes('镇上的潮汐钟会改写记忆'), intro.background)
+  assert.ok(intro.background.length > '「沉潮港」——玄幻题材的世界。'.length, 'more than the bare template sentence')
+  assert.equal(intro.thread, '沈知遥是这个世界的主角。故事从「守夜日志与逆流的潮声」开始，一路走到「终局的锁芯与倒流之潮」。这条线已经完结，全 24 章。')
+})
+
 test('④ the refresh script composes from the stored record alone', () => {
   const record = {
     ...geminiStyleDetail,

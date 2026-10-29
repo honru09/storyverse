@@ -428,6 +428,14 @@ select{appearance:auto}
 @media(max-width:759px){
   /* On phones the band docks onto the bottom nav's top edge. */
   .forge-actions{bottom:calc(62px + env(safe-area-inset-bottom))}
+  /* The nav below the band is translucent by design, so forge content
+     scrolling underneath it ghosted through the blur — most visibly a
+     genre-brick label row showing through behind the band (FINAL-FIX,
+     designer walk). The band grows a solid skirt over exactly the nav
+     strip on this page only: the forge never trades under the nav,
+     and the nav's own buttons sit above the skirt (z-30 > z-14), so
+     nothing is covered that anyone needs to tap. */
+  .forge-actions::after{content:"";position:absolute;left:0;right:0;top:100%;height:calc(62px + env(safe-area-inset-bottom));background:var(--surface-solid)}
 }
 @media(max-width:360px){
   /* The page inset drops to 16px here; the band's bleed follows it
@@ -876,9 +884,10 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .plaza-card-cover{position:relative;display:block;width:100%;aspect-ratio:16/8;padding:0;border:0;background:#0a1430;text-align:left;overflow:hidden}
 .plaza-card-cover .world-art{position:absolute;inset:0}
 .plaza-cover-shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(6,13,31,0) 30%,rgba(6,13,31,.78));pointer-events:none}
-.plaza-cover-title{position:absolute;left:16px;right:16px;bottom:12px;color:#fff;font-size:18px;font-weight:700;text-shadow:0 2px 14px rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.plaza-cover-title.is-md{font-size:15px}
-.plaza-cover-title.is-sm{font-size:12.5px}
+.plaza-cover-title{position:absolute;left:16px;right:16px;bottom:12px;color:#fff;font-size:16.5px;font-weight:700;text-shadow:0 2px 14px rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plaza-cover-title.is-md{font-size:14px}
+.plaza-cover-title.is-sm{font-size:12px}
+.store-book-card .plaza-cover-title{left:12px;right:12px}
 .plaza-card-body{padding:14px 16px 16px}
 /* The card byline (COVER-FIX): the author's place — an editorial
    line, not a pill. Letterspaced label, the author's display name,
@@ -889,8 +898,8 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .plaza-byline-link{display:inline-flex;align-items:baseline;gap:8px;min-width:0;padding:0;border:0;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .plaza-byline-link.is-static{cursor:default}
 .plaza-byline-label{flex-shrink:0;font-size:11px;font-weight:650;letter-spacing:.22em;color:var(--dim)}
-.plaza-byline-name{font-size:15px;font-weight:700;white-space:nowrap}
-.plaza-byline-handle{font-size:12.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plaza-byline-name{font-size:15px;font-weight:700;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.plaza-byline-handle{flex:none;font-size:12.5px;color:var(--dim);white-space:nowrap}
 .plaza-byline-official{flex-shrink:0;padding:2px 7px;border-radius:999px;background:rgba(246,178,62,.18);color:#f6b23e;font-size:10.5px;font-weight:700;letter-spacing:.06em}
 .plaza-byline-chevron{flex-shrink:0;align-self:center;color:var(--dim)}
 .plaza-author{color:var(--dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -899,7 +908,8 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .plaza-chip{padding:4px 11px;border:1px solid var(--line);border-radius:999px;background:var(--glass-2);font-size:12px;font-weight:600;color:var(--ink)}
 .plaza-chip.is-mint{color:#7de8c3;border-color:rgba(125,232,195,.35)}
 .plaza-chip-x{color:var(--dim);font-size:12px}
-.plaza-meta{display:flex;align-items:center;gap:9px;margin-top:10px;color:var(--dim);font-size:12.5px}
+.plaza-meta{display:flex;align-items:center;gap:9px;margin-top:10px;color:var(--dim);font-size:12.5px;flex-wrap:wrap}
+.plaza-meta>*{flex:none;white-space:nowrap}
 .plaza-badge{padding:2px 8px;border-radius:6px;background:rgba(125,232,195,.14);color:#7de8c3;font-size:11px;font-weight:700}
 .plaza-badge.is-official{background:rgba(246,178,62,.18);color:#f6b23e}
 .plaza-card-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
@@ -1763,6 +1773,8 @@ button.settings-row{cursor:pointer}
 .plaza-post-action.is-liked svg{fill:currentColor}
 .plaza-more{display:flex;justify-content:center;margin-top:22px}
 .plaza-share-row{display:flex;align-items:center;gap:12px;margin-top:14px;color:var(--dim);font-size:13px}
+.plaza-share-row .btn{flex:none}
+.plaza-share-row>span{min-width:0}
 
 .plaza-thread{margin-top:13px;padding-top:13px;border-top:1px solid var(--line)}
 .plaza-thread-empty{margin:0;color:var(--dim-2);font-size:13.5px}

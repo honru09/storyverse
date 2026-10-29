@@ -19,18 +19,39 @@ export function coverStateOf(story) {
 }
 
 /**
+ * How long a `pending` cover stamp still counts as a live request
+ * (FINAL-FIX, attached item R-13): the stamp is persisted with the
+ * story, so a session that died mid-request used to leave the book in
+ * 「生成中」 forever — no surface ever asked again. Ten minutes is far
+ * beyond any real painting round-trip; past it the stamp is an orphan
+ * and the book may ask once more (the per-session attempt guard in the
+ * shell still bounds that to once per session).
+ */
+export const COVER_PENDING_STALE_MS = 10 * 60 * 1000
+
+export function coverRequestInFlight(story, now = Date.now()) {
+  const state = coverStateOf(story)
+  if (state.status !== 'pending') return false
+  const stamped = Date.parse(state.updatedAt || '')
+  return Number.isFinite(stamped) && now - stamped < COVER_PENDING_STALE_MS
+}
+
+/**
  * The automatic request fires once a Gemini-written story has its first
  * chapter: that is when a world bible premise exists to paint from. Demo
  * and locally seeded stories never ask (their worlds are the shared art's
  * home), read-only copies never ask, and a failed attempt stays failed
  * until the reader explicitly re-rolls — a background retry loop must
- * never burn the daily cover allowance on its own.
+ * never burn the daily cover allowance on its own. An ORPHANED pending
+ * stamp (older than COVER_PENDING_STALE_MS) asks again like `none`.
  */
-export function shouldAutoRequestCover(story) {
+export function shouldAutoRequestCover(story, now = Date.now()) {
   if (!story || story.readOnly) return false
   if (story.engine !== 'gemini') return false
   if (!Array.isArray(story.chapters) || story.chapters.length < 1) return false
-  return coverStateOf(story).status === 'none'
+  const status = coverStateOf(story).status
+  if (status === 'none') return true
+  return status === 'pending' && !coverRequestInFlight(story, now)
 }
 
 export function withCoverState(story, patch) {
