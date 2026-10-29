@@ -228,6 +228,64 @@ test('merge restores the reading state into an empty device and reports unavaila
   assert.equal(result.status, 'unavailable')
 })
 
+test('continuous changes cannot starve the debounced flush (FINAL-FIX R-02)', async () => {
+  // The field failure: a chapter lands, the reader keeps turning pages
+  // (every change re-observes), and the old reset-on-every-observe
+  // debounce never fired — closing the page a minute later lost the
+  // book. The timer is now armed by the FIRST pending change and held.
+  let now = 0
+  let timerSeq = 0
+  const timers = new Map()
+  const setTimeoutImpl = (fn, ms) => { const id = ++timerSeq; timers.set(id, { fn, at: now + ms }); return id }
+  const clearTimeoutImpl = (id) => { timers.delete(id) }
+  const advance = (ms) => {
+    now += ms
+    for (const [id, entry] of [...timers]) if (entry.at <= now) { timers.delete(id); entry.fn() }
+  }
+  const uploads = []
+  const fetchImpl = async (url, options = {}) => {
+    if ((options.method || 'GET') === 'PUT' && url.startsWith('/api/library/stories/')) {
+      uploads.push(JSON.parse(options.body).story.id)
+      return Response.json({ story: {} })
+    }
+    return Response.json({})
+  }
+  const sync = createCloudSync({
+    getAccessToken: async () => 't', fetchImpl, storage: new MemoryStorage(), debounceMs: 1000,
+    setTimeoutImpl, clearTimeoutImpl,
+  })
+  const story = localStory('fresh-book', T1)
+  sync.observe({ uid: 'uid-starve', stories: [story], readReadingStateRaw: () => null })
+  // Keep changing the library every 400ms — well inside the debounce.
+  for (let step = 0; step < 10; step += 1) {
+    advance(400)
+    sync.observe({ uid: 'uid-starve', stories: [{ ...story, title: `改动 ${step}` }], readReadingStateRaw: () => null })
+    await Promise.resolve()
+  }
+  advance(1000)
+  await sync.flush('uid-starve')
+  assert.deepEqual(uploads, ['fresh-book'], 'the flush fired despite continuous changes')
+  assert.equal(sync.pendingCount('uid-starve'), 0)
+})
+
+test('flushOnHide drains pending work as keepalive requests (FINAL-FIX R-02)', async () => {
+  const calls = []
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url, options })
+    return Response.json({})
+  }
+  const sync = createCloudSync({ getAccessToken: async () => 't', fetchImpl, storage: new MemoryStorage(), debounceMs: 60_000 })
+  const story = localStory('closing-book', T1)
+  sync.observe({ uid: 'uid-hide', stories: [story], readReadingStateRaw: () => null })
+  assert.equal(sync.pendingCount('uid-hide'), 1)
+  sync.flushOnHide('uid-hide')
+  await sync.flush('uid-hide')
+  const put = calls.find((call) => call.options.method === 'PUT')
+  assert.ok(put, 'the owed upload was attempted on hide')
+  assert.equal(put.options.keepalive, true, 'the hide flush rides keepalive so the browser finishes it during unload')
+  assert.equal(sync.pendingCount('uid-hide'), 0)
+})
+
 test('observe writes changes through and keeps failures pending for the next trigger', async () => {
   let failing = true
   const storage = new MemoryStorage()

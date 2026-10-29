@@ -106,13 +106,14 @@ export function splitStoryForUpload(story) {
   return { mode: 'chunked', head, chunks }
 }
 
-export async function uploadStory({ story, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+export async function uploadStory({ story, getAccessToken, fetchImpl = globalThis.fetch, keepalive = false } = {}) {
   const plan = splitStoryForUpload(story)
   const path = `/api/library/stories/${encodeURIComponent(story.id)}`
   const json = { 'Content-Type': 'application/json' }
+  const beacon = keepalive ? { keepalive: true } : {}
   if (plan.mode === 'single') {
     await libraryRequest(path, {
-      getAccessToken, fetchImpl, method: 'PUT', headers: json, body: JSON.stringify({ story }),
+      getAccessToken, fetchImpl, method: 'PUT', headers: json, body: JSON.stringify({ story }), ...beacon,
     })
     return { mode: 'single' }
   }
@@ -120,28 +121,29 @@ export async function uploadStory({ story, getAccessToken, fetchImpl = globalThi
     const chunk = plan.chunks[index]
     await libraryRequest(`${path}/chunks/${index}`, {
       getAccessToken, fetchImpl, method: 'PUT', headers: json,
-      body: JSON.stringify({ from: chunk.from, chapters: chunk.chapters }),
+      body: JSON.stringify({ from: chunk.from, chapters: chunk.chapters }), ...beacon,
     })
   }
   await libraryRequest(`${path}/head`, {
     getAccessToken, fetchImpl, method: 'PUT', headers: json,
-    body: JSON.stringify({ story: plan.head, chunkCount: plan.chunks.length }),
+    body: JSON.stringify({ story: plan.head, chunkCount: plan.chunks.length }), ...beacon,
   })
   return { mode: 'chunked', chunks: plan.chunks.length }
 }
 
-export async function deleteCloudStory({ storyId, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+export async function deleteCloudStory({ storyId, getAccessToken, fetchImpl = globalThis.fetch, keepalive = false } = {}) {
   await libraryRequest(`/api/library/stories/${encodeURIComponent(storyId)}`, {
-    getAccessToken, fetchImpl, method: 'DELETE',
+    getAccessToken, fetchImpl, method: 'DELETE', ...(keepalive ? { keepalive: true } : {}),
   })
   return { ok: true }
 }
 
-export async function uploadReadingState({ state, updatedAt, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+export async function uploadReadingState({ state, updatedAt, getAccessToken, fetchImpl = globalThis.fetch, keepalive = false } = {}) {
   await libraryRequest('/api/library/reading-state', {
     getAccessToken, fetchImpl, method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ state, updatedAt }),
+    ...(keepalive ? { keepalive: true } : {}),
   })
   return { ok: true }
 }
@@ -240,24 +242,24 @@ export function createCloudSync({
     try { storage?.setItem(`${SYNCED_KEY_PREFIX}${active.uid}`, JSON.stringify(active.synced)) } catch { /* retried next time */ }
   }
 
-  async function flushPending(active) {
+  async function flushPending(active, { keepalive = false } = {}) {
     for (const id of [...active.pendingDeletes]) {
       try {
-        await deleteCloudStory({ storyId: id, getAccessToken, fetchImpl })
+        await deleteCloudStory({ storyId: id, getAccessToken, fetchImpl, keepalive })
         active.pendingDeletes.delete(id)
         delete active.synced[id]
       } catch { /* stays pending for the next trigger */ }
     }
     for (const [id, story] of [...active.pendingUploads]) {
       try {
-        await uploadStory({ story, getAccessToken, fetchImpl })
+        await uploadStory({ story, getAccessToken, fetchImpl, keepalive })
         active.pendingUploads.delete(id)
         active.synced[id] = story.updatedAt
       } catch { /* stays pending for the next trigger */ }
     }
     if (active.readingDirty) {
       try {
-        await uploadReadingState({ state: active.readingDirty.state, updatedAt: active.readingDirty.updatedAt, getAccessToken, fetchImpl })
+        await uploadReadingState({ state: active.readingDirty.state, updatedAt: active.readingDirty.updatedAt, getAccessToken, fetchImpl, keepalive })
         active.readingDirty = null
       } catch { /* stays dirty for the next trigger */ }
     }
@@ -265,7 +267,15 @@ export function createCloudSync({
   }
 
   function schedule(active) {
-    if (active.timer !== null) clearTimeoutImpl(active.timer)
+    // First-change wins (FINAL-FIX R-02): the timer is armed by the
+    // first pending change and is NOT re-armed by later ones. The old
+    // reset-on-every-observe behaviour let a reader who keeps turning
+    // pages (every turn re-observes) starve the flush indefinitely —
+    // the book then existed only locally when the page closed a minute
+    // after generation, and a fresh session found an empty shelf.
+    // Pending work is read from the maps at flush time, so nothing is
+    // lost by holding the earlier deadline.
+    if (active.timer !== null) return
     active.timer = setTimeoutImpl(() => {
       active.timer = null
       void enqueue(() => flushPending(active))
@@ -390,6 +400,25 @@ export function createCloudSync({
         }
         await flushPending(active)
       })
+    },
+
+    /**
+     * The page is going away (FINAL-FIX R-02): drain what this account
+     * still owes with keepalive requests — the only fetches a browser
+     * guarantees to finish during unload. A body over the platform's
+     * keepalive cap may still be refused; it stays pending, and the
+     * next session's merge re-plans any local-only book from the cloud
+     * index, so the debt is never silently dropped either way.
+     */
+    flushOnHide(uid) {
+      if (session?.uid !== uid) return
+      const active = session
+      if (!active.pendingUploads.size && !active.pendingDeletes.size && !active.readingDirty) return
+      if (active.timer !== null) {
+        clearTimeoutImpl(active.timer)
+        active.timer = null
+      }
+      void enqueue(() => flushPending(active, { keepalive: true }))
     },
 
     pendingCount(uid) {
