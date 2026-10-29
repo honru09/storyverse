@@ -98,11 +98,11 @@
      that value measured 3.84:1 on this ground; #878a92 measures
      5.43:1, because weak text that carries information must clear
      4.5:1 (BH-02's lesson, SALT ruling 2). Brand accents unchanged. */
-  --bg:#111214; --bg-2:#17181b;
+  --bg:#101012; --bg-2:#151619;
   --ink:#eae9e4; --dim:#9e9fa6; --dim-2:#878a92;
   --cyan:#6ee7ff; --violet:#a78bfa; --pink:#f0a6ff; --mint:#7dffce; --amber:#ffd166; --danger:#ff8f8f;
   --glass:rgba(255,255,255,.05); --glass-2:rgba(255,255,255,.09);
-  --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.22);
+  --line:rgba(255,255,255,.10); --line-2:rgba(255,255,255,.22);
   --surface-solid:#1c1e22; --paper-soft:#1c1e22;
   --surface:rgba(28,30,35,.72); --ink-card:#1c1e22;
   --on-ink:#eae9e4; --on-ink-muted:#9e9fa6;
@@ -118,13 +118,13 @@
   --glass-strong:rgba(255,255,255,.11); --glass-edge:rgba(255,255,255,.16); --glass-dark:#17181b;
   --shadow-flat:0 1px 3px rgba(0,0,0,.28),0 8px 20px -4px rgba(0,0,0,.38); --shadow-raised:0 4px 12px rgba(0,0,0,.40),0 20px 40px -8px rgba(0,0,0,.56);
   --rank-gold:#f5c451;
-  --topbar-bg:rgba(17,18,20,.88); --nav-bg:rgba(17,18,20,.88);
+  --topbar-bg:rgba(17,18,20,.88); --nav-bg:rgba(22,23,26,.72);
   /* SALT material tokens (§51): frosted surfaces are FEW and small —
      bars, sheets, showcase cards. Repeating list cards wear the solid
      matte (--card-solid) and never a backdrop blur (§4 discipline). */
-  --surface-card:rgba(28,30,35,.72); --surface-glass:rgba(18,20,24,.85); --surface-modal:rgba(24,26,31,.88); --surface-pill:rgba(255,255,255,.07);
-  --card-solid:#1c1e22; --card-backdrop:none; --float-solid:rgba(18,19,22,.94);
-  --shadow-card:0 1px 3px rgba(0,0,0,.28),0 8px 20px -4px rgba(0,0,0,.38); --shadow-floating:0 4px 12px rgba(0,0,0,.40),0 20px 40px -8px rgba(0,0,0,.56);
+  --surface-card:rgba(32,34,39,.78); --surface-glass:rgba(18,20,24,.85); --surface-modal:rgba(24,26,31,.88); --surface-pill:rgba(255,255,255,.07);
+  --card-solid:#202227; --card-backdrop:none; --float-solid:rgba(18,19,22,.94); --card-top-hi:rgba(255,255,255,.07);
+  --shadow-card:0 1px 2px rgba(0,0,0,.42),0 14px 34px -10px rgba(0,0,0,.55); --shadow-floating:0 4px 12px rgba(0,0,0,.40),0 20px 40px -8px rgba(0,0,0,.56);
   --shadow-glass-top:inset 0 1px 0 rgba(255,255,255,.12);
   --text-disabled:#454850;
   --blur-bar:blur(12px) saturate(1.2); --blur-card:blur(10px) saturate(1.2); --blur-modal:blur(12px) saturate(1.25); --blur-panel:blur(10px) saturate(1.2);
@@ -141,11 +141,11 @@
      #64696f measures 5.08:1 (SALT ruling 2). The hairline sits at
      .08, a step above the draft's .06 — §6.1's own warning plus the
      BH-02 lesson: borders on controls must survive bright light. */
-  --bg:#f6f5f2; --bg-2:#efece6;
+  --bg:#edeae3; --bg-2:#e6e2d9;
   --ink:#1f2124; --dim:#575b62; --dim-2:#64696f;
   --cyan:#0891b2; --violet:#7c5cd6; --pink:#d154c9; --mint:#0d9668; --amber:#b97f10; --danger:#d43a3a;
   --glass:rgba(23,24,28,.045); --glass-2:rgba(23,24,28,.08);
-  --line:rgba(24,25,27,.08); --line-2:rgba(23,24,28,.26);
+  --line:rgba(24,25,27,.09); --line-2:rgba(23,24,28,.26);
   --surface-solid:#faf9f6; --paper-soft:#faf9f6;
   --surface:rgba(255,255,255,.76); --ink-card:#faf9f6;
   --on-ink:#1f2124; --on-ink-muted:#575b62;
@@ -161,12 +161,12 @@
   --glass-strong:rgba(23,24,28,.09); --glass-edge:rgba(23,24,28,.16); --glass-dark:#efece6;
   --shadow-flat:0 1px 2px rgba(18,19,22,.03),0 6px 16px -4px rgba(18,19,22,.05); --shadow-raised:0 4px 12px rgba(18,19,22,.05),0 16px 36px -6px rgba(18,19,22,.08);
   --rank-gold:#b97f10;
-  --topbar-bg:rgba(246,245,242,.90); --nav-bg:rgba(246,245,242,.90);
+  --topbar-bg:rgba(246,245,242,.90); --nav-bg:rgba(255,255,255,.66);
   /* SALT material tokens (§51) — same discipline as black: frost is
      for bars, sheets and showcase cards; list cards wear --card-solid. */
-  --surface-card:rgba(255,255,255,.76); --surface-glass:rgba(246,245,242,.88); --surface-modal:rgba(250,249,246,.92); --surface-pill:rgba(24,25,27,.05);
-  --card-solid:#faf9f6; --card-backdrop:none; --float-solid:rgba(248,249,251,.95);
-  --shadow-card:0 1px 2px rgba(18,19,22,.03),0 6px 16px -4px rgba(18,19,22,.05); --shadow-floating:0 4px 12px rgba(18,19,22,.05),0 16px 36px -6px rgba(18,19,22,.08);
+  --surface-card:rgba(255,255,255,.82); --surface-glass:rgba(246,245,242,.88); --surface-modal:rgba(250,249,246,.92); --surface-pill:rgba(24,25,27,.05);
+  --card-solid:#ffffff; --card-backdrop:none; --float-solid:rgba(248,249,251,.95); --card-top-hi:rgba(255,255,255,.9);
+  --shadow-card:0 1px 2px rgba(30,27,20,.05),0 18px 44px -14px rgba(30,27,20,.16); --shadow-floating:0 4px 12px rgba(18,19,22,.05),0 16px 36px -6px rgba(18,19,22,.08);
   --shadow-glass-top:inset 0 1px 0 rgba(255,255,255,.65);
   --text-disabled:#b4b8bf;
   --blur-bar:blur(12px) saturate(1.2); --blur-card:blur(10px) saturate(1.2); --blur-modal:blur(12px) saturate(1.25); --blur-panel:blur(10px) saturate(1.2);
@@ -795,6 +795,25 @@ select{appearance:auto}
 .mobile-bottom-nav button.active svg{transform:translateY(-2px) scale(1.05)}
 .mobile-bottom-nav button:active{transform:scale(.96)}
 .mobile-bottom-nav button.active{color:var(--ink);font-weight:700}
+
+/* ——— SALT-2 显形预览 (REQ-23, SALT2.md): floating glass capsule nav,
+   frosted topbar, lifted card faces, salt section labels. Scoped to
+   the black / white shell themes only — aurora chrome is frozen and
+   keeps its own rules above. The 16px / 18px bar blurs are this
+   batch's explicit override of the §51 12px blur cap (the salt-theme
+   guard reports them; that failure is expected for this preview).
+   The capsule's inner bottom padding drops the safe-area term the
+   docked bar carried: the capsule's own bottom offset already
+   includes env(safe-area-inset-bottom), counting it twice would
+   double the inset. ——— */
+html[data-shell-theme='black'] .mobile-bottom-nav,html[data-shell-theme='white'] .mobile-bottom-nav{left:16px;right:16px;bottom:calc(10px + env(safe-area-inset-bottom));padding:6px 8px 8px;border:1px solid var(--line);border-radius:999px;background:var(--nav-bg);backdrop-filter:blur(18px) saturate(1.35);-webkit-backdrop-filter:blur(18px) saturate(1.35);box-shadow:var(--shadow-floating)}
+html.is-lite-gpu[data-shell-theme='black'] .mobile-bottom-nav,html.is-lite-gpu[data-shell-theme='white'] .mobile-bottom-nav{background:var(--float-solid);backdrop-filter:none;-webkit-backdrop-filter:none}
+html[data-shell-theme='black'] .topbar,html[data-shell-theme='white'] .topbar{backdrop-filter:blur(16px) saturate(1.3);-webkit-backdrop-filter:blur(16px) saturate(1.3);box-shadow:inset 0 1px 0 var(--card-top-hi)}
+html.is-lite-gpu[data-shell-theme='black'] .topbar,html.is-lite-gpu[data-shell-theme='white'] .topbar{backdrop-filter:none;-webkit-backdrop-filter:none}
+html[data-shell-theme='black'] .page:not(.page-reader),html[data-shell-theme='white'] .page:not(.page-reader){padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+html[data-shell-theme='black'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card),html[data-shell-theme='white'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card){box-shadow:var(--shadow-card),inset 0 1px 0 var(--card-top-hi);border-radius:var(--radius-surface)}
+html[data-shell-theme='black'] .store-book-card .plaza-card-cover,html[data-shell-theme='white'] .store-book-card .plaza-card-cover{box-shadow:var(--shadow-card);border-radius:var(--radius-surface)}
+html[data-shell-theme='black'] :is(.plaza-feed-heading h2,.plaza-section-title,.section-heading h2),html[data-shell-theme='white'] :is(.plaza-feed-heading h2,.plaza-section-title,.section-heading h2){font-size:11px;line-height:1.5;letter-spacing:.14em;color:var(--dim-2)}
 input[type="checkbox"]{accent-color:var(--cyan)}
 /* Hover (fine pointers only) */
 @media(hover:hover) and (pointer:fine){
