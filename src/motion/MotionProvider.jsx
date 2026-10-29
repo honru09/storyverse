@@ -27,6 +27,18 @@ function useMedia(query) {
 
 export function MotionProvider({ children }) {
   useEffect(() => observeInputModality(), []);
+  // SALT §51 (draft §4.1): mirror the policy's low-power verdict onto
+  // <html> so the stylesheet can trade backdrop blur for the near-solid
+  // float colour on weak GPUs.
+  useEffect(() => {
+    const lite =
+      (Number.isFinite(navigator.deviceMemory) &&
+        navigator.deviceMemory <= 4) ||
+      (Number.isFinite(navigator.hardwareConcurrency) &&
+        navigator.hardwareConcurrency <= 4);
+    document.documentElement.classList.toggle("is-lite-gpu", lite);
+    return () => document.documentElement.classList.remove("is-lite-gpu");
+  }, []);
   const [enabled, setEnabled] = useState(() => {
     try {
       return localStorage.getItem(PREFERENCE_KEY) !== "off";

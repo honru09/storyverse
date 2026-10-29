@@ -73,7 +73,7 @@ test('shelf is a wooden bookcase: planks, standing books, ribbons, printed title
   assert.match(css, /\.wood-book-cover\{[^}]*aspect-ratio:3\/4/)
   assert.match(css, /\.wood-book-ribbon\{[^}]*writing-mode:vertical-rl[^}]*clip-path:polygon/)
   assert.match(css, /\.wood-book-spine\{/)
-  assert.match(css, /\.wood-book\.is-pulled\{[^}]*translateY\(-14px\) scale\(1\.07\)/)
+  assert.match(css, /\.wood-book\.is-pulled\{[^}]*translateY\(-14px\) scale\(1\.04\)/) // SALT §51: pull scale trimmed 1.07 → 1.04
   assert.doesNotMatch(css, /\.sw-shelf-grid\{/)
   // BH-14 (2026-10-29): a cell is one natural book slot (the capacity
   // share of the row), never flex-grown — a lone book must not balloon

@@ -734,8 +734,20 @@ function MobileBottomNav({ view, onNavigate, onOpenProfile }) {
     { id: "forge", label: "造世", icon: "plus" },
     { id: "store", label: "书城", icon: "book" },
   ];
+  // SALT §51 (motion #10): the sliding indicator marks the ACTIVE peer
+  // slot. Views outside the four slots (home, detail, reader…) park it
+  // invisible — peer switches are indicator + content fade only.
+  const slotIndex = { plaza: 0, forge: 1, store: 2, profile: 3 }[view];
   return (
     <nav className="mobile-bottom-nav" aria-label="移动端主导航">
+      <span
+        className="nav-indicator"
+        aria-hidden="true"
+        style={{
+          transform: `translateX(${(slotIndex ?? 0) * 100}%)`,
+          opacity: slotIndex === undefined ? 0 : 1,
+        }}
+      />
       {items.map((item) => (
         <button
           type="button"
@@ -796,6 +808,41 @@ function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, dr
     ? storyLengthModeOf(activeStory) === "endless" && !isManuallyFinished(activeStory)
     : false;
   const otherStories = stories.filter((story) => story.id !== activeStory?.id);
+  // SALT §51 (motion #7): resume-hero parallax. The art layer trails
+  // the scroll at a 0.15 ratio, clamped to ±12px inside its 16px bleed;
+  // writes happen only inside rAF and only while the hero is on screen.
+  // The motion policy (data-motion="off" on the shell) and
+  // prefers-reduced-motion both leave the layer parked at rest.
+  const heroSceneRef = useRef(null);
+  useEffect(() => {
+    const scene = heroSceneRef.current;
+    if (!scene) return undefined;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return undefined;
+    let raf = 0;
+    let parked = false;
+    const update = () => {
+      raf = 0;
+      if (scene.closest(".app-shell")?.dataset.motion === "off") {
+        if (!parked) { scene.style.transform = ""; parked = true; }
+        return;
+      }
+      parked = false;
+      const hero = scene.parentElement;
+      const rect = hero.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) return;
+      const shift = Math.max(-12, Math.min(12, (window.innerHeight / 2 - (rect.top + rect.height / 2)) * 0.15));
+      scene.style.transform = `translate3d(0, ${shift.toFixed(1)}px, 0)`;
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [activeStory?.id]);
 
   return (
     <div className="page page-home page-enter">
@@ -804,7 +851,7 @@ function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, dr
         {!account.user && <button className="home-account-link" onClick={onOpenAccount}>登录 / 注册<Icon name="chevron" size={14}/></button>}
       </div>
       <section className={`home-hero ${activeStory ? "has-story" : "first-story"}`}>
-        <div className="hero-scene">
+        <div className="hero-scene" ref={heroSceneRef}>
           <StoryCover story={activeStory} genreId={genre.id} sources={coverSources(activeStory)} eager sizes="(min-width: 1200px) 1050px, 100vw" getAccessToken={() => authClient.getAccessToken()} authSignal={account.status} />
         </div>
         <div className="hero-copy">

@@ -9,10 +9,17 @@
    reading themes (reading-preferences.css) are a separate system. */
 :root{
   --w-mist:#6ee7ff; --w-cultivation:#7dffce; --w-neon:#a78bfa; --w-city:#ffd166; --w-court:#ff8fab; --w-frontier:#7dd3fc; --w-custom:#f0a6ff;
-  /* Motion tokens (DESIGN.md §5). */
+  /* Motion tokens (DESIGN.md §5; SALT §51 retune). SALT ruling: every
+     spring in the shell is critically/over-damped (ζ ≥ 1) — the user's
+     iron rule is "springs do not rebound". CSS beziers are how springs
+     are expressed here, so the press/pop curves lost their overshoot
+     control points (1.4 / 1.8): a y > 1 control point IS a rebound.
+     The physics table (k/d/m, ζ-audited) lives in DESIGN §51. */
   --dur-press:120ms; --dur-state:180ms; --dur-pop:450ms; --dur-ripple:1000ms; --dur-check:450ms;
   --dur-rise:550ms; --dur-page:320ms; --dur-sheet:240ms; --dur-shimmer:1600ms;
-  --ease-out:cubic-bezier(.22,1,.36,1); --ease-pop:cubic-bezier(.34,1.8,.4,1); --ease-press:cubic-bezier(.2,.9,.3,1.4); --ease-drawer:cubic-bezier(.32,.72,0,1);
+  --dur-tab:240ms; --dur-fade:160ms;
+  --ease-out:cubic-bezier(.22,1,.36,1); --ease-pop:cubic-bezier(.25,1,.35,1); --ease-press:cubic-bezier(.2,.9,.3,1); --ease-drawer:cubic-bezier(.32,.72,0,1);
+  --ease-spring:cubic-bezier(.3,1,.4,1);
   /* Legacy aliases — var() chains only, so they follow the active theme. */
   --canvas:var(--bg); --paper:var(--bg);
   /* Soft-ink text alias. BUGHUNT-FIX (BH-02): this used to point at
@@ -26,7 +33,9 @@
      near-black and disappears on the art. These two values are fixed
      across all three themes, like .story-cover-pending-chip's. */
   --on-art:#f5f7ff; --on-art-dim:rgba(216,226,250,.82);
-  --radius-control:12px; --radius-selection:14px; --radius-card:18px; --radius-surface:22px; --radius-sheet:26px; --radius-nav:16px;
+  /* Radius ladder (SALT §51, draft §1.2): sheet 24 / large card 16 /
+     standard card 16 / control 10 / media 8 — outer = inner + padding. */
+  --radius-control:10px; --radius-selection:12px; --radius-card:16px; --radius-surface:20px; --radius-sheet:24px; --radius-nav:16px; --radius-media:8px;
   /* List-surface type scale (DESIGN.md §2 list tokens, 2026-10-27). */
   --type-page-tab:22px; --type-page-tab-idle:20px;
   --type-chip:15px;
@@ -60,35 +69,59 @@
   --shadow-flat:0 8px 28px rgba(2,6,20,.35); --shadow-raised:0 18px 48px rgba(2,6,20,.5);
   --rank-gold:#f5c451;
   --topbar-bg:rgba(6,13,31,.93); --nav-bg:rgba(6,13,31,.94);
+  /* SALT §51 name aliases ONLY: the new material token names resolve
+     to aurora's own pre-SALT values, so shared components can speak
+     the new names while this palette stays value-for-value frozen. */
+  --surface-card:var(--glass); --surface-glass:var(--surface); --surface-modal:var(--surface-solid); --surface-pill:var(--glass-2);
+  --card-solid:var(--glass); --card-backdrop:blur(12px); --float-solid:var(--glass-dark);
+  --shadow-card:var(--shadow-flat); --shadow-floating:var(--shadow-raised);
+  --shadow-glass-top:inset 0 0 0 transparent;
+  --text-disabled:var(--dim-2);
+  --blur-bar:blur(16px) saturate(1.35); --blur-card:blur(12px); --blur-modal:blur(12px); --blur-panel:blur(14px);
   --profile-bg:var(--bg); --profile-ink:var(--ink); --profile-ink-strong:var(--ink); --profile-ink-2:var(--ink); --profile-dim:var(--dim); --profile-dim-2:var(--dim); --profile-faint:var(--dim-2); --profile-placeholder:var(--dim-2); --medal-bg:var(--glass-2); --profile-panel:var(--surface-solid); --profile-chip:var(--glass-2); --profile-edge:var(--line); --profile-edge-2:var(--glass-edge); --profile-shadow:var(--shadow-flat); --profile-pill-bg:var(--ink); --profile-pill-ink:var(--bg); --profile-action-bg:var(--ink); --pill-ink:var(--bg); --profile-pill-off:var(--glass-2); --profile-collage-bg:var(--glass-dark); --profile-stack-bg:var(--glass-2); --sheet-bg:var(--surface-solid); --sheet-ink:var(--ink); --sheet-dim:var(--dim); --sheet-line:var(--line);
   color-scheme:dark;
 }
-/* —— Black (new default): near-black ground, monochrome chrome, brand
-   accents kept for actions and the star map. Profile tokens reproduce the
-   DESIGN §15 refero values exactly (#000 ground / #1b1b20 panel / #26262b
-   hairline / #f4f4f2 ink / #a7a7ad sub). —— */
+/* —— Black (new default): SALT §51 matte charcoal ground, monochrome
+   chrome, brand accents kept for actions and the star map. (Pre-SALT
+   this block reproduced the DESIGN §15 refero values — #000 ground /
+   #1b1b20 panel / #f4f4f2 ink; §51 supersedes those values, the
+   profile token ALIASES below are unchanged and follow.) —— */
 :root[data-shell-theme='black']{
-  --bg:#050507; --bg-2:#0b0b0e;
-  --ink:#f2f2f0; --dim:#a7a7ad; --dim-2:#71717a;
+  /* SALT §51: matte charcoal ground (no dead black), warm salt-white
+     ink ramp. L3 (--dim-2) is BRIGHTENED past the draft's #6e717a —
+     that value measured 3.84:1 on this ground; #878a92 measures
+     5.43:1, because weak text that carries information must clear
+     4.5:1 (BH-02's lesson, SALT ruling 2). Brand accents unchanged. */
+  --bg:#111214; --bg-2:#17181b;
+  --ink:#eae9e4; --dim:#9e9fa6; --dim-2:#878a92;
   --cyan:#6ee7ff; --violet:#a78bfa; --pink:#f0a6ff; --mint:#7dffce; --amber:#ffd166; --danger:#ff8f8f;
   --glass:rgba(255,255,255,.05); --glass-2:rgba(255,255,255,.09);
-  --line:rgba(255,255,255,.10); --line-2:rgba(255,255,255,.22);
-  --surface-solid:#101014; --paper-soft:#101014;
-  --surface:rgba(16,16,20,.86); --ink-card:#17171c;
-  --on-ink:#f2f2f0; --on-ink-muted:#a7a7ad;
-  --secondary-text:#a7a7ad; --muted:#a7a7ad; --muted-2:#71717a; --muted-text:#a7a7ad;
-  --line-strong:rgba(255,255,255,.22); --divider:rgba(255,255,255,.10);
+  --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.22);
+  --surface-solid:#1c1e22; --paper-soft:#1c1e22;
+  --surface:rgba(28,30,35,.72); --ink-card:#1c1e22;
+  --on-ink:#eae9e4; --on-ink-muted:#9e9fa6;
+  --secondary-text:#9e9fa6; --muted:#9e9fa6; --muted-2:#878a92; --muted-text:#9e9fa6;
+  --line-strong:rgba(255,255,255,.22); --divider:rgba(255,255,255,.06);
   --action:#6ee7ff; --action-hover:#a5ecff; --action-ink:#06122b;
   --soft-indigo:rgba(255,255,255,.07);
   --selected-text:#a5ecff; --selected-surface:rgba(110,231,255,.13); --selected-border:#6ee7ff;
-  --thread:#f0a6ff; --thread-soft:rgba(240,166,255,.13); --thread-ink:#f2f2f0;
+  --thread:#f0a6ff; --thread-soft:rgba(240,166,255,.13); --thread-ink:#eae9e4;
   --error:#ff8f8f; --success:#7dffce;
   --surface-tide:rgba(125,255,206,.09); --surface-peach:rgba(240,166,255,.09);
   --coral:#ff8fab; --coral-soft:rgba(255,143,171,.13);
-  --glass-strong:rgba(255,255,255,.11); --glass-edge:rgba(255,255,255,.16); --glass-dark:#0b0b0e;
-  --shadow-flat:0 8px 28px rgba(0,0,0,.5); --shadow-raised:0 18px 48px rgba(0,0,0,.62);
+  --glass-strong:rgba(255,255,255,.11); --glass-edge:rgba(255,255,255,.16); --glass-dark:#17181b;
+  --shadow-flat:0 1px 3px rgba(0,0,0,.28),0 8px 20px -4px rgba(0,0,0,.38); --shadow-raised:0 4px 12px rgba(0,0,0,.40),0 20px 40px -8px rgba(0,0,0,.56);
   --rank-gold:#f5c451;
-  --topbar-bg:rgba(5,5,7,.94); --nav-bg:rgba(5,5,7,.94);
+  --topbar-bg:rgba(17,18,20,.88); --nav-bg:rgba(17,18,20,.88);
+  /* SALT material tokens (§51): frosted surfaces are FEW and small —
+     bars, sheets, showcase cards. Repeating list cards wear the solid
+     matte (--card-solid) and never a backdrop blur (§4 discipline). */
+  --surface-card:rgba(28,30,35,.72); --surface-glass:rgba(18,20,24,.85); --surface-modal:rgba(24,26,31,.88); --surface-pill:rgba(255,255,255,.07);
+  --card-solid:#1c1e22; --card-backdrop:none; --float-solid:rgba(18,19,22,.94);
+  --shadow-card:0 1px 3px rgba(0,0,0,.28),0 8px 20px -4px rgba(0,0,0,.38); --shadow-floating:0 4px 12px rgba(0,0,0,.40),0 20px 40px -8px rgba(0,0,0,.56);
+  --shadow-glass-top:inset 0 1px 0 rgba(255,255,255,.12);
+  --text-disabled:#454850;
+  --blur-bar:blur(12px) saturate(1.2); --blur-card:blur(10px) saturate(1.2); --blur-modal:blur(12px) saturate(1.25); --blur-panel:blur(10px) saturate(1.2);
   --profile-bg:var(--bg); --profile-ink:var(--ink); --profile-ink-strong:var(--ink); --profile-ink-2:var(--ink); --profile-dim:var(--dim); --profile-dim-2:var(--dim); --profile-faint:var(--dim-2); --profile-placeholder:var(--dim-2); --medal-bg:var(--glass-2); --profile-panel:var(--surface-solid); --profile-chip:var(--glass-2); --profile-edge:var(--line); --profile-edge-2:var(--glass-edge); --profile-shadow:var(--shadow-flat); --profile-pill-bg:var(--ink); --profile-pill-ink:var(--bg); --profile-action-bg:var(--ink); --pill-ink:var(--bg); --profile-pill-off:var(--glass-2); --profile-collage-bg:var(--glass-dark); --profile-stack-bg:var(--glass-2); --sheet-bg:var(--surface-solid); --sheet-ink:var(--ink); --sheet-dim:var(--dim); --sheet-line:var(--line);
   color-scheme:dark;
 }
@@ -96,16 +129,22 @@
    brand hues for contrast; the same layer physics (hairlines + soft
    shadows) at light values. —— */
 :root[data-shell-theme='white']{
-  --bg:#f7f7f4; --bg-2:#efefec;
-  --ink:#17181c; --dim:#5d6068; --dim-2:#8b8e96;
+  /* SALT §51: warm salt-white ground (the user's reference look),
+     charcoal ink ramp — never dead white / dead black. L3 (--dim-2)
+     is DARKENED past the draft's #6e737b (4.38:1 on this ground):
+     #64696f measures 5.08:1 (SALT ruling 2). The hairline sits at
+     .08, a step above the draft's .06 — §6.1's own warning plus the
+     BH-02 lesson: borders on controls must survive bright light. */
+  --bg:#f6f5f2; --bg-2:#efece6;
+  --ink:#1f2124; --dim:#575b62; --dim-2:#64696f;
   --cyan:#0891b2; --violet:#7c5cd6; --pink:#d154c9; --mint:#0d9668; --amber:#b97f10; --danger:#d43a3a;
   --glass:rgba(23,24,28,.045); --glass-2:rgba(23,24,28,.08);
-  --line:rgba(23,24,28,.12); --line-2:rgba(23,24,28,.26);
-  --surface-solid:#ffffff; --paper-soft:#ffffff;
-  --surface:rgba(255,255,255,.88); --ink-card:#ffffff;
-  --on-ink:#17181c; --on-ink-muted:#5d6068;
-  --secondary-text:#5d6068; --muted:#5d6068; --muted-2:#8b8e96; --muted-text:#5d6068;
-  --line-strong:rgba(23,24,28,.26); --divider:rgba(23,24,28,.12);
+  --line:rgba(24,25,27,.08); --line-2:rgba(23,24,28,.26);
+  --surface-solid:#faf9f6; --paper-soft:#faf9f6;
+  --surface:rgba(255,255,255,.76); --ink-card:#faf9f6;
+  --on-ink:#1f2124; --on-ink-muted:#575b62;
+  --secondary-text:#575b62; --muted:#575b62; --muted-2:#64696f; --muted-text:#575b62;
+  --line-strong:rgba(23,24,28,.26); --divider:rgba(24,25,27,.06);
   --action:#0891b2; --action-hover:#0e7490; --action-ink:#ffffff;
   --soft-indigo:rgba(23,24,28,.06);
   --selected-text:#0e7490; --selected-surface:rgba(8,145,178,.12); --selected-border:#0891b2;
@@ -113,10 +152,18 @@
   --error:#d43a3a; --success:#0d9668;
   --surface-tide:rgba(13,150,104,.10); --surface-peach:rgba(213,84,201,.08);
   --coral:#e0526e; --coral-soft:rgba(224,82,110,.12);
-  --glass-strong:rgba(23,24,28,.09); --glass-edge:rgba(23,24,28,.16); --glass-dark:#efefec;
-  --shadow-flat:0 8px 28px rgba(23,24,28,.10); --shadow-raised:0 18px 48px rgba(23,24,28,.16);
+  --glass-strong:rgba(23,24,28,.09); --glass-edge:rgba(23,24,28,.16); --glass-dark:#efece6;
+  --shadow-flat:0 1px 2px rgba(18,19,22,.03),0 6px 16px -4px rgba(18,19,22,.05); --shadow-raised:0 4px 12px rgba(18,19,22,.05),0 16px 36px -6px rgba(18,19,22,.08);
   --rank-gold:#b97f10;
-  --topbar-bg:rgba(247,247,244,.95); --nav-bg:rgba(247,247,244,.94);
+  --topbar-bg:rgba(246,245,242,.90); --nav-bg:rgba(246,245,242,.90);
+  /* SALT material tokens (§51) — same discipline as black: frost is
+     for bars, sheets and showcase cards; list cards wear --card-solid. */
+  --surface-card:rgba(255,255,255,.76); --surface-glass:rgba(246,245,242,.88); --surface-modal:rgba(250,249,246,.92); --surface-pill:rgba(24,25,27,.05);
+  --card-solid:#faf9f6; --card-backdrop:none; --float-solid:rgba(248,249,251,.95);
+  --shadow-card:0 1px 2px rgba(18,19,22,.03),0 6px 16px -4px rgba(18,19,22,.05); --shadow-floating:0 4px 12px rgba(18,19,22,.05),0 16px 36px -6px rgba(18,19,22,.08);
+  --shadow-glass-top:inset 0 1px 0 rgba(255,255,255,.65);
+  --text-disabled:#b4b8bf;
+  --blur-bar:blur(12px) saturate(1.2); --blur-card:blur(10px) saturate(1.2); --blur-modal:blur(12px) saturate(1.25); --blur-panel:blur(10px) saturate(1.2);
   --profile-bg:var(--bg); --profile-ink:var(--ink); --profile-ink-strong:var(--ink); --profile-ink-2:var(--ink); --profile-dim:var(--dim); --profile-dim-2:var(--dim); --profile-faint:var(--dim-2); --profile-placeholder:var(--dim-2); --medal-bg:var(--glass-2); --profile-panel:var(--surface-solid); --profile-chip:var(--glass-2); --profile-edge:var(--line); --profile-edge-2:var(--glass-edge); --profile-shadow:var(--shadow-flat); --profile-pill-bg:var(--ink); --profile-pill-ink:var(--bg); --profile-action-bg:var(--ink); --pill-ink:var(--bg); --profile-pill-off:var(--glass-2); --profile-collage-bg:var(--glass-dark); --profile-stack-bg:var(--glass-2); --sheet-bg:var(--surface-solid); --sheet-ink:var(--ink); --sheet-dim:var(--dim); --sheet-line:var(--line);
   color-scheme:light;
 }
@@ -131,7 +178,15 @@ html.theme-switching body::after{content:"";position:fixed;inset:0;z-index:190;b
 @keyframes theme-veil{from{opacity:.5}to{opacity:0}}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior-y:none}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-variant-numeric:tabular-nums}
+/* SALT §51 type discipline (draft §3.2): CJK punctuation squeezes to
+   half-width at line edges, strict line breaking, CJK/Latin auto-space
+   in prose surfaces. The reader page is excluded — its typography is
+   the reading-preferences system's own. Chips/tabs/toolbars opt OUT
+   of autospacing (draft §3.2: never inside a label). Unsupported
+   engines ignore these properties, so they are safe to declare. */
+.page:not(.page-reader),.notify-panel,.profile-edit-sheet,.generation-card,.intervention-card{text-spacing-trim:space-first;line-break:strict;text-autospace:normal}
+.stage-chip,.choice-chip,.trait-chip,.notify-tab,.mobile-bottom-nav button,.store-filters button,.hero-actions .button{text-autospace:no-autospace}
 button{font:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
 button:disabled{cursor:not-allowed}
 :focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
@@ -145,7 +200,7 @@ button:disabled{cursor:not-allowed}
    space, paint, or intercept taps. */
 .keepalive-view{display:contents}
 .keepalive-view[hidden]{display:none}
-.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(10px + env(safe-area-inset-top)) 20px 10px;background:var(--topbar-bg);border-bottom:1px solid var(--line);backdrop-filter:blur(16px) saturate(1.35);-webkit-backdrop-filter:blur(16px) saturate(1.35)}
+.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;background:var(--topbar-bg);border-bottom:1px solid var(--line);backdrop-filter:var(--blur-bar);-webkit-backdrop-filter:var(--blur-bar)}
 .brand-mark{display:flex;align-items:center;gap:9px;padding:4px;border:0;background:transparent;color:var(--ink);text-align:left}
 .brand-glyph{display:grid;place-items:center;width:36px;height:36px}
 .brand-glyph svg{width:36px;height:36px;filter:drop-shadow(0 0 10px rgba(110,231,255,.35))}
@@ -158,7 +213,7 @@ button:disabled{cursor:not-allowed}
    TOPBAR-POLISH cluster it replaces; the account face, motion toggle
    and shelf segments that shared it have moved (profile tab / 主页
    设置 / profile shelf), and their rules are retired with them. */
-.topbar-actions{display:flex;align-items:center;gap:2px;padding:2px;border:1px solid var(--line);border-radius:999px;background:var(--glass);backdrop-filter:blur(10px) saturate(1.3);-webkit-backdrop-filter:blur(10px) saturate(1.3)}
+.topbar-actions{display:flex;align-items:center;gap:2px;padding:2px;border:1px solid var(--line);border-radius:999px;background:var(--glass);backdrop-filter:var(--blur-card);-webkit-backdrop-filter:var(--blur-card)}
 .topbar-actions .account-entry{min-width:44px;min-height:44px;padding:4px 9px;border:0;border-radius:999px;background:transparent;color:var(--ink)}
 .topbar-bell{position:relative;display:grid;place-items:center;min-width:44px;min-height:44px;padding:4px;border:0;border-radius:999px;background:transparent;color:var(--ink)}
 .topbar-bell-badge{position:absolute;top:1px;right:0;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#e5484d;color:#fff;font-size:10.5px;font-weight:700;line-height:18px;text-align:center;pointer-events:none}
@@ -166,7 +221,7 @@ button:disabled{cursor:not-allowed}
 .motion-toggle,.icon-button{display:grid;place-items:center;min-width:44px;min-height:44px;border:1px solid transparent;border-radius:var(--radius-nav);background:transparent;color:var(--ink);transition:background-color var(--dur-state) var(--ease-out),transform var(--dur-press) var(--ease-press)}
 .motion-toggle[aria-pressed="false"]{color:var(--dim-2)}
 .sidebar{display:none}
-.page{width:min(100%,1240px);margin:0 auto;padding:24px 20px calc(84px + env(safe-area-inset-bottom))}
+.page{width:min(100%,1240px);margin:0 auto;padding:24px 16px calc(84px + env(safe-area-inset-bottom))}
 /* Fill mode must stay `backwards`, never `both`: page-in animates
    transform, and a forwards fill keeps the finished animation's
    transform value applied forever (engines report it as an identity
@@ -182,6 +237,52 @@ button:disabled{cursor:not-allowed}
    (opacity 1, no transform) the moment the 320ms entry finishes. */
 .page-enter{animation:page-in var(--dur-page) var(--ease-out) backwards}
 @keyframes page-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+/* ——— SALT §51 motion set (draft §2 as ruled) ———
+   Tab-peer switches (ruling 5): the four bottom-bar peers plus home
+   and the own-profile page cross-FADE only — no slide, no rise; the
+   sliding indicator in the bar carries the spatial story. Hierarchy
+   pushes (reader, detail, merge, write…) keep page-in's rise. */
+.app-shell[data-view='home'] .page-enter,.app-shell[data-view='plaza'] .page-enter,.app-shell[data-view='forge'] .page-enter,.app-shell[data-view='store'] .page-enter,.app-shell[data-view='profile'] .page-enter{animation:view-fade var(--dur-fade) var(--ease-out) backwards}
+@keyframes view-fade{from{opacity:0}to{opacity:1}}
+/* Resume hero (motion #7): the art layer bleeds 16px past the frame
+   so the rAF parallax in Home (≤ ±12px at a 0.15 ratio) never exposes
+   an edge; the cover itself breathes at a 6s period, scale ≤ 1.025.
+   Both die with the motion policy (below) and reduced-motion. */
+.home-hero .hero-scene{inset:-16px}
+.hero-scene .story-cover{animation:hero-breathe 6s cubic-bezier(.45,.05,.55,.95) infinite alternate}
+@keyframes hero-breathe{from{transform:scale(1)}to{transform:scale(1.025)}}
+/* Like (motion #8): the one sanctioned micro-overshoot — implemented
+   as keyframes, not a spring, so the ζ ≥ 1 spring rule is untouched.
+   Press dips to .82, a single peak at 1.18, settle; a ring sheds. */
+.plaza-post-action{position:relative}
+.plaza-post-action.is-liked svg{animation:like-pop 380ms var(--ease-out)}
+.plaza-post-action.is-liked::after{content:"";position:absolute;inset:0;border-radius:999px;border:1.5px solid #ff4d6d;opacity:0;pointer-events:none;animation:like-ring 380ms var(--ease-out)}
+@keyframes like-pop{0%{transform:scale(.82)}45%{transform:scale(1.18)}100%{transform:scale(1)}}
+@keyframes like-ring{0%{transform:scale(.6);opacity:.7}100%{transform:scale(1.3);opacity:0}}
+/* 換一批 (motion #9): a fresh batch of trait chips rises in with a
+   20ms stagger (60ms total); remounting on new keys is the trigger. */
+.trait-chip{animation:trait-in 260ms var(--ease-out) backwards}
+.trait-chip:nth-child(2){animation-delay:20ms}
+.trait-chip:nth-child(3){animation-delay:40ms}
+@keyframes trait-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+/* God-mode inspiration fragments ride the same swap-in (the batch is
+   redrawn per god-mode entry, so a fresh set rises in each time). */
+.god-form .stage-chip{animation:trait-in 260ms var(--ease-out) backwards}
+.god-form .stage-chip:nth-child(2){animation-delay:20ms}
+.god-form .stage-chip:nth-child(3){animation-delay:40ms}
+.god-form .stage-chip:nth-child(4){animation-delay:60ms}
+/* Avatar stage sheen: one slow light pass across the portrait frame
+   every 7s, mostly at rest — showcase polish, kept faint on purpose. */
+.avatar-frame::after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 32%,rgba(255,255,255,.13) 48%,transparent 64%);transform:translateX(-120%);animation:stage-sheen 7s ease-in-out infinite;pointer-events:none}
+@keyframes stage-sheen{0%,55%{transform:translateX(-120%)}85%,100%{transform:translateX(120%)}}
+/* Lite-GPU degradation (draft §4.1): weak devices drop the frost to
+   the near-solid float colour instead of paying for backdrop blur. */
+html.is-lite-gpu .topbar,html.is-lite-gpu .mobile-bottom-nav,html.is-lite-gpu .app-shell>.sidebar{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--float-solid)}
+html.is-lite-gpu .plaza-panel,html.is-lite-gpu .plaza-publish-card,html.is-lite-gpu .plaza-continue-card,html.is-lite-gpu .avatar-stage,html.is-lite-gpu .protagonist-form,html.is-lite-gpu .ability-list,html.is-lite-gpu .merge-controls,html.is-lite-gpu .home-draft-row,html.is-lite-gpu .sw-toast{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--card-solid)}
+/* The motion policy switch freezes the whole SALT set. */
+.app-shell[data-motion="off"] .nav-indicator{transition:none}
+.app-shell[data-motion="off"] .mobile-bottom-nav button svg{transition:none}
+.app-shell[data-motion="off"] .hero-scene .story-cover,.app-shell[data-motion="off"] .avatar-frame::after,.app-shell[data-motion="off"] .trait-chip,.app-shell[data-motion="off"] .god-form .stage-chip,.app-shell[data-motion="off"] .plaza-post-action.is-liked svg,.app-shell[data-motion="off"] .plaza-post-action.is-liked::after{animation:none}
 .button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:50px;padding:12px 20px;border-radius:999px;font-weight:700;font-size:15px;border:1px solid transparent;position:relative;overflow:hidden;transition:transform var(--dur-press) var(--ease-press),box-shadow var(--dur-state) var(--ease-out),background-color var(--dur-state) var(--ease-out),border-color var(--dur-state) var(--ease-out),filter var(--dur-state) var(--ease-out)}
 .button:active:not(:disabled){transform:scale(.97)}
 .button:disabled{opacity:.45}
@@ -195,7 +296,7 @@ button:disabled{cursor:not-allowed}
 .back-button{color:var(--dim)}
 .mini-reset{min-height:36px;padding-block:4px;font-size:13px}
 .section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
-.section-heading h2{margin:0;font-size:21px;font-weight:750;letter-spacing:-.01em}
+.section-heading h2{margin:0;font-size:18px;line-height:26px;font-weight:650;letter-spacing:0}
 .page-caption{margin:8px 0 0;color:var(--dim);font-size:14px;line-height:1.7}
 .world-art{display:block;width:100%;height:100%;overflow:hidden;background:#0a1430}
 .world-art img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}
@@ -230,7 +331,7 @@ button:disabled{cursor:not-allowed}
 .resume-position{color:var(--on-art);font-weight:650}
 .home-section{margin-top:34px}
 .library-sync-note{margin:14px 2px 0;font-size:12.5px;line-height:1.55;color:var(--ink-soft)}
-.home-draft-row{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:58px;margin-top:16px;padding:12px 17px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);color:var(--ink);text-align:left;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.home-draft-row{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:58px;margin-top:16px;padding:12px 17px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--surface-card);color:var(--ink);text-align:left;backdrop-filter:var(--blur-card);-webkit-backdrop-filter:var(--blur-card);box-shadow:var(--shadow-glass-top)}
 .home-draft-row>span{flex:1;min-width:0}
 .home-draft-row b,.home-draft-row strong{display:block;font-size:14px;font-weight:650}
 .home-draft-row small{display:block;margin-top:4px;color:var(--dim);font-size:12px}
@@ -249,10 +350,10 @@ button:disabled{cursor:not-allowed}
 .wood-shelf::before{left:0;border-radius:10px 0 0 10px;box-shadow:inset -3px 0 5px rgba(0,0,0,.5)}
 .wood-shelf::after{right:0;border-radius:0 10px 10px 0;box-shadow:inset 3px 0 5px rgba(0,0,0,.5)}
 .wood-shelf-books{display:flex;align-items:flex-end;gap:14px;padding:0 6px}
-.wood-book{position:relative;flex:1 1 0;min-width:0;max-width:190px;padding:0;border:0;background:none;color:var(--ink);cursor:pointer;transform:rotate(var(--tilt,0deg));transform-origin:50% 100%;transition:transform .26s var(--ease-out)}
+.wood-book{position:relative;flex:1 1 0;min-width:0;max-width:190px;padding:0;border:0;background:none;color:var(--ink);cursor:pointer;transform:rotate(var(--tilt,0deg));transform-origin:50% 100%;transition:transform 160ms var(--ease-out)}
 .wood-book::after{content:"";position:absolute;left:5%;right:1%;bottom:-6px;height:11px;border-radius:50%;background:radial-gradient(50% 100% at 50% 0,rgba(0,0,0,.55),transparent 72%);z-index:-1}
 .wood-book.is-leaning{transform:rotate(calc(var(--tilt,0deg) + 6deg))}
-.wood-book.is-pulled{transform:rotate(0deg) translateY(-14px) scale(1.07);z-index:3}
+.wood-book.is-pulled{transform:rotate(0deg) translateY(-14px) scale(1.04);z-index:3}
 .wood-book-cover{display:block;position:relative;aspect-ratio:3/4;border-radius:3px 7px 7px 3px;overflow:hidden;background:#0a1430;box-shadow:0 14px 18px -10px rgba(0,0,0,.65),0 3px 7px rgba(0,0,0,.42);transition:box-shadow var(--dur-state) var(--ease-out)}
 .wood-book.is-pulled .wood-book-cover{box-shadow:0 30px 34px -14px rgba(0,0,0,.75),0 8px 14px rgba(0,0,0,.45)}
 .wood-book-cover::before{content:"";position:absolute;top:0;left:10px;right:4px;height:3px;border-radius:0 0 2px 2px;background:linear-gradient(180deg,rgba(255,250,235,.9),rgba(255,250,235,.28));z-index:2}
@@ -437,7 +538,7 @@ select{appearance:auto}
      opaque, full-bleed and edge-to-edge; the capsule survives as the
      button inside it. Bricks scroll behind a solid surface, and the
      page's bottom padding lets the last row clear the band entirely. */
-  .forge-actions{position:sticky;bottom:0;z-index:14;margin-inline:-20px;padding:10px 20px calc(10px + env(safe-area-inset-bottom));border:0;border-top:1px solid var(--line);border-radius:0;background:var(--surface-solid);box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+  .forge-actions{position:sticky;bottom:0;z-index:14;margin-inline:-16px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));border:0;border-top:1px solid var(--line);border-radius:0;background:var(--surface-solid);box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
   .forge-main{padding-bottom:12px}
 }
 @media(min-width:620px) and (max-width:1049px){
@@ -545,9 +646,12 @@ select{appearance:auto}
 .rank-cat{color:var(--cyan)}
 .rank-rest{color:var(--dim)}
 .book-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px 12px;margin-top:26px}
-.book-card{display:block;padding:0;border:0;background:none;color:var(--ink);text-align:left;animation:card-rise var(--dur-rise) var(--ease-out) both}
-.book-grid .book-card:nth-child(2){animation-delay:90ms}.book-grid .book-card:nth-child(3){animation-delay:180ms}.book-grid .book-card:nth-child(4){animation-delay:270ms}.book-grid .book-card:nth-child(5){animation-delay:360ms}.book-grid .book-card:nth-child(6){animation-delay:450ms}.book-grid .book-card:nth-child(7){animation-delay:540ms}.book-grid .book-card:nth-child(8){animation-delay:630ms}
-@keyframes card-rise{from{opacity:0;transform:translateY(14px);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}
+.book-card{display:block;padding:0;border:0;background:none;color:var(--ink);text-align:left;animation:card-rise 240ms var(--ease-out) both}
+/* SALT §51 (motion #5): stagger is 30ms steps with the TOTAL capped
+   at 180ms — item 7+ move together. The old rise animated a blur
+   filter, which §4 forbids (transform/opacity only). */
+.book-grid .book-card:nth-child(2){animation-delay:30ms}.book-grid .book-card:nth-child(3){animation-delay:60ms}.book-grid .book-card:nth-child(4){animation-delay:90ms}.book-grid .book-card:nth-child(5){animation-delay:120ms}.book-grid .book-card:nth-child(6){animation-delay:150ms}.book-grid .book-card:nth-child(n+7){animation-delay:180ms}
+@keyframes card-rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 .book-cover{position:relative;aspect-ratio:3/4;padding:0;border:1px solid var(--line);border-radius:var(--radius-cover-list);overflow:hidden;background:#0a1430;isolation:isolate;transition:transform var(--dur-press) var(--ease-press),box-shadow var(--dur-state) var(--ease-out),border-color var(--dur-state) var(--ease-out)}
 .book-cover .world-art{position:absolute;inset:0;z-index:-2}
 .book-cover::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,transparent 46%,rgba(6,13,31,.88))}
@@ -566,7 +670,7 @@ select{appearance:auto}
 .merge-picker{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;min-width:0}
 .merge-picker .field-label{margin:0}
 .merge-line-list{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;min-width:0}
-.merge-line-card{display:flex;align-items:center;gap:12px;width:100%;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);color:var(--ink);text-align:left;cursor:pointer}
+.merge-line-card{display:flex;align-items:center;gap:12px;width:100%;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--card-solid);color:var(--ink);text-align:left;cursor:pointer}
 .merge-line-card.active{border-color:var(--cyan)}
 .merge-line-thumb{width:44px;height:56px;flex-shrink:0;overflow:hidden;border-radius:4px 6px 6px 4px}
 .merge-line-thumb .art-frame,.merge-line-thumb .world-art{width:100%;height:100%}
@@ -632,7 +736,7 @@ select{appearance:auto}
 .merge-result b{font-size:16px;overflow-wrap:anywhere}
 .merge-result>button{display:inline-flex;align-items:center;gap:7px;margin-left:auto;flex-shrink:0;min-height:46px;padding:10px 16px;border:0;border-radius:999px;background:linear-gradient(120deg,#38bdf8,#818cf8);color:#06122b;font-weight:700}
 /* Grouped surfaces */
-.protagonist-form,.ability-list,.merge-controls{border:1px solid var(--line);border-radius:var(--radius-surface);background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:var(--shadow-flat)}
+.protagonist-form,.ability-list,.merge-controls{border:1px solid var(--line);border-radius:var(--radius-surface);background:var(--surface-card);backdrop-filter:var(--blur-card);-webkit-backdrop-filter:var(--blur-card);box-shadow:var(--shadow-card),var(--shadow-glass-top)}
 .protagonist-form{padding:21px 18px}
 .ability-list{overflow:hidden}
 /* Dialogs, share, library tools */
@@ -665,15 +769,21 @@ select{appearance:auto}
 .sw-empty-icon{display:grid;place-items:center;width:58px;height:58px;border:1px solid var(--line);border-radius:18px;background:var(--glass);color:var(--cyan)}
 .sw-empty-page h1{margin:0;font-size:clamp(1.5rem,6vw,2rem);font-weight:800}
 .sw-empty-page p{margin:0;color:var(--dim);font-size:14px;line-height:1.75}
-.sw-storage-warning{display:flex;align-items:center;gap:9px;margin:14px 20px 0;padding:12px 14px;border:1px solid rgba(255,209,102,.4);border-radius:var(--radius-control);background:rgba(255,209,102,.08);color:var(--amber);font-size:13px;line-height:1.6}
+.sw-storage-warning{display:flex;align-items:center;gap:9px;margin:14px 16px 0;padding:12px 14px;border:1px solid rgba(255,209,102,.4);border-radius:var(--radius-control);background:rgba(255,209,102,.08);color:var(--amber);font-size:13px;line-height:1.6}
 .sw-storage-warning button{margin-left:auto;flex-shrink:0;min-height:36px;padding:5px 8px;border:0;background:none;color:var(--amber);font-weight:700}
 /* IMPORT-DAYLIGHT: the toast face follows the shell theme; it used to
    be a hardcoded deep-teal pill carrying theme ink. */
-.sw-toast{position:fixed;left:16px;right:16px;bottom:calc(80px + env(safe-area-inset-bottom));z-index:40;display:flex;align-items:center;gap:9px;padding:13px 16px;border:1px solid var(--line);border-radius:999px;background:var(--surface-solid);color:var(--ink);font-size:13px;font-weight:600;box-shadow:var(--shadow-raised);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);animation:toast-in var(--dur-sheet) var(--ease-drawer) both}
+.sw-toast{position:fixed;left:16px;right:16px;bottom:calc(80px + env(safe-area-inset-bottom));z-index:40;display:flex;align-items:center;gap:9px;padding:13px 16px;border:1px solid var(--line);border-radius:999px;background:var(--surface-modal);color:var(--ink);font-size:13px;font-weight:600;box-shadow:var(--shadow-floating);backdrop-filter:var(--blur-modal);-webkit-backdrop-filter:var(--blur-modal);animation:toast-in var(--dur-sheet) var(--ease-drawer) both}
 .sw-toast svg{color:var(--mint);flex-shrink:0}
 @keyframes toast-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-.mobile-bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:grid;grid-template-columns:repeat(4,1fr);padding:6px 8px calc(8px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--nav-bg);backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4)}
-.mobile-bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:48px;border:0;background:transparent;color:var(--dim);font-size:var(--type-bottom-nav);font-weight:500;transition:color var(--dur-state) var(--ease-out),transform var(--dur-press) var(--ease-press)}
+.mobile-bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:grid;grid-template-columns:repeat(4,1fr);padding:6px 8px calc(8px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--nav-bg);backdrop-filter:var(--blur-bar);-webkit-backdrop-filter:var(--blur-bar)}
+/* SALT §51 tab indicator (motion table #10): a fixed-width pill that
+   only translates between slots — critically damped, never stretched.
+   Peer tab switches are indicator + content fade ONLY (ruling 5). */
+.nav-indicator{position:absolute;top:6px;left:8px;width:calc((100% - 16px)/4);height:48px;border-radius:999px;background:var(--glass-2);box-shadow:var(--shadow-glass-top);pointer-events:none;transition:transform var(--dur-tab) var(--ease-spring),opacity var(--dur-state) var(--ease-out)}
+.mobile-bottom-nav button{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:48px;border:0;background:transparent;color:var(--dim);font-size:var(--type-bottom-nav);font-weight:500;transition:color var(--dur-state) var(--ease-out),transform var(--dur-press) var(--ease-press)}
+.mobile-bottom-nav button svg{transition:transform var(--dur-tab) var(--ease-spring)}
+.mobile-bottom-nav button.active svg{transform:translateY(-2px) scale(1.05)}
 .mobile-bottom-nav button:active{transform:scale(.96)}
 .mobile-bottom-nav button.active{color:var(--ink);font-weight:700}
 input[type="checkbox"]{accent-color:var(--cyan)}
@@ -725,7 +835,7 @@ input[type="checkbox"]{accent-color:var(--cyan)}
 }
 @media(min-width:1050px){
   .app-shell{display:flex}
-  .app-shell>.sidebar{display:flex;flex-direction:column;width:88px;flex:0 0 88px;position:sticky;top:0;height:100dvh;padding:18px 10px;background:var(--topbar-bg);border-right:1px solid var(--line);backdrop-filter:blur(16px) saturate(1.35);-webkit-backdrop-filter:blur(16px) saturate(1.35)}
+  .app-shell>.sidebar{display:flex;flex-direction:column;width:88px;flex:0 0 88px;position:sticky;top:0;height:100dvh;padding:18px 10px;background:var(--topbar-bg);border-right:1px solid var(--line);backdrop-filter:var(--blur-bar);-webkit-backdrop-filter:var(--blur-bar)}
   .sidebar .brand-mark{justify-content:center;min-height:44px}.sidebar .brand-copy,.sidebar-rule{display:none}
   .side-nav{display:grid;gap:12px;margin-top:40px}
   .side-nav-item{display:flex;flex-direction:column;align-items:center;gap:8px;min-height:72px;padding:14px 2px;border:0;border-radius:16px;background:transparent;color:var(--dim);font-size:11px;font-weight:650;transition:background-color var(--dur-state) var(--ease-out),color var(--dur-state) var(--ease-out)}
@@ -734,7 +844,7 @@ input[type="checkbox"]{accent-color:var(--cyan)}
   .mobile-bottom-nav{display:none}
   .topbar{padding-inline:44px}.page{padding-bottom:64px}
   .forge-layout{grid-template-columns:minmax(0,1fr) 250px;gap:36px}
-  .preview-panel{display:block;position:sticky;top:100px;align-self:start;padding:20px;border:1px solid var(--line);border-radius:var(--radius-surface);background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:var(--shadow-flat)}
+  .preview-panel{display:block;position:sticky;top:100px;align-self:start;padding:20px;border:1px solid var(--line);border-radius:var(--radius-surface);background:var(--surface-card);backdrop-filter:var(--blur-panel);-webkit-backdrop-filter:var(--blur-panel);box-shadow:var(--shadow-card),var(--shadow-glass-top)}
   .preview-panel h3{margin:0 0 16px;font-size:13px;color:var(--dim)}
   .preview-cover{display:flex;align-items:flex-end;position:relative;isolation:isolate;aspect-ratio:3/4;padding:20px;margin-bottom:24px;border:1px solid var(--line);border-radius:var(--radius-card);color:var(--on-ink);overflow:hidden}
   .preview-cover>.world-art{position:absolute;inset:0;z-index:-2}
@@ -828,7 +938,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 /* 化身批次：立绘舞台、部件调整、阅历与带入卡（极光玻璃口径，动效只走 transform/opacity） */
 .page-avatar{max-width:980px}
 .avatar-layout{display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:22px;align-items:start;margin-top:8px}
-.avatar-stage{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.avatar-stage{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--surface-card);backdrop-filter:var(--blur-card);-webkit-backdrop-filter:var(--blur-card);box-shadow:var(--shadow-card),var(--shadow-glass-top)}
 .avatar-frame{position:relative;width:100%;aspect-ratio:3/4;overflow:hidden;border-radius:18px;background:linear-gradient(160deg,rgba(56,189,248,.16),rgba(139,92,246,.14) 55%,rgba(6,13,31,.35))}
 .avatar-frame .avatar-portrait-img,.avatar-frame .avatar-portrait-fallback{position:absolute;inset:0;width:100%;height:100%}
 /* Face-anchored crop everywhere (BUGHUNT-FIX, BH-11): the portrait's
@@ -855,7 +965,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .avatar-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
 .avatar-journeys{margin-top:30px}
 .avatar-journey-list{display:flex;flex-direction:column;gap:10px}
-.avatar-journey{display:flex;align-items:center;gap:12px;width:100%;min-height:58px;padding:12px 17px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);color:var(--ink);text-align:left}
+.avatar-journey{display:flex;align-items:center;gap:12px;width:100%;min-height:58px;padding:12px 17px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--card-solid);color:var(--ink);text-align:left}
 .avatar-journey-main{flex:1;min-width:0}
 .avatar-journey-main b{display:block;font-size:14px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .avatar-journey-main small{display:block;margin-top:3px;color:var(--dim);font-size:12px}
@@ -872,7 +982,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .avatar-bring-empty{cursor:pointer;font-size:13.5px;color:var(--dim)}
 .avatar-collection{margin-top:6px}
 .avatar-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
-.avatar-card{display:flex;align-items:center;gap:11px;padding:11px 13px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);color:var(--ink);text-align:left;transition:transform var(--dur-press) var(--ease-press),border-color var(--dur-state) var(--ease-out)}
+.avatar-card{display:flex;align-items:center;gap:11px;padding:11px 13px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--card-solid);color:var(--ink);text-align:left;transition:transform var(--dur-press) var(--ease-press),border-color var(--dur-state) var(--ease-out)}
 .avatar-card:active{transform:scale(.98)}
 .avatar-card.active{border-color:var(--cyan)}
 .avatar-card:disabled{opacity:.55}
@@ -911,11 +1021,11 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .page-plaza{max-width:860px}
 .plaza-heading h1{margin:0;font-size:30px;letter-spacing:.01em}
 .plaza-loading{color:var(--dim);font-size:14px;margin:26px 0}
-.plaza-publish-card{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:22px;padding:18px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.plaza-publish-card{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:22px;padding:18px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--surface-card);backdrop-filter:var(--blur-card);-webkit-backdrop-filter:var(--blur-card);box-shadow:var(--shadow-glass-top)}
 .plaza-publish-card strong{display:block;font-size:16px}
 .plaza-publish-card p{margin:5px 0 0;color:var(--dim);font-size:13px;line-height:1.65}
 .plaza-publish-card .btn{flex-shrink:0}
-.plaza-mine-row{display:flex;align-items:center;gap:12px;width:100%;margin-top:12px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);color:var(--ink);text-align:left;transition:transform var(--dur-press) var(--ease-press),border-color var(--dur-state) var(--ease-out)}
+.plaza-mine-row{display:flex;align-items:center;gap:12px;width:100%;margin-top:12px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--card-solid);color:var(--ink);text-align:left;transition:transform var(--dur-press) var(--ease-press),border-color var(--dur-state) var(--ease-out)}
 .plaza-mine-row:active{transform:scale(.99)}
 .plaza-mine-row svg{color:var(--cyan);flex-shrink:0}
 .plaza-mine-row span{flex:1;min-width:0}
@@ -935,7 +1045,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .plaza-empty h3{margin:10px 0 6px;color:var(--ink);font-size:16px}
 .plaza-empty p{margin:0 auto 16px;max-width:420px;font-size:13px;line-height:1.7}
 .plaza-feed-list{display:grid;gap:18px}
-.plaza-card{border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);overflow:hidden;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.plaza-card{border:1px solid var(--line);border-radius:var(--radius-card);background:var(--card-solid);overflow:hidden;box-shadow:var(--shadow-card);backdrop-filter:var(--card-backdrop);-webkit-backdrop-filter:var(--card-backdrop)}
 .plaza-card-cover{position:relative;display:block;width:100%;aspect-ratio:16/8;padding:0;border:0;background:#0a1430;text-align:left;overflow:hidden;container-type:inline-size;--title-fit-inset:32px}
 .store-book-card .plaza-card-cover{--title-fit-inset:24px}
 .plaza-card-cover .world-art{position:absolute;inset:0}
@@ -988,7 +1098,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .plaza-detail-cover-copy h1.is-md{font-size:20px}
 .plaza-detail-cover-copy h1.is-sm{font-size:16.5px}
 .plaza-detail-cover-copy p{margin:6px 0 0;font-size:12.5px;opacity:.92}
-.plaza-panel{margin-top:14px;padding:16px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.plaza-panel{margin-top:14px;padding:16px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--surface-card);backdrop-filter:var(--blur-card);-webkit-backdrop-filter:var(--blur-card);box-shadow:var(--shadow-glass-top)}
 .plaza-panel h2{margin:0 0 10px;font-size:15.5px}
 .plaza-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .plaza-panel-heading h2{margin:0}
@@ -1080,7 +1190,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 /* My own profile as a tab page (§33 A1): in-flow inside the shell —
    the shell topbar and bottom nav stay on stage, window scroll is the
    scroller, and the page wears the shell's own padding rhythm. */
-.page-profile.is-page-form{position:relative;inset:auto;z-index:auto;width:min(100%,1240px);margin:0 auto;padding:16px 20px calc(84px + env(safe-area-inset-bottom));overflow:visible;height:auto;background:var(--bg)}
+.page-profile.is-page-form{position:relative;inset:auto;z-index:auto;width:min(100%,1240px);margin:0 auto;padding:16px 16px calc(84px + env(safe-area-inset-bottom));overflow:visible;height:auto;background:var(--bg)}
 .profile-window-grab{display:flex;justify-content:center;padding:10px 0 4px;touch-action:none;cursor:grab;flex:none}
 .profile-window-grabber{width:38px;height:4.5px;border-radius:99px;background:var(--line-2)}
 @media(min-width:760px){.profile-window-grab{display:none}}
@@ -1436,7 +1546,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .profile-avatar-stand-caption strong{display:block;font-size:16px;color:var(--profile-ink-strong)}
 
 /* Plaza reorder surfaces: continue-reading first, followed authors next. */
-.plaza-continue-card{display:flex;align-items:center;gap:12px;width:100%;margin-top:18px;padding:12px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);color:var(--ink);text-align:left;cursor:pointer;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.plaza-continue-card{display:flex;align-items:center;gap:12px;width:100%;margin-top:18px;padding:12px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--surface-card);color:var(--ink);text-align:left;cursor:pointer;backdrop-filter:var(--blur-card);-webkit-backdrop-filter:var(--blur-card);box-shadow:var(--shadow-glass-top)}
 .plaza-continue-card>svg{color:var(--dim-2);flex:none}
 .plaza-continue-cover{width:54px;height:72px;flex:none;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
 .plaza-continue-copy{flex:1;min-width:0;display:grid;gap:2px}
@@ -1520,7 +1630,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
    hold. The hero bleeds to the page edges: its negative margins match
    each form's padding (window 8px+safe/16px, page 16px/20px). */
 .profile-hero{position:relative;min-height:348px;margin:calc(-8px - env(safe-area-inset-top)) -16px 0;padding:calc(8px + env(safe-area-inset-top)) 16px 0;display:flex;flex-direction:column;overflow:hidden;background:var(--profile-collage-bg)}
-.page-profile.is-page-form .profile-hero{margin:-16px -20px 0;padding:16px 20px 0}
+.page-profile.is-page-form .profile-hero{margin:-16px -16px 0;padding:16px 16px 0}
 .profile-hero-bg{position:absolute;inset:-28px;background-size:cover;background-position:center 22%;filter:blur(26px) brightness(.52) saturate(1.08);transform:scale(1.06);z-index:0}
 .profile-hero-tint{position:absolute;inset:0;z-index:1;background:radial-gradient(90% 60% at 16% 0%,rgba(139,124,240,.22),transparent 60%),radial-gradient(70% 55% at 88% 6%,rgba(29,158,116,.15),transparent 60%)}
 .profile-hero-shade{position:absolute;inset:0;z-index:2;background:linear-gradient(180deg,color-mix(in srgb,var(--bg) 36%,transparent) 0%,transparent 32%,color-mix(in srgb,var(--bg) 52%,transparent) 66%,var(--bg) 98%)}
@@ -1675,7 +1785,7 @@ button.profile-stat{cursor:pointer}
 /* Skeleton in the new geometry (supersedes the §33 header shapes). */
 .profile-skeleton{align-items:stretch;padding-top:0}
 .profile-skeleton-hero{height:348px;margin:calc(-8px - env(safe-area-inset-top)) -16px 0;border-radius:0}
-.page-profile.is-page-form .profile-skeleton-hero{margin:-16px -20px 0}
+.page-profile.is-page-form .profile-skeleton-hero{margin:-16px -16px 0}
 .profile-skeleton-stats{height:46px;margin-top:20px;border-radius:12px}
 .profile-skeleton-action{align-self:center}
 .profile-actions .btn-pill-white{height:48px}

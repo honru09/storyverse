@@ -39,14 +39,18 @@ test('three shell themes: black default, white, and aurora preserved value-for-v
     // themes so scrolled text can no longer be read through the bar.
     '--topbar-bg:rgba(6,13,31,.93)',
   ]) assert.ok(aurora.includes(pin), `aurora keeps ${pin}`)
-  assert.ok(themeBlock('black').includes('--topbar-bg:rgba(5,5,7,.94)'), 'black topbar is opaque enough (BH-10)')
-  assert.ok(themeBlock('white').includes('--topbar-bg:rgba(247,247,244,.95)'), 'white topbar is opaque enough (BH-10)')
+  // SALT §51 supersedes the BH-10-era pins for black/white: the bars
+  // are frosted glass now, but the alpha stays high (.88/.90) so the
+  // BH-10 read-through defect cannot return; the lite-GPU fallback
+  // (--float-solid, .94/.95) covers the no-blur case.
+  assert.ok(themeBlock('black').includes('--topbar-bg:rgba(17,18,20,.88)'), 'black topbar stays unread-through (BH-10 under SALT §51)')
+  assert.ok(themeBlock('white').includes('--topbar-bg:rgba(246,245,242,.90)'), 'white topbar stays unread-through (BH-10 under SALT §51)')
   const black = themeBlock('black')
-  assert.ok(black.includes('--bg:#050507'))
+  assert.ok(black.includes('--bg:#111214'))
   assert.ok(black.includes('color-scheme:dark'))
   const white = themeBlock('white')
-  assert.ok(white.includes('--bg:#f7f7f4'))
-  assert.ok(white.includes('--ink:#17181c'))
+  assert.ok(white.includes('--bg:#f6f5f2'))
+  assert.ok(white.includes('--ink:#1f2124'))
   assert.ok(white.includes('color-scheme:light'))
   // Every theme defines the same core token names (one layout system).
   for (const token of ['--bg:', '--ink:', '--dim:', '--glass:', '--line:', '--surface:', '--action:', '--profile-bg:', '--profile-panel:', '--nav-bg:']) {

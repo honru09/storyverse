@@ -88,11 +88,14 @@ export function useSceneMotion(scope, key, selector, { quiet = false } = {}) {
       if (!animate || isKeyboardInput() || !scope.current) return;
       const targets = Array.from(scope.current.querySelectorAll(selector));
       if (!targets.length) return;
+      // SALT §51 (motion #5): entrances start from true zero opacity
+      // over a 12px rise; the stagger is capped — item 7 onwards share
+      // the 180ms mark instead of trailing in one by one.
       const entrance = gsap.from(targets, {
-        y: quiet ? 0 : 8,
-        opacity: quiet ? 0.8 : 0.65,
-        duration: quiet ? 0.14 : 0.22,
-        stagger: quiet ? 0 : 0.03,
+        y: quiet ? 0 : 12,
+        opacity: quiet ? 0.8 : 0,
+        duration: quiet ? 0.14 : 0.24,
+        delay: quiet ? 0 : (index) => Math.min(index, 6) * 0.03,
         ease: "power3.out",
         clearProps: "opacity,transform",
       });
