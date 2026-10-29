@@ -147,6 +147,7 @@
 .reading-bookmark-remove{min-height:44px;border-radius:12px;background:var(--reader-soft);font-size:.8125rem}
 .reading-bookmark-add{width:100%;min-height:48px;margin-top:16px;border-radius:14px;background:var(--reader-soft);color:var(--reader-accent);font-size:.875rem;font-weight:600}
 .reading-tools-empty{padding:24px 0;text-align:center;color:var(--reader-secondary)}
+.reading-tools-empty .empty-row-art{display:block;width:52px;height:52px;margin:0 auto 10px;border-radius:14px}
 .reading-dialog:has(.reading-preferences){max-height:min(88dvh,850px)}
 .page-forge .choice-chip,.page-forge .origin-card,.page-forge .tone-card{font-size:.875rem;line-height:1.5}
 .page-forge .ability-card small{font-size:.875rem;line-height:1.7}

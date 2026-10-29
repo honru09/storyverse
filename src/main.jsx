@@ -1096,7 +1096,10 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
         </div>
       )}
       {visibleStories.length === 0 && (
-        <p className="shelf-empty-note" role="status">书架上没有找到「{query}」。</p>
+        <div className="shelf-empty-note" role="status">
+          <img className="empty-inline-art" src="/art/empty-search-512.webp" alt="" loading="lazy" />
+          书架上没有找到「{query}」。
+        </div>
       )}
       {shelves.map((row, shelfIndex) => {
         const partial = row.length < capacity;
@@ -1479,10 +1482,12 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
                   <AvatarPortrait avatar={item} getAccessToken={getToken} />
                 </span>
                 <span className="avatar-card-copy">
-                  <b>{item.name}</b>
+                  <span className="avatar-card-name-row">
+                    <b>{item.name}</b>
+                    {item.id === mainId && <span className="avatar-main-badge">主化身</span>}
+                  </span>
                   <small>{avatarAppearanceText(item.appearance)}</small>
                 </span>
-                {item.id === mainId && <span className="avatar-main-badge">主化身</span>}
               </button>
             ))}
             <button
@@ -4349,7 +4354,12 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
         <p className="field-hint">
           条目是这本书的私有资料（导入的，或你自己写的），只在你自己的书里生效，永远不会出现在广场和分享里。常驻条目每章都带上；带关键词的条目，在章节上下文出现关键词时才注入。注入有总量上限，常驻优先。
         </p>
-        {entries.length === 0 && <p className="field-hint">还没有条目。在造世的世界一步导入世界书，或在下面自己写一条。</p>}
+        {entries.length === 0 && (
+          <div className="lorebook-empty">
+            <img className="empty-inline-art" src="/art/empty-lorebook-512.webp" alt="" loading="lazy" />
+            <p className="field-hint">还没有条目。在造世的世界一步导入世界书，或在下面自己写一条。</p>
+          </div>
+        )}
         {entries.map((entry, position) => (
           <div className="lore-entry" key={entry.id || position}>
             <div className="lore-entry-head">
@@ -5474,7 +5484,9 @@ function StoreBookCard({ book, onOpen }) {
       >
         <PublicationArtwork publication={book} genreId={genre.id} />
         <span className="plaza-cover-shade" aria-hidden="true" />
-        <span className={`plaza-cover-title is-${plazaTitleTierFor(book.title)}`}>《{book.title}》</span>
+        {/* --title-glyphs feeds the cover-fit size (BUGHUNT-FIX,
+            BH-06): glyphs = title characters + the 《》 pair. */}
+        <span className={`plaza-cover-title is-${plazaTitleTierFor(book.title)}`} style={{"--title-glyphs": [...String(book.title || "")].length + 2}}>《{book.title}》</span>
         <span className="store-card-status">{plazaLineStatusFor(book) === "serializing" ? "连载中" : "已完结"}</span>
       </button>
       <div className="store-book-body">
@@ -5561,16 +5573,20 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
   const searching = debouncedQuery.length > 0;
   return (
     <div className="page page-store page-enter">
-      <div className="store-ambient-wrap">
-        <ParticleField density="faint" />
+      {/* Store banner (BUGHUNT-FIX asset wiring): the many-worlds
+          painting heads the store and the page title rides its
+          reserved darker band — one title, on the art. */}
+      <div className="store-banner">
+        <img src="/art/banner-store-1600.webp" alt="" width="1600" height="533" />
+        <span className="store-banner-shade" aria-hidden="true" />
         <header className="store-heading">
           <h1>书城</h1>
           <button type="button" className="small-link" onClick={onPublish}>
             上架我的故事 <Icon name="send" size={17} />
           </button>
         </header>
-        <p className="page-caption">正式书目——走完的故事线在这里上架，广场上分享的也是这里的书。</p>
       </div>
+      <p className="page-caption">正式书目——走完的故事线在这里上架，广场上分享的也是这里的书。</p>
 
       <div className="store-search">
         <Icon name="search" size={17} />
@@ -5634,7 +5650,7 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
       {data === null && !error && <p className="plaza-loading" role="status">正在打开书城…</p>}
       {data !== null && !error && books.length === 0 && (
         <div className="store-empty" role="status">
-          <img className="empty-art" src="/art/empty-store-512.webp" alt="" loading="lazy" />
+          <img className="empty-art" src={searching ? "/art/empty-search-512.webp" : "/art/empty-store-512.webp"} alt="" loading="lazy" />
           <h3>{searching ? `没有搜到「${debouncedQuery}」` : "这个分类还没有上架的书"}</h3>
           <p>{searching ? "换个书名、作者名或世界名试试。" : "走完一条故事线，就能把它上架到书城。"}</p>
           <Button variant="secondary" icon="arrow" onClick={() => onNavigate("forge")}>
@@ -5950,7 +5966,7 @@ function PlazaCommentThread({ post, account, authClient, onOpenAccount, onCountC
     <div className="plaza-thread">
       {comments === null && <p className="plaza-note" role="status">正在打开评论…</p>}
       {comments !== null && comments.length === 0 && (
-        <p className="plaza-thread-empty">暂无评论，来发表第一条看法吧。</p>
+        <p className="plaza-thread-empty"><img className="empty-row-art" src="/art/empty-comments-512.webp" alt="" loading="lazy" />暂无评论，来发表第一条看法吧。</p>
       )}
       {comments !== null && comments.length > 0 && (
         <ul className="plaza-thread-list">
@@ -6319,7 +6335,10 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
       {activeStory && (
         <button type="button" className="plaza-continue-card" onClick={() => onOpenStory(activeStory.id)}>
           <span className="plaza-continue-cover">
-            <StoryCover story={activeStory} genreId={genreOf(activeStory).id} sources={coverSources(activeStory)} getAccessToken={() => authClient?.getAccessToken()} authSignal={account.status} />
+            {/* Single painting only (BUGHUNT-FIX, BH-04): the pair
+                composition is for large faces — in this 54×72 thumb
+                it tiled the same scene twice across a hard seam. */}
+            <StoryCover story={activeStory} genreId={genreOf(activeStory).id} sources={coverSources(activeStory)?.slice(0, 1)} getAccessToken={() => authClient?.getAccessToken()} authSignal={account.status} />
           </span>
           <span className="plaza-continue-copy">
             <small>继续阅读</small>
@@ -6392,7 +6411,7 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
         <Icon name="book" size={20} />
         <span>
           <strong>我的世界</strong>
-          <small>{activeStory ? `正在读《${activeStory.title}》 · ${activeSerializing ? `连载中 · 第 ${activeChapter} 章` : `第 ${activeChapter} / ${activeTotal} 章`}` : "你的书架、化身与草稿都在这里"}</small>
+          <small>{activeStory ? <>正在读《{activeStory.title}》 · {activeSerializing ? <>连载中 · <span className="mine-row-tail">第 {activeChapter} 章</span></> : <span className="mine-row-tail">第 {activeChapter} / {activeTotal} 章</span>}</> : "你的书架、化身与草稿都在这里"}</small>
         </span>
         <Icon name="chevron" size={16} />
       </button>
@@ -6632,7 +6651,7 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
               <span className="book-ratings-summary-note">读者打分</span>
             </div>
           ) : (
-            <p className="book-ratings-empty">还没有人评价这本书——读过的话，来打第一个分吧。</p>
+            <p className="book-ratings-empty"><img className="empty-row-art" src="/art/empty-ratings-512.webp" alt="" loading="lazy" />还没有人评价这本书——读过的话，来打第一个分吧。</p>
           )}
 
           {data.viewerIsAuthor ? (
@@ -7599,7 +7618,10 @@ function FriendsPanel({ authClient, onOpenProfile }) {
         <p className="profile-line-empty" role="status">正在打开好友…</p>
       ) : tab === "friends" ? (
         data.friends.length === 0 ? (
-          <p className="profile-line-empty">还没有好友。去找朋友，把认识的人加进来。</p>
+          <div>
+            <img className="empty-inline-art" src="/art/empty-friends-512.webp" alt="" loading="lazy" />
+            <p className="profile-line-empty">还没有好友。去找朋友，把认识的人加进来。</p>
+          </div>
         ) : (
           <div className="profile-connection-list">
             {data.friends.map((person) => (
@@ -7610,7 +7632,10 @@ function FriendsPanel({ authClient, onOpenProfile }) {
       ) : tab === "requests" ? (
         <>
           {data.incoming.length === 0 && data.outgoing.length === 0 && (
-            <p className="profile-line-empty">还没有好友申请。</p>
+            <div>
+              <img className="empty-inline-art" src="/art/empty-friends-512.webp" alt="" loading="lazy" />
+              <p className="profile-line-empty">还没有好友申请。</p>
+            </div>
           )}
           {data.incoming.length > 0 && (
             <div className="profile-connection-list" aria-label="收到的申请">
@@ -7682,7 +7707,10 @@ function FriendsPanel({ authClient, onOpenProfile }) {
             <p className="profile-line-empty" role="status">正在找…</p>
           ) : searchResult ? (
             searchResult.people.length === 0 ? (
-              <p className="profile-line-empty">{searchResult.mode === "email" ? "没有找到这个邮箱对应的账号。" : "没有找到符合的人，换个关键词试试。"}</p>
+              <div>
+                <img className="empty-inline-art" src="/art/empty-search-512.webp" alt="" loading="lazy" />
+                <p className="profile-line-empty">{searchResult.mode === "email" ? "没有找到这个邮箱对应的账号。" : "没有找到符合的人，换个关键词试试。"}</p>
+              </div>
             ) : (
               <div className="profile-connection-list">
                 {searchResult.people.map((person) => (
@@ -8536,7 +8564,10 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           ) : !connections ? (
             <p className="profile-line-empty" role="status">正在打开名单…</p>
           ) : connections.people.length === 0 ? (
-            <p className="profile-line-empty">{connectionsKind === "followers" ? "还没有粉丝。" : "还没有关注任何人。"}</p>
+            <div>
+              <img className="empty-inline-art" src="/art/empty-follows-512.webp" alt="" loading="lazy" />
+              <p className="profile-line-empty">{connectionsKind === "followers" ? "还没有粉丝。" : "还没有关注任何人。"}</p>
+            </div>
           ) : (
             <div className="profile-connection-list">
               {connections.people.map((person) => (
@@ -9289,9 +9320,7 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
     return (
       <div className="page page-merge page-enter">
         <div className="sw-empty-page">
-          <div className="sw-empty-icon">
-            <Icon name="git" size={25} />
-          </div>
+          <img className="empty-art" src="/art/empty-fusion-512.webp" alt="" loading="lazy" />
           <h1>先有你的故事。</h1>
           <p>再与另一个主角相遇，开启独立的新书。</p>
           <Button icon="arrow" onClick={() => onNavigate("forge")}>
@@ -9993,6 +10022,7 @@ function WriteDesk({ story, onUpdateStory, onNavigate }) {
       <section className="write-chapters" aria-label="章节列表">
         {chapters.length === 0 ? (
           <div className="plaza-empty" role="status">
+            <img className="empty-art" src="/art/empty-write-512.webp" alt="" loading="lazy" />
             <h3>还没有章节</h3>
             <p>第一章从一句话开始就行——草稿自动保存，写错了随时改。</p>
             <Button icon="pencil" onClick={addChapter}>写第一章</Button>
@@ -10205,6 +10235,10 @@ function App() {
         ...["xuanzhen", "yanqing", "dushi", "lishi", "kehuan", "xuanyi", "fuben", "duanpian", "fanpai"]
           .map((id) => `/art/family-${id}-640.webp`),
         "/art/waiting-weaving-1600.webp",
+        "/art/waiting-birth-1600.webp",
+        "/art/waiting-growth-1600.webp",
+        "/art/waiting-chapter-1600.webp",
+        "/art/banner-store-1600.webp",
         "/art/empty-plaza-512.webp",
         "/art/empty-store-512.webp",
         "/art/empty-shelf-512.webp",

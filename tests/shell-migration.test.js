@@ -34,8 +34,13 @@ test('three shell themes: black default, white, and aurora preserved value-for-v
     '--cyan:#6ee7ff', '--violet:#a78bfa', '--glass:rgba(148,178,255,.08)',
     '--line:rgba(168,196,255,.20)', '--surface:rgba(13,24,52,.82)',
     '--surface-solid:#0d1834', '--shadow-raised:0 18px 48px rgba(2,6,20,.5)',
-    '--topbar-bg:rgba(6,13,31,.72)',
+    // BUGHUNT-FIX (BH-10) is the one sanctioned exception to the
+    // untouched aurora palette: the topbar alpha rose in all three
+    // themes so scrolled text can no longer be read through the bar.
+    '--topbar-bg:rgba(6,13,31,.93)',
   ]) assert.ok(aurora.includes(pin), `aurora keeps ${pin}`)
+  assert.ok(themeBlock('black').includes('--topbar-bg:rgba(5,5,7,.94)'), 'black topbar is opaque enough (BH-10)')
+  assert.ok(themeBlock('white').includes('--topbar-bg:rgba(247,247,244,.95)'), 'white topbar is opaque enough (BH-10)')
   const black = themeBlock('black')
   assert.ok(black.includes('--bg:#050507'))
   assert.ok(black.includes('color-scheme:dark'))

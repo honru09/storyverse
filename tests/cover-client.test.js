@@ -158,13 +158,25 @@ test('fallbackCoverVariantFor maps custom and unknown worlds by template flavour
   assert.equal(fallbackCoverVariantFor(custom('urban')), 'urban')
   assert.equal(fallbackCoverVariantFor(custom('campus')), 'urban')
   assert.equal(fallbackCoverVariantFor(custom('scifi')), 'scifi')
-  assert.equal(fallbackCoverVariantFor(custom('wuxianliu')), 'scifi')
   // Unknown world ids fall through the same mapping.
   assert.equal(fallbackCoverVariantFor(geminiStory({ genreId: 'atlantis', genreTemplateId: 'xianxia' })), 'eastern')
-  // Unmapped flavours stay on the world artwork — no guessy matches.
-  assert.equal(fallbackCoverVariantFor(custom('horror')), null)
-  assert.equal(fallbackCoverVariantFor(custom('guize-guatan')), null)
-  assert.equal(fallbackCoverVariantFor(custom('zhihu-short')), null)
   assert.equal(fallbackCoverVariantFor(custom('')), null)
   assert.equal(fallbackCoverVariantFor(null), null)
+})
+
+test('fallbackCoverVariantFor covers all nine shelves with the phase-2 paintings (BUGHUNT-FIX)', () => {
+  const custom = (genreTemplateId) => geminiStory({ genreId: 'custom', genreTemplateId })
+  // Every template of every shelf resolves to its family's painting:
+  // the fallback chain has no flavour gaps left.
+  assert.equal(fallbackCoverVariantFor(custom('xianxia')), 'eastern')
+  assert.equal(fallbackCoverVariantFor(custom('romance-ancient')), 'yanqing')
+  assert.equal(fallbackCoverVariantFor(custom('romance-modern')), 'yanqing')
+  assert.equal(fallbackCoverVariantFor(custom('horror')), 'xuanyi')
+  assert.equal(fallbackCoverVariantFor(custom('guize-guatan')), 'xuanyi')
+  assert.equal(fallbackCoverVariantFor(custom('suspense-supernatural')), 'xuanyi')
+  assert.equal(fallbackCoverVariantFor(custom('wuxianliu')), 'fuben')
+  assert.equal(fallbackCoverVariantFor(custom('zhihu-short')), 'duanpian')
+  assert.equal(fallbackCoverVariantFor(custom('er-ren')), 'fanpai')
+  // A known preset world still wins over the family painting.
+  assert.equal(fallbackCoverVariantFor(geminiStory({ genreId: 'neon', genreTemplateId: 'horror' })), null)
 })

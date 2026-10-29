@@ -38,6 +38,13 @@
    B): full-bleed threads-and-stardust painting, darkened by its own
    scrim so the card's stage copy stays on a calm centre. */
 .generation-bg{position:absolute;inset:0;background:url("/art/waiting-weaving-1600.webp") center/cover no-repeat}
+/* Phase-2 stage paintings (BUGHUNT-FIX asset wiring): the wait walks
+   the story's own arc — 准备 keeps the loom (weaving), then 开篇 a
+   seed of light rises, 生长 the river-net spreads, 成章 the pages
+   settle into a book. The scrim below stays constant across stages. */
+.generation-bg[data-stage="1"]{background-image:url("/art/waiting-birth-1600.webp")}
+.generation-bg[data-stage="2"]{background-image:url("/art/waiting-growth-1600.webp")}
+.generation-bg[data-stage="3"]{background-image:url("/art/waiting-chapter-1600.webp")}
 .generation-overlay .particle-field{z-index:0}
 .generation-card{z-index:1}
 .generation-bg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,8,20,.58),rgba(4,8,20,.8))}

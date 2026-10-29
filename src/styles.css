@@ -15,7 +15,17 @@
   --ease-out:cubic-bezier(.22,1,.36,1); --ease-pop:cubic-bezier(.34,1.8,.4,1); --ease-press:cubic-bezier(.2,.9,.3,1.4); --ease-drawer:cubic-bezier(.32,.72,0,1);
   /* Legacy aliases — var() chains only, so they follow the active theme. */
   --canvas:var(--bg); --paper:var(--bg);
-  --ink-soft:var(--surface);
+  /* Soft-ink text alias. BUGHUNT-FIX (BH-02): this used to point at
+     var(--surface) — a *background* token — so every consumer rendered
+     in the surface's own colour family and vanished against the page
+     in all three themes. Soft text is --dim in every palette. */
+  --ink-soft:var(--dim);
+  /* On-art ink (BUGHUNT-FIX, BH-01/03/05): text laid over a fixed dark
+     painting (cover art, world art, the forge world cards) must NOT
+     follow the shell theme's ink — in the white theme that ink is
+     near-black and disappears on the art. These two values are fixed
+     across all three themes, like .story-cover-pending-chip's. */
+  --on-art:#f5f7ff; --on-art-dim:rgba(216,226,250,.82);
   --radius-control:12px; --radius-selection:14px; --radius-card:18px; --radius-surface:22px; --radius-sheet:26px; --radius-nav:16px;
   /* List-surface type scale (DESIGN.md §2 list tokens, 2026-10-27). */
   --type-page-tab:22px; --type-page-tab-idle:20px;
@@ -49,7 +59,7 @@
   --glass-strong:rgba(148,178,255,.16); --glass-edge:rgba(168,196,255,.28); --glass-dark:#0a1430;
   --shadow-flat:0 8px 28px rgba(2,6,20,.35); --shadow-raised:0 18px 48px rgba(2,6,20,.5);
   --rank-gold:#f5c451;
-  --topbar-bg:rgba(6,13,31,.72); --nav-bg:rgba(6,13,31,.94);
+  --topbar-bg:rgba(6,13,31,.93); --nav-bg:rgba(6,13,31,.94);
   --profile-bg:var(--bg); --profile-ink:var(--ink); --profile-ink-strong:var(--ink); --profile-ink-2:var(--ink); --profile-dim:var(--dim); --profile-dim-2:var(--dim); --profile-faint:var(--dim-2); --profile-placeholder:var(--dim-2); --medal-bg:var(--glass-2); --profile-panel:var(--surface-solid); --profile-chip:var(--glass-2); --profile-edge:var(--line); --profile-edge-2:var(--glass-edge); --profile-shadow:var(--shadow-flat); --profile-pill-bg:var(--ink); --profile-pill-ink:var(--bg); --profile-action-bg:var(--ink); --pill-ink:var(--bg); --profile-pill-off:var(--glass-2); --profile-collage-bg:var(--glass-dark); --profile-stack-bg:var(--glass-2); --sheet-bg:var(--surface-solid); --sheet-ink:var(--ink); --sheet-dim:var(--dim); --sheet-line:var(--line);
   color-scheme:dark;
 }
@@ -78,7 +88,7 @@
   --glass-strong:rgba(255,255,255,.11); --glass-edge:rgba(255,255,255,.16); --glass-dark:#0b0b0e;
   --shadow-flat:0 8px 28px rgba(0,0,0,.5); --shadow-raised:0 18px 48px rgba(0,0,0,.62);
   --rank-gold:#f5c451;
-  --topbar-bg:rgba(5,5,7,.78); --nav-bg:rgba(5,5,7,.94);
+  --topbar-bg:rgba(5,5,7,.94); --nav-bg:rgba(5,5,7,.94);
   --profile-bg:var(--bg); --profile-ink:var(--ink); --profile-ink-strong:var(--ink); --profile-ink-2:var(--ink); --profile-dim:var(--dim); --profile-dim-2:var(--dim); --profile-faint:var(--dim-2); --profile-placeholder:var(--dim-2); --medal-bg:var(--glass-2); --profile-panel:var(--surface-solid); --profile-chip:var(--glass-2); --profile-edge:var(--line); --profile-edge-2:var(--glass-edge); --profile-shadow:var(--shadow-flat); --profile-pill-bg:var(--ink); --profile-pill-ink:var(--bg); --profile-action-bg:var(--ink); --pill-ink:var(--bg); --profile-pill-off:var(--glass-2); --profile-collage-bg:var(--glass-dark); --profile-stack-bg:var(--glass-2); --sheet-bg:var(--surface-solid); --sheet-ink:var(--ink); --sheet-dim:var(--dim); --sheet-line:var(--line);
   color-scheme:dark;
 }
@@ -106,7 +116,7 @@
   --glass-strong:rgba(23,24,28,.09); --glass-edge:rgba(23,24,28,.16); --glass-dark:#efefec;
   --shadow-flat:0 8px 28px rgba(23,24,28,.10); --shadow-raised:0 18px 48px rgba(23,24,28,.16);
   --rank-gold:#b97f10;
-  --topbar-bg:rgba(247,247,244,.82); --nav-bg:rgba(247,247,244,.94);
+  --topbar-bg:rgba(247,247,244,.95); --nav-bg:rgba(247,247,244,.94);
   --profile-bg:var(--bg); --profile-ink:var(--ink); --profile-ink-strong:var(--ink); --profile-ink-2:var(--ink); --profile-dim:var(--dim); --profile-dim-2:var(--dim); --profile-faint:var(--dim-2); --profile-placeholder:var(--dim-2); --medal-bg:var(--glass-2); --profile-panel:var(--surface-solid); --profile-chip:var(--glass-2); --profile-edge:var(--line); --profile-edge-2:var(--glass-edge); --profile-shadow:var(--shadow-flat); --profile-pill-bg:var(--ink); --profile-pill-ink:var(--bg); --profile-action-bg:var(--ink); --pill-ink:var(--bg); --profile-pill-off:var(--glass-2); --profile-collage-bg:var(--glass-dark); --profile-stack-bg:var(--glass-2); --sheet-bg:var(--surface-solid); --sheet-ink:var(--ink); --sheet-dim:var(--dim); --sheet-line:var(--line);
   color-scheme:light;
 }
@@ -199,12 +209,12 @@ button:disabled{cursor:not-allowed}
 .hero-scene{position:absolute;inset:0;z-index:-2}
 .hero-scene .world-art img{object-position:center 30%}
 .home-hero::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(6,13,31,.05) 40%,rgba(6,13,31,.55) 78%,rgba(6,13,31,.88))}
-.hero-copy{width:100%;margin:14px;padding:24px 20px 20px;border-radius:var(--radius-card);background:rgba(10,20,48,.55);border:1px solid var(--line);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);color:var(--ink)}
+.hero-copy{width:100%;margin:14px;padding:24px 20px 20px;border-radius:var(--radius-card);background:rgba(10,20,48,.55);border:1px solid var(--line);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);color:var(--on-art)}
 .hero-copy h1{margin:0;font-size:clamp(2rem,9vw,3.2rem);line-height:1.16;letter-spacing:-.02em;font-weight:800;overflow-wrap:anywhere}
-.hero-copy h1 em{font-style:normal;background:linear-gradient(100deg,var(--cyan),var(--violet) 60%,var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent}
-.hero-copy>p{display:flex;flex-wrap:wrap;gap:6px 12px;margin:14px 0 20px;color:var(--dim);font-size:13px;line-height:1.65;overflow-wrap:anywhere}
+.hero-copy h1 em{font-style:normal;background:linear-gradient(100deg,#6ee7ff,#a78bfa 60%,#f0a6ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero-copy>p{display:flex;flex-wrap:wrap;gap:6px 12px;margin:14px 0 20px;color:var(--on-art-dim);font-size:13px;line-height:1.65;overflow-wrap:anywhere}
 .hero-actions .button{width:100%}
-.resume-position{color:var(--ink);font-weight:650}
+.resume-position{color:var(--on-art);font-weight:650}
 .home-section{margin-top:34px}
 .library-sync-note{margin:14px 2px 0;font-size:12.5px;line-height:1.55;color:var(--ink-soft)}
 .home-draft-row{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:58px;margin-top:16px;padding:12px 17px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);color:var(--ink);text-align:left;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
@@ -310,7 +320,7 @@ button:disabled{cursor:not-allowed}
 /* World step: cover cards on a screen of their own — deliberately unlike
    the category wall (craft bricks are colour + glyph; worlds are places). */
 .world-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.world-card{position:relative;display:grid;grid-template-rows:auto 1fr;padding:0;border:1px solid var(--line);border-radius:var(--radius-card);overflow:hidden;background:#0a1430;color:var(--ink);text-align:left;isolation:isolate;transition:transform var(--dur-pop) var(--ease-pop),border-color var(--dur-state) var(--ease-out),box-shadow var(--dur-state) var(--ease-out)}
+.world-card{position:relative;display:grid;grid-template-rows:auto 1fr;padding:0;border:1px solid var(--line);border-radius:var(--radius-card);overflow:hidden;background:#0a1430;color:var(--on-art);text-align:left;isolation:isolate;transition:transform var(--dur-pop) var(--ease-pop),border-color var(--dur-state) var(--ease-out),box-shadow var(--dur-state) var(--ease-out)}
 .world-card:active{transform:scale(.99)}
 .world-card-cover{display:block;aspect-ratio:16/9;overflow:hidden}
 .world-card-cover .world-art img{object-position:center 30%}
@@ -320,10 +330,10 @@ button:disabled{cursor:not-allowed}
 .world-card-random .world-card-symbol{color:var(--cyan)}
 .world-card-copy{display:grid;gap:3px;padding:11px 12px 13px;align-content:start}
 .world-card-copy strong{font-size:15px;font-weight:750;line-height:1.35}
-.world-card-copy em{color:var(--cyan);font-size:12px;font-style:normal;font-weight:650}
-.world-card-copy small{color:var(--dim);font-size:11.5px;line-height:1.55}
+.world-card-copy em{color:#6ee7ff;font-size:12px;font-style:normal;font-weight:650}
+.world-card-copy small{color:var(--on-art-dim);font-size:11.5px;line-height:1.55}
 .world-card.selected{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan),0 0 26px -6px rgba(110,231,255,.75);transform:translateY(-2px)}
-.world-card>svg{position:absolute;top:10px;right:12px;color:var(--dim)}
+.world-card>svg{position:absolute;top:10px;right:12px;color:var(--on-art-dim)}
 /* Preview facts that jump back to their own step (category / world). */
 .preview-fact-jump{display:grid;grid-template-columns:36px minmax(0,1fr);gap:12px;width:100%;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:12px;line-height:1.7;text-align:left;cursor:pointer}
 .preview-fact-jump span{color:var(--dim)}
@@ -573,7 +583,7 @@ select{appearance:auto}
 .merge-art{position:relative;aspect-ratio:4/3.4;padding:10px;border:1px solid var(--line);border-radius:var(--radius-card);overflow:hidden;background:#0a1430;isolation:isolate}
 .merge-art .world-art{position:absolute;inset:0;z-index:-2}
 .merge-art::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,transparent 40%,rgba(6,13,31,.85))}
-.merge-art-label{position:absolute;left:14px;bottom:12px;font-size:17px;font-weight:800;text-shadow:0 1px 10px rgba(3,6,18,.65)}
+.merge-art-label{position:absolute;left:14px;bottom:12px;font-size:17px;font-weight:800;color:var(--on-art);text-shadow:0 1px 10px rgba(3,6,18,.65)}
 .merge-card-bottom{display:flex;gap:11px;align-items:flex-start;padding:14px 2px 0;min-width:0}
 .avatar{display:grid;place-items:center;width:42px;height:42px;flex-shrink:0;border-radius:50%;font-weight:800}
 .avatar-rose{background:rgba(255,143,171,.18);color:var(--coral);border:1px solid rgba(255,143,171,.4)}
@@ -629,6 +639,7 @@ select{appearance:auto}
 .recovery-page>button{width:100%;margin-top:12px}
 /* Empty states, warnings, toast, bottom nav */
 .sw-empty-page{display:grid;justify-items:center;gap:14px;padding:64px 20px;text-align:center}
+.sw-empty-page .empty-art{width:104px;height:104px}
 .sw-empty-icon{display:grid;place-items:center;width:58px;height:58px;border:1px solid var(--line);border-radius:18px;background:var(--glass);color:var(--cyan)}
 .sw-empty-page h1{margin:0;font-size:clamp(1.5rem,6vw,2rem);font-weight:800}
 .sw-empty-page p{margin:0;color:var(--dim);font-size:14px;line-height:1.75}
@@ -791,7 +802,12 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .avatar-stage{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 .avatar-frame{position:relative;width:100%;aspect-ratio:3/4;overflow:hidden;border-radius:18px;background:linear-gradient(160deg,rgba(56,189,248,.16),rgba(139,92,246,.14) 55%,rgba(6,13,31,.35))}
 .avatar-frame .avatar-portrait-img,.avatar-frame .avatar-portrait-fallback{position:absolute;inset:0;width:100%;height:100%}
-.avatar-portrait-img{object-fit:cover;display:block}
+/* Face-anchored crop everywhere (BUGHUNT-FIX, BH-11): the portrait's
+   face lives in the upper band, so every crop of it anchors at
+   50% 12% — the same anchor the plaza author avatars already used —
+   instead of the centre crop that shrank the whole figure into
+   small thumbs with the face unrecognisable. */
+.avatar-portrait-img{object-fit:cover;object-position:50% 12%;display:block}
 .avatar-portrait-fallback{display:grid;place-items:center;background:linear-gradient(150deg,rgba(56,189,248,.22),rgba(139,92,246,.28));color:var(--ink)}
 .avatar-portrait-fallback span{font-size:64px;font-weight:800;opacity:.85}
 .avatar-frame-state{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);padding:6px 14px;border-radius:999px;background:rgba(6,13,31,.72);color:#dbeafe;font-size:12.5px;font-weight:650;white-space:nowrap;backdrop-filter:blur(6px)}
@@ -836,7 +852,13 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .avatar-card-thumb .avatar-portrait-fallback{width:100%;height:100%;display:grid;place-items:center}
 .avatar-card-thumb .avatar-portrait-fallback span{font-size:18px}
 .avatar-card-copy{flex:1;min-width:0}
+/* The main-avatar badge rides the NAME row (BUGHUNT-FIX, BH-09): as a
+   trailing flex sibling it ate the description's width and cut it
+   mid-phrase while the identical description on the next row fit. */
+.avatar-card-name-row{display:flex;align-items:center;gap:8px;min-width:0}
+.avatar-card-name-row .avatar-main-badge{flex-shrink:0}
 .avatar-card-copy b{display:block;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.avatar-card-name-row b{min-width:0}
 .avatar-card-copy small{display:block;margin-top:2px;color:var(--dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .avatar-main-badge{flex-shrink:0;padding:3px 9px;border-radius:999px;background:rgba(56,189,248,.16);color:var(--cyan);font-size:11.5px;font-weight:700}
 .avatar-card-new{border-style:dashed}
@@ -870,6 +892,10 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .plaza-mine-row span{flex:1;min-width:0}
 .plaza-mine-row strong{display:block;font-size:14px}
 .plaza-mine-row small{display:block;margin-top:2px;color:var(--dim);font-size:12px;line-height:1.55;white-space:normal;overflow-wrap:anywhere}
+/* The chapter-position tail never splits (BUGHUNT-FIX, BH-08): it
+   wraps as one unit, so the last line can be short but never a
+   single orphaned glyph. */
+.plaza-mine-row small .mine-row-tail{white-space:nowrap}
 .plaza-value-line{margin:16px 0 0;font-size:clamp(25px,6.8vw,32px);font-weight:800;line-height:1.3;letter-spacing:-.01em;color:var(--ink)}
 .plaza-value-line em{font-style:normal;color:var(--cyan)}
 .plaza-feed-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:28px 0 14px}
@@ -881,12 +907,23 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .plaza-empty p{margin:0 auto 16px;max-width:420px;font-size:13px;line-height:1.7}
 .plaza-feed-list{display:grid;gap:18px}
 .plaza-card{border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);overflow:hidden;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-.plaza-card-cover{position:relative;display:block;width:100%;aspect-ratio:16/8;padding:0;border:0;background:#0a1430;text-align:left;overflow:hidden}
+.plaza-card-cover{position:relative;display:block;width:100%;aspect-ratio:16/8;padding:0;border:0;background:#0a1430;text-align:left;overflow:hidden;container-type:inline-size;--title-fit-inset:32px}
+.store-book-card .plaza-card-cover{--title-fit-inset:24px}
 .plaza-card-cover .world-art{position:absolute;inset:0}
 .plaza-cover-shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(6,13,31,0) 30%,rgba(6,13,31,.78));pointer-events:none}
-.plaza-cover-title{position:absolute;left:16px;right:16px;bottom:12px;color:#fff;font-size:16.5px;font-weight:700;text-shadow:0 2px 14px rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.plaza-cover-title.is-md{font-size:14px}
-.plaza-cover-title.is-sm{font-size:12px}
+/* The tier size is a CAP, not a promise (BUGHUNT-FIX, BH-06): the
+   title must also fit the cover it sits on, so the used size is the
+   smaller of the tier size and (cover width − insets) / glyph count.
+   --title-glyphs is set per title in StoreBookCard (chars + 《》).
+   The ×1.07 divisor is measured, not decorative: CJK font hinting
+   snaps small-size glyph advances UP to whole pixels (8.53px type
+   laid out at 9px per glyph in the probe environment; the hunter's
+   16.5px title measured 17px per glyph), so an exact 1em fit still
+   overflowed by up to ~5.5%. The factor covers the snap at every
+   probed size and costs at most 7% where fonts advance true 1em. */
+.plaza-cover-title{position:absolute;left:16px;right:16px;bottom:12px;color:#fff;font-size:min(16.5px,calc((100cqw - var(--title-fit-inset)) / (var(--title-glyphs,12) * 1.07)));font-weight:700;text-shadow:0 2px 14px rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plaza-cover-title.is-md{font-size:min(14px,calc((100cqw - var(--title-fit-inset)) / (var(--title-glyphs,12) * 1.07)))}
+.plaza-cover-title.is-sm{font-size:min(12px,calc((100cqw - var(--title-fit-inset)) / (var(--title-glyphs,12) * 1.07)))}
 .store-book-card .plaza-cover-title{left:12px;right:12px}
 .plaza-card-body{padding:14px 16px 16px}
 /* The card byline (COVER-FIX): the author's place — an editorial
@@ -1373,12 +1410,12 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .profile-avatar-stand-caption strong{display:block;font-size:16px;color:var(--profile-ink-strong)}
 
 /* Plaza reorder surfaces: continue-reading first, followed authors next. */
-.plaza-continue-card{display:flex;align-items:center;gap:14px;width:100%;margin-top:18px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);color:var(--ink);text-align:left;cursor:pointer;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.plaza-continue-card{display:flex;align-items:center;gap:12px;width:100%;margin-top:18px;padding:12px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);color:var(--ink);text-align:left;cursor:pointer;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 .plaza-continue-card>svg{color:var(--dim-2);flex:none}
 .plaza-continue-cover{width:54px;height:72px;flex:none;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
 .plaza-continue-copy{flex:1;min-width:0;display:grid;gap:2px}
 .plaza-continue-copy small{color:var(--cyan);font-size:12px;font-weight:700;letter-spacing:.04em}
-.plaza-continue-copy strong{font-size:16px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plaza-continue-copy strong{font-size:15.5px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .plaza-continue-copy span{color:var(--dim);font-size:12.5px}
 .plaza-following{margin-top:24px}
 .plaza-following-row{display:flex;gap:12px;overflow-x:auto;padding:4px 2px 10px;scrollbar-width:none}
@@ -1576,6 +1613,24 @@ button.profile-stat{cursor:pointer}
    they sit in every theme as a rounded illustration card with a
    hairline edge, never as a raw dark square adrift on a light panel. */
 .empty-art{object-fit:cover;border:1px solid var(--line);border-radius:20px;box-shadow:0 12px 28px rgba(2,6,18,.3)}
+/* Phase-2 empty art (BUGHUNT-FIX asset wiring): the small centred
+   tile for compact text-only empties (profile line rows, shelf search
+   misses), and the inline tile for one-line empties (thread, ratings). */
+.empty-inline-art{display:block;width:76px;height:76px;margin:0 auto 10px;object-fit:cover;border:1px solid var(--line);border-radius:16px;box-shadow:0 10px 24px rgba(2,6,18,.28)}
+.empty-inline-art + .profile-line-empty{margin-top:2px}
+.lorebook-empty .field-hint{text-align:center}
+.empty-row-art{flex:none;width:44px;height:44px;object-fit:cover;border:1px solid var(--line);border-radius:12px}
+.plaza-thread-empty{display:flex;align-items:center;gap:10px}
+.book-ratings-empty{display:flex;align-items:center;gap:10px}
+/* Store banner (BUGHUNT-FIX asset wiring): the many-worlds painting
+   heads the store; the page title rides its reserved darker band, so
+   the heading moves onto the art and takes the on-art ink. */
+.store-banner{position:relative;margin-bottom:16px;border:1px solid var(--line);border-radius:var(--radius-surface);overflow:hidden;background:#0a1430}
+.store-banner>img{display:block;width:100%;height:172px;object-fit:cover;object-position:50% 40%}
+.store-banner-shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,8,20,.30),rgba(4,8,20,0) 42%,rgba(4,8,20,.58));pointer-events:none}
+.store-banner .store-heading{position:absolute;left:20px;right:20px;bottom:14px;color:var(--on-art)}
+.store-banner .store-heading h1{color:var(--on-art);text-shadow:0 2px 16px rgba(0,0,0,.55)}
+.store-banner .store-heading .small-link{color:var(--on-art)}
 .plaza-empty .empty-art,.store-empty .empty-art{display:block;width:116px;height:116px;margin:0 auto 14px}
 .notify-empty .empty-art{display:block;width:104px;height:104px;margin:0 auto 12px}
 .notify-empty p{margin:0}

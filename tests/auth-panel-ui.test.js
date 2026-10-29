@@ -91,7 +91,7 @@ test('signed-in username accounts get the unbound reminder and the password-gate
 
 test('register mode shows one dynamic hint that follows the identifier shape', () => {
   assert.match(panel, /const registerHint = passwordAvailable && \(identifierIsEmail \|\| !usernameAvailable\)/)
-  assert.match(panel, /用邮箱注册，提交后会发一封验证邮件，确认后就能登录。/)
+  assert.match(panel, /用邮箱注册，提交后直接登录；另发一封验证邮件确认邮箱，日后找回账号也靠它。/)
   assert.match(panel, /用户名 3–20 个字符，大小写不敏感；注册后直接登录，不用邮箱。/)
   assert.match(panel, /\{activeMode === "register" && <p className="account-storage-note">\{registerHint\}<\/p>\}/)
 })

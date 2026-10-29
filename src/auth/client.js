@@ -472,7 +472,7 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
         throw error
       }
       guard()
-      publish({ notice: verificationError ? '账号已创建，但验证邮件尚未发出。请在账号页重新发送验证邮件。' : '验证邮件已发出，请在邮箱中确认后返回刷新状态。' })
+      publish({ notice: verificationError ? '账号已创建并登录；验证邮件尚未发出，可在账号页重新发送。' : '账号已创建并登录；验证邮件已发出，确认邮箱后找回账号更方便。' })
       return user
     }, 'email'),
     signIn: (email, password) => run(async (guard) => {

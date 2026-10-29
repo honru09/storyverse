@@ -56,7 +56,7 @@ export default function ReadingTools({
       )}
       <button type="button" className="reading-bookmark-add" onClick={onBookmark}>标记／取消当前位置</button>
       <p className="reading-tools-status">书签保存在本机；重写后的旧剧情书签不会跳到新剧情。</p>
-      {!bookmarks.length && <p className="reading-tools-empty">还没有位置书签。</p>}
+      {!bookmarks.length && <p className="reading-tools-empty"><img className="empty-row-art" src="/art/empty-bookmarks-512.webp" alt="" loading="lazy" />还没有位置书签。</p>}
       <div className="reading-search-results">
         {bookmarks.map(item => <div className="reading-bookmark-row" key={`${item.key}-${item.anchor.paragraph}`}>
           <button type="button" onClick={() => onSelect(item.chapterIndex, item.anchor)}><strong>{item.title}</strong><span>{item.excerpt}</span></button>

@@ -123,7 +123,7 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
   // ever shown; when the email channel is off, the username copy wins even
   // for an email shape, because that is the channel that could serve them.
   const registerHint = passwordAvailable && (identifierIsEmail || !usernameAvailable)
-    ? "用邮箱注册，提交后会发一封验证邮件，确认后就能登录。"
+    ? "用邮箱注册，提交后直接登录；另发一封验证邮件确认邮箱，日后找回账号也靠它。"
     : "用户名 3–20 个字符，大小写不敏感；注册后直接登录，不用邮箱。";
   // The registration form is a username form exactly when the hint above
   // is the username copy; only then do the recovery warning and the

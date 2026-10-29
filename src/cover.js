@@ -67,16 +67,26 @@ export function withCoverState(story, patch) {
 export const WORLD_ART_IDS = ['mist', 'cultivation', 'neon', 'city', 'court', 'frontier', 'custom']
 
 /**
- * Genre-flavoured fallback paintings (PHONE-FIX §37, assets batch B).
- * The mapping is deliberately short — only templates whose flavour is
- * unambiguous are listed. Horror, rules-horror, supernatural suspense,
- * short-form and villain-led lines can live in too many kinds of
- * worlds to pin to one painting; they are NOT mapped, on purpose.
+ * Genre-flavoured fallback paintings (PHONE-FIX §37, assets batch B;
+ * BUGHUNT-FIX: extended to all nine shelves with the phase-2 asset
+ * set). The mapping is shelf-first: every L1 family now owns a
+ * dedicated painting, so a coverless line in a custom / unknown world
+ * wears its family's flavour instead of a generic emblem. The older
+ * caution — horror and friends "can live in too many kinds of worlds"
+ * — applied when the only paintings were broad eastern/urban/scifi
+ * scenes; the dedicated 悬疑/副本/短篇/反派 paintings are flavour, not
+ * world depiction, and the variant only ever steps in where the world
+ * painting itself says nothing about this story (see below).
  */
 const FALLBACK_VARIANT_TEMPLATES = {
-  eastern: ['xuanhuan', 'xianxia', 'gaowu', 'lishi', 'romance-ancient'],
-  urban: ['urban', 'campus', 'romance-modern'],
-  scifi: ['scifi', 'wuxianliu'],
+  eastern: ['xuanhuan', 'xianxia', 'gaowu', 'lishi'],
+  urban: ['urban', 'campus'],
+  scifi: ['scifi'],
+  yanqing: ['romance-ancient', 'romance-modern'],
+  xuanyi: ['horror', 'guize-guatan', 'suspense-supernatural'],
+  fuben: ['wuxianliu'],
+  duanpian: ['zhihu-short'],
+  fanpai: ['er-ren'],
 }
 
 /**
