@@ -894,7 +894,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
    their @ID, and the official mark; a hairline sets it off from the
    chips below. No picture: the lead portrait column already carries
    the avatar at full size (first rule — one face per card). */
-.plaza-byline{display:flex;align-items:center;gap:10px;min-width:0;padding-bottom:11px;border-bottom:1px solid var(--line)}
+.plaza-byline{display:flex;align-items:center;gap:10px;min-width:0;padding-bottom:11px;border-bottom:1px solid var(--line);flex-wrap:wrap;row-gap:3px}
 .plaza-byline-link{display:inline-flex;align-items:baseline;gap:8px;min-width:0;padding:0;border:0;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .plaza-byline-link.is-static{cursor:default}
 .plaza-byline-label{flex-shrink:0;font-size:11px;font-weight:650;letter-spacing:.22em;color:var(--dim)}
@@ -1773,7 +1773,7 @@ button.settings-row{cursor:pointer}
 .plaza-post-action.is-liked svg{fill:currentColor}
 .plaza-more{display:flex;justify-content:center;margin-top:22px}
 .plaza-share-row{display:flex;align-items:center;gap:12px;margin-top:14px;color:var(--dim);font-size:13px}
-.plaza-share-row .btn{flex:none}
+.plaza-share-row .button{flex:none;white-space:nowrap}
 .plaza-share-row>span{min-width:0}
 
 .plaza-thread{margin-top:13px;padding-top:13px;border-top:1px solid var(--line)}
@@ -1861,5 +1861,7 @@ button.settings-row{cursor:pointer}
 .write-editor .field-label{display:block;margin-top:14px}
 .write-textarea{width:100%;min-height:320px;line-height:1.8;font-size:16px;resize:vertical}
 .write-editor-foot{display:flex;justify-content:space-between;margin-top:8px;font-size:13px;color:var(--dim)}
-.plaza-pick-remedy{align-items:center}
+.plaza-pick-remedy{align-items:center;flex-wrap:wrap}
+.plaza-pick-remedy .plaza-pick-copy{flex:1 1 180px}
+.plaza-pick-remedy .button{flex:none;margin-left:auto}
 .settings-avatar-row{display:flex;flex-wrap:wrap;gap:8px}
