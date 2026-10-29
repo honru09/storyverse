@@ -124,6 +124,13 @@
      matte (--card-solid) and never a backdrop blur (§4 discipline). */
   --surface-card:rgba(32,34,39,.78); --surface-glass:rgba(18,20,24,.85); --surface-modal:rgba(24,26,31,.88); --surface-pill:rgba(255,255,255,.07);
   --card-solid:#202227; --card-backdrop:none; --float-solid:rgba(18,19,22,.94); --card-top-hi:rgba(255,255,255,.07);
+  /* SALT-3 frosted-glass group (SALT3.md, values frozen there): the
+     tinted translucent face, its bright hairline plus outer ring, and
+     the chips that ride on glass. Alpha floors are the contrast red
+     line — never lower them. */
+  --glass-card-bg:rgba(24,27,33,.48); --glass-card-blur:blur(22px) saturate(1.45); --glass-card-line:rgba(255,255,255,.14); --glass-card-edge:rgba(255,255,255,.10); --glass-card-shadow:0 18px 44px -12px rgba(0,0,0,.55); --glass-card-radius:26px;
+  --glass-chip-bg:rgba(255,255,255,.10); --glass-chip-blur:blur(14px) saturate(1.35); --glass-nav-bg:rgba(24,27,33,.58); --glass-modal-bg:rgba(24,27,33,.66); --glass-panel-pad:rgba(10,12,16,.25);
+  --detail-amb-opacity:.35; --detail-amb-filter:blur(48px) saturate(1.3) brightness(.82);
   --shadow-card:0 1px 2px rgba(0,0,0,.42),0 14px 34px -10px rgba(0,0,0,.55); --shadow-floating:0 4px 12px rgba(0,0,0,.40),0 20px 40px -8px rgba(0,0,0,.56);
   --shadow-glass-top:inset 0 1px 0 rgba(255,255,255,.12);
   --text-disabled:#454850;
@@ -166,6 +173,12 @@
      for bars, sheets and showcase cards; list cards wear --card-solid. */
   --surface-card:rgba(255,255,255,.82); --surface-glass:rgba(246,245,242,.88); --surface-modal:rgba(250,249,246,.92); --surface-pill:rgba(24,25,27,.05);
   --card-solid:#ffffff; --card-backdrop:none; --float-solid:rgba(248,249,251,.95); --card-top-hi:rgba(255,255,255,.9);
+  /* SALT-3 frosted-glass group (SALT3.md, values frozen there): the
+     white glass edge is a BRIGHT edge (line .70 white) with a faint
+     dark outer ring; alpha floors are the contrast red line. */
+  --glass-card-bg:rgba(255,255,255,.50); --glass-card-blur:blur(22px) saturate(1.45); --glass-card-line:rgba(255,255,255,.70); --glass-card-edge:rgba(24,25,27,.07); --glass-card-shadow:0 18px 44px -16px rgba(30,27,20,.18); --glass-card-radius:26px;
+  --glass-chip-bg:rgba(255,255,255,.55); --glass-chip-blur:blur(14px) saturate(1.35); --glass-nav-bg:rgba(255,255,255,.58); --glass-modal-bg:rgba(255,255,255,.68); --glass-panel-pad:rgba(255,255,255,.25);
+  --detail-amb-opacity:.30; --detail-amb-filter:blur(48px) saturate(1.3) brightness(1.08);
   --shadow-card:0 1px 2px rgba(30,27,20,.05),0 18px 44px -14px rgba(30,27,20,.16); --shadow-floating:0 4px 12px rgba(18,19,22,.05),0 16px 36px -6px rgba(18,19,22,.08);
   --shadow-glass-top:inset 0 1px 0 rgba(255,255,255,.65);
   --text-disabled:#b4b8bf;
@@ -2121,3 +2134,60 @@ button.settings-row{cursor:pointer}
 .plaza-pick-remedy .plaza-pick-copy{flex:1 1 180px}
 .plaza-pick-remedy .button{flex:none;margin-left:auto}
 .settings-avatar-row{display:flex;flex-wrap:wrap;gap:8px}
+
+/* ——— SALT-3 毛玻璃升级预览 (REQ-23 续, SALT3.md): atmosphere first,
+   then true frosted glass. The black/white themes used to sit on a
+   flat matte ground, so backdrop blur had nothing to refract and the
+   glass read as plain translucency (SALT-2's weak point). This block
+   lays down the ambient halo layer + cover ambience, then swaps the
+   card faces to the --glass-card-* group: tinted translucent face,
+   real backdrop blur, 26px shells, brighter glass chips riding on
+   top, and cover art melting into the glass at its lower edge.
+   Aurora never matches these selectors; the reader surface is not
+   touched; every blur-bearing rule is :not(.is-lite-gpu) so low-end
+   devices keep the solid --card-solid fallback. ——— */
+.salt-ambient{display:none}
+html[data-shell-theme='black'] .salt-ambient,html[data-shell-theme='white'] .salt-ambient{display:block;position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+html[data-shell-theme='black'] .salt-ambient{background:
+  radial-gradient(62% 44% at 10% 2%,rgba(110,231,255,.07),transparent 70%),
+  radial-gradient(56% 42% at 90% 26%,rgba(167,139,250,.08),transparent 70%),
+  radial-gradient(72% 52% at 50% 70%,rgba(110,231,255,.04),transparent 72%)}
+html[data-shell-theme='white'] .salt-ambient{background:
+  radial-gradient(62% 44% at 8% 0%,rgba(125,211,192,.14),transparent 70%),
+  radial-gradient(56% 42% at 92% 24%,rgba(120,200,235,.12),transparent 70%),
+  radial-gradient(68% 48% at 55% 68%,rgba(255,196,150,.13),transparent 72%)}
+/* — Card faces: full glass material — */
+html:not(.is-lite-gpu)[data-shell-theme='black'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card),html:not(.is-lite-gpu)[data-shell-theme='white'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card){background:var(--glass-card-bg);backdrop-filter:var(--glass-card-blur);-webkit-backdrop-filter:var(--glass-card-blur);border:1px solid var(--glass-card-line);border-radius:var(--glass-card-radius);box-shadow:var(--glass-card-shadow),0 0 0 1px var(--glass-card-edge),inset 0 1px 0 var(--card-top-hi)}
+/* — Store grid card: the whole card is the glass shell, the cover an
+   inset 18px piece inside it (the reference image's construction) — */
+html:not(.is-lite-gpu)[data-shell-theme='black'] .store-book-card,html:not(.is-lite-gpu)[data-shell-theme='white'] .store-book-card{background:var(--glass-card-bg);backdrop-filter:var(--glass-card-blur);-webkit-backdrop-filter:var(--glass-card-blur);border:1px solid var(--glass-card-line);border-radius:var(--glass-card-radius);box-shadow:var(--glass-card-shadow),0 0 0 1px var(--glass-card-edge),inset 0 1px 0 var(--card-top-hi);padding:10px 10px 12px}
+html[data-shell-theme='black'] .store-book-card .plaza-card-cover,html[data-shell-theme='white'] .store-book-card .plaza-card-cover{border-radius:18px;box-shadow:none}
+/* — Cover art melts into the glass at its lower edge (mask lives on
+   the artwork only; the shade + title stay crisp for legibility) — */
+html[data-shell-theme='black'] :is(.store-book-card,.plaza-card) .plaza-card-cover .world-art,html[data-shell-theme='white'] :is(.store-book-card,.plaza-card) .plaza-card-cover .world-art{-webkit-mask-image:linear-gradient(180deg,#000 76%,transparent 99%);mask-image:linear-gradient(180deg,#000 76%,transparent 99%)}
+/* — Chips on glass: a second, brighter glass layer with its own
+   edge and top light. Cover status pill keeps its dark face (white
+   text legibility) and only gains the blur + bright rim. — */
+html:not(.is-lite-gpu)[data-shell-theme='black'] :is(.plaza-chip,.profile-main-chip),html:not(.is-lite-gpu)[data-shell-theme='white'] :is(.plaza-chip,.profile-main-chip){background:var(--glass-chip-bg);backdrop-filter:var(--glass-chip-blur);-webkit-backdrop-filter:var(--glass-chip-blur);border:1px solid var(--glass-card-line);box-shadow:inset 0 1px 0 var(--card-top-hi)}
+html[data-shell-theme='black'] .store-card-status,html[data-shell-theme='white'] .store-card-status{backdrop-filter:blur(14px) saturate(1.35);-webkit-backdrop-filter:blur(14px) saturate(1.35);border:1px solid rgba(255,255,255,.18)}
+/* — Chrome sync: topbar / capsule nav / dialogs take the same
+   blur + tint family (topbar background alpha stays on the BH-10
+   red line; only its blur rises) — */
+html:not(.is-lite-gpu)[data-shell-theme='black'] .topbar,html:not(.is-lite-gpu)[data-shell-theme='white'] .topbar{backdrop-filter:blur(20px) saturate(1.45);-webkit-backdrop-filter:blur(20px) saturate(1.45)}
+html:not(.is-lite-gpu)[data-shell-theme='black'] .mobile-bottom-nav,html:not(.is-lite-gpu)[data-shell-theme='white'] .mobile-bottom-nav{background:var(--glass-nav-bg);backdrop-filter:blur(20px) saturate(1.45);-webkit-backdrop-filter:blur(20px) saturate(1.45);border-color:var(--glass-card-line)}
+html:not(.is-lite-gpu)[data-shell-theme='black'] :is(.sw-dialog,.reading-dialog,.profile-edit-sheet),html:not(.is-lite-gpu)[data-shell-theme='white'] :is(.sw-dialog,.reading-dialog,.profile-edit-sheet){background:var(--glass-modal-bg);backdrop-filter:blur(20px) saturate(1.45);-webkit-backdrop-filter:blur(20px) saturate(1.45)}
+/* — Detail page: cover ambience behind the first screen, panels
+   lifted above it, and a local pad inside each panel so text over a
+   bright cover glow keeps its contrast (spec red line) — */
+.detail-ambience{display:none}
+html[data-shell-theme='black'] .detail-ambience,html[data-shell-theme='white'] .detail-ambience{display:block;position:absolute;left:0;right:0;top:0;height:660px;z-index:0;overflow:hidden;pointer-events:none;-webkit-mask-image:linear-gradient(180deg,#000 50%,transparent 97%);mask-image:linear-gradient(180deg,#000 50%,transparent 97%)}
+.detail-ambience .world-art{position:absolute;inset:0;filter:var(--detail-amb-filter);opacity:var(--detail-amb-opacity);transform:scale(1.3)}
+html[data-shell-theme='black'] .page-plaza:has(> .detail-ambience),html[data-shell-theme='white'] .page-plaza:has(> .detail-ambience){position:relative}
+html[data-shell-theme='black'] .page-plaza:has(> .detail-ambience)>:is(.plaza-detail-top,.plaza-detail-cover,section),html[data-shell-theme='white'] .page-plaza:has(> .detail-ambience)>:is(.plaza-detail-top,.plaza-detail-cover,section){position:relative;z-index:1}
+html:not(.is-lite-gpu)[data-shell-theme='black'] .page-plaza:has(> .detail-ambience) .plaza-panel,html:not(.is-lite-gpu)[data-shell-theme='white'] .page-plaza:has(> .detail-ambience) .plaza-panel{position:relative}
+html:not(.is-lite-gpu)[data-shell-theme='black'] .page-plaza:has(> .detail-ambience) .plaza-panel::before,html:not(.is-lite-gpu)[data-shell-theme='white'] .page-plaza:has(> .detail-ambience) .plaza-panel::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:var(--glass-panel-pad);pointer-events:none}
+/* — Profile: the banner melts longer at its lower edge; the identity
+   block and the stats bar become glass plates riding the fade band — */
+html[data-shell-theme='black'] .profile-hero-bg,html[data-shell-theme='white'] .profile-hero-bg{-webkit-mask-image:linear-gradient(180deg,#000 55%,transparent 96%);mask-image:linear-gradient(180deg,#000 55%,transparent 96%)}
+html:not(.is-lite-gpu)[data-shell-theme='black'] .profile-hero-id,html:not(.is-lite-gpu)[data-shell-theme='white'] .profile-hero-id{background:var(--glass-card-bg);backdrop-filter:var(--glass-card-blur);-webkit-backdrop-filter:var(--glass-card-blur);border:1px solid var(--glass-card-line);border-radius:var(--glass-card-radius);box-shadow:var(--glass-card-shadow),0 0 0 1px var(--glass-card-edge),inset 0 1px 0 var(--card-top-hi);padding:16px 16px 14px;margin-bottom:14px}
+html:not(.is-lite-gpu)[data-shell-theme='black'] .profile-stats,html:not(.is-lite-gpu)[data-shell-theme='white'] .profile-stats{background:var(--glass-card-bg);backdrop-filter:var(--glass-card-blur);-webkit-backdrop-filter:var(--glass-card-blur);border:1px solid var(--glass-card-line);border-radius:var(--glass-card-radius);box-shadow:var(--glass-card-shadow),0 0 0 1px var(--glass-card-edge),inset 0 1px 0 var(--card-top-hi);padding:12px 4px;margin-top:-16px;position:relative;z-index:4}

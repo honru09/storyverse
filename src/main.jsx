@@ -6877,6 +6877,13 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
   };
   return (
     <div className="page page-plaza page-enter">
+      {/* SALT-3 cover ambience: a blurred copy of this book's own
+          artwork laid behind the first screen, so the glass panels
+          below refract the cover's colours. CSS confines the effect
+          to the black/white themes and hides the layer elsewhere. */}
+      <span className="detail-ambience" aria-hidden="true">
+        <PublicationArtwork publication={detail} genreId={genre.id} eager />
+      </span>
       <div className="plaza-detail-top">
         <button type="button" className="back-link" onClick={goBack}>
           <Icon name="chevron" size={15} className="rotate-180" /> {backLabel}

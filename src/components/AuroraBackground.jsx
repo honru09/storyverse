@@ -8,12 +8,19 @@ import React from "react";
  */
 export default function AuroraBackground() {
   return (
-    <div className="aurora-bg" aria-hidden="true">
-      <span className="aurora-blob b1" />
-      <span className="aurora-blob b2" />
-      <span className="aurora-blob b3" />
-      <span className="aurora-blob b4" />
-      <span className="aurora-grid" />
-    </div>
+    <>
+      <div className="aurora-bg" aria-hidden="true">
+        <span className="aurora-blob b1" />
+        <span className="aurora-blob b2" />
+        <span className="aurora-blob b3" />
+        <span className="aurora-blob b4" />
+        <span className="aurora-grid" />
+      </div>
+      {/* SALT-3: the black/white themes sit on a flat token ground, so
+          their frosted glass has nothing to refract. This layer paints
+          the soft colour halos those themes blur against. CSS keeps it
+          display:none outside black/white, so aurora never sees it. */}
+      <div className="salt-ambient" aria-hidden="true" />
+    </>
   );
 }
