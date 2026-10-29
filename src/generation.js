@@ -47,12 +47,26 @@ export function nextGenerationIndex(story, position = readerIndexFor(story)) {
 
 // Apply to the current story, not the request-time snapshot. A late answer must
 // not restore an abandoned branch, change a bookmark or move the reader back.
+// The name the server settled for an unnamed protagonist before the
+// opening was written (FINAL-FIX R-03): it lands in the story's config
+// so the settings book, the shelf and every later surface speak of the
+// same person the prose does. A name the reader actually chose is
+// never overwritten.
+export function withDerivedProtagonistName(story, result) {
+  const name = typeof result?.protagonistName === 'string' ? result.protagonistName.trim() : ''
+  if (!name) return story
+  const existing = typeof story.config?.name === 'string' ? story.config.name.trim() : ''
+  if (existing) return story
+  return { ...story, config: { ...story.config, name } }
+}
+
 export function acceptGeneratedChapter(story, result) {
   const index = result?.chapter?.index
   if (!Number.isInteger(index) || index < 0 || index >= totalChaptersFor(story)) throw new Error('章节格式不完整，请重试。')
   if (result.key !== chapterKey(story, index)) return story
   let next = acceptChapter(story, result.chapter, result.key)
   if (next === story) return story
+  next = withDerivedProtagonistName(next, result)
   if (index === 0 && result.worldBible) next = { ...next, worldBible: result.worldBible }
   // Remember which genre template the server resolved for this story so later
   // chapter requests can pin the same template instead of re-mapping.
@@ -161,6 +175,7 @@ export function acceptRerolledChapter(story, result) {
   if (result.key !== chapterKey(story, index)) return story
   let next = replaceFrontierChapter(story, result.chapter, result.key)
   if (next === story) return story
+  next = withDerivedProtagonistName(next, result)
   // Re-rolling the opening chapter is a fresh opening: the world bible
   // the server derived for it replaces the old one, as on first accept.
   if (index === 0 && result.worldBible) next = { ...next, worldBible: result.worldBible }

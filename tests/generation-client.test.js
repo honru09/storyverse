@@ -43,6 +43,19 @@ test('generated chapter validates nested prose before accepting', () => {
   assert.throws(() => acceptGeneratedChapter(story, result), /格式/)
 })
 
+test('the settled protagonist name is written into the record on accept (FINAL-FIX R-03)', () => {
+  const blank = { ...createStory({ name: '' }), engine: 'gemini' }
+  const next = acceptGeneratedChapter(blank, { ...resultFor(blank, 0), protagonistName: '宁远' })
+  assert.equal(next.config.name, '宁远')
+  // A reader-chosen name is never overwritten by a reported one.
+  const chosen = fresh()
+  const kept = acceptGeneratedChapter(chosen, { ...resultFor(chosen, 0), protagonistName: '宁远' })
+  assert.equal(kept.config.name, '旅人')
+  // No reported name changes nothing.
+  const untouched = acceptGeneratedChapter(blank, resultFor(blank, 0))
+  assert.equal(untouched.config.name, '')
+})
+
 test('opening accepts the planned world bible', () => {
   const story = fresh()
   const bible = { ...story.worldBible, premise: '这是一个完全不同的世界。' }

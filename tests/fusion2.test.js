@@ -195,6 +195,13 @@ test('gemini merge context ships the open foreshadowing of both sources', async 
     },
   })
   await generator.generate({ story: requestStory, index: 0 })
+  // FINAL-FIX (fusion item): a fused chapter is held to the same length
+  // band as any solo chapter, stated inside the merged context itself —
+  // the one measured fused chapter landed at ~1300 chars against the
+  // 1600–1950 band while the instruction lived only in the global
+  // system prompt.
+  assert.match(context.chapterLengthDirective || '', /1600–1950/)
+  assert.match(context.chapterLengthDirective || '', /1550/)
   assert.equal(context.sourceWorlds.length, 2)
   assert.deepEqual(context.sourceWorlds[0].openForeshadowing, [{ chapter: 1, text: '海底的钟声还没解释' }])
   assert.deepEqual(context.sourceWorlds[1].openForeshadowing, [{ chapter: 3, text: '剑碑上的旧名' }])

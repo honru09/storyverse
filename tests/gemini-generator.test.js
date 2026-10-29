@@ -300,17 +300,26 @@ test('upstream failures are sanitized; transient classes retry, configuration er
   }
 })
 
-test('blocked, truncated, malformed and schema-invalid output never becomes a chapter', async () => {
+test('blocked, malformed and schema-invalid output never becomes a chapter', async () => {
+  // Policy amendment (FINAL-FIX R-01, following the RELIABILITY.md §7
+  // pattern): this suite used to also pin TRUNCATED returns and
+  // world-bible slips at exactly one call, from when every model-output
+  // 502 was treated as deterministic. The收官 regression showed what
+  // that costs the FIRST chapter — the largest payload the service
+  // asks for (chapter + bible + a full-length outline): a truncated
+  // sample or one short outline entry killed it outright while later
+  // chapters' transient failures healed in-request. Those two classes
+  // are sampling outcomes and now retry inside the same budget (see
+  // the companion test below); they still never become a chapter.
+  // What stays deterministic, at exactly one call: safety blocks,
+  // function-call parts, an oversized body, and chapter-PROSE slips
+  // (the prose bounds are the chapter's own format facts).
   const cases = [
-    () => response(output(true), 'MAX_TOKENS'),
     () => response(output(true), 'SAFETY'),
     () => new Response(JSON.stringify({ promptFeedback: { blockReason: 'SAFETY' } })),
-    () => new Response(JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { parts: [] } }] })),
-    () => new Response('not-json'),
     () => response({ ...output(true), paragraphs: ['too short'] }),
     () => response({ ...output(true), title: 'x'.repeat(81) }),
     () => response({ ...output(true), choice: { options: [{ id: 'malicious' }] } }),
-    () => response({ ...output(true), worldBible: { ...output(true).worldBible, outline: ['too short'] } }),
     () => new Response('x'.repeat(129 * 1024)),
   ]
   for (const invalid of cases) {
@@ -319,6 +328,56 @@ test('blocked, truncated, malformed and schema-invalid output never becomes a ch
     await assert.rejects(generator.generate({ story: story(), index: 0 }), (error) => error.status === 502)
     assert.equal(calls, 1)
   }
+})
+
+test('truncated returns and world-bible slips retry inside the budget, then still refuse (FINAL-FIX R-01)', async () => {
+  const cases = [
+    () => response(output(true), 'MAX_TOKENS'),
+    () => new Response(JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { parts: [] } }] })),
+    () => new Response('not-json'),
+    () => response({ ...output(true), worldBible: { ...output(true).worldBible, outline: ['too short'] } }),
+    () => response({ ...output(true), worldBible: { ...output(true).worldBible, outline: output(true).worldBible.outline.slice(0, 5) } }),
+  ]
+  for (const invalid of cases) {
+    let calls = 0
+    const generator = createGeminiGenerator({ env, sleep: async () => {}, fetchImpl: async () => { calls += 1; return invalid() } })
+    await assert.rejects(generator.generate({ story: story(), index: 0 }), (error) => error.status === 502)
+    // 1 initial + 2 retries, all inside the one request; the chapter
+    // still never lands — the reader retries the whole ask, as before.
+    assert.equal(calls, 3)
+  }
+})
+
+test('a truncated first attempt heals when the re-ask completes (FINAL-FIX R-01)', async () => {
+  let calls = 0
+  const generator = createGeminiGenerator({ env, sleep: async () => {}, fetchImpl: async () => {
+    calls += 1
+    return calls === 1 ? response(output(true), 'MAX_TOKENS') : response(output(true))
+  } })
+  const result = await generator.generate({ story: story(), index: 0 })
+  assert.equal(calls, 2)
+  assert.equal(result.chapter.title, prose().title)
+})
+
+test('an unnamed protagonist is named before the opening is written, and the name rides the result (FINAL-FIX R-03)', async () => {
+  const blank = { ...createStory({ name: '' }), engine: 'gemini' }
+  let context
+  const generator = createGeminiGenerator({ env, fetchImpl: async (_url, options) => {
+    context = JSON.parse(JSON.parse(options.body).contents[0].parts[0].text)
+    return response(output(true))
+  } })
+  const result = await generator.generate({ story: blank, index: 0 })
+  assert.ok(result.protagonistName, 'the settled name is reported back')
+  assert.equal(context.config.name, result.protagonistName, 'the context speaks the same name')
+  assert.match(context.beatPlan ? JSON.stringify(context) : '', new RegExp(result.protagonistName))
+  // Deterministic: the same story id settles the same name every time.
+  const again = createGeminiGenerator({ env, fetchImpl: async () => response(output(true)) })
+  const second = await again.generate({ story: blank, index: 0 })
+  assert.equal(second.protagonistName, result.protagonistName)
+  // A name the reader chose is never replaced.
+  const named = createGeminiGenerator({ env, fetchImpl: async () => response(output(true)) })
+  const namedResult = await named.generate({ story: story(), index: 0 })
+  assert.equal(namedResult.protagonistName, undefined)
 })
 
 test('timeout aborts transport and retries inside the budget before reporting 504', async () => {

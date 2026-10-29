@@ -2411,12 +2411,12 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
   // hardcoded sample: a sci-fi-flavoured sentence must not leak into a
   // cultivation world just because it was written first.
   const previewText = isCustom && (draft.customWorldSetting || "").trim()
-    ? `${draft.name || "未命名旅人"}会在${world.name}醒来——${(draft.customWorldSetting || "").trim().slice(0, 56)}`
+    ? `${draft.name || "主角"}会在${world.name}醒来——${(draft.customWorldSetting || "").trim().slice(0, 56)}`
     : draft.immersive && draft.hometown
       ? `来自${draft.hometown}的${draft.role || "旅人"}，会在${spawnName}听见第一声回响。`
       : spawn?.hook
-        ? `${draft.name || "未命名旅人"}，${spawn.hook}`
-        : `${draft.name || "未命名旅人"}会在${spawnName}醒来。`;
+        ? `${draft.name || "主角"}，${spawn.hook}`
+        : `${draft.name || "主角"}会在${spawnName}醒来。`;
   // 书名 (TITLE-FLOW): the confirmation step names the book explicitly.
   // The suggestion is exactly what createStory would derive; the field
   // shows it as the placeholder so an untouched book still gets a sane
@@ -3199,7 +3199,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                 )}
                 <button disabled={busy} onClick={() => setStep(3)} aria-label="修改出身"><span>身份</span><b>{identity ? (localIdentityTitle(spawnGenre, identity.id) !== identity.name ? `${identity.name} · ${localIdentityTitle(spawnGenre, identity.id)}` : identity.name) : (draft.origin || "未定")}</b><Icon name="chevron" size={15} /></button>
                 <button disabled={busy} onClick={() => setStep(3)} aria-label="修改出生点"><span>出生点</span><b>{spawn ? spawn.name : "由设定决定"}{!isCustom && spawn && !draft.startPointName ? "（默认）" : ""}</b><Icon name="chevron" size={15} /></button>
-                <button disabled={busy} onClick={() => setStep(4)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "未命名旅人"} · {draft.trait}{pickedTrait ? "" : "（默认）"}</b><Icon name="chevron" size={15} /></button>
+                <button disabled={busy} onClick={() => setStep(4)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "留空 · 开篇时定名"} · {draft.trait}{pickedTrait ? "" : "（默认）"}</b><Icon name="chevron" size={15} /></button>
                 {draft.immersive && (
                   <button disabled={busy} onClick={() => setStep(4)} aria-label="修改人生经历"><span>人生经历</span><b>已带入</b><Icon name="chevron" size={15} /></button>
                 )}
@@ -10254,6 +10254,22 @@ function App() {
     if (!cloudUid) return;
     cloudSync.observe({ uid: cloudUid, stories: library.stories, readReadingStateRaw });
   }, [cloudUid, cloudSync, library]);
+  // Keep the cloud shelf whole when the page goes away (FINAL-FIX
+  // R-02): generation lands locally first and the debounced sync used
+  // to be the only road up — closing the tab inside that window lost
+  // the book. On hide/unload the sync drains what it owes with
+  // keepalive requests instead.
+  useEffect(() => {
+    if (!cloudUid) return undefined;
+    const drain = () => cloudSync.flushOnHide(cloudUid);
+    const onVisibility = () => { if (document.visibilityState === "hidden") drain(); };
+    window.addEventListener("pagehide", drain);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", drain);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [cloudUid, cloudSync]);
   const syncNote = account.user
     ? account.config?.storage === "synced"
       ? "书架已同步到你的账号，换设备登录就能接着读。"
