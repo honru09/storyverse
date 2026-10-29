@@ -133,6 +133,24 @@ export async function uploadMyPicture({ image, contentType, getAccessToken, fetc
   return result?.profile ?? null
 }
 
+/** The owner's hero-banner upload (DEVICE-FIX REQ-19): same payload shape as the picture. */
+export async function uploadMyBanner({ image, contentType, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await usersHeaders(getAccessToken)) }
+  const response = await fetchImpl('/api/me/profile/banner', {
+    method: 'POST', headers, body: JSON.stringify({ image, contentType }),
+  })
+  const result = await usersJson(response)
+  return result?.profile ?? null
+}
+
+/** Remove the uploaded banner; the hero falls back to portrait/default. */
+export async function deleteMyBanner({ getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await usersHeaders(getAccessToken)) }
+  const response = await fetchImpl('/api/me/profile/banner', { method: 'DELETE', headers })
+  const result = await usersJson(response)
+  return result?.profile ?? null
+}
+
 export async function checkHandleAvailable({ handle, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
   const headers = await usersHeaders(getAccessToken)
   const response = await fetchImpl(`/api/me/handle?value=${encodeURIComponent(handle || '')}`, { headers })
@@ -165,6 +183,25 @@ export async function bitmapRegionToSquareJpeg(bitmap, { cx, cy, side }, size = 
   canvas.height = out
   const context = canvas.getContext('2d')
   context.drawImage(bitmap, cx, cy, side, side, 0, 0, out, out)
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86))
+  return jpegBlobToUploadPayload(blob)
+}
+
+/**
+ * Draw one wide region of a decoded bitmap (`{ cx, cy, width, height }`
+ * in source pixels) down to at most 1600×533 and return the upload
+ * payload — the banner twin of bitmapRegionToSquareJpeg, for the
+ * profile hero's 3:1 crop step (DEVICE-FIX REQ-19).
+ */
+export async function bitmapRegionToBannerJpeg(bitmap, { cx, cy, width, height }) {
+  const scale = Math.min(1, 1600 / width, 533 / height)
+  const outW = Math.max(1, Math.round(width * scale))
+  const outH = Math.max(1, Math.round(height * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = outW
+  canvas.height = outH
+  const context = canvas.getContext('2d')
+  context.drawImage(bitmap, cx, cy, width, height, 0, 0, outW, outH)
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86))
   return jpegBlobToUploadPayload(blob)
 }

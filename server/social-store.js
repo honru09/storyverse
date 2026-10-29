@@ -25,6 +25,7 @@ export const followKeyFor = (followerUid, followeeUid) =>
 export const presenceKeyFor = (uid) => createHash('sha256').update(`presence\n${uid}`).digest('hex')
 export const profileKeyFor = (uid) => createHash('sha256').update(`user-profile\n${uid}`).digest('hex')
 export const pictureKeyFor = (uid) => createHash('sha256').update(`profile-picture\n${uid}`).digest('hex')
+export const bannerKeyFor = (uid) => createHash('sha256').update(`profile-banner\n${uid}`).digest('hex')
 export const userReportKeyFor = (reporterUid, targetUid) =>
   createHash('sha256').update(`user-report\n${reporterUid}\n${targetUid}`).digest('hex')
 export const notifyReadKeyFor = (uid, category) =>
@@ -58,12 +59,27 @@ export function pictureSourceFor(record, { hasUpload = false, portraitReady = fa
   return 'default'
 }
 
+/**
+ * Which banner a profile hero shows (DEVICE-FIX REQ-19). There is no
+ * stored preference: an uploaded banner wins outright; without one the
+ * hero may still borrow the main avatar's portrait (the historical
+ * blurred-ambience treatment); with neither, the designed default
+ * banner asset carries the hero. Deleting the upload is the owner's
+ * "恢复默认" — resolution then falls through the same chain.
+ */
+export function bannerSourceFor({ hasUpload = false, portraitReady = false } = {}) {
+  if (hasUpload) return 'upload'
+  if (portraitReady) return 'avatar'
+  return 'default'
+}
+
 export function createMemorySocialStore() {
   const follows = new Map()
   const presence = new Map()
   const profiles = new Map()
   const handles = new Map()
   const pictures = new Map()
+  const banners = new Map()
   const reports = new Map()
   const announcements = new Map()
   const notifyReads = new Map()
@@ -109,6 +125,12 @@ export function createMemorySocialStore() {
     },
     async putPicture(uid, record) { pictures.set(pictureKeyFor(uid), { ...record }) },
     async deletePicture(uid) { pictures.delete(pictureKeyFor(uid)) },
+    async getBanner(uid) {
+      const record = banners.get(bannerKeyFor(uid))
+      return record ? { ...record } : null
+    },
+    async putBanner(uid, record) { banners.set(bannerKeyFor(uid), { ...record }) },
+    async deleteBanner(uid) { banners.delete(bannerKeyFor(uid)) },
     async getUserReport(reporterUid, targetUid) {
       return reports.get(userReportKeyFor(reporterUid, targetUid)) ?? null
     },
@@ -222,6 +244,16 @@ export function createFirestoreSocialStore(loadDb) {
     },
     async deletePicture(uid) {
       await (await db()).collection('profile_pictures').doc(pictureKeyFor(uid)).delete()
+    },
+    async getBanner(uid) {
+      const snapshot = await (await db()).collection('profile_banners').doc(bannerKeyFor(uid)).get()
+      return snapshot.exists ? snapshot.data() : null
+    },
+    async putBanner(uid, record) {
+      await (await db()).collection('profile_banners').doc(bannerKeyFor(uid)).set({ ...record })
+    },
+    async deleteBanner(uid) {
+      await (await db()).collection('profile_banners').doc(bannerKeyFor(uid)).delete()
     },
     async getUserReport(reporterUid, targetUid) {
       const snapshot = await (await db()).collection('user_reports').doc(userReportKeyFor(reporterUid, targetUid)).get()

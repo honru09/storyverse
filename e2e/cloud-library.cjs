@@ -225,10 +225,13 @@ async function main() {
     await b.page.waitForSelector('text=雾港守塔人', { timeout: 15_000 });
     await b.page.waitForSelector('text=第 2 / 24 章', { timeout: 15_000 });
     check('B: the shelf shows the book at its reading position', () => {});
-    const syncedNote = await b.page.textContent('.library-sync-note');
-    check('B: the shelf states the book is account-synced', () => {
-      assert.match(syncedNote, /已同步到你的账号/);
+    // DEVICE-FIX REQ-26: the sync-success explainer was deleted as
+    // text noise — a synced shelf renders no note; the restored book
+    // and its reading position above are the sync proof.
+    check('B: a synced shelf renders no sync note (REQ-26)', () => {
+      assert.ok(true);
     });
+    assert.equal(await b.page.locator('.library-sync-note').count(), 0, 'no sync-success note on a synced shelf');
     await noOverflow(b.page, 'B home');
     // The note sits one flick below the fold; the app scrolls through
     // Lenis, so drive it with a real wheel gesture and let it settle.

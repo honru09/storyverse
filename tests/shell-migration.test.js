@@ -123,7 +123,10 @@ test("another user's profile renders no create/plus entry (user order 2026-10-28
 })
 
 test('face-anchor cropping: small round slots zoom portraits to the face', () => {
-  assert.match(css, /\.plaza-avatar-frame\.is-portrait \.plaza-avatar-img\{transform:scale\(2\.05\);transform-origin:50% 14%\}/)
+  assert.match(css, /\.plaza-avatar-frame\.is-portrait \.plaza-avatar-img\{object-position:50% 12%;transform:scale\(2\.05\);transform-origin:50% 14%\}/)
+  // DEVICE-FIX REQ-22: uploads and the default asset are NOT face
+  // anchored — the frame's base image sits centred and unscaled.
+  assert.match(css, /\.plaza-avatar-frame \.plaza-avatar-img\{[^}]*object-position:50% 50%/)
   // The 32px author frame zooms harder (§33 D): a whole tiny figure in
   // the circle is the failure this line exists to prevent.
   assert.match(css, /\.plaza-avatar-frame:not\(\.is-large\)\.is-portrait \.plaza-avatar-img\{transform:scale\(3\.4\);transform-origin:50% 11%\}/)

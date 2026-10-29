@@ -58,18 +58,20 @@ test('shelf is a wooden bookcase: planks, standing books, ribbons, printed title
   assert.match(shelfBlock, /wood-book-title-tag/)
   assert.match(shelfBlock, /coverTitleLayoutFor\(story\)/)
   assert.match(shelfBlock, /shelfMetaFor\(story\)/)
-  // Status hangs from the cover top as a ribbon; tilt is seeded per book.
+  // Status hangs from the cover top as a ribbon.
   assert.match(shelfBlock, /wood-book-ribbon \$\{ribbonKind\}/)
   assert.match(shelfBlock, /statusBadgeFor\(story\)/)
-  assert.match(shelfBlock, /shelfTiltFor\(story\)/)
-  // A partial last plank leans its final book; no filler books are invented.
-  assert.match(shelfBlock, /is-leaning/)
+  // DEVICE-FIX REQ-20: books stand straight — no seeded tilt is passed,
+  // no leaning book exists, and no filler books are invented.
+  assert.doesNotMatch(shelfBlock, /shelfTiltFor|is-leaning|--tilt/)
   assert.doesNotMatch(shelfBlock, /加入书架|sw-shelf-grid|sw-shelf-card/)
   // Wood is CSS: plank faces, grain, posts and the book's plank shadow.
   assert.match(css, /\.wood-shelf-plank\{[^}]*linear-gradient\(180deg,#8a6844/)
   assert.match(css, /\.wood-shelf-plank::before\{[^}]*repeating-linear-gradient/)
   assert.match(css, /\.wood-shelf::before/)
-  assert.match(css, /\.wood-book\{[^}]*rotate\(var\(--tilt/)
+  assert.doesNotMatch(css, /--tilt|is-leaning/)
+  // The action row keeps clear air above the plank (REQ-20).
+  assert.match(css, /\.wood-shelf-books\{[^}]*padding:0 6px 8px/)
   assert.match(css, /\.wood-book-cover\{[^}]*aspect-ratio:3\/4/)
   assert.match(css, /\.wood-book-ribbon\{[^}]*writing-mode:vertical-rl[^}]*clip-path:polygon/)
   assert.match(css, /\.wood-book-spine\{/)
@@ -107,7 +109,7 @@ test('store grid cards: status on the cover, title only on the cover, byline bel
   assert.match(storeBlock, /className="store-card-status"/)
   assert.match(storeBlock, /plaza-cover-title is-\$\{plazaTitleTierFor\(book\.title\)\}/)
   assert.match(storeBlock, /className="store-book-intro"/)
-  assert.match(storeBlock, /className="plaza-byline"/)
+  assert.match(storeBlock, /className="plaza-byline store-book-byline"/)
   assert.match(storeBlock, /plazaLengthLabel\(book\)/)
   assert.match(css, /\.store-grid\{display:grid/)
   assert.match(css, /\.store-card-status\{position:absolute/)

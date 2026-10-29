@@ -759,6 +759,21 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         }
         return sendJson(response, 200, { profile: await social.saveMyPicture(identity, await readPictureJson(request)) })
       }
+      if (pathname === '/api/me/profile/banner' && (request.method === 'POST' || request.method === 'DELETE')) {
+        // The profile hero banner (DEVICE-FIX REQ-19): same account
+        // gate and image-body reader as the picture route.
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再换头图。', 'auth-required')
+          throw error
+        }
+        if (request.method === 'DELETE') {
+          return sendJson(response, 200, { profile: await social.deleteMyBanner(identity) })
+        }
+        return sendJson(response, 200, { profile: await social.saveMyBanner(identity, await readPictureJson(request)) })
+      }
       if (pathname === '/api/me/handle' && request.method === 'GET') {
         const identity = await auth.identity(request.headers.authorization)
         const value = new URL(request.url, 'http://localhost').searchParams.get('value') || ''
@@ -801,7 +816,7 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         }
         return sendJson(response, 200, await social.friends(identity))
       }
-      const userMatch = pathname.match(/^\/api\/users\/([^/]+)(?:\/(profile|connections|portrait|picture|follow|unfollow|report|friend-request\/respond|friend-request\/cancel|friend-request))?$/)
+      const userMatch = pathname.match(/^\/api\/users\/([^/]+)(?:\/(profile|connections|portrait|picture|banner|follow|unfollow|report|friend-request\/respond|friend-request\/cancel|friend-request))?$/)
       if (userMatch) {
         const uid = decodeURIComponent(userMatch[1])
         const action = userMatch[2]
@@ -826,6 +841,22 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           // default avatar is a static asset and never lands here.
           const image = await social.picture(uid)
           if (!image) throw new ApiError(404, '这位用户还没有自定义头像。')
+          if (!response.destroyed && !response.writableEnded) {
+            response.writeHead(200, {
+              'Content-Type': image.contentType,
+              'Content-Length': image.buffer.length,
+              'Cache-Control': 'public, max-age=300',
+            })
+            response.end(image.buffer)
+          }
+          return
+        }
+        if (action === 'banner' && request.method === 'GET') {
+          // The uploaded profile hero banner (REQ-19). Only an actual
+          // upload has bytes here — the avatar/default resolutions are
+          // the portrait route and a static asset respectively.
+          const image = await social.banner(uid)
+          if (!image) throw new ApiError(404, '这位用户还没有自定义头图。')
           if (!response.destroyed && !response.writableEnded) {
             response.writeHead(200, {
               'Content-Type': image.contentType,

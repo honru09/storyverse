@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { ApiError, sanitizeSettingText } from './gemini.js'
 import { avatarAppearanceText } from '../src/avatar.js'
 import { CUSTOM_GENRE_ID } from '../src/story-engine.js'
-import { createSocialStore, pictureSourceFor, friendshipKeyFor } from './social-store.js'
+import { createSocialStore, pictureSourceFor, bannerSourceFor, friendshipKeyFor } from './social-store.js'
 import { emailCodeUid, normalizeEmailAddress, validEmailAddress } from './email-code.js'
 import { createPlazaStore } from './plaza-store.js'
 import { createPlazaFeedStore } from './plaza-feed-store.js'
@@ -44,6 +44,8 @@ import { isOfficialUid, plazaSummaryOf } from './plaza.js'
 export const PRESENCE_WINDOW_MS = 90_000
 export const DEFAULT_AVATAR_PATH = '/default-avatar.svg'
 export const PROFILE_PICTURE_MAX_BYTES = 1_048_576
+export const PROFILE_BANNER_MAX_BYTES = 1_048_576
+export const DEFAULT_BANNER_PATH = '/art/banner-profile-1600.webp'
 export const HANDLE_PATTERN = /^[a-z0-9_]{3,20}$/
 
 /**
@@ -364,6 +366,22 @@ export function createSocialService({
     if (kind === 'default') return { kind, url: DEFAULT_AVATAR_PATH }
     const stamp = (record?.pictureVersion || 0) + (kind === 'avatar' ? (avatarProfile?.portrait?.version || 0) : 0)
     return { kind, url: `/api/users/${encodeURIComponent(uid)}/picture?v=${stamp}` }
+  }
+
+  /**
+   * Resolve the profile hero banner (DEVICE-FIX REQ-19):
+   * `{ kind, url }` where kind is 'upload' | 'avatar' | 'default'.
+   * Uploads ride this service's banner route with the record's
+   * bannerVersion stamp; the default is the designed banner asset;
+   * 'avatar' carries url=null — the client renders the main portrait
+   * with its blurred-ambience treatment instead of a banner file.
+   */
+  async function bannerFor(uid, record, avatarProfile) {
+    const hasUpload = backend ? Boolean(await backend.getBanner(uid).catch(() => null)) : false
+    const kind = bannerSourceFor({ hasUpload, portraitReady: avatarProfile?.portrait?.status === 'ready' })
+    if (kind === 'upload') return { kind, url: `/api/users/${encodeURIComponent(uid)}/banner?v=${record?.bannerVersion || 0}` }
+    if (kind === 'avatar') return { kind, url: null }
+    return { kind, url: DEFAULT_BANNER_PATH }
   }
 
   async function handleProblem(identity, handle) {
@@ -724,6 +742,7 @@ export function createSocialService({
         // not the person. Empty string when never written.
         bio: record?.bio || '',
         picture,
+        banner: await bannerFor(target, record, profile),
         avatar: profile ? {
           name: sanitizeSettingText(clip(profile.name, 40)).trim(),
           description: sanitizeSettingText(clip(profile.description, 300)).trim(),
@@ -775,6 +794,7 @@ export function createSocialService({
           bio: record?.bio || '',
           pictureKind: record?.pictureKind ?? null,
           hasUpload: backend ? Boolean(await backend.getPicture(target).catch(() => null)) : false,
+          hasBanner: backend ? Boolean(await backend.getBanner(target).catch(() => null)) : false,
           hasPortrait,
         }
       }
@@ -843,6 +863,7 @@ export function createSocialService({
           bio: existing?.bio || '',
           pictureKind: existing?.pictureKind ?? null,
           pictureVersion: existing?.pictureVersion || 0,
+          bannerVersion: existing?.bannerVersion || 0,
         }
         if ('displayName' in input) {
           const name = sanitizeSettingText(clip(input.displayName, 60)).trim()
@@ -933,10 +954,84 @@ export function createSocialService({
           bio: existing?.bio || '',
           pictureKind: 'upload',
           pictureVersion: (existing?.pictureVersion || 0) + 1,
+          bannerVersion: existing?.bannerVersion || 0,
           updatedAt: new Date(now()).toISOString(),
         })
         return this.profile(identity, identity.uid)
       })
+    },
+
+    /** POST /api/me/profile/banner — the owner's uploaded hero banner (REQ-19). */
+    async saveMyBanner(identity, body) {
+      if (!backend) throw new ApiError(503, '主页服务尚未配置。')
+      const input = body && typeof body === 'object' ? body : {}
+      const contentType = typeof input.contentType === 'string' ? input.contentType : ''
+      if (contentType !== 'image/jpeg' && contentType !== 'image/png') {
+        throw new ApiError(400, '头图只支持 JPG 或 PNG 图片。')
+      }
+      const encoded = typeof input.image === 'string'
+        ? input.image.replace(/^data:image\/[a-z+]+;base64,/, '')
+        : ''
+      const buffer = encoded ? Buffer.from(encoded, 'base64') : Buffer.alloc(0)
+      if (!buffer.length || buffer.length > PROFILE_BANNER_MAX_BYTES) {
+        throw new ApiError(400, '图片太大了，换一张 1MB 以内的。')
+      }
+      const magicOk = contentType === 'image/jpeg'
+        ? buffer[0] === 0xff && buffer[1] === 0xd8
+        : buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47
+      if (!magicOk) throw new ApiError(400, '图片格式对不上，请换一张 JPG 或 PNG。')
+      return serialise(`profile:${identity.uid}`, async () => {
+        await backend.putBanner(identity.uid, {
+          image: buffer.toString('base64'),
+          contentType,
+          updatedAt: new Date(now()).toISOString(),
+        })
+        const existing = await profileRecordOf(identity.uid)
+        await backend.putProfileRecord({
+          uid: identity.uid,
+          displayName: existing?.displayName || '',
+          handle: existing?.handle || '',
+          bio: existing?.bio || '',
+          pictureKind: existing?.pictureKind ?? null,
+          pictureVersion: existing?.pictureVersion || 0,
+          bannerVersion: (existing?.bannerVersion || 0) + 1,
+          updatedAt: new Date(now()).toISOString(),
+        })
+        return this.profile(identity, identity.uid)
+      })
+    },
+
+    /** DELETE /api/me/profile/banner — back to the resolved default chain. */
+    async deleteMyBanner(identity) {
+      if (!backend) throw new ApiError(503, '主页服务尚未配置。')
+      return serialise(`profile:${identity.uid}`, async () => {
+        await backend.deleteBanner(identity.uid)
+        const existing = await profileRecordOf(identity.uid)
+        await backend.putProfileRecord({
+          uid: identity.uid,
+          displayName: existing?.displayName || '',
+          handle: existing?.handle || '',
+          bio: existing?.bio || '',
+          pictureKind: existing?.pictureKind ?? null,
+          pictureVersion: existing?.pictureVersion || 0,
+          bannerVersion: (existing?.bannerVersion || 0) + 1,
+          updatedAt: new Date(now()).toISOString(),
+        })
+        return this.profile(identity, identity.uid)
+      })
+    },
+
+    /**
+     * The uploaded banner bytes for `uid` (REQ-19). Only the 'upload'
+     * resolution has bytes here — the avatar and default banners are
+     * the portrait route and a static asset respectively.
+     */
+    async banner(uid) {
+      const target = clip(uid, 512)
+      if (!target || !backend) return null
+      const stored = await backend.getBanner(target).catch(() => null)
+      if (!stored?.image) return null
+      return { buffer: Buffer.from(stored.image, 'base64'), contentType: stored.contentType || 'image/jpeg' }
     },
 
     /**

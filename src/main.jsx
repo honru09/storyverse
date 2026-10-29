@@ -28,7 +28,6 @@ import {
   coverTitleLayoutFor,
   seasonLabel,
   shelfMetaFor,
-  shelfTiltFor,
   statusBadgeFor,
   storyComplete,
   storyDistinguisherFor,
@@ -108,6 +107,8 @@ import {
   fetchUserConnections,
   fetchUserProfile,
   bitmapRegionToSquareJpeg,
+  bitmapRegionToBannerJpeg,
+  deleteMyBanner,
   followUser,
   markNotificationsRead,
   publicDisplayName as profileDisplayName,
@@ -119,6 +120,7 @@ import {
   sendPresenceHeartbeat,
   unfollowUser,
   updateMyProfile,
+  uploadMyBanner,
   uploadMyPicture,
 } from "./users.js";
 import {
@@ -1144,23 +1146,20 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
           书架上没有找到「{query}」。
         </div>
       )}
-      {shelves.map((row, shelfIndex) => {
-        const partial = row.length < capacity;
+      {shelves.map((row) => {
         return (
           <div className="wood-shelf" key={row.map((story) => story.id).join("|")}>
             <div className="wood-shelf-books">
-              {row.map((story, bookIndex) => {
+              {row.map((story) => {
                 const genre = genreOf(story);
                 const complete = storyComplete(story);
                 const ribbonKind = complete ? "is-complete" : seasonLabel(story) ? "is-season" : "is-serial";
                 const titleLayout = coverTitleLayoutFor(story);
-                const leaning = partial && shelfIndex === shelves.length - 1 && bookIndex === row.length - 1;
                 return (
                   <div className="wood-book-cell" key={story.id}>
                     <button
                       type="button"
-                      className={`wood-book ${leaning ? "is-leaning" : ""} ${pulledId === story.id ? "is-pulled" : ""}`}
-                      style={{ "--tilt": `${shelfTiltFor(story)}deg` }}
+                      className={`wood-book ${pulledId === story.id ? "is-pulled" : ""}`}
                       onClick={() => handleOpen(story)}
                       aria-label={`${story.title}，${shelfMetaFor(story)}`}
                     >
@@ -5529,14 +5528,19 @@ function StoreBookCard({ book, onOpen }) {
         <span className="store-card-status">{plazaLineStatusFor(book) === "serializing" ? "连载中" : "已完结"}</span>
       </button>
       <div className="store-book-body">
-        <div className="plaza-byline">
+        {/* DEVICE-FIX REQ-21: every body row owns a fixed slot — the
+            byline never wraps, the intro always renders its 2-line
+            slot (empty when the book has none), chips and meta always
+            occupy their line — so two cards in a row share every
+            baseline. */}
+        <div className="plaza-byline store-book-byline">
           <span className="plaza-byline-label">作者</span>
           <span className="plaza-byline-name">{book.authorName}</span>
           {showHandle && <span className="plaza-byline-handle">@{authorHandle}</span>}
           {book.official && <span className="plaza-byline-official">官方</span>}
         </div>
-        {intro && <p className="store-book-intro">{intro}</p>}
-        <div className="plaza-chips">
+        <p className="store-book-intro">{intro}</p>
+        <div className="plaza-chips store-book-chips">
           <span className="plaza-chip">{book.manual ? (shelfById(book.shelfId)?.name || "作者手写") : templateName}</span>
           {showWorld && (
             <>
@@ -5545,7 +5549,7 @@ function StoreBookCard({ book, onOpen }) {
             </>
           )}
         </div>
-        <div className="plaza-meta">
+        <div className="plaza-meta store-book-meta">
           <span>{plazaLengthLabel(book)}</span>
           {book.ratingCount > 0 && ratingAverageText(book) && (
             <span className="store-card-rating">★ {ratingAverageText(book)} · {book.ratingCount} 条评价</span>
@@ -5625,8 +5629,6 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
           </button>
         </header>
       </div>
-      <p className="page-caption">正式书目——走完的故事线在这里上架，广场上分享的也是这里的书。</p>
-
       <div className="store-search">
         <Icon name="search" size={17} />
         <input
@@ -6365,10 +6367,10 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
         </header>
         {/* The value line takes a formal seat on the front door
             (DESIGNER-QA #7, closed in §33): a cold visitor's first screen
-            carries one sentence worth remembering; the caption below it
-            keeps its explaining job. */}
+            carries one sentence worth remembering. The explaining
+            caption under it was deleted as text noise (DEVICE-FIX
+            REQ-26) — the value line stands alone. */}
         <p className="plaza-value-line">这一次，<em>你是主角。</em></p>
-        <p className="page-caption">读完的世界、想说的话，都在这里流动。</p>
       </div>
 
       {activeStory && (
@@ -6413,7 +6415,6 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
         <section className="plaza-following" aria-label="关注动态">
           <div className="plaza-feed-heading">
             <h2>关注动态</h2>
-            <span>你关注的人最近在广场说了什么</span>
           </div>
           <div className="plaza-following-row">
             {followedPosts.map((post) => (
@@ -6934,7 +6935,6 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
             <strong>{detail.avatar?.name}</strong>
             <span className="plaza-chip">作者的化身</span>
           </div>
-          <p>这条线，是这个化身一步步走完的。</p>
           {detail.avatar?.appearance && <small>化身设定：{detail.avatar.appearance}</small>}
         </div>
       </section>
@@ -6959,9 +6959,8 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
             plain words — 世界背景 / 核心规则 / 主角与主线 — never the
             raw engine premise (which could stuff the book's title in
             as a sentence subject and leak engine vocabulary). The
-            脱敏版 chip that used to sit in this heading is gone: the
-            note below already says it, and the first rule allows the
-            fact on the page once. */}
+            脱敏 explainer that used to tail this panel was deleted as
+            text noise (DEVICE-FIX REQ-26): the outline stands alone. */}
         <h3 className="plaza-intro-head">世界背景</h3>
         <p className="plaza-prose">{worldIntro.background}</p>
         {worldIntro.rules.length > 0 && (
@@ -6974,14 +6973,12 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         )}
         <h3 className="plaza-intro-head">主角与主线</h3>
         <p className="plaza-prose">{worldIntro.thread}</p>
-        <small className="plaza-note">发布时已脱敏：作者的私有设定与未公开分支不会出现在这里。</small>
       </section>
 
       <section className="plaza-panel">
         <div className="plaza-panel-heading">
           <h2>主线节拍</h2>
         </div>
-        <p className="plaza-note">带化身进入时，你的新线会沿用这套骨架，走向由你的选择分叉。</p>
         <ol className="plaza-beats">
           {beats.slice(0, 4).map((beat) => {
             const beatTitle = chapterTitleTextFor(beat.title);
@@ -7102,8 +7099,15 @@ function formatProfileDate(value) {
  * small round preview at the slider repeats the same transform.
  * Confirming hands the chosen source rect to
  * bitmapRegionToSquareJpeg; cancelling discards everything.
+ *
+ * DEVICE-FIX REQ-19 parameterised the same skeleton for the profile
+ * banner: shape="banner" swaps the square viewport for a 3:1 frame
+ * (rectangular mask, wide preview) and the confirm rect becomes
+ * `{ cx, cy, width, height }` (the circle path also carries
+ * `side = width`, so the square consumer is untouched).
  */
-function PictureCropper({ bitmap, url, busy, onCancel, onConfirm }) {
+function PictureCropper({ bitmap, url, busy, onCancel, onConfirm, shape = "circle" }) {
+  const isBanner = shape === "banner";
   const viewRef = useRef(null);
   const [viewSize, setViewSize] = useState(280);
   const [zoom, setZoom] = useState(1);
@@ -7120,14 +7124,16 @@ function PictureCropper({ bitmap, url, busy, onCancel, onConfirm }) {
   }, []);
   const iw = bitmap.width;
   const ih = bitmap.height;
-  const baseScale = Math.max(viewSize / iw, viewSize / ih);
+  const viewW = viewSize;
+  const viewH = viewSize / (isBanner ? 3 : 1);
+  const baseScale = Math.max(viewW / iw, viewH / ih);
   const scale = baseScale * zoom;
   const dispW = iw * scale;
   const dispH = ih * scale;
   const clampOffset = (next, forZoom = zoom) => {
     const s = baseScale * forZoom;
-    const maxX = Math.max(0, (iw * s - viewSize) / 2);
-    const maxY = Math.max(0, (ih * s - viewSize) / 2);
+    const maxX = Math.max(0, (iw * s - viewW) / 2);
+    const maxY = Math.max(0, (ih * s - viewH) / 2);
     return {
       x: Math.min(maxX, Math.max(-maxX, next.x)),
       y: Math.min(maxY, Math.max(-maxY, next.y)),
@@ -7145,16 +7151,17 @@ function PictureCropper({ bitmap, url, busy, onCancel, onConfirm }) {
   };
   const onPointerEnd = () => { dragRef.current = null; };
   const confirm = () => {
-    const side = viewSize / scale;
-    const cx = Math.min(iw - side, Math.max(0, iw / 2 - offset.x / scale - side / 2));
-    const cy = Math.min(ih - side, Math.max(0, ih / 2 - offset.y / scale - side / 2));
-    onConfirm({ cx, cy, side });
+    const cropW = viewW / scale;
+    const cropH = viewH / scale;
+    const cx = Math.min(iw - cropW, Math.max(0, iw / 2 - offset.x / scale - cropW / 2));
+    const cy = Math.min(ih - cropH, Math.max(0, ih / 2 - offset.y / scale - cropH / 2));
+    onConfirm({ cx, cy, side: cropW, width: cropW, height: cropH });
   };
-  const previewRatio = 46 / viewSize;
+  const previewRatio = (isBanner ? 92 : 46) / viewSize;
   return (
     <div className="profile-crop">
       <div
-        className="profile-crop-view"
+        className={`profile-crop-view${isBanner ? " is-banner" : ""}`}
         ref={viewRef}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -7171,10 +7178,12 @@ function PictureCropper({ bitmap, url, busy, onCancel, onConfirm }) {
             transform: `translate(-50%, -50%) translate(${offset.x}px, ${offset.y}px)`,
           }}
         />
-        <span className="profile-crop-circle" aria-hidden="true" />
+        {isBanner
+          ? <span className="profile-crop-frame" aria-hidden="true" />
+          : <span className="profile-crop-circle" aria-hidden="true" />}
       </div>
       <div className="profile-crop-controls">
-        <span className="profile-crop-preview" aria-hidden="true">
+        <span className={`profile-crop-preview${isBanner ? " is-banner" : ""}`} aria-hidden="true">
           <img
             src={url}
             alt=""
@@ -7201,7 +7210,7 @@ function PictureCropper({ bitmap, url, busy, onCancel, onConfirm }) {
           }}
         />
       </div>
-      <p className="profile-crop-hint">拖动调整位置，圆圈里就是头像最终的样子。</p>
+      <p className="profile-crop-hint">{isBanner ? "拖动调整位置，框里就是头图最终的样子。" : "拖动调整位置，圆圈里就是头像最终的样子。"}</p>
       <div className="profile-crop-actions">
         <button type="button" onClick={onCancel} disabled={busy}>取消</button>
         <button type="button" className="is-primary" onClick={confirm} disabled={busy}>
@@ -7229,8 +7238,9 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
   // editable block never carried, so the field used to open blank and
   // invite a divergent claim), the claimed handle for the rest. The
   // resolved profile.handle is the effective @ID: when it is set, the
-  // field is a read-only display and saves stop sending handle at all
-  // (the server refuses a differing value with 400 regardless).
+  // field is not rendered at all (DEVICE-FIX REQ-24) and saves stop
+  // sending handle (the server refuses a differing value with 400
+  // regardless).
   const lockedHandle = profile.handle || "";
   const idLocked = Boolean(lockedHandle);
   const [busy, setBusy] = useState(false);
@@ -7243,15 +7253,30 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
   const [crop, setCrop] = useState(null);
   const cropRef = useRef(null);
   cropRef.current = crop;
+  // The banner crop (REQ-19) keeps its own pending bitmap, disposed
+  // the same way when the sheet goes away mid-crop.
+  const [bannerCrop, setBannerCrop] = useState(null);
+  const bannerCropRef = useRef(null);
+  bannerCropRef.current = bannerCrop;
+  const bannerFileRef = useRef(null);
   useEffect(() => () => {
-    const current = cropRef.current;
-    if (current) {
-      current.bitmap.close?.();
-      URL.revokeObjectURL(current.url);
+    for (const pending of [cropRef.current, bannerCropRef.current]) {
+      if (pending) {
+        pending.bitmap.close?.();
+        URL.revokeObjectURL(pending.url);
+      }
     }
   }, []);
   const pictureKind = profile.picture?.kind || "default";
   const pictureStateLabel = pictureKind === "upload" ? "自定义图片" : pictureKind === "avatar" ? "化身立绘" : "默认头像";
+  // The hero banner's resolved state (REQ-19): the preview mirrors
+  // what the hero shows — the upload/default file itself, or the
+  // portrait the blurred fallback borrows.
+  const bannerKind = profile.banner?.kind || "default";
+  const bannerStateLabel = bannerKind === "upload" ? "自定义图片" : bannerKind === "avatar" ? "化身立绘" : "默认头图";
+  const bannerPreviewUrl = bannerKind === "avatar"
+    ? (profile.avatar?.portraitUrl || "")
+    : (profile.banner?.url || "");
 
   const checkHandle = async () => {
     const value = handle.trim().toLowerCase();
@@ -7308,6 +7333,53 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
     } finally { setPictureBusy(""); }
   };
 
+  const closeBannerCrop = () => {
+    const current = bannerCropRef.current;
+    if (current) {
+      current.bitmap.close?.();
+      URL.revokeObjectURL(current.url);
+    }
+    setBannerCrop(null);
+  };
+
+  const onPickBannerFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || pictureBusy) return;
+    setError("");
+    try {
+      const bitmap = await createImageBitmap(file);
+      setBannerCrop({ bitmap, url: URL.createObjectURL(file) });
+    } catch {
+      setError("这张图片读不出来，换一张试试。");
+    }
+  };
+
+  const confirmBannerCrop = async (rect) => {
+    if (!bannerCrop || pictureBusy) return;
+    setPictureBusy("banner-upload");
+    setError("");
+    try {
+      const processed = await bitmapRegionToBannerJpeg(bannerCrop.bitmap, rect);
+      const next = await uploadMyBanner({ ...processed, getAccessToken: getToken });
+      closeBannerCrop();
+      onSaved(next);
+    } catch (failure) {
+      setError(failure?.message || "头图没能上传，请换一张试试。");
+    } finally { setPictureBusy(""); }
+  };
+
+  const resetBanner = async () => {
+    if (pictureBusy) return;
+    setPictureBusy("banner-reset");
+    setError("");
+    try {
+      onSaved(await deleteMyBanner({ getAccessToken: getToken }));
+    } catch (failure) {
+      setError(failure?.message || "头图没能恢复默认，请稍后再试。");
+    } finally { setPictureBusy(""); }
+  };
+
   const save = async () => {
     if (busy) return;
     setBusy(true);
@@ -7338,7 +7410,7 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
       <div className="profile-edit-sheet">
         <span className="ryan-sheet-handle" aria-hidden="true" />
         <div className="profile-edit-heading">
-          <h2>{crop ? "裁剪头像" : "编辑资料"}</h2>
+          <h2>{crop ? "裁剪头像" : bannerCrop ? "裁剪头图" : "编辑资料"}</h2>
           <button type="button" className="profile-edit-close" onClick={onClose} aria-label="关闭">
             <Icon name="x" size={16} />
           </button>
@@ -7353,6 +7425,18 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
               busy={pictureBusy === "upload"}
               onCancel={closeCrop}
               onConfirm={(rect) => void confirmCrop(rect)}
+            />
+          </>
+        ) : bannerCrop ? (
+          <>
+            {error && <p className="profile-edit-error" role="alert">{error}</p>}
+            <PictureCropper
+              shape="banner"
+              bitmap={bannerCrop.bitmap}
+              url={bannerCrop.url}
+              busy={pictureBusy === "banner-upload"}
+              onCancel={closeBannerCrop}
+              onConfirm={(rect) => void confirmBannerCrop(rect)}
             />
           </>
         ) : (
@@ -7384,6 +7468,30 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
           <input ref={fileRef} type="file" accept="image/jpeg,image/png" hidden onChange={(event) => void onPickFile(event)} />
         </div>
 
+        <div className="profile-edit-banner">
+          <span className="profile-edit-banner-preview">
+            {bannerPreviewUrl ? <img src={bannerPreviewUrl} alt="" /> : null}
+          </span>
+          <div className="profile-edit-picture-copy">
+            <strong>主页头图</strong>
+            <small>现在使用的是：{bannerStateLabel}</small>
+          </div>
+        </div>
+        <div className="profile-edit-picture-actions">
+          <button type="button" disabled={Boolean(pictureBusy)} onClick={() => bannerFileRef.current?.click()}>
+            {pictureBusy === "banner-upload" ? "上传中…" : "上传图片"}
+          </button>
+          <button
+            type="button"
+            disabled={Boolean(pictureBusy) || !editable.hasBanner}
+            onClick={() => void resetBanner()}
+            title={editable.hasBanner ? "" : "现在就是默认头图"}
+          >
+            恢复默认
+          </button>
+          <input ref={bannerFileRef} type="file" accept="image/jpeg,image/png" hidden onChange={(event) => void onPickBannerFile(event)} />
+        </div>
+
         <label className="profile-edit-field">
           <span>显示名</span>
           <input
@@ -7405,27 +7513,30 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
             {bioCount}/120
           </small>
         </label>
-        <label className="profile-edit-field">
-          <span>@用户名</span>
-          <input
-            value={idLocked ? lockedHandle : handle}
-            maxLength={20}
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            readOnly={idLocked}
-            onChange={(event) => { setHandle(event.target.value); setHandleState(null); }}
-            onBlur={idLocked ? undefined : () => void checkHandle()}
-            placeholder="小写字母、数字、下划线"
-          />
-          {idLocked ? (
-            <small className="profile-edit-handle-state">用户名是注册时定下的 @ID，不能修改。</small>
-          ) : handleState && (
-            <small className={`profile-edit-handle-state ${handleState.available ? "is-ok" : "is-bad"}`}>
-              {handleState.message}
-            </small>
-          )}
-        </label>
+        {/* DEVICE-FIX REQ-24: once the @ID exists it can never change,
+            so the field leaves the editor entirely (user order: 不可改
+            的东西别放在编辑里）. Only a first claim (no @ID yet)
+            still renders the editable field + availability check. */}
+        {!idLocked && (
+          <label className="profile-edit-field">
+            <span>@用户名</span>
+            <input
+              value={handle}
+              maxLength={20}
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              onChange={(event) => { setHandle(event.target.value); setHandleState(null); }}
+              onBlur={() => void checkHandle()}
+              placeholder="小写字母、数字、下划线"
+            />
+            {handleState && (
+              <small className={`profile-edit-handle-state ${handleState.available ? "is-ok" : "is-bad"}`}>
+                {handleState.message}
+              </small>
+            )}
+          </label>
+        )}
 
         {error && <p className="profile-edit-error" role="alert">{error}</p>}
         <button type="button" className="profile-edit-save" disabled={busy || bioOverLimit} onClick={() => void save()}>
@@ -7784,7 +7895,8 @@ function FriendsPanel({ authClient, onOpenProfile }) {
 
 // ——— PROFILE-ENRICH (§35) section pieces ———
 // One book standing in the profile's mini-shelf: the same cover
-// sources and seeded tilt as the shelf page, a slimmer footprint.
+// sources as the shelf page, a slimmer footprint. Books stand
+// straight everywhere (DEVICE-FIX REQ-20).
 // Own books come from the live library (drafts included, it is your
 // home); other people's books are their public lines.
 function ProfileShelfStoryBook({ story, authClient, account, onOpen }) {
@@ -7793,7 +7905,6 @@ function ProfileShelfStoryBook({ story, authClient, account, onOpen }) {
     <button
       type="button"
       className="profile-shelf-book"
-      style={{ "--tilt": `${shelfTiltFor(story)}deg` }}
       onClick={() => onOpen(story.id)}
       aria-label={`打开《${story.title || "未命名故事"}》`}
     >
@@ -7821,7 +7932,6 @@ function ProfileShelfPubBook({ publication, onOpen }) {
     <button
       type="button"
       className="profile-shelf-book"
-      style={{ "--tilt": `${shelfTiltFor(publication)}deg` }}
       onClick={() => onOpen(publication)}
       aria-label={`打开《${publication.title}》`}
     >
@@ -8436,7 +8546,12 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
         </div>
       )}
       <header className="profile-hero">
-        {mainAvatar?.hasPortrait && mainAvatar?.portraitUrl ? (
+        {/* DEVICE-FIX REQ-19: the hero background follows the resolved
+            banner — an upload or the designed default shows SHARP;
+            only the portrait fallback keeps the blurred ambience. */}
+        {profile.banner?.kind === "upload" || profile.banner?.kind === "default" ? (
+          <span className="profile-hero-bg is-clear" style={{ backgroundImage: `url("${profile.banner.url}")` }} aria-hidden="true" />
+        ) : mainAvatar?.hasPortrait && mainAvatar?.portraitUrl ? (
           <span className="profile-hero-bg" style={{ backgroundImage: `url("${mainAvatar.portraitUrl}")` }} aria-hidden="true" />
         ) : null}
         <span className="profile-hero-tint" aria-hidden="true" />
@@ -8905,8 +9020,6 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
       <header className="plaza-heading">
         <h1>上架到书城</h1>
       </header>
-      <p className="page-caption">把一条故事线上架到书城：走完的线整条上架；无限连载的线和自己写的书连载中就能上架，之后的新章会自己跟上。上架后，其他人能在书城读你的书，也能把这本书分享到广场；化身走完的线还能被带化身进入重演，自己写的书只能读。</p>
-
       <OfficialDemoEntry onNavigate={onNavigate} />
 
       {!account.user ? (
@@ -10463,10 +10576,11 @@ function App() {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [cloudUid, cloudSync]);
+  // DEVICE-FIX REQ-26: the signed-in "shelf is synced" success line
+  // is text noise — it no longer renders anywhere. Only the at-risk
+  // states (signed out with local-only stories) still speak.
   const syncNote = account.user
-    ? account.config?.storage === "synced"
-      ? "书架已同步到你的账号，换设备登录就能接着读。"
-      : null
+    ? null
     : library.stories.length > 0
       ? account.config?.storage === "synced"
         ? "故事只保存在当前浏览器 · 登录后自动同步到账号，换设备不丢。"
@@ -10655,6 +10769,11 @@ function App() {
           id: options.storyId || activeStory?.id,
           shared: Boolean(options.shared),
           ...(options.plaza ? { plaza: true } : {}),
+          // DEVICE-FIX REQ-25: the surface the reader was opened FROM
+          // (memory-only route state — never in the hash, so a refresh
+          // drops it and the reader falls back to its default back
+          // target). Reader.goBack honours it before the readOnly rule.
+          ...(options.from ? { from: options.from } : {}),
         }
       : next === "plaza" && options.postId
         ? { view: next, postId: options.postId }
@@ -10671,7 +10790,11 @@ function App() {
           : { view: next };
     const hash = routeHash(nextRoute);
     if (window.location.hash !== hash) window.history.pushState(null, "", hash);
-    setRoute(parseRoute(hash));
+    // parseRoute cannot see memory-only route state (REQ-25 `from`):
+    // re-attach it so the reader still knows its origin surface.
+    setRoute(nextRoute.from
+      ? { ...parseRoute(hash), from: nextRoute.from }
+      : parseRoute(hash));
     if (next !== "reader") setShareRequest(false);
     // Opening someone else's profile WINDOW must not scroll the page
     // underneath back to the top (PROFILE-FIX B2); every real page
@@ -10993,7 +11116,7 @@ function App() {
     setShareRequest(Boolean(options.share));
     if (id)
       setLibrary((current) => ({ ...current, activeStoryId: id }));
-    navigate("reader", { storyId: id });
+    navigate("reader", { storyId: id, ...(options.from ? { from: options.from } : {}) });
   };
   const publish = (story) => {
     try {
@@ -11129,8 +11252,12 @@ function App() {
         key={`${readerStory?.id || "empty"}:${readerExternal ? "shared" : route.plaza ? "plaza" : "own"}`}
         story={readerStory}
         readOnly={Boolean(readerExternal) || Boolean(route.plaza)}
-        backRoute={route.plaza ? { view: "plaza-detail", id: route.id } : null}
-        backText={route.plaza ? "返回广场" : ""}
+        backRoute={route.plaza
+          ? { view: "plaza-detail", id: route.id }
+          : route.from === "plaza"
+            ? { view: "plaza" }
+            : null}
+        backText={route.plaza || route.from === "plaza" ? "返回广场" : ""}
         onNavigate={navigate}
         onUpdateStory={commitStory}
         avatars={avatarState.avatars}
@@ -11200,7 +11327,7 @@ function App() {
         stories={library.stories}
         focusPostId={pageRoute.postId || ""}
         onNavigate={navigate}
-        onOpenStory={openOwnReader}
+        onOpenStory={(storyId) => openOwnReader(storyId, { from: "plaza" })}
         onOpenDetail={openPlazaDetail}
         onReadLine={(publication) => void openPlazaLine(publication)}
         onEnter={(publication) => navigate("plaza-enter", { id: publication.id })}

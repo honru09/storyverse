@@ -47,7 +47,7 @@ test('card byline is the author’s place: no avatar thumb, no avatar name, @ID 
   assert.ok(!card.includes('plaza-avatar-row'), 'the old capsule row is gone')
   assert.ok(!card.includes('plaza-lead-appearance'), 'the appearance line is gone')
   assert.ok(!card.includes('publication.avatar?.appearance'), 'the card never reads the attribute string')
-  assert.match(card, /className="plaza-byline"/)
+  assert.match(card, /className="plaza-byline store-book-byline"/)
   assert.match(card, /book\.authorName/, 'byline shows the author, not the avatar')
   assert.match(card, /book\.authorHandle/, 'byline carries the author @ID')
   assert.match(card, /plaza-byline-official/, 'official accounts carry the official mark in the byline')

@@ -16,17 +16,15 @@ test('chunkShelves groups books onto planks of the given capacity', () => {
   assert.deepEqual(chunkShelves(books(4), 0).map((row) => row.length), [3, 1])
 })
 
-test('shelfTiltFor is seeded by story id: stable, bounded, varied', () => {
-  const first = shelfTiltFor({ id: 'story-alpha' })
-  assert.equal(shelfTiltFor({ id: 'story-alpha' }), first)
+test('shelfTiltFor is a constant 0: books stand straight (DEVICE-FIX REQ-20)', () => {
+  // The seeded micro-tilt is retired by user order (2026-10-30): every
+  // book, whatever its id, rests at exactly 0 degrees.
   for (const id of ['a', 'story-1', 'story-2', 'story-3', 'xyz-999', '长标题的故事']) {
-    const tilt = shelfTiltFor({ id })
-    assert.ok(tilt >= -1.2 && tilt <= 1.2, `${id} tilt ${tilt} within ±1.2°`)
+    assert.equal(shelfTiltFor({ id }), 0, `${id} stands straight`)
   }
-  const tilts = new Set(['s1', 's2', 's3', 's4', 's5', 's6'].map((id) => shelfTiltFor({ id })))
-  assert.ok(tilts.size > 1, 'neighbours do not all lean identically')
-  assert.equal(shelfTiltFor({}), shelfTiltFor({ id: '' }))
-  assert.equal(shelfTiltFor(null), shelfTiltFor({ id: '' }))
+  assert.equal(shelfTiltFor({}), 0)
+  assert.equal(shelfTiltFor(null), 0)
+  assert.equal(shelfTiltFor(), 0)
 })
 
 test('coverTitleLayoutFor sends long titles to the vertical tag', () => {

@@ -132,10 +132,14 @@
 .directory-starmap{margin-top:14px;padding:14px 12px 8px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass)}
 .directory-starmap b{display:block;margin:0 2px 8px;font-size:13px}
 /* The home shelf is a wooden bookcase (styles.css .wood-*): books stand
-   on walnut planks with seeded tilts and status ribbons. The store list
+   straight on walnut planks with status ribbons (DEVICE-FIX REQ-20
+   retired the seeded tilts). The store list
    cards keep the fixed 2026-10-27 list format (cover + badge / title /
    meta line). */
-.hero-starmap{margin-top:16px;padding:12px 14px 8px;border:1px solid var(--line);border-radius:var(--radius-card);background:rgba(6,13,31,.35)}
+.hero-starmap{margin-top:20px;padding:14px 16px 12px;border:1px solid var(--line);border-radius:var(--radius-card);background:rgba(6,13,31,.35)}
+/* DEVICE-FIX REQ-22: the state capsule keeps clear air from the node
+   strip inside the hero starmap (gap 10px → 14px). */
+.hero-starmap .storymap-mini{gap:14px}
 /* Stepper: step-count agnostic (5 or 6 steps), labels never wrap */
 .stepper{flex-wrap:nowrap}
 .step{min-width:0}

@@ -134,11 +134,15 @@ test('a fresh user has the default avatar picture, an editable block, and no pic
   const profile = await getProfile(base, user.uid, user.token)
   assert.deepEqual(profile.picture, { kind: 'default', url: '/default-avatar.svg' })
   assert.deepEqual(profile.editable, {
-    displayName: '', handle: '', bio: '', pictureKind: null, hasUpload: false, hasPortrait: false,
+    displayName: '', handle: '', bio: '', pictureKind: null, hasUpload: false, hasPortrait: false, hasBanner: false,
   })
   assert.equal(profile.bio, '', 'a fresh user has an empty bio, never a borrowed avatar description')
   const picture = await fetch(`${base}/api/users/${encodeURIComponent(user.uid)}/picture`)
   assert.equal(picture.status, 404, 'the default asset is a static file, not served by the picture route')
+  // DEVICE-FIX REQ-19: the banner chain ends at the designed default.
+  assert.deepEqual(profile.banner, { kind: 'default', url: '/art/banner-profile-1600.webp' })
+  const banner = await fetch(`${base}/api/users/${encodeURIComponent(user.uid)}/banner`)
+  assert.equal(banner.status, 404, 'no upload → no banner bytes from the route')
 })
 
 test('profile record CRUD: the record wins for the name; the @ID stays the login username', async (t) => {

@@ -127,17 +127,13 @@ export function chunkShelves(stories, perShelf = 3) {
   return rows;
 }
 
-// A book's resting tilt is seeded from its id (FNV-1a): the same book
-// leans the same way on every visit, neighbours do not mirror each other,
-// and the lean stays inside ±1.2° so spines read as settled, not sloppy.
-export function shelfTiltFor(story) {
-  const id = String(story?.id || "");
-  let hash = 2166136261;
-  for (let index = 0; index < id.length; index += 1) {
-    hash ^= id.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (((hash >>> 0) % 25) - 12) / 10;
+// DEVICE-FIX REQ-20 (user order 2026-10-30): books stand STRAIGHT —
+// the seeded micro-tilt is retired (supersedes the ±1.2° lean and the
+// partial-row +6° lean). The helper stays exported at a constant 0 so
+// any straggler caller renders an upright book instead of crashing;
+// nothing in the UI passes a tilt any more.
+export function shelfTiltFor() {
+  return 0;
 }
 
 // Printed cover titles: short titles sit horizontally over the cover's
