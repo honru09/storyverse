@@ -110,6 +110,56 @@ test('SALT: no shell backdrop blur exceeds 12px; aurora bar keeps its own 16px',
   }
 })
 
+test('CONTRAST-FIX: page-level titles are pinned to the L1 ink, clearing 7:1 in black and white', () => {
+  // The 2026-10-29 production point-check caught 「我的化身」 washing
+  // out in the white theme. Root fragility: every page-level title
+  // carried NO colour of its own and silently inherited — any tinted
+  // or art-backed ancestor flips it (the BH-02 disease class). The
+  // titles now pin color:var(--ink) in their own rules; this test
+  // keeps the pin AND recomputes the ink pairings for real.
+  for (const rule of [
+    '.store-heading h1,.merge-heading h1{', '.plaza-heading h1{', '.write-heading h1{',
+    '.sw-empty-page h1{', '.forge-section-heading h2{', '.section-heading h2{', '.reading-end h2{',
+  ]) {
+    const start = css.indexOf(rule)
+    assert.ok(start !== -1, `${rule} exists`)
+    const body = css.slice(start, css.indexOf('}', start))
+    assert.ok(body.includes('color:var(--ink)'), `${rule} pins the L1 ink`)
+  }
+  // On-art exceptions stay on-art: the banner store title and the
+  // resume-hero title are NOT swept into the ink pin.
+  assert.ok(css.includes('.store-banner .store-heading h1{color:var(--on-art)'), 'banner title keeps --on-art')
+  for (const id of ['black', 'white']) {
+    const block = themeBlock(id)
+    const ink = tokenValue(block, '--ink')
+    const bg = tokenValue(block, '--bg')
+    const card = tokenValue(block, '--card-solid')
+    assert.ok(contrast(ink, bg) >= 7, `${id} ink ${ink} on bg ${bg} = ${contrast(ink, bg).toFixed(2)}`)
+    assert.ok(contrast(ink, card) >= 7, `${id} ink ${ink} on card ${card} = ${contrast(ink, card).toFixed(2)}`)
+  }
+})
+
+test('CONTRAST-FIX: the store banner CTA chip keeps on-art text at 4.5:1 over worst-case art', () => {
+  const root = css.slice(css.indexOf(':root{'), css.indexOf('}', css.indexOf(':root{')))
+  const onArt = tokenValue(root, '--on-art')
+  const chip = tokenValue(root, '--on-art-chip')
+  const match = chip.match(/rgba\((\d+),(\d+),(\d+),([\d.]+)\)/)
+  assert.ok(match, '--on-art-chip is an rgba scrim')
+  const [, r, g, b, a] = match
+  // Worst case: the chip composited over PURE WHITE art (the shade
+  // gradient underneath only darkens further, so this is the floor).
+  const overWhite = [r, g, b].map((c) => Math.round(Number(c) * Number(a) + 255 * (1 - Number(a))))
+  const hex = `#${overWhite.map((c) => c.toString(16).padStart(2, '0')).join('')}`
+  assert.ok(contrast(onArt, hex) >= 4.5, `${onArt} on chip-over-white ${hex} = ${contrast(onArt, hex).toFixed(2)}`)
+  // And the banner CTA actually wears the chip — no layout move, the
+  // rule only gains a backing.
+  const ruleStart = css.indexOf('.store-banner .store-heading .small-link{')
+  assert.ok(ruleStart !== -1, 'banner CTA rule exists')
+  const ruleBody = css.slice(ruleStart, css.indexOf('}', ruleStart))
+  assert.ok(ruleBody.includes('background:var(--on-art-chip)'), 'banner CTA wears the chip')
+  assert.ok(ruleBody.includes('color:var(--on-art)'), 'banner CTA keeps --on-art text')
+})
+
 test('SALT: motion tokens carry no overshoot and the tab grammar is fade + indicator', () => {
   const root = css.slice(css.indexOf(':root{'), css.indexOf('}', css.indexOf(':root{')))
   assert.ok(root.includes('--ease-pop:cubic-bezier(.25,1,.35,1)'), 'pop easing has no >1 control point')

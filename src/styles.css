@@ -33,6 +33,12 @@
      near-black and disappears on the art. These two values are fixed
      across all three themes, like .story-cover-pending-chip's. */
   --on-art:#f5f7ff; --on-art-dim:rgba(216,226,250,.82);
+  /* On-art chip (CONTRAST-FIX, 2026-10-29): the solid scrim a lone
+     text CTA wears when it rides bright art (the store banner's
+     「上架我的故事」 measured 3.89 worst-case bare). #f5f7ff on this
+     chip composited over PURE WHITE art = 5.38:1 — the guard test
+     recomputes it; do not lower the alpha. */
+  --on-art-chip:rgba(4,8,20,.62);
   /* Radius ladder (SALT §51, draft §1.2): sheet 24 / large card 16 /
      standard card 16 / control 10 / media 8 — outer = inner + padding. */
   --radius-control:10px; --radius-selection:12px; --radius-card:16px; --radius-surface:20px; --radius-sheet:24px; --radius-nav:16px; --radius-media:8px;
@@ -296,7 +302,7 @@ html.is-lite-gpu .plaza-panel,html.is-lite-gpu .plaza-publish-card,html.is-lite-
 .back-button{color:var(--dim)}
 .mini-reset{min-height:36px;padding-block:4px;font-size:13px}
 .section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
-.section-heading h2{margin:0;font-size:18px;line-height:26px;font-weight:650;letter-spacing:0}
+.section-heading h2{margin:0;font-size:18px;line-height:26px;font-weight:650;letter-spacing:0;color:var(--ink)}
 .page-caption{margin:8px 0 0;color:var(--dim);font-size:14px;line-height:1.7}
 .world-art{display:block;width:100%;height:100%;overflow:hidden;background:#0a1430}
 .world-art img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}
@@ -392,7 +398,7 @@ html.is-lite-gpu .plaza-panel,html.is-lite-gpu .plaza-publish-card,html.is-lite-
 .forge-layout{display:grid;gap:28px}
 .forge-main{min-width:0}
 .forge-section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin:8px 0 22px}
-.forge-section-heading h2{margin:0;font-size:clamp(1.55rem,6vw,2.1rem);line-height:1.3;letter-spacing:-.02em;font-weight:800}
+.forge-section-heading h2{margin:0;font-size:clamp(1.55rem,6vw,2.1rem);line-height:1.3;letter-spacing:-.02em;font-weight:800;color:var(--ink)}
 .forge-section-heading h2:focus{outline:none}
 .forge-section-heading.mini{margin:0 0 14px}
 .forge-section-heading h3{margin:0;font-size:17px;font-weight:750}
@@ -617,13 +623,13 @@ select{appearance:auto}
 .article-footer{margin-top:16px;padding-top:12px;border-top:1px solid var(--line);color:var(--dim-2);font-size:12px;text-align:center}
 .sw-inline-alert{display:flex;align-items:flex-start;gap:9px;margin-top:18px;padding:13px 15px;border:1px solid rgba(255,143,143,.4);border-radius:var(--radius-control);background:rgba(255,120,120,.08);color:var(--danger);font-size:13px;line-height:1.7}
 .reading-end{margin-top:38px;padding-top:28px;border-top:1px solid var(--line);text-align:center}
-.reading-end h2{margin:0 0 10px;font-size:22px;font-weight:800}
+.reading-end h2{margin:0 0 10px;font-size:22px;font-weight:800;color:var(--ink)}
 .reading-end p{margin:0 0 20px;color:var(--dim);font-size:14px;line-height:1.75}
 .reading-end .button{width:min(100%,340px)}
 .reading-end>button:last-child:not(.button){display:block;min-height:44px;margin:6px auto 0;padding:8px;border:0;background:none;color:var(--cyan);font-size:14px;font-weight:600}
 /* Store */
 .store-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
-.store-heading h1,.merge-heading h1{margin:0;font-size:clamp(2rem,7vw,2.5rem);font-weight:800;letter-spacing:-.02em}
+.store-heading h1,.merge-heading h1{margin:0;font-size:clamp(2rem,7vw,2.5rem);font-weight:800;letter-spacing:-.02em;color:var(--ink)}
 .store-heading h1{font-size:var(--type-page-tab);font-weight:700;letter-spacing:0}
 .store-toolbar{margin-top:24px}
 .store-filters{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
@@ -767,7 +773,7 @@ select{appearance:auto}
 .sw-empty-page{display:grid;justify-items:center;gap:14px;padding:64px 20px;text-align:center}
 .sw-empty-page .empty-art{width:104px;height:104px}
 .sw-empty-icon{display:grid;place-items:center;width:58px;height:58px;border:1px solid var(--line);border-radius:18px;background:var(--glass);color:var(--cyan)}
-.sw-empty-page h1{margin:0;font-size:clamp(1.5rem,6vw,2rem);font-weight:800}
+.sw-empty-page h1{margin:0;font-size:clamp(1.5rem,6vw,2rem);font-weight:800;color:var(--ink)}
 .sw-empty-page p{margin:0;color:var(--dim);font-size:14px;line-height:1.75}
 .sw-storage-warning{display:flex;align-items:center;gap:9px;margin:14px 16px 0;padding:12px 14px;border:1px solid rgba(255,209,102,.4);border-radius:var(--radius-control);background:rgba(255,209,102,.08);color:var(--amber);font-size:13px;line-height:1.6}
 .sw-storage-warning button{margin-left:auto;flex-shrink:0;min-height:36px;padding:5px 8px;border:0;background:none;color:var(--amber);font-weight:700}
@@ -1019,7 +1025,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 
 /* 广场批次：公开故事线 feed、详情、发布与带入（极光玻璃口径，与书城同族；动效只走 transform/opacity） */
 .page-plaza{max-width:860px}
-.plaza-heading h1{margin:0;font-size:30px;letter-spacing:.01em}
+.plaza-heading h1{margin:0;font-size:30px;letter-spacing:.01em;color:var(--ink)}
 .plaza-loading{color:var(--dim);font-size:14px;margin:26px 0}
 .plaza-publish-card{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:22px;padding:18px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--surface-card);backdrop-filter:var(--blur-card);-webkit-backdrop-filter:var(--blur-card);box-shadow:var(--shadow-glass-top)}
 .plaza-publish-card strong{display:block;font-size:16px}
@@ -1777,7 +1783,7 @@ button.profile-stat{cursor:pointer}
 .store-banner-shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,8,20,.30),rgba(4,8,20,0) 42%,rgba(4,8,20,.58));pointer-events:none}
 .store-banner .store-heading{position:absolute;left:20px;right:20px;bottom:14px;color:var(--on-art)}
 .store-banner .store-heading h1{color:var(--on-art);text-shadow:0 2px 16px rgba(0,0,0,.55)}
-.store-banner .store-heading .small-link{color:var(--on-art)}
+.store-banner .store-heading .small-link{color:var(--on-art);background:var(--on-art-chip);border:1px solid rgba(245,247,255,.26);border-radius:999px;padding-inline:12px}
 .plaza-empty .empty-art,.store-empty .empty-art{display:block;width:116px;height:116px;margin:0 auto 14px}
 .notify-empty .empty-art{display:block;width:104px;height:104px;margin:0 auto 12px}
 .notify-empty p{margin:0}
@@ -2043,7 +2049,7 @@ button.settings-row{cursor:pointer}
 .manual-shelf-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .plaza-manual-note{font-size:12px;font-weight:650;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:2px 9px}
 .page-write{max-width:760px;margin:0 auto}
-.write-heading h1{margin:10px 0 6px;font-size:24px}
+.write-heading h1{margin:10px 0 6px;font-size:24px;color:var(--ink)}
 .write-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0;font-size:13.5px;color:var(--dim)}
 .write-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:18px 0 8px}
 .write-finished-note{font-size:13.5px;color:var(--dim)}
