@@ -208,12 +208,25 @@ button:disabled{cursor:not-allowed}
 .home-hero{position:relative;display:flex;align-items:flex-end;min-height:520px;border-radius:var(--radius-surface);overflow:hidden;background:#0a1430;border:1px solid var(--line);isolation:isolate}
 .hero-scene{position:absolute;inset:0;z-index:-2}
 .hero-scene .world-art img{object-position:center 30%}
-.home-hero::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(6,13,31,.05) 40%,rgba(6,13,31,.55) 78%,rgba(6,13,31,.88))}
-.hero-copy{width:100%;margin:14px;padding:24px 20px 20px;border-radius:var(--radius-card);background:rgba(10,20,48,.55);border:1px solid var(--line);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);color:var(--on-art)}
-.hero-copy h1{margin:0;font-size:clamp(2rem,9vw,3.2rem);line-height:1.16;letter-spacing:-.02em;font-weight:800;overflow-wrap:anywhere}
+.home-hero::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(6,13,31,.05) 0%,rgba(6,13,31,.34) 34%,rgba(6,13,31,.68) 56%,rgba(6,13,31,.86) 78%,rgba(6,13,31,.95))}
+/* BH-12 (2026-10-29): the resume hero is art-first — the old translucent
+   navy panel (43–46% of the hero box, measured) is gone; the copy sits
+   directly on the bottom scrim in the fixed on-art tokens. */
+.hero-copy{width:100%;padding:22px 20px 18px;color:var(--on-art)}
+.hero-copy h1{margin:0;font-size:clamp(2rem,9vw,3.2rem);line-height:1.16;letter-spacing:-.02em;font-weight:800;overflow-wrap:anywhere;text-shadow:0 2px 24px rgba(3,6,18,.65),0 1px 4px rgba(3,6,18,.6)}
 .hero-copy h1 em{font-style:normal;background:linear-gradient(100deg,#6ee7ff,#a78bfa 60%,#f0a6ff);-webkit-background-clip:text;background-clip:text;color:transparent}
-.hero-copy>p{display:flex;flex-wrap:wrap;gap:6px 12px;margin:14px 0 20px;color:var(--on-art-dim);font-size:13px;line-height:1.65;overflow-wrap:anywhere}
-.hero-actions .button{width:100%}
+.hero-copy>p{display:flex;flex-wrap:wrap;gap:6px 12px;margin:14px 0 20px;color:var(--on-art-dim);font-size:13px;line-height:1.65;overflow-wrap:anywhere;text-shadow:0 1px 8px rgba(3,6,18,.45)}
+.hero-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.hero-actions .button{width:auto}
+.hero-actions .button-primary{flex:1 1 140px}
+.hero-actions .button-ghost{padding:8px 12px;background:rgba(6,13,31,.38);border-color:rgba(245,247,255,.32);color:var(--on-art);font-size:13px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+/* BH-12: on the hero's dark scrim the generation-state label uses the
+   on-art ramp in every theme (theme --dim/--violet/--mint are tuned for
+   the shell background and go dark-on-dark over art in the white theme). */
+.home-hero .gen-state.is-waiting{color:var(--on-art-dim)}
+.home-hero .gen-state.is-generating{color:#c4b5fd}
+.home-hero .gen-state.is-ready{color:#7de8c3}
+.home-hero .gen-state.is-action{color:#f6c453}
 .resume-position{color:var(--on-art);font-weight:650}
 .home-section{margin-top:34px}
 .library-sync-note{margin:14px 2px 0;font-size:12.5px;line-height:1.55;color:var(--ink-soft)}
@@ -249,7 +262,7 @@ button:disabled{cursor:not-allowed}
 .wood-book-ribbon.is-complete{background:linear-gradient(180deg,#d9a441,#b9832f);color:#2a1c05}
 .wood-book-title-tag{position:absolute;top:10px;left:16px;z-index:2;max-height:64%;padding:7px 3px;border-radius:2px;background:linear-gradient(180deg,#f3e9d2,#e6d7b8);color:#33302a;font-size:11px;font-weight:700;writing-mode:vertical-rl;letter-spacing:.08em;box-shadow:0 2px 5px rgba(0,0,0,.4);overflow:hidden}
 .wood-book-face{position:absolute;left:0;right:0;bottom:0;z-index:2;display:grid;gap:2px;padding:17px 8px 7px;background:linear-gradient(180deg,transparent,rgba(4,8,20,.84) 56%);color:#fff;text-align:left}
-.wood-book-face b{display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:13px;font-weight:700;line-height:1.35;text-shadow:0 1px 4px rgba(0,0,0,.6)}
+.wood-book-face b{display:-webkit-box;-webkit-line-clamp:1;line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;font-size:13px;font-weight:700;line-height:1.35;text-shadow:0 1px 4px rgba(0,0,0,.6)}
 .wood-book-face small{font-size:10px;font-weight:600;color:rgba(255,255,255,.78);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wood-shelf-plank{position:relative;height:15px;border-radius:2px;background:linear-gradient(180deg,#8a6844 0,#77572f 3px,#5d3f1e 4px,#4a3016 11px,#38240f 100%);box-shadow:0 16px 22px -10px rgba(0,0,0,.72),inset 0 1px 0 rgba(255,214,150,.35),inset 0 -2px 3px rgba(0,0,0,.45)}
 .wood-shelf-plank::before{content:"";position:absolute;inset:0;border-radius:2px;background:repeating-linear-gradient(93deg,rgba(0,0,0,.07) 0 7px,transparent 7px 13px,rgba(255,220,170,.05) 13px 21px,transparent 21px 34px)}
@@ -564,14 +577,20 @@ select{appearance:auto}
 .merge-pending p{margin:0 0 12px;color:var(--dim);font-size:13.5px;line-height:1.7}
 .merge-product-note{margin:18px 0 0;color:var(--dim);font-size:13.5px;line-height:1.7}
 .merge-result-source{display:block;margin-top:4px;color:var(--dim);font-size:12.5px}
-.wood-book-cell{position:relative;flex:1 1 0;min-width:0;max-width:190px;display:flex}
-.wood-book-cell .wood-book{flex:1 1 0;width:100%;max-width:none}
-.wood-book-fuse{position:absolute;right:2px;bottom:8px;z-index:4;padding:4px 9px;border:1px solid rgba(125,232,195,.45);border-radius:999px;background:rgba(6,14,28,.82);color:#7de8c3;font-size:11px;font-weight:700;line-height:1.4;cursor:pointer;opacity:0;transition:opacity var(--dur-state) var(--ease-out)}
-.wood-book-cell:hover .wood-book-fuse,.wood-book-cell:focus-within .wood-book-fuse{opacity:1}
-@media (hover:none){.wood-book-fuse{opacity:.92}}
-.wood-book-delete{position:absolute;left:2px;bottom:8px;z-index:4;padding:4px 9px;border:1px solid rgba(255,143,143,.5);border-radius:999px;background:rgba(24,6,10,.82);color:#ff9d9d;font-size:11px;font-weight:700;line-height:1.4;cursor:pointer;opacity:0;transition:opacity var(--dur-state) var(--ease-out)}
-.wood-book-cell:hover .wood-book-delete,.wood-book-cell:focus-within .wood-book-delete{opacity:1}
-@media (hover:none){.wood-book-delete{opacity:.92}}
+/* BH-14 (2026-10-29): a cell is one natural book slot — its width is the
+   row share for the shelf capacity (--shelf-cap, set by WoodShelf), never
+   flex-grown: a lone book used to stretch to the 190px cap (≈2× the
+   natural slot, 253px tall) and read as a giant tome. Short rows now
+   leave the rest of the plank empty. */
+.wood-book-cell{position:relative;flex:0 0 auto;width:calc((100% - (var(--shelf-cap,3) - 1)*14px)/var(--shelf-cap,3));max-width:190px;display:flex;flex-direction:column}
+.wood-book-cell .wood-book{flex:none;width:100%;max-width:none}
+/* BH-14: fuse/delete are a real in-flow action row under the cover, not
+   absolute pills floating over the face meta line (they intersected the
+   chapter/status text by ~800px², measured). The row is always rendered
+   (possibly empty) so cover bottoms stay aligned along the plank. */
+.wood-book-actions{display:flex;justify-content:space-between;gap:8px;min-height:24px;margin-top:7px;padding:0 1px}
+.wood-book-fuse{flex:none;white-space:nowrap;padding:4px 8px;border:1px solid rgba(125,232,195,.45);border-radius:999px;background:rgba(6,14,28,.55);color:#7de8c3;font-size:11px;font-weight:700;line-height:1.4;cursor:pointer}
+.wood-book-delete{flex:none;white-space:nowrap;padding:4px 8px;border:1px solid rgba(255,143,143,.5);border-radius:999px;background:rgba(24,6,10,.55);color:#ff9d9d;font-size:11px;font-weight:700;line-height:1.4;cursor:pointer}
 .delete-book-copy{display:grid;gap:10px;margin-bottom:16px}
 .delete-book-copy p{margin:0;font-size:14px;line-height:1.75;color:var(--ink)}
 .delete-book-copy strong{color:var(--danger)}
@@ -678,8 +697,7 @@ input[type="checkbox"]{accent-color:var(--cyan)}
 @media(min-width:700px){
   .page{padding-inline:36px;padding-top:30px}.topbar{padding-inline:36px}.page-home{padding-top:12px}
   .home-hero{min-height:550px}
-  .hero-copy{width:min(490px,65%);margin:24px;padding:30px}
-  .hero-actions .button{max-width:290px}
+  .hero-copy{width:min(490px,65%);padding:30px 30px 24px}
   .first-story-browse{max-width:400px;margin-left:auto}
   .life-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
   .template-wall{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
@@ -740,7 +758,7 @@ input[type="checkbox"]{accent-color:var(--cyan)}
   .page,.topbar{padding-inline:16px}
   .brand-copy strong{font-size:22px}
   .brand-mark{gap:7px}
-  .hero-copy{margin:10px;padding:21px 17px 17px}
+  .hero-copy{padding:21px 17px 16px}
   .hero-copy h1{font-size:30px}.has-story .hero-copy h1{font-size:28px}
   .template-wall{gap:8px}.template-brick-copy{padding:8px}.template-brick-copy strong{font-size:13px}.template-brick-copy small{font-size:10px}
   .book-grid{gap:28px 12px}.book-cover b{font-size:17px}
@@ -768,7 +786,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
   :root[data-shell-theme='aurora']{--glass:#0d1834;--glass-2:#14224a;--glass-strong:#14224a;--glass-dark:#0a1430;--surface:#0d1834;--surface-tide:#0d2b26;--surface-peach:#2b1030}
   :root[data-shell-theme='black']{--glass:#101014;--glass-2:#17171c;--glass-strong:#17171c;--glass-dark:#0b0b0e;--surface:#101014;--surface-tide:#0d2019;--surface-peach:#221126}
   :root[data-shell-theme='white']{--glass:#f0f0ec;--glass-2:#e8e8e2;--glass-strong:#e8e8e2;--glass-dark:#efefec;--surface:#ffffff;--surface-tide:#e2f2ea;--surface-peach:#fbeefb}
-  .topbar,.app-shell>.sidebar,.mobile-bottom-nav,.hero-copy{background:var(--surface-solid)}
+  .topbar,.app-shell>.sidebar,.mobile-bottom-nav{background:var(--surface-solid)}
   .template-brick-copy{background:linear-gradient(180deg,transparent,rgba(6,13,31,.92))}
 }
 @media(prefers-contrast:more){
@@ -776,7 +794,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
   :root[data-shell-theme='black']{--dim:#d4d4d8;--dim-2:#a7a7ad;--line:rgba(255,255,255,.34);--line-2:rgba(255,255,255,.6);--glass:rgba(255,255,255,.10);--glass-2:rgba(255,255,255,.16)}
   :root[data-shell-theme='white']{--dim:#3f4249;--dim-2:#5d6068;--line:rgba(23,24,28,.34);--line-2:rgba(23,24,28,.6);--glass:rgba(23,24,28,.08);--glass-2:rgba(23,24,28,.13)}
   .choice-chip.active,.origin-card.active,.tone-card.active,.priority-options button.active,.sw-bond-options button.active{border-color:var(--cyan)}
-  .hero-copy,.template-brick,.sw-toast{border-color:var(--line-2)}
+  .template-brick,.sw-toast{border-color:var(--line-2)}
 }
 /* Restored layout bits from the previous system that remain load-bearing. */
 .page-merge{max-width:860px}
@@ -1558,7 +1576,12 @@ button.profile-stat{cursor:pointer}
 :root[data-shell-theme='white'] .profile-store-chip.is-live{color:#0d7a54}
 .profile-store-copy small{font-size:12px;color:var(--profile-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .profile-store-card>svg{flex:0 0 auto;color:var(--profile-faint)}
-.profile-stage{position:relative;height:384px;border-radius:24px;overflow:hidden;background:var(--profile-panel);margin:0;width:auto;text-align:left}
+/* BH-13 (2026-10-29): the stage follows the poster's own 3:4 frame
+   (capped) instead of a fixed 384px band, which cover-cropped away
+   20–30% of the painting's height and could take the head with it on
+   non-contract compositions; the 8% top anchor stays as the guard when
+   the cap bites on wide screens. */
+.profile-stage{position:relative;aspect-ratio:3/4;max-height:560px;border-radius:24px;overflow:hidden;background:var(--profile-panel);margin:0;width:auto;text-align:left}
 /* Poster stage (POSTER-AVATAR): the fake light rig is retired — no
    spot wash, no floor ellipse, no brightened glow copy of the figure.
    Portraits are poster key visuals that carry their own backdrop,
@@ -1581,15 +1604,21 @@ button.profile-stat{cursor:pointer}
 .profile-main-badge{flex:0 0 auto;font-size:10.5px;font-weight:700;color:#221a05;background:linear-gradient(135deg,#ffc44d,#f6a21e);padding:2.5px 8px;border-radius:999px}
 .profile-stage-desc{margin:3px 0 0;font-size:12px;color:var(--profile-dim);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .profile-stage-world{flex:0 0 auto;font-size:11.5px;color:var(--profile-faint);white-space:nowrap;padding-bottom:2px}
-.profile-avatar-row{display:flex;gap:12px;overflow-x:auto;padding:12px 2px 2px;scrollbar-width:none}
+.profile-avatar-row{display:flex;gap:12px;overflow-x:auto;padding:12px 2px 8px;scrollbar-width:none}
 .profile-avatar-row::-webkit-scrollbar{display:none}
 .profile-avatar-tile,.profile-avatar-new{flex:0 0 auto;width:64px;border:0;background:none;padding:0;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;font:inherit}
 .profile-avatar-tile-img{width:64px;height:64px;border-radius:16px;overflow:hidden;background:var(--profile-chip);display:grid;place-items:center;border:2px solid transparent;box-sizing:border-box}
-.profile-avatar-tile-img img{width:100%;height:100%;object-fit:cover;object-position:50% 4%;display:block}
+/* BH-13: tiles crop on the established face anchor (50% 12%, BH-11) with
+   the plaza large-frame face zoom (scale 2.05 @ 50% 14%) — a plain cover
+   crop squeezed a full-body portrait into a tiny figure adrift in its
+   own pale background. */
+.profile-avatar-tile-img img{width:100%;height:100%;object-fit:cover;object-position:50% 12%;display:block;transform:scale(2.05);transform-origin:50% 14%}
 .profile-avatar-tile.is-selected .profile-avatar-tile-img{border-color:var(--violet)}
 .profile-avatar-tile.is-main .profile-avatar-tile-img{box-shadow:0 0 0 2px #f6a21e}
+/* BH-13: one clean ring when the main avatar is also the selected one. */
+.profile-avatar-tile.is-selected.is-main .profile-avatar-tile-img{box-shadow:none}
 .profile-avatar-tile-letter{font-size:22px;font-weight:700;color:var(--profile-dim)}
-.profile-avatar-tile-name{font-size:11px;color:var(--profile-dim);max-width:64px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.profile-avatar-tile-name{font-size:11px;line-height:1.5;padding-bottom:1px;color:var(--profile-dim);max-width:64px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .profile-avatar-tile.is-selected .profile-avatar-tile-name{color:var(--profile-ink-strong)}
 .profile-avatar-new-plus{width:64px;height:64px;border-radius:16px;border:1.5px dashed color-mix(in srgb,var(--profile-ink) 25%,transparent);display:grid;place-items:center;font-size:24px;color:var(--profile-dim);box-sizing:border-box}
 .profile-empty{display:flex;align-items:center;gap:12px;padding:16px;border-radius:18px;border:1px dashed color-mix(in srgb,var(--profile-ink) 14%,transparent)}

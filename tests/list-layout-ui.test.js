@@ -75,6 +75,15 @@ test('shelf is a wooden bookcase: planks, standing books, ribbons, printed title
   assert.match(css, /\.wood-book-spine\{/)
   assert.match(css, /\.wood-book\.is-pulled\{[^}]*translateY\(-14px\) scale\(1\.07\)/)
   assert.doesNotMatch(css, /\.sw-shelf-grid\{/)
+  // BH-14 (2026-10-29): a cell is one natural book slot (the capacity
+  // share of the row), never flex-grown — a lone book must not balloon
+  // to the 190px cap; fuse/delete sit in an in-flow action row under
+  // the cover instead of absolute pills over the face meta line.
+  assert.match(shelfBlock, /--shelf-cap/)
+  assert.match(shelfBlock, /className="wood-book-actions"/)
+  assert.match(css, /\.wood-book-cell\{[^}]*var\(--shelf-cap,3\)/)
+  assert.doesNotMatch(css, /\.wood-book-fuse\{position:absolute/)
+  assert.doesNotMatch(css, /\.wood-book-delete\{position:absolute/)
   // DESIGN exempts the shelf from the grid type scale and documents it.
   assert.match(design, /书架（木质 2\.5D/)
   assert.match(design, /豁免于本网格字阶/)

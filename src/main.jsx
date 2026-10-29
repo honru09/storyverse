@@ -1059,7 +1059,7 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
   };
 
   return (
-    <section className="sw-shelf sw-shelf-wood" aria-label="书架上的其他故事">
+    <section className="sw-shelf sw-shelf-wood" aria-label="书架上的其他故事" style={{ "--shelf-cap": capacity }}>
       {otherStories.length >= 4 && (
         <div className="shelf-controls">
           <label className="shelf-search">
@@ -1136,26 +1136,31 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
                         </span>
                       </span>
                     </button>
-                    {story.kind !== "merged" && !story.readOnly && !isManualStory(story) && onFuseStory && (
-                      <button
-                        type="button"
-                        className="wood-book-fuse"
-                        aria-label={`让《${story.title}》与另一条线合流`}
-                        onClick={() => onFuseStory(story.id)}
-                      >
-                        合流
-                      </button>
-                    )}
-                    {!story.readOnly && onDeleteStory && (
-                      <button
-                        type="button"
-                        className="wood-book-delete"
-                        aria-label={`删除《${story.title}》`}
-                        onClick={() => onDeleteStory(story)}
-                      >
-                        删除
-                      </button>
-                    )}
+                    {/* BH-14: fuse/delete live in an in-flow action row under
+                        the cover (always rendered so cover bottoms align);
+                        absolute pills used to overlap the face meta line. */}
+                    <div className="wood-book-actions">
+                      {!story.readOnly && onDeleteStory && (
+                        <button
+                          type="button"
+                          className="wood-book-delete"
+                          aria-label={`删除《${story.title}》`}
+                          onClick={() => onDeleteStory(story)}
+                        >
+                          删除
+                        </button>
+                      )}
+                      {story.kind !== "merged" && !story.readOnly && !isManualStory(story) && onFuseStory && (
+                        <button
+                          type="button"
+                          className="wood-book-fuse"
+                          aria-label={`让《${story.title}》与另一条线合流`}
+                          onClick={() => onFuseStory(story.id)}
+                        >
+                          合流
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}

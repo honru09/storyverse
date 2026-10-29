@@ -181,3 +181,96 @@ probe4.cjs / login360.cjs + *-report.json）。
 2. BH-11 与等待阶段图的生产真机复核：随本版部署后点验（fixture
    无立绘/无 Gemini 配置的固有限制，已在上文如实标注量测方式）。
 3. 360 登录观察项：证据关闭；生产再现时按新条件重开。
+
+---
+
+# BH-12 / BH-13 / BH-14（2026-10-29 晚，用户真机截图直报第二波）
+
+## BH-12 主页续读 hero：面板压封面 → 图为主
+
+- 诊断（生产 persona 号实测）：hero 350×580；信息面板 `.hero-copy`
+  320×272（390 宽）/ 370×288（440 宽），占 hero 面积 42.9% / 46%；
+  rgba(10,20,48,.55) + blur(14px) 圆角卡，「约半张图被盖死」属实。
+- 改法：面板本体下线——`.hero-copy` 去 background / border /
+  backdrop-filter / margin，标题、元信息、星图、按钮直接坐
+  `.home-hero::after` 渐变 scrim（五段加深：0% .05 / 34% .34 /
+  56% .68 / 78% .86 / 100% .95）；文字全程 `--on-art` /
+  `--on-art-dim` 压图口径（BH-01），标题与元信息各加一层柔和投影。
+  按钮改单行 wrap flex：主钮实心 pill `flex:1 1 140px` 置卡底，
+  「与另一条线合流」「回写作台」降为 13px 紧凑 ghost pill 与主钮
+  同行（双 ghost 时第二个才换行）。连带：hero 内 `.gen-state` 四态
+  全主题改走压图色（白主题下原 `--dim`/`--violet`/`--mint` 在深色
+  scrim 上深压深）；清掉随面板而设的三处旧规则（≤360px 的
+  `.hero-copy{margin:10px}`、reduced-transparency 的 hero-copy
+  实底、prefers-contrast 的 hero-copy 描边）。
+- 可见面积口径：遮挡 = 不透明/模糊面板覆盖的像素占比。改前
+  42.9–46%；改后 **0%**（copy 区 computed background =
+  rgba(0,0,0,0)、无 backdrop-filter；仅剩渐变 scrim，图在任意点
+  不被遮断，静态帧全幅可见 100% ≥ 目标 80%）。
+- 对比度（猎手同法：canvas 采样文字中心 3×3 图色 × 该处 scrim
+  alpha 合成后算 WCAG 比值）：本地种子真实世界图、三主题同值
+  （压图色不随主题变）——标题 17.88 / 元信息 10.10 / 生成态
+  10.03。白昼最坏情形（合成近白图 RGB≈209–230 + 白主题 harness
+  实测）：标题 7.11 / 元信息 6.14 / 生成态 7.58，全部 ≥ 4.5。
+- 标题不截断：13 字长标题实测 h1 scrollHeight ≤ clientHeight。
+- 截图：bh1214-shots/hero-after-{black,white,aurora}.png、
+  home-after-{black,white,aurora}.png、hero-after-bright.png。
+
+## BH-13 主页化身区：展台丢头 + 缩略条塞全人/双环/名字半裁
+
+- 诊断（生产 persona 号实测）：展台固定 384px 高带，立绘
+  768×1052 的可见纵带仅 0.024–0.701（440 宽）/ 0.016–0.801
+  （390 宽）——20–30% 画高被 cover 裁掉，非契约构图的旧立绘
+  头部即出画（用户实报）。缩略图 plain cover + 50% 4% 把全身
+  立绘缩成小团（本地以真立绘复现，与真机截图一致）；选中的
+  主化身 tile 同挂 is-selected + is-main，violet 边与 amber
+  box-shadow 叠成双环，量测坐实。
+- 改法：展台改海报原框 `aspect-ratio:3/4; max-height:560px`，
+  50% 8% 顶锚保留（宽屏触顶时仍护脸带）；缩略图入 BH-11 脸锚
+  家族：`object-position:50% 12%` + `transform:scale(2.05);
+  transform-origin:50% 14%`（广场大框同参，不另发明）；选中且
+  主化身时 `box-shadow:none`，只留一层 violet 环；名字定
+  `line-height:1.5` 并把行底 padding 2px → 8px。
+- 量测（persona 真立绘 + 构建产物同源 CSS harness；内容宽
+  318/350/400 三档）：展台可见纵带 **0.002–0.976**（≈97.4%
+  画高入画；海报脸带 12.6–21.5% 稳在画内）；截图亲看全身头足
+  入画、缩略图为头肩特写、单环、名字完整。名字盒高 18px ≥
+  行高 16.5px。
+- 记账：名字半裁在 Chromium 几何下未复现（原名盒 16px 完整），
+  iOS 真机机制未定案；已按行高 + 底距双加固，随本版部署后以
+  用户真机复核为准。
+
+## BH-14 主页木质书架：单本巨册 + 书底信息行重叠
+
+- 诊断（生产 persona 号实测）：只有 1 本「其他故事」时 cell 被
+  flex 撑到 190×253——自然槽位（390 宽、容量 3）约 93px 宽，
+  巨册为 2.05 倍宽、约 4 倍面积；删除/合流两个绝对 pill 与
+  face 元信息盒相交 805 / 874 px²（压字属实）。
+- 改法：cell 改自然槽位宽——WoodShelf 把容量以 `--shelf-cap`
+  注入，`width:calc((100% − (cap−1)×14px)/cap)`（190px 上限
+  保留），`flex:0 0 auto` 不再撑大；书少时靠左立、架面留空。
+  删除/合流移出封面，改为封面下 in-flow 动作行（恒渲染保各书
+  封面底沿对齐层板），按钮 `flex:none; white-space:nowrap`
+  防窄槽压缩竖排；face 标题改一行截断（标题一行 / 元信息
+  一行）。
+- 量测（本地种子，390 宽）：1 本与 3 本两种状态下 cell 均为
+  93px 宽（与满行槽位一致，单本不再放大）；删除/合流与标题、
+  元信息四组相交面积全 0；按钮 40×25px 单行 pill；多本封面
+  底沿对齐（1081/1082px，1px 差为倾斜书包围盒）。截图亲看：
+  单本靠左立于空架面、3 本排布与改前一致。截图：
+  bh1214-shots/shelf1-after.png、shelf3-after.png。
+
+## 测试与回归（BH-12/13/14 批）
+
+- 单测 **800/800 全绿**（基线 799 + 新增 BH-12 契约 1 条；
+  BH-13/14 契约并入 shell-migration / list-layout-ui 既有测试；
+  shell-migration 的 profile-stage 384px 旧引脚按 BH-13 改
+  3/4 框口径，测试内已注明 supersede 理由）。
+- e2e：delete-book 9/9 全过（书架删除路径走新动作行）；
+  visual 全旅程对本地新构建 exit 0。
+- 注：全量单测中途两见间歇失败各一（import-daylight「backup
+  merge」、本批新测试引脚旧值），前者单跑与终跑均过、属既有
+  flake；后者已修引脚，终跑 800/800。
+- build 通过；本地提交，不部署不 push（父 agent 统一部署）。
+- 未修记账：BH-13 名字半裁的 iOS 真机复核（见上）；三项均待
+  部署后用户真机点验。

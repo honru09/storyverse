@@ -132,7 +132,17 @@ test('face-anchor cropping: small round slots zoom portraits to the face', () =>
   // (PROFILE-ENRICH §35 supersedes the §33 stand: same class name, new
   // stage geometry — spotlight, atmosphere, name plate).
   assert.match(profileBlock, /profile-avatar-stand/)
-  assert.match(css, /\.profile-stage\{[^}]*height:384px/)
+  // BH-13 (2026-10-29) supersedes the fixed 384px band: the stage takes
+  // the poster's own 3:4 frame (capped), so the face and upper body stay
+  // in frame instead of losing 20–30% of the painting to cover-cropping.
+  assert.match(css, /\.profile-stage\{[^}]*aspect-ratio:3\/4/)
+  assert.match(css, /\.profile-stage\{[^}]*max-height:560px/)
+  // BH-13: the avatar tiles join the face-anchor family (50% 12% + the
+  // large-frame 2.05 zoom) instead of squeezing the whole figure into
+  // the square, and selected+main collapses to a single ring.
+  assert.match(css, /\.profile-avatar-tile-img img\{[^}]*object-position:50% 12%/)
+  assert.match(css, /\.profile-avatar-tile-img img\{[^}]*transform:scale\(2\.05\);transform-origin:50% 14%/)
+  assert.match(css, /\.profile-avatar-tile\.is-selected\.is-main \.profile-avatar-tile-img\{box-shadow:none\}/)
 })
 
 test('poster stage (POSTER-AVATAR): the fake light rig is retired, the painting fills the stage', () => {
@@ -213,6 +223,18 @@ test('offline shell: service worker registered, honest data scope', () => {
   assert.match(sw, /\/api\\\/plaza/)
   assert.match(sw, /request\.method !== 'GET'/)
   assert.match(main, /serviceWorker\.register\("\/sw\.js"\)/)
+})
+
+test('resume hero is art-first (BH-12): no panel over the cover, copy rides the scrim', () => {
+  // The translucent navy panel that used to cover 43–46% of the hero
+  // must not come back; the copy is bare text on the ::after scrim and
+  // the actions share one wrapping row (primary pill + ghost links).
+  assert.doesNotMatch(css, /\.hero-copy\{[^}]*rgba\(10,20,48/)
+  assert.doesNotMatch(css, /\.hero-copy\{[^}]*backdrop-filter/)
+  assert.match(css, /\.hero-copy\{[^}]*color:var\(--on-art\)/)
+  assert.match(css, /\.hero-actions\{display:flex;flex-wrap:wrap/)
+  assert.match(css, /\.hero-actions \.button-primary\{flex:1 1 140px\}/)
+  assert.match(css, /\.home-hero \.gen-state\.is-waiting\{color:var\(--on-art-dim\)\}/)
 })
 
 test('finished books read 重新阅读 on the home hero (F-26)', () => {
