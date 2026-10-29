@@ -12,6 +12,7 @@ import {
   plazaSnapshot,
 } from '../src/story-engine.js'
 import {
+  bringAvatarIntoStory,
   enterDraftFor,
   plazaCardIntroFor,
   plazaTitleTierFor,
@@ -81,6 +82,28 @@ test('plaza gate rejects unfinished, avatar-less, short and merged lines', () =>
   ), 6)
   assert.equal(plazaGateFor(merged).publishable, false)
   assert.match(plazaGateFor(merged).reason, /合流/)
+})
+
+test('an avatar-less line can take an avatar in and then passes the gate (FINAL-FIX R-06)', () => {
+  const noAvatar = completedSeason({ avatarId: '', avatarAppearance: '' })
+  const gate = plazaGateFor(noAvatar)
+  assert.equal(gate.publishable, false)
+  assert.equal(gate.needsAvatar, true, 'the avatar refusal is the one carrying the remedy flag')
+
+  const avatar = { id: AVATAR_ID, name: '沈砚', appearance: { hairColor: 'silver', hairStyle: null, outfit: null, shoes: null, face: null, faceNote: '' } }
+  const carried = bringAvatarIntoStory(noAvatar, avatar)
+  assert.notEqual(carried, noAvatar)
+  assert.equal(carried.config.avatarId, AVATAR_ID)
+  assert.equal(carried.config.avatarAppearance, '银灰', 'only the picked parts ride along (R-07 semantics)')
+  assert.equal(plazaGateFor(carried).publishable, true, 'the gate re-reads clean after the bring-in')
+  assert.equal(noAvatar.config.avatarId, '', 'the original record is untouched')
+
+  // Refusals return the story itself: already-carried, read-only,
+  // fused and hand-written lines never take this path.
+  assert.equal(bringAvatarIntoStory(carried, avatar), carried)
+  assert.equal(bringAvatarIntoStory({ ...noAvatar, readOnly: true }, avatar).config.avatarId, '')
+  assert.equal(bringAvatarIntoStory(noAvatar, null), noAvatar)
+  assert.equal(bringAvatarIntoStory(noAvatar, {}), noAvatar)
 })
 
 test('plaza labels describe the world, the template and the season length', () => {

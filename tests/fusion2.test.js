@@ -80,6 +80,24 @@ test('the four-combination product-mode table is pinned', () => {
   assert.equal(totalChaptersFor(endlessProduct), Infinity)
 })
 
+test('a fused line is named from its source books, never the genre templates (FINAL-FIX)', () => {
+  const a = { ...finishedShort({ name: '阿澜' }), title: '雾港来信' }
+  const b = { ...finishedShort({ name: '沈砚' }), title: '剑碑夜行' }
+  const merged = createMergedStory(a, b)
+  assert.equal(merged.title, '合流：雾港来信 × 剑碑夜行')
+  assert.deepEqual(merged.sourceTitles, ['雾港来信', '剑碑夜行'], 'the provenance stays on the record')
+  // Two sources sharing one title fall back to their leads so the
+  // fused line still reads as its own book.
+  const twin = createMergedStory(a, { ...b, title: '雾港来信' })
+  assert.equal(twin.title, '合流：阿澜 × 沈砚')
+  // Long source titles clip per side instead of swallowing the line.
+  const long = createMergedStory(
+    { ...a, title: '这是一个非常非常长的书名超过十二个字' },
+    { ...b, title: '这也是一个非常非常长的书名超过十二字' },
+  )
+  assert.ok(long.title.length <= '合流：'.length + 13 + ' × '.length + 13)
+})
+
 test('an endless fusion product rolls on: rolling arcs, no finale, dual-avatar cast', () => {
   const a = serializing({
     name: '阿澜', ability: '听潮', avatarId: 'avatar-a', avatarAppearance: '银发，左颊泪痣',

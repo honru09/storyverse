@@ -72,6 +72,7 @@ import {
   plazaCardIntroFor,
   plazaTitleTierFor,
   plazaGateFor,
+  bringAvatarIntoStory,
   plazaLengthLabel,
   plazaPortraitPath,
   plazaLineStatusFor,
@@ -3213,6 +3214,15 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                 <button disabled={busy} onClick={() => setStep(4)} aria-label="修改能力"><span>能力</span><b>{abilityName || "未定"}</b><Icon name="chevron" size={15} /></button>
                 <button disabled={busy} onClick={() => setStep(4)} aria-label="修改故事风格"><span>风格</span><b>{tone.name}{pickedTone ? "" : "（默认）"}</b><Icon name="chevron" size={15} /></button>
               </div>
+              {/* The shelf-requirement disclosure (FINAL-FIX R-06): a
+                  line forged without an avatar can be read and kept,
+                  but it cannot be listed — say so BEFORE the book
+                  exists, not at the publish gate months later. The
+                  remedy (bring one in later) is named too, so this
+                  reads as a fact, not a trap. */}
+              {!draft.avatarId && (
+                <p className="field-hint opening-avatar-note">这条线没有带化身：写完可以读、可以留在书架，但不能上架书城——上架的书，主角得是你的化身。成书之后也能在发布页或设定集里随时补带。</p>
+              )}
               <div className="opening-starmap">
                 <StoryMapMini total={mapTotalFor(totalChaptersFor({ config: draft }), 0, 0)} generated={0} current={0} state={null} />
               </div>
@@ -4009,7 +4019,7 @@ function ProseEditor({ chapter, onClose, onSave }) {
 // generated after the edit; chapters that already exist never change.
 // The lorebook shown here is the owner's private material (imported or
 // hand-written): it appears in no public snapshot, ever.
-function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSynopsis, onSaveBookTitle, onSaveChapterTitles }) {
+function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPage, onClose, onSave, onFuse, onDelete, onSaveSynopsis, onSaveBookTitle, onSaveChapterTitles }) {
   // 自己写 (WRITE-MODE §50): a hand-written book has no world bible to
   // steer, no lorebook to inject and no style preset to dial — those
   // sections would be dead controls. Its settings book keeps only what
@@ -4106,6 +4116,35 @@ function StorySettingsBook({ story, onClose, onSave, onFuse, onDelete, onSaveSyn
           ? "这本书是你自己写的：这里只有书名、简介和目录。正文在写作台里改，这里的每一处保存都只动名字，不动正文。"
           : "这本书的世界设定都在这里。在这里改，只影响之后生成的章节——已经写好的章节，一个字都不会动。"}
       </p>
+      {/* The carried-avatar row (FINAL-FIX R-06): the second remedy
+          surface for a line forged without an avatar. It states who
+          rides this line, or offers the bring-in when nobody does —
+          a fused line's cast is fixed at the merge, and a hand-written
+          book has no such row at all (manual returns early above via
+          its own sections). */}
+      {!manual && story.kind !== "merged" && (
+        <div className="settings-section">
+          <h3>随行化身</h3>
+          {story.config?.avatarId ? (
+            <p className="field-hint">
+              这条线由化身「{(avatars.find((item) => item.id === story.config.avatarId)?.name) || story.config?.name || "你的化身"}」走完——上架书城时，它就是这本书的主角。
+            </p>
+          ) : (
+            <>
+              <p className="field-hint">这条线还没有带化身：可以读、可以留在书架，但上架书城要求主角是你的化身。把化身带进来，这条线就能上架。</p>
+              {avatars.length > 0 ? (
+                <div className="settings-avatar-row">
+                  {avatars.map((item) => (
+                    <Button key={item.id} variant="secondary" onClick={() => onBringAvatar?.(item)}>带入「{item.name}」</Button>
+                  ))}
+                </div>
+              ) : (
+                <Button variant="secondary" onClick={() => { onClose(); onOpenAvatarPage?.(); }}>先去创建化身</Button>
+              )}
+            </>
+          )}
+        </div>
+      )}
       <div className="settings-section">
         <h3>书名</h3>
         <p className="field-hint">
@@ -4432,6 +4471,8 @@ function Reader({
   onPublish,
   openShare = false,
   onShareOpened,
+  avatars = [],
+  onOpenAvatarPage,
   unsaved = false,
   onPrepareChapter,
   onReviseChapter,
@@ -5309,6 +5350,12 @@ function Reader({
       {settingsOpen && !readOnly && (
         <StorySettingsBook
           story={story}
+          avatars={avatars}
+          onOpenAvatarPage={onOpenAvatarPage}
+          onBringAvatar={(avatar) => {
+            const next = bringAvatarIntoStory(story, avatar);
+            if (next !== story) update(next);
+          }}
           onClose={() => setSettingsOpen(false)}
           onSave={saveSettings}
           onSaveSynopsis={saveSynopsis}
@@ -8745,7 +8792,7 @@ function OfficialDemoEntry({ onNavigate }) {
   );
 }
 
-function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onToast }) {
+function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onToast, onBringAvatar }) {
   const [selectedId, setSelectedId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -8810,15 +8857,13 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
             {rows.map(({ story, gate }) => {
               const genre = genreOf(story);
               const published = Boolean(mine[story.id]);
-              return (
-                <button
-                  type="button"
-                  key={story.id}
-                  className={`plaza-pick ${selectedId === story.id && gate.publishable ? "active" : ""} ${gate.publishable ? "" : "is-disabled"}`}
-                  aria-pressed={selectedId === story.id && gate.publishable}
-                  disabled={!gate.publishable}
-                  onClick={() => setSelectedId(story.id)}
-                >
+              // The avatar-blocked row is the R-06 remedy surface: it
+              // cannot be picked, but it is not a dead end either — the
+              // main avatar can be brought into the line right here,
+              // after which the gate re-reads and the row unlocks.
+              const avatarBlocked = !gate.publishable && gate.needsAvatar === true;
+              const copy = (
+                <>
                   <span className="plaza-pick-cover"><WorldArtwork genreId={genre.id} /></span>
                   <span className="plaza-pick-copy">
                     <strong>《{story.title}》</strong>
@@ -8830,6 +8875,35 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
                         : <>{story.kind === "merged" ? "合流故事" : isManualStory(story) ? "作者手写" : "连载中"} · {gate.reason}</>}
                     </span>
                   </span>
+                </>
+              );
+              if (avatarBlocked) {
+                return (
+                  <div key={story.id} className="plaza-pick is-disabled plaza-pick-remedy">
+                    {copy}
+                    {avatar ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() => { onBringAvatar?.(story, avatar); setSelectedId(story.id); }}
+                      >
+                        带入化身「{avatar.name}」
+                      </Button>
+                    ) : (
+                      <Button variant="secondary" onClick={onOpenAvatar}>先创建化身</Button>
+                    )}
+                  </div>
+                );
+              }
+              return (
+                <button
+                  type="button"
+                  key={story.id}
+                  className={`plaza-pick ${selectedId === story.id && gate.publishable ? "active" : ""} ${gate.publishable ? "" : "is-disabled"}`}
+                  aria-pressed={selectedId === story.id && gate.publishable}
+                  disabled={!gate.publishable}
+                  onClick={() => setSelectedId(story.id)}
+                >
+                  {copy}
                   {selectedId === story.id && gate.publishable && <Icon name="check" size={18} />}
                 </button>
               );
@@ -8869,7 +8943,10 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
           {error && <div className="sw-inline-alert" role="alert">{error}</div>}
           <div className="plaza-publish-actions">
             <Button disabled={!selected || busy} onClick={() => void publish()}>{busy ? "正在上架…" : "上架到书城"}</Button>
-            <Button variant="ghost" disabled={busy} onClick={() => onNavigate("store")}>暂不上架</Button>
+            {/* 「暂不上架」 read as a shelving state (上架's negation) and
+                sat one tap away from the publish button (FINAL-FIX
+                R-15): renamed to the plain deferral it actually is. */}
+            <Button variant="ghost" disabled={busy} onClick={() => onNavigate("store")}>先不发布</Button>
           </div>
         </>
       )}
@@ -10945,6 +11022,8 @@ function App() {
         backText={route.plaza ? "返回广场" : ""}
         onNavigate={navigate}
         onUpdateStory={commitStory}
+        avatars={avatarState.avatars}
+        onOpenAvatarPage={() => navigate("avatar")}
         onPrepareChapter={prepareChapter}
         onReviseChapter={reviseChapter}
         onRerollChapter={rerollChapter}
@@ -11048,6 +11127,13 @@ function App() {
         onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
         onOpenAvatar={() => navigate("avatar")}
         onToast={setToast}
+        onBringAvatar={(story, avatar) => {
+          const next = bringAvatarIntoStory(story, avatar);
+          if (next !== story) {
+            commitStory(next);
+            setToast(`已把化身带入《${story.title}》，这条线现在可以上架了。`);
+          }
+        }}
       />
     );
   else if (view === "plaza-enter")

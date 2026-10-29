@@ -135,7 +135,10 @@ export function plazaGateFor(story) {
     return { publishable: false, reason: '合流故事不能发布到广场。', lineStatus: 'finished' }
   }
   if (typeof story.config?.avatarId !== 'string' || !story.config.avatarId) {
-    return { publishable: false, reason: '只有用化身走完的故事线才能发布。', lineStatus: 'finished' }
+    // needsAvatar marks the ONE gate refusal with a remedy
+    // (bringAvatarIntoStory): surfaces key on the flag, never on the
+    // human wording of the reason (FINAL-FIX R-06).
+    return { publishable: false, reason: '只有用化身走完的故事线才能发布。', lineStatus: 'finished', needsAvatar: true }
   }
   const mode = storyLengthModeOf(story)
   if (mode === 'endless') {
@@ -160,6 +163,32 @@ export function plazaGateFor(story) {
     return { publishable: false, reason, lineStatus: 'finished' }
   }
   return { publishable: true, reason: '', lineStatus: 'finished' }
+}
+
+/**
+ * Bringing an avatar into a finished line (FINAL-FIX R-06). The
+ * publish gate asks for a carried avatar, and until now a line forged
+ * without one was a dead end: the gate said no, and nothing anywhere
+ * offered the remedy. This is the remedy — the chosen avatar becomes
+ * the line's carried companion (the same two config fields the forge
+ * and the plaza entry write), so the gate re-reads clean. Lines that
+ * already carry one, read-only lines, fused lines (their cast is
+ * fixed at the merge) and hand-written books (a different shelf
+ * contract) are refused by returning the story untouched.
+ */
+export function bringAvatarIntoStory(story, avatar) {
+  if (!story || !avatar?.id) return story
+  if (story.readOnly || story.kind === 'merged' || story.creationMode === 'manual') return story
+  if (story.config?.avatarId) return story
+  return {
+    ...story,
+    config: {
+      ...story.config,
+      avatarId: avatar.id,
+      avatarAppearance: avatarAppearanceText(avatar.appearance),
+    },
+    updatedAt: new Date().toISOString(),
+  }
 }
 
 /**

@@ -3075,9 +3075,27 @@ export function createMergedStory(a, b, options = {}) {
     merge: { rules, lead, bond },
   }
   const timestamp = now()
+  // The fused line is named from the two BOOKS it came from, not from
+  // their genre templates (FINAL-FIX, fusion item): the old
+  // 「合流：<题材> × <题材>」 put the template's sample name on the
+  // cover, so two fusions of same-genre lines — and a fusion next to
+  // its own sources on the shelf — were indistinguishable. The book
+  // titles are the identity; each side is clipped so the pair stays
+  // one cover line, and when both sources share one title the pair is
+  // told apart by their leads instead. Where each half came from
+  // stays on the record regardless (sourceTitles, below).
+  const clipSide = (text) => {
+    const value = String(text || '').trim()
+    return value.length > 12 ? `${value.slice(0, 12)}…` : value
+  }
+  const sourceTitleA = typeof a.title === 'string' ? a.title.trim() : ''
+  const sourceTitleB = typeof b.title === 'string' ? b.title.trim() : ''
+  const mergedTitle = sourceTitleA && sourceTitleB && sourceTitleA !== sourceTitleB
+    ? `合流：${clipSide(sourceTitleA)} × ${clipSide(sourceTitleB)}`
+    : `合流：${clipSide(sourceA.name) || '一位主角'} × ${clipSide(sourceB.name) || '另一位主角'}`
   const story = {
     id: makeId('merge'),
-    title: `合流：${genreA.title} × ${genreB.title}`,
+    title: mergedTitle,
     genreId: mergedConfig.genreId,
     config: mergedConfig,
     worldBible: {

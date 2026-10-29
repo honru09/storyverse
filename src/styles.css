@@ -1849,3 +1849,5 @@ button.settings-row{cursor:pointer}
 .write-editor .field-label{display:block;margin-top:14px}
 .write-textarea{width:100%;min-height:320px;line-height:1.8;font-size:16px;resize:vertical}
 .write-editor-foot{display:flex;justify-content:space-between;margin-top:8px;font-size:13px;color:var(--dim)}
+.plaza-pick-remedy{align-items:center}
+.settings-avatar-row{display:flex;flex-wrap:wrap;gap:8px}
