@@ -130,7 +130,7 @@ html:not([data-shell-theme='aurora']) .aurora-bg{display:none}
 html.theme-switching body::after{content:"";position:fixed;inset:0;z-index:190;background:var(--bg);opacity:0;pointer-events:none;animation:theme-veil 320ms var(--ease-out)}
 @keyframes theme-veil{from{opacity:.5}to{opacity:0}}
 *{box-sizing:border-box}
-html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior-y:none}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 button{font:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
 button:disabled{cursor:not-allowed}
@@ -410,11 +410,6 @@ select{appearance:auto}
 .ability-radio{display:grid;place-items:center;width:24px;height:24px;flex-shrink:0;border:2px solid var(--line-2);border-radius:50%}
 .ability-radio i{width:12px;height:12px;border-radius:50%;background:linear-gradient(120deg,#38bdf8,#818cf8)}
 .ability-card.active .ability-radio{border-color:var(--cyan)}
-.tone-block{margin-top:22px}
-.tone-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
-.tone-card{min-height:56px;padding:12px 8px;border:1px solid var(--line);border-radius:var(--radius-selection);background:var(--glass);color:var(--ink);transition:transform var(--dur-press) var(--ease-press),border-color var(--dur-state) var(--ease-out),background-color var(--dur-state) var(--ease-out)}
-.tone-card b{font-size:14px;font-weight:700}
-.tone-card.active{border-color:var(--cyan);background:var(--selected-surface);box-shadow:0 0 0 1px var(--cyan)}
 .opening-preview{display:grid;justify-items:center;text-align:center}
 .opening-art{width:min(240px,68vw);aspect-ratio:3/4;border:1px solid var(--line);border-radius:var(--radius-card);overflow:hidden;box-shadow:0 24px 50px -18px rgba(2,6,20,.8)}
 .opening-preview h3{margin:20px 0 0;font-size:24px;font-weight:800}
@@ -468,6 +463,16 @@ select{appearance:auto}
 .back-button{padding-inline:5px;font-size:13px}
 .life-fields .field-hint{grid-column:1 / -1;margin:0}
 .generation-feedback{min-height:24px;margin-top:14px;color:var(--dim);font-size:13px;line-height:1.7}
+/* FORGE-TRIM trait editor: the reader's own text is the control; three
+   library entries sit under it as stacked one-tap fills (name over its
+   8–16 character sketch), plus a text refresh for three more. */
+.trait-input{width:100%}
+.trait-suggestions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.trait-chip{flex-direction:column;align-items:flex-start;gap:1px;border-radius:var(--radius-selection);padding:9px 13px;line-height:1.45;text-align:left}
+.trait-chip span{font-size:14px}
+.trait-chip small{font-size:11px;font-weight:500;color:var(--dim-2)}
+.trait-refresh{align-self:center;min-height:44px;padding:8px 6px;border:0;background:none;color:var(--cyan);font-size:13px;font-weight:650}
+.trait-editor .field-hint{margin-top:10px}
 .preview-panel{display:none}
 /* Reader shell (prose itself is themed in reading-preferences.css) */
 .app-shell[data-view="reader"]{background:var(--paper)}
@@ -627,11 +632,9 @@ select{appearance:auto}
 .merge-result b{font-size:16px;overflow-wrap:anywhere}
 .merge-result>button{display:inline-flex;align-items:center;gap:7px;margin-left:auto;flex-shrink:0;min-height:46px;padding:10px 16px;border:0;border-radius:999px;background:linear-gradient(120deg,#38bdf8,#818cf8);color:#06122b;font-weight:700}
 /* Grouped surfaces */
-.protagonist-form,.ability-list,.tone-block,.merge-controls{border:1px solid var(--line);border-radius:var(--radius-surface);background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:var(--shadow-flat)}
+.protagonist-form,.ability-list,.merge-controls{border:1px solid var(--line);border-radius:var(--radius-surface);background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:var(--shadow-flat)}
 .protagonist-form{padding:21px 18px}
 .ability-list{overflow:hidden}
-.tone-block{padding:20px 18px}
-.tone-block .forge-section-heading{margin-bottom:16px}
 /* Dialogs, share, library tools */
 .sw-share-preview{display:flex;gap:16px;align-items:flex-start;margin-top:18px}
 .share-cover{width:96px;aspect-ratio:3/4;flex-shrink:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
@@ -683,7 +686,7 @@ input[type="checkbox"]{accent-color:var(--cyan)}
   .motion-toggle:hover,.icon-button:hover{background:var(--glass-2)}
   .topbar-actions .account-entry:hover{background:var(--glass-2)}
   .profile-hero .ryan-topbar-actions .ryan-glyph-btn:hover{background:color-mix(in srgb,var(--profile-ink-strong) 10%,transparent)}
-  .template-brick:hover,.choice-chip:hover,.origin-card:hover,.tone-card:hover,.spawn-card:hover{border-color:var(--line-2)}
+  .template-brick:hover,.choice-chip:hover,.origin-card:hover,.spawn-card:hover{border-color:var(--line-2)}
   .template-brick:hover{transform:translateY(-2px)}
   .stage-chip:hover,.store-filters button:hover{border-color:var(--line-2);color:var(--ink)}
   .stage-chip.selected:hover{color:#06122b}
@@ -769,7 +772,7 @@ input[type="checkbox"]{accent-color:var(--cyan)}
   .home-heading{align-items:flex-start;gap:6px}
   .home-account-link{padding-inline:8px;font-size:12px}
   .home-hero{min-height:490px;border-radius:20px}
-  .protagonist-form,.tone-block{padding:18px 14px}
+  .protagonist-form{padding:18px 14px}
   .choice-chip,.origin-card{font-size:12px}
   .merge-controls{padding:20px 14px}
   .step{font-size:10.5px}
@@ -793,7 +796,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
   :root[data-shell-theme='aurora']{--dim:#c3d2f2;--dim-2:#a9b9da;--line:rgba(168,196,255,.45);--line-2:rgba(200,220,255,.75);--glass:rgba(148,178,255,.14);--glass-2:rgba(148,178,255,.22)}
   :root[data-shell-theme='black']{--dim:#d4d4d8;--dim-2:#a7a7ad;--line:rgba(255,255,255,.34);--line-2:rgba(255,255,255,.6);--glass:rgba(255,255,255,.10);--glass-2:rgba(255,255,255,.16)}
   :root[data-shell-theme='white']{--dim:#3f4249;--dim-2:#5d6068;--line:rgba(23,24,28,.34);--line-2:rgba(23,24,28,.6);--glass:rgba(23,24,28,.08);--glass-2:rgba(23,24,28,.13)}
-  .choice-chip.active,.origin-card.active,.tone-card.active,.priority-options button.active,.sw-bond-options button.active{border-color:var(--cyan)}
+  .choice-chip.active,.origin-card.active,.priority-options button.active,.sw-bond-options button.active{border-color:var(--cyan)}
   .template-brick,.sw-toast{border-color:var(--line-2)}
 }
 /* Restored layout bits from the previous system that remain load-bearing. */
@@ -801,7 +804,15 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .home-lower{margin-top:28px}
 .home-lower .section-heading{margin-bottom:16px}
 .reader-appearance-button{flex-shrink:0;min-width:44px;min-height:44px;padding:8px;border:0;border-radius:50%;color:var(--selected-text);background:var(--soft-indigo);font-size:14px;font-weight:650}
-@media(max-width:700px){.page-forge{scroll-padding-bottom:180px;padding-bottom:calc(190px + env(safe-area-inset-bottom))}}
+/* FORGE-TRIM scroll geometry: the action bar is sticky IN FLOW and now
+   the last element of the forge column, so the page's bottom padding is
+   only the bar's dock offset made permanent — 50px here plus the forge
+   column's own 12px equals the 62px phone nav height, and the bar comes
+   to rest exactly on its floating line at max scroll. The old 190px
+   assumed a fixed overlay the bar never was: it left ~240px of void
+   under the bar (measured at 390x844), which the page rode up over when
+   pulled past the end. scroll-padding stays generous for focus jumps. */
+@media(max-width:700px){.page-forge{scroll-padding-bottom:150px;padding-bottom:calc(50px + env(safe-area-inset-bottom))}}
 
 /* 爽文批次：题材砖自有符号面（与世界封面解耦）、篇幅选择与开局篇幅行 */
 .template-brick-symbol{position:absolute;top:10px;right:14px;font-size:44px;font-weight:800;line-height:1;opacity:.5;text-shadow:0 2px 14px rgba(3,6,18,.45)}
@@ -1299,9 +1310,6 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .ability-group{margin-top:18px}
 .ability-group-title{margin:0 0 10px;font-size:13px;font-weight:750;color:var(--ink)}
 .ability-list-tail{margin-top:12px}
-.tone-card{display:grid;gap:4px;align-content:start;text-align:left}
-.tone-card small{color:var(--dim);font-size:11.5px;line-height:1.55;overflow-wrap:anywhere}
-.tone-card .default-badge{justify-self:start}
 .avatar-create-line{margin-top:22px;color:var(--dim);font-size:12.5px;line-height:1.7}
 .avatar-create-line button{padding:0;border:0;background:none;color:var(--cyan);font:inherit;font-weight:650;cursor:pointer}
 .opening-preview--summary{display:grid;justify-items:center;gap:10px;margin-bottom:22px;text-align:center}

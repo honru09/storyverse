@@ -148,6 +148,31 @@ export function avatarAppearanceText(appearance) {
   return parts.join('，').slice(0, AVATAR_APPEARANCE_TEXT_MAX)
 }
 
+/**
+ * The forge draft patch a brought-in avatar applies (FORGE-TRIM): its
+ * name, id and appearance line — plus its written profile. The profile's
+ * description IS the avatar's 性格与设定 (the profile form asks for
+ * 性格、气质、给人的感觉）, so it lands in the draft's persona: the one
+ * field that carries protagonist character into the story config and
+ * from there into every chapter's generation context. Before this
+ * mapping existed, bringing an avatar carried only its name and look —
+ * its character stayed behind in the profile, and the forge asked the
+ * reader for a trait all over again. An avatar with no written
+ * description leaves the draft's persona untouched. Cancelling the
+ * bring-in clears only avatarId/avatarAppearance; name and persona stay
+ * as the book's own copies （只改这本书，不动化身档案）.
+ */
+export function avatarDraftPatch(avatar) {
+  if (!avatar || typeof avatar !== 'object') return null
+  const description = typeof avatar.description === 'string' ? avatar.description.trim() : ''
+  return {
+    name: typeof avatar.name === 'string' ? avatar.name : '',
+    avatarId: typeof avatar.id === 'string' ? avatar.id : '',
+    avatarAppearance: avatarAppearanceText(avatar.appearance),
+    ...(description ? { persona: description } : {}),
+  }
+}
+
 /** The English appearance fragments the portrait prompt paints from. */
 export function avatarAppearancePrompt(appearance) {
   const look = normalizeAppearance(appearance)

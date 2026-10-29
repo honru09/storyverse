@@ -118,8 +118,12 @@ test('default-state governance: system defaults are badged, deliberate picks get
   assert.match(main, /default-badge/)
   assert.match(main, /pickedTemplate/)
   assert.match(main, /pickedTrait/)
-  assert.match(main, /pickedTone/)
   assert.match(main, /pickedLength/)
+  // FORGE-TRIM: the 故事风格 governance retired with the cards
+  // themselves — no tone state survives in the forge.
+  assert.doesNotMatch(main, /pickedTone/)
+  assert.doesNotMatch(main, /setToneId/)
+  assert.doesNotMatch(main, /tone-card/)
   // A restored draft counts as the reader's own choices, not defaults.
   assert.match(main, /restoredDraft/)
 })
@@ -207,10 +211,13 @@ test('god mode: entry, form and wiring live in the world forge step', () => {
   // Entry is a card on the world screen, not buried in a later step.
   assert.ok(main.includes('创世神模式') && main.includes('世界由你亲手写'))
   assert.ok(main.includes('world-card-god') && main.includes('enterGodMode') && main.includes('exitGodMode'))
-  // The form is exactly three things: name, setting, craft choice.
+  // The form is name, setting and the inspiration sparks. FORGE-TRIM:
+  // the craft-choice chips are gone (the craft is step one's pick), and
+  // the sparks draw from the 100-hook library, not the retired pool.
   assert.ok(main.includes('customWorldName') && main.includes('CUSTOM_WORLD_NAME_MAX'))
   assert.ok(main.includes('customWorldSetting') && main.includes('CUSTOM_WORLD_SETTING_MAX'))
-  assert.ok(main.includes('完全自由') && main.includes('GOD_MODE_FRAGMENTS'))
+  assert.ok(main.includes('drawInspirationFragments') && main.includes('fragmentBatch'))
+  assert.ok(!main.includes('GOD_MODE_FRAGMENTS') && !main.includes('写法（选填）'))
   // Creation forwards every custom field, not just the template id.
   assert.ok(main.includes('customWorldName: payload.customWorldName'))
   assert.ok(main.includes('customWorldSetting: payload.customWorldSetting'))
@@ -220,10 +227,11 @@ test('god mode no longer wipes the step-one genre: entry preserves it, exit rest
   const entry = main.match(/const enterGodMode = \(\) => \{([\s\S]*?)\};/)
   assert.ok(entry, 'enterGodMode exists')
   assert.doesNotMatch(entry[1], /genreTemplateId/)
-  // The in-godmode craft chips are framed as the same step-one choice
-  // carried over, not a second decision.
-  assert.match(main, /这就是第一步选定的题材/)
-  assert.match(main, /setPickedTemplate\(true\)/)
+  // FORGE-TRIM: nothing in the god form writes the template pin at all
+  // any more — the 写法 chips (the only writer of an empty pin) are
+  // deleted, so the step-one choice can only be changed at step one.
+  assert.doesNotMatch(main, /genreTemplateId: ""/)
+  assert.doesNotMatch(main, /这就是第一步选定的题材/)
 })
 
 test('god mode: the hard-line setting check gates the world step and creation', () => {

@@ -191,6 +191,10 @@ async function library(page) {
       assert.equal(saved.stories[0].config.avatarId, LEGACY_ID);
       assert.match(saved.stories[0].config.avatarAppearance, /长直发/);
       assert.equal(saved.stories[0].config.name, '沈砚');
+      // FORGE-TRIM: the avatar's written profile (its 性格与设定） rides
+      // into the book's persona — the forge no longer re-asks for a
+      // trait the profile already states.
+      assert.equal(saved.stories[0].config.persona, '从山里走出来的年轻人，话少，手稳。');
     });
 
     // --- delete that avatar; the book must not care -------------------

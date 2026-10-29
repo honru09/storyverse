@@ -41,11 +41,14 @@ import {
   withCoverState,
 } from "./cover.js";
 import { downloadText } from "./downloads.js";
+import { drawPersonalityTraits, personalityTraitText } from "./personality-traits.js";
+import { drawInspirationFragments } from "./inspiration-fragments.js";
 import {
   AVATAR_APPEARANCE_FIELDS,
   AVATAR_LIMIT,
   AVATAR_PRESETS,
   avatarAppearanceText,
+  avatarDraftPatch,
   avatarJourneys,
   avatarPortraitState,
   createAvatar,
@@ -507,20 +510,13 @@ const Icon = ({ name, size = 18, stroke = 1.8, className = "" }) => {
   return <svg {...common}>{paths[name] || paths.spark}</svg>;
 };
 
-const traits = ["冷静观察者", "温柔理想派", "危险好奇心", "嘴硬心软"];
-// One-tap sparks for the god-mode setting field: each is a complete world
-// rule a creator can adopt as-is or keep writing from.
-const GOD_MODE_FRAGMENTS = [
-  "这里的雨只落在说谎的人头上。",
-  "每个人出生时都带着一把钥匙，却没有人见过锁。",
-  "时间是通货，穷人向富人借明天。",
-  "这座城每晚都会换一个位置醒来。",
-];
-const tones = [
-  { id: "poetic", name: "诗性冒险", desc: "慢一点，风会把伏笔吹到你手里" },
-  { id: "tense", name: "悬疑推进", desc: "每一次呼吸都离真相更近" },
-  { id: "warm", name: "群像治愈", desc: "让角色在世界缝隙里彼此照亮" },
-];
+// FORGE-TRIM: the forge's old fixed vocabularies retired here. The
+// trait chips are now an input backed by the 100-entry library in
+// personality-traits.js; the god-mode sparks draw from the 100-hook
+// library in inspiration-fragments.js (the four atmospheric one-liners
+// that used to sit here are gone for good); the 故事风格 cards are
+// offline entirely — the engine still reads a stored tone on old
+// stories, but the forge no longer asks.
 const genreById = { ...Object.fromEntries(GENRES.map((genre) => [genre.id, genre])), [CUSTOM_GENRE.id]: CUSTOM_GENRE };
 
 const toWorld = (genre) => ({
@@ -1743,7 +1739,7 @@ function WorldCard({ world, selected, onSelect }) {
   );
 }
 
-function PreviewPanel({ world, template, draft, ability, tone, spawn, onJump }) {
+function PreviewPanel({ world, template, draft, ability, spawn, onJump }) {
   const person = draft.name || "未命名的旅人";
   const origin = originSummaryFor(genreById[draft.genreId] || GENRES[0], draft);
   const isCustom = draft.genreId === CUSTOM_GENRE.id;
@@ -1783,9 +1779,8 @@ function PreviewPanel({ world, template, draft, ability, tone, spawn, onJump }) 
           <div><dt>设定</dt><dd>{(draft.customWorldSetting || "").trim().slice(0, 80) || "尚未写下设定"}</dd></div>
         )}
         <div><dt>主角</dt><dd>{person}</dd></div>
-        <div><dt>性格</dt><dd>{draft.trait}</dd></div>
+        <div><dt>性格</dt><dd>{draft.avatarId ? "化身自带" : draft.trait}</dd></div>
         <div><dt>能力</dt><dd>{ability?.name || "未定"}</dd></div>
-        <div><dt>风格</dt><dd>{tone.name}</dd></div>
       </dl>
     </aside>
   );
@@ -1929,8 +1924,9 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     setDraft((current) => {
       if (current.avatarId || (current.name || "").trim()) return current;
       const main = avatars.find((item) => item.id === mainId);
-      if (!main) return current;
-      return { ...current, name: main.name, avatarId: main.id, avatarAppearance: avatarAppearanceText(main.appearance) };
+      const patch = main ? avatarDraftPatch(main) : null;
+      if (!patch) return current;
+      return { ...current, ...patch };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [avatarLoaded, mainId]);
@@ -1960,8 +1956,14 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
   );
   const [pickedTemplate, setPickedTemplate] = useState(templateWasPicked);
   const [pickedTrait, setPickedTrait] = useState(wasRestored);
-  const [pickedTone, setPickedTone] = useState(wasRestored);
   const [pickedLength, setPickedLength] = useState(wasRestored);
+  // FORGE-TRIM: the three personality entries currently offered under
+  // the trait input, and the four inspiration fragments currently
+  // offered in the god-mode form. Both batches are drawn once per forge
+  // visit; the trait batch redraws on refresh (excluding the batch on
+  // screen), the fragment batch redraws each time god mode is entered.
+  const [traitBatch, setTraitBatch] = useState(() => drawPersonalityTraits(3));
+  const [fragmentBatch, setFragmentBatch] = useState(() => drawInspirationFragments(4));
   // Step one's open shelf (two-level taxonomy): a genuinely picked
   // template resumes on its own L2 screen with the pick lit; every
   // other entry — fresh, or restored-but-never-picked — starts on the
@@ -2018,11 +2020,6 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     );
     return !known && initialDraft?.ability ? initialDraft.ability : "";
   });
-  const [toneId, setToneId] = useState(
-    tones.find((item) => item.id === initialDraft?.toneId)?.id ||
-      tones.find((item) => item.name === initialDraft?.tone)?.id ||
-      "poetic",
-  );
   const isCustom = draft.genreId === CUSTOM_GENRE.id;
   // True only once a world was deliberately picked, rolled or combo-rolled
   // (or the draft predates the world screen — see legacyDraftToDraft). The
@@ -2181,6 +2178,8 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     const borrow = draft.genreId !== CUSTOM_GENRE.id
       ? (worldChosen ? draft.genreId : "")
       : (draft.godBorrowWorldId || "");
+    // Each god-mode entry offers a fresh handful of inspiration sparks.
+    setFragmentBatch(drawInspirationFragments(4));
     set({ genreId: CUSTOM_GENRE.id, godBorrowWorldId: borrow });
   };
   const exitGodMode = () => {
@@ -2233,7 +2232,6 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     ? (customAbility.trim() ? { id: "custom", name: customAbility.trim(), desc: "你亲手写下的能力" } : null)
     : abilityCandidates.find((item) => item.id === abilityId) || null;
   const abilityName = abilityPick?.name || "";
-  const tone = tones.find((item) => item.id === toneId) || tones[0];
   const set = (patch) => setDraft((current) => ({ ...current, ...patch }));
   // 外部导入 (external import): a world book / world text lands as a
   // custom world (the god-mode shape) plus lorebook entries on the
@@ -2256,6 +2254,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       customWorldSetting: setting || "",
       lorebook: entries || [],
     });
+    setFragmentBatch(drawInspirationFragments(4));
     setWorldImportNote(note);
     setError("");
   };
@@ -2379,9 +2378,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     onDraftChange?.({
       ...draft,
       ability: abilityName,
-      tone: tone.name,
       abilityId: abilityPick?.id || "",
-      toneId,
       step,
       // Whether the step-one template was EVER deliberately picked or
       // rolled in this draft's life (§37): the restore funnel reads it
@@ -2393,7 +2390,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       // migratedDraftStep) instead of folding them a second time.
       flowVersion: 5,
     });
-  }, [draft, abilityName, abilityPick?.id, tone.name, toneId, step, pickedTemplate, onDraftChange]);
+  }, [draft, abilityName, abilityPick?.id, step, pickedTemplate, onDraftChange]);
   useEffect(() => {
     scrollToTop();
     forgeRef.current
@@ -2413,10 +2410,8 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     try { await onGenerate({
       ...draft,
       ability: abilityName,
-      tone: tone.name,
       world,
       abilityOption: abilityPick || { id: "", name: "", desc: "" },
-      toneOption: tone,
     }, { engine, signal: controller.signal });
       // The first chapter has landed (§37 G3 burst moment): one short
       // sparkle as the wait surface lifts and the reader opens.
@@ -2652,38 +2647,17 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                   <div className="form-block">
                     <span className="field-label">灵感碎片（点一下，补进设定）</span>
                     <div className="stage-chips">
-                      {GOD_MODE_FRAGMENTS.map((fragment) => (
-                        <button type="button" key={fragment} className="stage-chip" onClick={() => appendFragment(fragment)}>
-                          {fragment}
+                      {fragmentBatch.map((fragment) => (
+                        <button type="button" key={fragment.id} className="stage-chip" onClick={() => appendFragment(fragment.text)}>
+                          {fragment.text}
                         </button>
                       ))}
                     </div>
                   </div>
-                  <div className="form-block">
-                    <span className="field-label">写法（选填）</span>
-                    <div className="stage-chips" role="group" aria-label="写法">
-                      <button
-                        type="button"
-                        className={`stage-chip ${!template ? "selected" : ""}`}
-                        aria-pressed={!template}
-                        onClick={() => { setPickedTemplate(true); set({ genreTemplateId: "" }); }}
-                      >
-                        完全自由
-                      </button>
-                      {GENRE_TEMPLATES.map((item) => (
-                        <button
-                          type="button"
-                          key={item.id}
-                          className={`stage-chip ${template?.id === item.id ? "selected" : ""}`}
-                          aria-pressed={template?.id === item.id}
-                          onClick={() => { setPickedTemplate(true); set({ genreTemplateId: item.id }); }}
-                        >
-                          {item.name}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="field-hint">这就是第一步选定的题材，带到这里作「写法」——改这里或改第一步，效果一样。选一个题材，借它的结构与文风来写你的世界；选「完全自由」，写法不设限。</p>
-                  </div>
+                  {/* FORGE-TRIM: the 写法 chips that used to live here are
+                      gone — they re-asked step one's category pick in a
+                      second costume. The craft is whatever step one
+                      pinned; to change it, go back to step one. */}
                   {error && <p className="god-error" role="alert">{error}</p>}
                 </div>
               ) : (
@@ -2883,7 +2857,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                       </span>
                       <span className="avatar-bring-copy">
                         <b>这一本由{item.name}来走</b>
-                        <small>名字和样子已带入，只改这本书，不动化身档案。</small>
+                        <small>名字、样子和设定已带入，只改这本书，不动化身档案。</small>
                       </span>
                       <button type="button" className="small-link" onClick={() => set({ avatarId: "", avatarAppearance: "" })}>
                         取消带入
@@ -2901,7 +2875,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                       <button
                         type="button"
                         className="small-link"
-                        onClick={() => set({ name: item.name, avatarId: item.id, avatarAppearance: avatarAppearanceText(item.appearance) })}
+                        onClick={() => { const patch = avatarDraftPatch(item); if (patch) set(patch); }}
                       >
                         用这个化身
                       </button>
@@ -2998,25 +2972,50 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                     />
                   </label>
                 )}
-                <div className="form-block">
-                  <span className="field-label">性格{pickedTrait ? "" : "（默认）"}</span>
-                  <div className="chip-grid">
-                    {traits.map((trait) => (
+                {/* FORGE-TRIM: with an avatar brought in, this whole
+                    section steps aside — the avatar's own profile (its
+                    description, carried in the persona field above) IS
+                    this book's 性格与设定， and asking again was the
+                    jarring part. Without an avatar, the trait is the
+                    reader's own text first: an input, with three
+                    entries drawn from the 100-entry library underneath
+                    as one-tap fills and a refresh for three more. */}
+                {!draft.avatarId && (
+                  <div className="form-block trait-editor">
+                    <span className="field-label">性格{pickedTrait ? "" : "（默认）"}</span>
+                    <input
+                      className="trait-input"
+                      maxLength={80}
+                      autoComplete="off"
+                      value={draft.trait}
+                      aria-label="性格"
+                      placeholder="写下主角的性格，或点下面一条填入"
+                      onChange={(event) => { setPickedTrait(true); set({ trait: event.target.value }); }}
+                    />
+                    <div className="trait-suggestions">
+                      {traitBatch.map((entry) => (
+                        <button
+                          type="button"
+                          key={entry.id}
+                          className="choice-chip trait-chip"
+                          onClick={() => { setPickedTrait(true); set({ trait: personalityTraitText(entry) }); }}
+                        >
+                          <span>{entry.name}</span>
+                          <small>{entry.desc}</small>
+                        </button>
+                      ))}
                       <button
                         type="button"
-                        key={trait}
-                        className={`choice-chip ${draft.trait === trait && pickedTrait ? "active" : ""}`}
-                        aria-pressed={draft.trait === trait}
-                        onClick={() => { setPickedTrait(true); set({ trait }); }}
+                        className="trait-refresh"
+                        aria-label="换一批性格词条"
+                        onClick={() => setTraitBatch(drawPersonalityTraits(3, traitBatch.map((entry) => entry.id)))}
                       >
-                        {trait}
-                        {draft.trait === trait && (pickedTrait
-                          ? <Icon name="check" size={13} />
-                          : <span className="default-badge">默认</span>)}
+                        换一批
                       </button>
-                    ))}
+                    </div>
+                    <p className="field-hint">性格以你写的为准；下面三条从词条库里随机抽，点一条填进来，还能再改。</p>
                   </div>
-                </div>
+                )}
                 <div className="life-import">
                   <div className="life-import-heading">
                     <div>
@@ -3154,28 +3153,11 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                   placeholder="也可以写一个只属于你的能力"
                 />
               </label>
-              <div className="tone-block">
-                <div className="forge-section-heading mini">
-                  <div>
-                    <h3>故事风格{pickedTone ? "" : "（默认）"}</h3>
-                  </div>
-                </div>
-                <div className="tone-grid">
-                  {tones.map((item) => (
-                    <button
-                      type="button"
-                      key={item.id}
-                      className={`tone-card tone-${item.id} ${toneId === item.id && pickedTone ? "active" : ""}`}
-                      aria-pressed={toneId === item.id}
-                      onClick={() => { setPickedTone(true); setToneId(item.id); }}
-                    >
-                      <b>{item.name}</b>
-                      <small>{item.desc}</small>
-                      {toneId === item.id && !pickedTone && <span className="default-badge">默认</span>}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {/* FORGE-TRIM: the 故事风格 cards are offline. The same
+                  three cards hung off every category and read as noise;
+                  the forge no longer asks. Stored tone values on older
+                  stories still read fine — the engine keeps its own
+                  table and nothing new writes a choice here. */}
               {!avatar && !draft.avatarId && avatarLoaded && (
                 <p className="avatar-create-line">
                   还没有化身？
@@ -3224,12 +3206,12 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                 )}
                 <button disabled={busy} onClick={() => setStep(3)} aria-label="修改出身"><span>身份</span><b>{identity ? (localIdentityTitle(spawnGenre, identity.id) !== identity.name ? `${identity.name} · ${localIdentityTitle(spawnGenre, identity.id)}` : identity.name) : (draft.origin || "未定")}</b><Icon name="chevron" size={15} /></button>
                 <button disabled={busy} onClick={() => setStep(3)} aria-label="修改出生点"><span>出生点</span><b>{spawn ? spawn.name : "由设定决定"}{!isCustom && spawn && !draft.startPointName ? "（默认）" : ""}</b><Icon name="chevron" size={15} /></button>
-                <button disabled={busy} onClick={() => setStep(4)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "留空 · 开篇时定名"} · {draft.trait}{pickedTrait ? "" : "（默认）"}</b><Icon name="chevron" size={15} /></button>
+                <button disabled={busy} onClick={() => setStep(4)} aria-label="修改主角设定"><span>主角</span><b>{draft.name || "留空 · 开篇时定名"} · {draft.avatarId ? "性格由化身自带" : `${draft.trait}${pickedTrait ? "" : "（默认）"}`}</b><Icon name="chevron" size={15} /></button>
                 {draft.immersive && (
                   <button disabled={busy} onClick={() => setStep(4)} aria-label="修改人生经历"><span>人生经历</span><b>已带入</b><Icon name="chevron" size={15} /></button>
                 )}
                 <button disabled={busy} onClick={() => setStep(4)} aria-label="修改能力"><span>能力</span><b>{abilityName || "未定"}</b><Icon name="chevron" size={15} /></button>
-                <button disabled={busy} onClick={() => setStep(4)} aria-label="修改故事风格"><span>风格</span><b>{tone.name}{pickedTone ? "" : "（默认）"}</b><Icon name="chevron" size={15} /></button>
+
               </div>
               {/* The shelf-requirement disclosure (FINAL-FIX R-06): a
                   line forged without an avatar can be read and kept,
@@ -3308,6 +3290,13 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
               <GenerationMode provider={provider} value={engine} onChange={setMode} disabled={busy} />
             </>
           )}
+          {/* FORGE-TRIM (scroll fix): the status line renders BEFORE the
+              docked action bar, so the bar is the last in-flow element
+              of the forge column. It used to render after the bar, and
+              together with the page's old 190px bottom padding it left
+              ~240px of dead space below the bar at max scroll — pulled
+              past the end, the whole page rode up over a void. */}
+          <div className="generation-feedback" role="status" aria-live="polite">{busy ? "第一章准备好后，即可开始阅读。" : error}</div>
           {
             <div className="forge-actions">
               {step > 1 && (
@@ -3329,7 +3318,6 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
               </div>
             </div>
           }
-          <div className="generation-feedback" role="status" aria-live="polite">{busy ? "第一章准备好后，即可开始阅读。" : error}</div>
           {busy && <GenerationOverlay kind="story" onCancel={() => { operation.current?.abort(); operation.current = null; setBusy(false); }} />}
         </main>
         {step !== 5 && (
@@ -3338,7 +3326,6 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
             template={template}
             draft={draft}
             ability={abilityPick}
-            tone={tone}
             spawn={spawn}
             onJump={(value) => { if (!busy) setStep(value); }}
           />
