@@ -5502,22 +5502,25 @@ function Reader({
 }
 
 /**
- * One bookstore card (BOOKSTORE-PLAZA): the book's own cover carries
- * the title (single line, tiered — the card body never repeats it);
- * the body is the byline, the book's real introduction, and the meta
- * row. Nothing appears twice on one card (first rule).
+ * One bookstore card (BOOKSTORE-PLAZA): a bare cover, then the body —
+ * title row, byline, handle, and the pinned footer (status+length /
+ * rating). STORE-DESIGN v3 (user rule, 2026-10-30): NO introduction
+ * and NO tag chips on this card — their lengths cannot be budgeted,
+ * so they live only on the book detail page. Nothing appears twice
+ * on one card (first rule).
  */
 function StoreBookCard({ book, onOpen }) {
   const genre = genreById[book.genreId] || GENRES[0];
-  const templateName = plazaTemplateNameFor(book) || genre.label;
-  // DEVICE-FIX3 §54: the intro slot shows the clause-bounded excerpt
-  // (a complete statement inside the slot's two lines), never the raw
-  // synopsis rescued by a line-clamp ellipsis.
-  const intro = cardIntroExcerptFor(book);
   const authorHandle = typeof book.authorHandle === "string" ? book.authorHandle.trim() : "";
   const showHandle = Boolean(authorHandle)
     && authorHandle.toLowerCase() !== String(book.authorName || "").toLowerCase();
-  const showWorld = book.worldName && !String(book.title || "").includes(book.worldName);
+  // STORE-DESIGN v2: the footer's first line carries status + length
+  // together — the status word leads (so it forms a column down the
+  // grid) unless the length label already opens with it (endless
+  // serializing labels do: 连载中 · 已更 N 章).
+  const lengthLabel = plazaLengthLabel(book);
+  const statusWord = plazaLineStatusFor(book) === "serializing" ? "连载中" : "已完结";
+  const lengthLine = lengthLabel.includes(statusWord) ? lengthLabel : `${statusWord} · ${lengthLabel}`;
   return (
     <article className="store-book-card">
       <button
@@ -5526,32 +5529,43 @@ function StoreBookCard({ book, onOpen }) {
         onClick={() => onOpen(book)}
         aria-label={`查看《${book.title}》详情`}
       >
+        {/* STORE-DESIGN v2 (user rule, 2026-10-30): the cover is a
+            bare rectangle of art — NO overlay of any kind rides it:
+            no shade, no printed title, no status capsule, no share
+            badge. The title lives in the body's first row, the
+            status in the footer, and the share count only on the
+            book detail page. Art baked into a generated cover image
+            itself is the picture, not an overlay. */}
         <PublicationArtwork publication={book} genreId={genre.id} />
-        <span className="plaza-cover-shade" aria-hidden="true" />
-        {/* --title-glyphs feeds the cover-fit size (BUGHUNT-FIX,
-            BH-06): glyphs = title characters + the 《》 pair. */}
-        <span className={`plaza-cover-title is-${plazaTitleTierFor(book.title)}`} style={{"--title-glyphs": [...String(book.title || "")].length + 2}}>《{book.title}》</span>
-        <span className="store-card-status">{plazaLineStatusFor(book) === "serializing" ? "连载中" : "已完结"}</span>
-        {book.shareCount > 0 ? <span className="store-cover-share">被分享 {countTextFor(book.shareCount)} 次</span> : null}
       </button>
       <div className="store-book-body">
         {/* DEVICE-FIX3 (REQ-37, DESIGN §54): fixed slots, spec-first.
             Every information item owns a slot sized by its budget —
             name (18 units; the official badge spends from the same
-            line) on its own line, the
-            handle (≤20 chars by the username pattern) on its own
-            line, the intro excerpt in its 2-line slot, each chip on
-            its own row. STORE-DESIGN (proposed, STORE-DESIGN.md):
-            the meta block (length / rating) is pinned to the card
-            foot by margin-top:auto inside a framed card, an absent
-            world chip renders NO row (its variance is absorbed by
-            the one flexible joint above the meta block), an unrated
-            book says 暂无评价 instead of leaving a blank slot, and
-            the share count rides the cover as a badge — so no slot
-            is ever an invisible void. Nothing in this body
-            ellipsizes: over-budget legacy strings are
-            whole-character clipped by clipToUnits as a safety net,
-            and new input is capped at the source (§54). */}
+            line) on its own line, the handle (≤20 chars by the
+            username pattern) on its own line. STORE-DESIGN
+            (proposed, STORE-DESIGN.md): the meta block (status+length
+            / rating) is pinned to the card foot by margin-top:auto
+            inside a framed card — its joint absorbs the one remaining
+            variance (a hidden handle) — and an unrated book says
+            暂无评价 instead of leaving a blank slot, so no slot is
+            ever an invisible void.
+            STORE-DESIGN v2: the title is the body's FIRST row (it
+            left the cover, which is now bare art), sized by the
+            BH-06 fit formula fed by --title-glyphs (title characters
+            + the 《》 pair) so it always fits whole on one line.
+            STORE-DESIGN v3: the intro slot and the chip rows are
+            GONE (user rule — unbudgetable lengths do not ride a list
+            card; both live on the detail page only).
+            Text hierarchy (STORE-DESIGN.md §2): title 16/700 --ink,
+            author 14/600 --ink, handle 12 --dim-2, footer 12.5 --dim
+            with the rating in --amber. Nothing in this body
+            ellipsizes: over-budget legacy strings are whole-character
+            clipped by clipToUnits as a safety net, and new input is
+            capped at the source (§54). */}
+        <div className="store-slot store-slot-title">
+          <span className="store-book-title" style={{"--title-glyphs": [...String(book.title || "")].length + 2}}>《{book.title}》</span>
+        </div>
         <div className="store-slot store-slot-name">
           {/* §54: the name LINE budget is 18 units; the official
               badge (≈6 units measured) is spent from the same line,
@@ -5562,25 +5576,9 @@ function StoreBookCard({ book, onOpen }) {
         <div className="store-slot store-slot-handle">
           {showHandle ? <span>@{authorHandle}</span> : null}
         </div>
-        <p className="store-book-intro">{intro}</p>
-        {/* §54: template and world each own a chip ROW — measured,
-            the two chips side by side (fixed chip padding ×2 + both
-            texts at full budget) exceed the narrowest card slot, so
-            the spec gives each its own line instead of shrinking
-            either text. */}
-        <div className="store-chips-block">
-          <div className="store-chip-row">
-            <span className="plaza-chip">{book.manual ? (shelfById(book.shelfId)?.name || "作者手写") : templateName}</span>
-          </div>
-          {showWorld ? (
-            <div className="store-chip-row">
-              <span className="plaza-chip">{clipToUnits(book.worldName, 12)}</span>
-            </div>
-          ) : null}
-        </div>
         <div className="store-meta-block">
           <div className="store-slot store-slot-meta">
-            <span>{plazaLengthLabel(book)}</span>
+            <span>{lengthLine}</span>
           </div>
           <div className="store-slot store-slot-meta">
             {book.ratingCount > 0 && ratingAverageText(book) ? (
