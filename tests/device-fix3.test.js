@@ -120,7 +120,15 @@ test('§54 slots (STORE-DESIGN v3 form): the store card body is fixed slots, and
   // in the STORE-DESIGN merge and would swallow plaza rules).
   const bodyCss = css.slice(css.indexOf('.store-book-body{'), css.indexOf('/* Book ratings (RATINGS)'))
   assert.ok(!/text-overflow:\s*ellipsis/.test(bodyCss), 'no text-overflow:ellipsis in the store card body')
-  assert.ok(!/-webkit-line-clamp/.test(bodyCss), 'no line-clamp rescue in the store card body')
+  // REQ-63 (DESIGN §56) narrows the no-clamp rule by one named
+  // exception: the title itself may wrap to two lines and carries a
+  // clamp purely as the guard for pre-limit legacy titles — new
+  // titles are bounded at the source (BOOK_TITLE_MAX), so the clamp
+  // is not the mechanism that keeps titles whole. Every other slot
+  // still forbids clamp outright.
+  const titleRule = bodyCss.match(/\.store-book-title\{[^}]*\}/)?.[0] || ''
+  assert.ok(/-webkit-line-clamp:2/.test(titleRule), 'the title clamp is the two-line guard')
+  assert.ok(!/-webkit-line-clamp/.test(bodyCss.replace(titleRule, '')), 'no line-clamp rescue anywhere else in the store card body')
 })
 
 test('§54 source caps: display name is rejected over 18 units at the write path', () => {

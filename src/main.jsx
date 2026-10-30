@@ -78,6 +78,7 @@ import {
   plazaCardIntroFor,
   cardIntroExcerptFor,
   clipToUnits,
+  textUnitsFor,
   countTextFor,
   plazaTitleTierFor,
   plazaGateFor,
@@ -229,6 +230,7 @@ import {
   updateStylePreset,
   updateWorldBible,
   BOOK_TITLE_MAX,
+  bookTitleWithinLimit,
   CHAPTER_TITLE_MAX,
   SYNOPSIS_MAX,
   INTRO_BACKGROUND_MAX,
@@ -1997,7 +1999,7 @@ function ManualBookForm({ onCreate, onCancel }) {
         书名
         <input
           type="text"
-          maxLength={BOOK_TITLE_MAX}
+          maxLength={BOOK_TITLE_MAX * 2}
           value={title}
           aria-label="书名"
           placeholder="给这本书起个名字"
@@ -3745,7 +3747,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                   <input
                     id="forge-book-title"
                     type="text"
-                    maxLength={BOOK_TITLE_MAX}
+                    maxLength={BOOK_TITLE_MAX * 2}
                     autoComplete="off"
                     value={draft.bookTitle || ""}
                     placeholder={bookTitleSuggestion}
@@ -3753,7 +3755,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                     onChange={(event) => set({ bookTitle: event.target.value })}
                   />
                 </label>
-                <p className="field-hint">书名可以和世界不一样。不改，就用上面这个建议名；开书以后也能在设定集里改。</p>
+                <p className="field-hint">书名可以和世界不一样，最多 {BOOK_TITLE_MAX} 字。不改，就用上面这个建议名；开书以后也能在设定集里改。</p>
               </div>
               <div className="opening-details" aria-label="确认故事设定">
                 {isCustom ? (
@@ -4841,13 +4843,13 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
       <div className="settings-section">
         <h3>书名</h3>
         <p className="field-hint">
-          书架、主页和广场上显示的都是这个名字；改名会同步到已经发布的广场版本。
+          书架、主页和广场上显示的都是这个名字；改名会同步到已经发布的广场版本。书名最多 {BOOK_TITLE_MAX} 字。
         </p>
         <label className="field-label">
           书名
           <input
             type="text"
-            maxLength={BOOK_TITLE_MAX}
+            maxLength={BOOK_TITLE_MAX * 2}
             value={bookTitle}
             aria-label="书名"
             placeholder="给这本书起个名字"
@@ -6437,6 +6439,11 @@ function StoreBookCard({ book, onOpen }) {
             left the cover, which is now bare art), sized by the
             BH-06 fit formula fed by --title-glyphs (title characters
             + the 《》 pair) so it always fits whole on one line.
+            REQ-63: the title may now wrap to TWO lines — the slot is
+            two lines tall, --title-glyphs counts §54 wide units
+            (《title》 included) so the formula sizes for a two-line
+            fit, and the platform title limit (BOOK_TITLE_MAX) keeps
+            every new title inside those two lines at the source.
             STORE-DESIGN v3: the intro slot and the chip rows are
             GONE (user rule — unbudgetable lengths do not ride a list
             card; both live on the detail page only).
@@ -6447,7 +6454,7 @@ function StoreBookCard({ book, onOpen }) {
             clipped by clipToUnits as a safety net, and new input is
             capped at the source (§54). */}
         <div className="store-slot store-slot-title">
-          <span className="store-book-title" style={{"--title-glyphs": [...String(book.title || "")].length + 2}}>《{book.title}》</span>
+          <span className="store-book-title" style={{"--title-glyphs": Math.ceil(textUnitsFor(`《${book.title || ""}》`) / 2)}}>《{book.title}》</span>
         </div>
         <div className="store-slot store-slot-name">
           {/* §54: the name LINE budget is 18 units; the official
@@ -12577,6 +12584,14 @@ function App() {
         ? findSettingViolation(payload.worldDrafts?.[payload.genreId]?.setting)
         : null;
       if (worldDraftViolation) throw new Error(worldDraftViolation);
+      // REQ-63: a typed book title is refused at the same pre-check
+      // gate as creator setting text, in the same human words the
+      // rename path uses — never silently clipped into a name the
+      // creator did not choose.
+      const typedBookTitle = typeof payload.bookTitle === "string" ? payload.bookTitle.trim() : "";
+      if (typedBookTitle && !bookTitleWithinLimit(typedBookTitle)) {
+        throw new Error(`书名最多 ${BOOK_TITLE_MAX} 字。`);
+      }
       const signature = JSON.stringify([payload, engine]);
       if (opening.current?.signature !== signature) opening.current = { signature, story:
         createStory({
