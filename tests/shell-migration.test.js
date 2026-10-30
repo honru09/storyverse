@@ -135,26 +135,26 @@ test('face-anchor cropping: small round slots zoom portraits to the face', () =>
   const thumbBlock = main.slice(main.indexOf('function PlazaAvatarThumb'), main.indexOf('function PublicationArtwork'))
   assert.match(thumbBlock, /pictureKind === "avatar"/)
   assert.match(thumbBlock, /plaza-avatar-frame/)
-  // The full figure has exactly one home: the profile's avatar stage
-  // (PROFILE-ENRICH §35). DEVICE-FIX4 (REQ-44-1) retires the §35
-  // "same class name" arrangement: the stage div carries ONLY
-  // .profile-stage — the legacy .profile-avatar-stand width/margin
-  // rules were a cascade landmine beside the stage rule.
-  assert.match(profileBlock, /className="profile-stage"/)
-  assert.doesNotMatch(profileBlock, /profile-stage profile-avatar-stand/)
-  // BH-13 (2026-10-29) supersedes the fixed 384px band: the stage takes
-  // the poster's own 3:4 frame (capped), so the face and upper body stay
-  // in frame instead of losing 20–30% of the painting to cover-cropping.
-  // DEVICE-FIX2 (REQ-28) moves the cap from height to width: a
-  // max-height flattens the frame toward landscape on wide columns and
-  // cover then takes the head — the owner's recurring report. The
-  // 420px width cap keeps the same 560px ceiling (420 × 4⁄3).
-  assert.match(css, /\.profile-stage\{[^}]*aspect-ratio:3\/4/)
-  assert.match(css, /\.profile-stage\{[^}]*width:min\(100%,420px\)/)
-  assert.doesNotMatch(css, /\.profile-stage\{[^}]*max-height/)
-  // DEVICE-FIX4 (REQ-44-1): flex:none pins the aspect box against a
-  // flex-column ancestor shrinking it below its 3:4 height.
-  assert.match(css, /\.profile-stage\{[^}]*flex:none/)
+  // The full figure has exactly one home: the profile's avatar
+  // showcase (PROFILE-ENRICH §35). REQ-64 (2026-10-31) retires the
+  // §35 stage wholesale — container, guards and all — after the
+  // guard line produced its third owner-visible failure. The new
+  // container carries ONLY .profile-showcase; the legacy
+  // .profile-avatar-stand landmine stays retired with it.
+  assert.match(profileBlock, /className="profile-showcase"/)
+  assert.doesNotMatch(profileBlock, /profile-showcase profile-avatar-stand/)
+  assert.doesNotMatch(profileBlock, /profile-stage/)
+  // REQ-64 sizing rule: the FIGURE box is 4:3 (the old card was a
+  // 3:4 full-height frame, 477px at the profile column) and the
+  // card keeps the 420px width cap — figure 268px + in-flow plate
+  // ≈ 375px total, inside the measured 699px visible band, so the
+  // whole card fits between the bars at its anchored stop.
+  assert.match(css, /\.profile-showcase-figure\{[^}]*aspect-ratio:4\/3/)
+  assert.match(css, /\.profile-showcase\{[^}]*width:min\(100%,420px\)/)
+  assert.doesNotMatch(css, /\.profile-showcase\{[^}]*max-height/)
+  // flex:none pins the card against a flex-column ancestor
+  // shrinking it below its ruled height (DEVICE-FIX4's pin, kept).
+  assert.match(css, /\.profile-showcase\{[^}]*flex:none/)
   // BH-13: the avatar tiles join the face-anchor family (50% 12% + the
   // large-frame 2.05 zoom) instead of squeezing the whole figure into
   // the square, and selected+main collapses to a single ring.
@@ -163,17 +163,19 @@ test('face-anchor cropping: small round slots zoom portraits to the face', () =>
   assert.match(css, /\.profile-avatar-tile\.is-selected\.is-main \.profile-avatar-tile-img\{box-shadow:none\}/)
 })
 
-test('poster stage (POSTER-AVATAR): the fake light rig is retired, the painting fills the stage', () => {
-  assert.doesNotMatch(main, /profile-stage-spot|profile-stage-floor|profile-stage-glow|profile-stage-bg/)
-  assert.doesNotMatch(css, /\.profile-stage-spot|\.profile-stage-floor|\.profile-stage-glow|\.profile-stage-bg/)
-  // DEVICE-FIX2 (REQ-28) supersedes the cover fit on the stage: the
-  // figure is contain-fit (head to shoes always in frame) over a
+test('poster showcase (POSTER-AVATAR → REQ-64): the fake light rig stays retired, the figure is contain-fit in its own box', () => {
+  assert.doesNotMatch(main, /profile-showcase-spot|profile-showcase-floor|profile-showcase-glow|profile-showcase-bg/)
+  assert.doesNotMatch(css, /\.profile-showcase-spot|\.profile-showcase-floor|\.profile-showcase-glow|\.profile-showcase-bg/)
+  // DEVICE-FIX2 (REQ-28)'s fit verdict carries into the REQ-64 box:
+  // the figure is contain-fit (head to shoes always in frame) over a
   // blurred cover copy of the same painting, which keeps the old
-  // 50% 8% anchor. Contract 3:4 posters still fill the frame exactly.
-  assert.match(css, /\.profile-stage-img\{[^}]*object-fit:contain/)
-  assert.match(css, /\.profile-stage-backdrop\{[^}]*background-size:cover/)
-  assert.match(css, /\.profile-stage-backdrop\{[^}]*background-position:50% 8%/)
-  assert.match(profileBlock, /profile-stage-backdrop/)
+  // 50% 8% anchor. The plate flows below the figure now, so no
+  // legibility scrim pseudo-layers exist on the card.
+  assert.match(css, /\.profile-showcase-img\{[^}]*object-fit:contain/)
+  assert.match(css, /\.profile-showcase-backdrop\{[^}]*background-size:cover/)
+  assert.match(css, /\.profile-showcase-backdrop\{[^}]*background-position:50% 8%/)
+  assert.match(profileBlock, /profile-showcase-backdrop/)
+  assert.doesNotMatch(css, /\.profile-showcase::before|\.profile-showcase::after/)
 })
 
 test('boards retired (PROFILE-ENRICH §35): the fan collage gives way to shelf / store / stage sections', () => {
@@ -183,7 +185,7 @@ test('boards retired (PROFILE-ENRICH §35): the fan collage gives way to shelf /
   assert.doesNotMatch(main, /STACK_STEP_PX/)
   assert.match(profileBlock, /profile-shelf-row/)
   assert.match(profileBlock, /profile-store-card|ProfileStoreCard/)
-  assert.match(profileBlock, /profile-stage/)
+  assert.match(profileBlock, /profile-showcase/)
 })
 
 test('identity zero-wait: skeleton holds the header geometry, identity skips the stagger', () => {
