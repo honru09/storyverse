@@ -724,6 +724,21 @@ export async function withdrawPublication({ id, getAccessToken, fetchImpl = glob
   return plazaJson(response)
 }
 
+/**
+ * Record one read of a shelved book (READ-COUNT, REQ-42): fired as
+ * the book's text opens in the reader. The server owns the counting
+ * rule (signed-in, not the author, once per reader per book per
+ * day); callers treat this as fire-and-forget — a failed or refused
+ * record must never surface in the reading experience.
+ */
+export async function recordPlazaRead({ id, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await plazaHeaders(getAccessToken)) }
+  const response = await fetchImpl(`/api/store/${encodeURIComponent(id)}/read`, {
+    method: 'POST', headers, body: JSON.stringify({}),
+  })
+  return plazaJson(response)
+}
+
 // ---- Plaza posts (the social feed) --------------------------------------
 //
 // The plaza itself is now a social timeline: free-text posts and
