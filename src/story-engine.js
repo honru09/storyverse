@@ -690,9 +690,11 @@ export const DEFAULT_DRAFT = {
  * length mode, never written as a bare 6 anywhere in the engine.
  * - 'short'  6 chapters — the original single-volume shape; also the shape of
  *   every pre-mode save (a missing storyLengthMode means 'short') and of
- *   merged stories born from two finished-side lines, which stay capped at
- *   the shorter structure. A merged story born from a still-serialising
- *   endless line is the one exception: it inherits 'endless' (FUSION2).
+ *   merged stories whose fusion chose no length: the combination table
+ *   defaults finished × finished to 'short' and any combination touching
+ *   a still-serialising line to 'endless' (FUSION2). Since 2026-10-30 a
+ *   fusion may instead pin the reader's explicit choice — short / season /
+ *   long / endless — exactly like an ordinary forge.
  * - 'season' 24 chapters = 4 acts × 6; acts end in a small upgrade point and
  *   chapter 24 closes the season with the big one, after which the reader
  *   may open the next season (seasonNumber + 1, stakes raised).
@@ -739,13 +741,13 @@ const configOf = (source) =>
 
 export const storyLengthModeOf = (source) => {
   if (!source || typeof source !== 'object') return 'short'
-  if (source.kind === 'merged') {
-    // A fused line is 'short' by birth — except when the fusion itself
-    // inherited a still-serialising endless line, in which case the
-    // product is a running endless line in its own right and its config
-    // says so (createMergedStory pins the product mode explicitly).
-    return configOf(source)?.storyLengthMode === 'endless' ? 'endless' : 'short'
-  }
+  // A fused line's mode is whatever createMergedStory pinned on its
+  // config: the reader's explicit length choice when one was made
+  // (short / season / long / endless — owner ruling 2026-10-30), or
+  // the combination table's product otherwise (finished × finished →
+  // short; any serialising source → endless). Legacy fused saves pin
+  // 'short' or 'endless' the same way; anything unrecognised falls
+  // back to 'short', the fused line's historical shape.
   const mode = configOf(source)?.storyLengthMode
   return STORY_LENGTH_MODES[mode] ? mode : 'short'
 }
@@ -3017,7 +3019,10 @@ const redactedSnapshotConfig = (config, name) => ({
  *   book, exactly as merges always have.
  * The product mode follows the table: 完结×完结 → short (the historical
  * cap); any combination touching a serialising line → endless, rolling
- * on with no finale until its owner finishes it by hand.
+ * on with no finale until its owner finishes it by hand. Since
+ * 2026-10-30 the table is only the DEFAULT: createMergedStory honours
+ * an explicit reader-chosen length (short / season / long / endless)
+ * over it, exactly like an ordinary forge's length menu.
  */
 export const fusionSourceStateFor = (source) => {
   if (!source || typeof source !== 'object') return 'finished'
@@ -3041,7 +3046,15 @@ export function createMergedStory(a, b, options = {}) {
   const rules = options.rules === 'separate' ? 'separate' : 'bridge'
   const lead = options.lead === 'b' ? 'b' : 'a'
   const bond = options.bond === 'rivals' ? 'rivals' : 'allies'
-  const productMode = fusionProductModeFor(a, b)
+  // Length is the reader's choice (owner ruling 2026-10-30): an explicit
+  // options.storyLengthMode (short / season / long / endless — the same
+  // menu as an ordinary forge) wins; only when no choice was made does
+  // the combination table decide (finished × finished → short, any
+  // serialising source → endless).
+  const chosenMode = ['short', 'season', 'long', 'endless'].includes(options.storyLengthMode)
+    ? options.storyLengthMode
+    : null
+  const productMode = chosenMode || fusionProductModeFor(a, b)
   const sourceA = publicConfigFor(a.config, protagonistName(a.config, '旅者甲'))
   const sourceB = publicConfigFor(b.config, protagonistName(b.config, '旅者乙'))
   const leadConfig = lead === 'b' ? sourceB : sourceA
@@ -3050,9 +3063,10 @@ export function createMergedStory(a, b, options = {}) {
   const mergedConfig = {
     ...leadConfig,
     genreId: leadConfig.genreId,
-    // The product mode is pinned by the combination table, never
-    // inherited from whichever source happened to lead: a fused line is
-    // born running (never pre-finished, never carrying a custom target).
+    // The product mode is pinned here — the reader's explicit choice
+    // when one was made, else the combination table — never inherited
+    // from whichever source happened to lead: a fused line is born
+    // running (never pre-finished, never carrying a custom target).
     storyLengthMode: productMode,
     targetChapters: null,
     finishedAt: '',
@@ -3103,24 +3117,27 @@ export function createMergedStory(a, b, options = {}) {
       rules: rules === 'bridge'
         ? ['两种世界规则可以互相翻译，但每次翻译都会消耗稳定度。', '双主角共同见证合流点的每一次扰动，任何一方都不能被静默抹去。', '合流后的新规则必须被两位主角共同见证。']
         : ['两种世界规则保持各自边界，只在合流点短暂交叠。', '双主角可以同行，但不能替对方决定原世界的命运。', '任何跨界行动都必须留下可追溯的回声。'],
-      // A short fusion closes: its anchor is the decision the pair owes
-      // the future. An endless fusion has no finale to anchor to — the
-      // anchor is the open road itself: arcs settle one by one, and both
-      // source lines' unrecovered foreshadowing stays on this line's
-      // books until it finds its resolution here.
+      // A finite fusion closes: its anchor is the decision the pair
+      // owes the future. An endless fusion has no finale to anchor to —
+      // the anchor is the open road itself: arcs settle one by one, and
+      // both source lines' unrecovered foreshadowing stays on this
+      // line's books until it finds its resolution here.
       endingAnchor: productMode === 'endless'
         ? '这条融合线没有预设的终点：每一弧结清一笔账，两位主角再一起决定下一弧往哪走；两条原线未回收的伏笔，都要在这条线上逐步有着落。'
         : bond === 'rivals' ? '两位主角必须决定竞争是否值得牺牲共同的未来。' : '两位主角必须决定要把共同的未来交给哪一种规则。',
-      outline: productMode === 'endless'
-        ? outlineFor(genreFor(mergedConfig.genreId), mergedConfig)
-        : [
+      // The bespoke six-beat outline is the short shape; longer finite
+      // fusions and endless ones take the genre outline at their own
+      // total, like an ordinary forge of the same mode.
+      outline: productMode === 'short'
+        ? [
           '两条世界线在合流点相撞，双主角同时收到信号。',
           '他们决定暂时同行，第一条共同规则浮现。',
           '新的敌人从旧世界的缝隙里出现。',
           '规则冲突逼迫双主角选择翻译或分离。',
           '合流点坍缩，他们为未来保留一条路。',
           '两个世界找到共同呼吸，新的故事开始。',
-        ],
+        ]
+        : outlineFor(genreFor(mergedConfig.genreId), mergedConfig),
     },
     chapterIndex: 0,
     chapters: [],
@@ -3358,13 +3375,15 @@ export function redactedTitleFor(story, safeConfig) {
 
 export function plazaSnapshot(story, { avatarName = '' } = {}) {
   validateStory(story)
-  // A SHORT fused line never publishes (the gate says the same). A fused
-  // line that inherited endless mode publishes exactly like any other
+  // A fused line in endless mode publishes exactly like any other
   // endless line — living while it runs, finished once its owner ends
-  // it by hand (FUSION2).
+  // it by hand (FUSION2). A FINITE fused line (short / season / long /
+  // custom) publishes once it is complete (owner ruling 2026-10-30,
+  // superseding the FUSION2 never-publish rule for finished lines); an
+  // unfinished one is refused here just as the gate refuses it.
   const mergedLine = story.kind === 'merged'
-  if (mergedLine && storyLengthModeOf(story) !== 'endless') {
-    throw new TypeError('合流故事不能发布到广场')
+  if (mergedLine && storyLengthModeOf(story) !== 'endless' && !isStoryComplete(story)) {
+    throw new TypeError('合流故事还没走完，不能发布到广场')
   }
   const genre = genreFor(story.genreId || story.config.genreId)
   const mode = storyLengthModeOf(story)

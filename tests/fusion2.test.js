@@ -80,6 +80,64 @@ test('the four-combination product-mode table is pinned', () => {
   assert.equal(totalChaptersFor(endlessProduct), Infinity)
 })
 
+test('fusion length is the reader’s choice; the table only decides when unchosen (owner ruling 2026-10-30)', () => {
+  const a = finishedShort({ avatarId: 'avatar-a' })
+  const b = finishedShort({ avatarId: 'avatar-b' })
+
+  // Explicit season: mode + total follow the choice, not the table.
+  const season = createMergedStory(a, b, { storyLengthMode: 'season' })
+  assert.equal(storyLengthModeOf(season), 'season')
+  assert.equal(season.config.storyLengthMode, 'season')
+  assert.equal(totalChaptersFor(season), 24)
+  // At the old short cap the season fusion is still mid-run: the gate
+  // refuses it (合流 reason) and the snapshot throws.
+  const atSix = { ...withChapters(season, 6), engine: 'gemini' }
+  assert.equal(isStoryComplete(atSix), false)
+  const sixGate = plazaGateFor(atSix)
+  assert.equal(sixGate.publishable, false)
+  assert.match(sixGate.reason, /合流/)
+  assert.throws(() => plazaSnapshot(atSix), /合流故事还没走完/)
+  // Walked to 24/24 it publishes as a finished line and snapshots clean.
+  const done = { ...withChapters(season, 24), engine: 'gemini' }
+  assert.equal(isStoryComplete(done), true)
+  const doneGate = plazaGateFor(done)
+  assert.equal(doneGate.publishable, true)
+  assert.equal(doneGate.lineStatus, 'finished')
+  const snapshot = plazaSnapshot(done)
+  assert.equal(snapshot.merged, true)
+  assert.equal(snapshot.storyLengthMode, 'season')
+  assert.equal(snapshot.totalChapters, 24)
+  assert.equal(snapshot.lineStatus, 'finished')
+  assert.equal(snapshot.chapters.length, 24)
+  // Library validation caps a fused line at its CHOSEN total: 7
+  // chapters are legal for a season fusion (the old fused-short cap
+  // was 6), and a 25th chapter is not.
+  assert.deepEqual(validateLibrary({ ...emptyLibrary(), stories: [withChapters(season, 7)] }), [])
+  const over = withChapters(season, 24)
+  const extra = { ...over.chapters[23], id: 'extra-chapter', index: 24 }
+  assert.ok(validateLibrary({ ...emptyLibrary(), stories: [{ ...over, chapters: [...over.chapters, extra] }] }).length > 0)
+
+  // Explicit long / endless on finished × finished override the
+  // table's short default.
+  const long = createMergedStory(a, b, { storyLengthMode: 'long' })
+  assert.equal(storyLengthModeOf(long), 'long')
+  assert.equal(totalChaptersFor(long), 100)
+  assert.equal(plazaGateFor(withChapters(long, 6)).publishable, false)
+  const endless = createMergedStory(a, b, { storyLengthMode: 'endless' })
+  assert.equal(storyLengthModeOf(endless), 'endless')
+  assert.equal(totalChaptersFor(endless), Infinity)
+  const endlessGate = plazaGateFor(withChapters(endless, 2))
+  assert.equal(endlessGate.publishable, true)
+  assert.equal(endlessGate.lineStatus, 'serializing')
+
+  // No choice — and an invalid choice — fall back to the table.
+  assert.equal(storyLengthModeOf(createMergedStory(a, b)), 'short')
+  assert.equal(storyLengthModeOf(createMergedStory(a, b, { storyLengthMode: 'bogus' })), 'short')
+  assert.equal(storyLengthModeOf(createMergedStory(serializing(), b, { storyLengthMode: 'bogus' })), 'endless')
+  // An explicit short on a serialising pair also wins over the table.
+  assert.equal(storyLengthModeOf(createMergedStory(serializing(), b, { storyLengthMode: 'short' })), 'short')
+})
+
 test('a fused line is named from its source books, never the genre templates (FINAL-FIX)', () => {
   const a = { ...finishedShort({ name: '阿澜' }), title: '雾港来信' }
   const b = { ...finishedShort({ name: '沈砚' }), title: '剑碑夜行' }
@@ -245,11 +303,15 @@ test('a serializing fused line publishes to the plaza as a live line', () => {
   const done = plazaGateFor(finishEndlessLine(walked))
   assert.equal(done.publishable, true)
   assert.equal(done.lineStatus, 'finished')
-  // The historical merged-short refusal is untouched.
+  // A fused short gates on completion (owner ruling 2026-10-30):
+  // unfinished is refused with a 合流 reason; complete (6/6) publishes.
   const shortProduct = createMergedStory(finishedShort(), finishedShort())
+  const shortRunning = plazaGateFor(withChapters(shortProduct, 3))
+  assert.equal(shortRunning.publishable, false)
+  assert.match(shortRunning.reason, /合流/)
   const shortGate = plazaGateFor(withChapters(shortProduct, 6))
-  assert.equal(shortGate.publishable, false)
-  assert.match(shortGate.reason, /合流/)
+  assert.equal(shortGate.publishable, true)
+  assert.equal(shortGate.lineStatus, 'finished')
 })
 
 test('plaza snapshot of a fused endless line keeps provenance and drops private fields', () => {
@@ -282,9 +344,16 @@ test('plaza snapshot of a fused endless line keeps provenance and drops private 
   assert.ok(!serialized.includes('"derivedFrom"'))
   assert.ok(!serialized.includes(lead.id))
   assert.ok(!serialized.includes(partner.id))
-  // The fused-short snapshot refusal is untouched.
+  // A fused short snapshots only once complete (owner ruling
+  // 2026-10-30): unfinished throws; complete (6/6) snapshots as a
+  // finished fused line.
   const shortProduct = { ...createMergedStory(finishedShort(), finishedShort()), engine: 'gemini' }
-  assert.throws(() => plazaSnapshot(withChapters(shortProduct, 6)), /合流故事不能发布到广场/)
+  assert.throws(() => plazaSnapshot(withChapters(shortProduct, 3)), /合流故事还没走完，不能发布到广场/)
+  const shortSnapshot = plazaSnapshot(withChapters(shortProduct, 6))
+  assert.equal(shortSnapshot.merged, true)
+  assert.equal(shortSnapshot.storyLengthMode, 'short')
+  assert.equal(shortSnapshot.lineStatus, 'finished')
+  assert.equal(shortSnapshot.chapters.length, 6)
 })
 
 test('library validation accepts a long fused endless line and caps fused shorts', () => {

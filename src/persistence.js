@@ -8,17 +8,15 @@ export const MAX_BACKUP_BYTES = 5 * 1024 * 1024
 // engine's length resolution so this storage layer stays dependency-free):
 // short 6 / season 24 / long 100 / custom = the story's own stored target
 // (10–999) / endless = unbounded, capped here at the largest supported
-// chapter count; merged stories are 6, except a fused line that
-// inherited endless mode from a still-serialising source (FUSION2),
-// which is unbounded like any endless line. Pre-mode saves are 6.
+// chapter count; merged stories follow the same table via the mode
+// pinned on their config — the combination table's product (short or
+// endless, FUSION2) or the reader's explicit fusion length choice
+// (short / season / long / endless, 2026-10-30). Pre-mode saves are 6.
 // The cursor points to the next accepted chapter and stays at total-1 once
 // the final chapter exists.
 const LENGTH_TOTALS = { short: 6, season: 24, long: 100 }
 const MAX_SUPPORTED_CHAPTERS = 999
 const totalForStory = (story) => {
-  if (story?.kind === 'merged') {
-    return story?.config?.storyLengthMode === 'endless' ? MAX_SUPPORTED_CHAPTERS : 6
-  }
   const mode = story?.config?.storyLengthMode
   if (mode === 'custom') {
     const target = story?.config?.targetChapters

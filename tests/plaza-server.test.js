@@ -316,16 +316,17 @@ test('publish rejects gated stories, another avatar’s line and red-line conten
   assert.equal(shortResponse.status, 400)
   assert.match((await shortResponse.json()).error, /一季、长线、自定义篇幅或无限连载/)
 
-  const merged = {
-    ...walkLocal(createMergedStory(
-      createStory({ genreId: 'mist', avatarId: avatar.id }),
-      createStory({ genreId: 'neon' }),
-    ), 6),
-    engine: 'gemini',
-  }
-  const mergedResponse = await publish(base, token, merged)
-  assert.equal(mergedResponse.status, 400)
-  assert.match((await mergedResponse.json()).error, /合流/)
+  const mergedSources = () => createMergedStory(
+    createStory({ genreId: 'mist', avatarId: avatar.id }),
+    createStory({ genreId: 'neon' }),
+  )
+  // An unfinished fused short is still refused at the gate.
+  const mergedRunning = { ...walkLocal(mergedSources(), 3), engine: 'gemini' }
+  const mergedRunningResponse = await publish(base, token, mergedRunning)
+  assert.equal(mergedRunningResponse.status, 400)
+  const mergedRunningError = (await mergedRunningResponse.json()).error
+  assert.match(mergedRunningError, /合流/)
+  assert.match(mergedRunningError, /还没走完/)
 
   const redLine = completedLine(avatar.id, { redLine: true })
   const redLineResponse = await publish(base, token, redLine)
@@ -335,6 +336,28 @@ test('publish rejects gated stories, another avatar’s line and red-line conten
   assert.equal((await plazaStore.listPublications()).length, 0, 'no rejected publish left a record behind')
   const feed = (await (await fetch(`${base}/api/store`)).json()).books
   assert.deepEqual(feed, [])
+})
+
+test('publish accepts a completed fused short line (owner ruling 2026-10-30)', async (t) => {
+  const { base, plazaStore } = await startPlazaServer(t)
+  const token = await register(base, 'plaza_author_merged')
+  const avatar = await makeAvatar(base, token)
+
+  const merged = {
+    ...walkLocal(createMergedStory(
+      createStory({ genreId: 'mist', avatarId: avatar.id }),
+      createStory({ genreId: 'neon' }),
+    ), 6),
+    engine: 'gemini',
+  }
+  const response = await publish(base, token, merged)
+  assert.equal(response.status, 200)
+  const { publication: book } = await response.json()
+  assert.equal(book.chapterCount, 6)
+  assert.equal(book.lineStatus, 'finished')
+  const stored = await plazaStore.listPublications()
+  assert.equal(stored.length, 1, 'the completed fused line left exactly one record')
+  assert.equal(stored[0].merged, true)
 })
 
 test('publish stops a story whose real prose lost its engine mark — never scaffold in its place (DESIGN §27)', async (t) => {
