@@ -2337,13 +2337,18 @@ export function updateSynopsis(story, text) {
  * plazaWorldIntroFor) — and, like the synopsis, generation never
  * reads it back: it is display copy, not canon.
  *
- * Three bans govern every non-owner source of public intro copy
+ * Four bans govern every non-owner source of public intro copy
  * (generated drafts and assembled fallbacks alike; the owner's own
  * edits are the owner's words and are never policed):
  *   - no chapter-title chaining (「从『首章名』开始，一路走到『末章名』」);
  *   - no chapter-count broadcasting (「全 N 章」/「已更新到第 N 章」);
  *   - no engine jargon, no one-size filler (「秘密只能通过具体行动被
- *     唤醒」 fits every book and therefore describes none).
+ *     唤醒」 fits every book and therefore describes none);
+ *   - no officialese (REQ-65): the publisher-blurb register —
+ *     「讲述了」「命运的齿轮」「细腻的笔触」「通过…展现了」 and kin —
+ *     that platform 爽文 blurbs never use; the public words are a
+ *     爽点预订单 written in the platform voice (see BLURB_ANCHORS
+ *     in server/gemini.js and DESIGN.md §55).
  * introViolationFor is the single automated check; the plaza
  * composer, the server-side output validator and the tests share it.
  */
@@ -2369,12 +2374,40 @@ export const INTRO_FILLER_MARKERS = [
   '由创作者亲手写定',
 ]
 
+// 官方腔 (REQ-65, user order 2026-10-31): the publisher-blurb
+// register that platform 爽文 blurbs (番茄/七猫， N=40 coded samples)
+// effectively never use — the intro is a 爽点预订单， not a book
+// report. Fixed phrases from the research report's §5 table and
+// §6.1 rule 14, plus pattern shapes for the two constructions that
+// are frames rather than words （通过…展现了 / 在这个…的世界里 /
+// 这是一个关于…的故事）. Enforced through the same single check as
+// every other ban, and ONLY on public intro copy — chapter prose
+// and owners' own edits are never policed by this list.
+export const INTRO_OFFICIALESE_TERMS = [
+  '讲述了',
+  '踏上旅程',
+  '踏上了旅程',
+  '命运的齿轮',
+  '细腻的笔触',
+  '引发思考',
+  '自我价值',
+  '找到了人生意义',
+  '关于勇气与坚持',
+  '充满挑战与成长',
+  '人性的光辉',
+  '时代的变迁',
+  '过上幸福生活',
+]
+
 const INTRO_BANNED_PATTERNS = [
   /从「[^」]*」开始，一路走到/,
   /一路走到「[^」]*」/,
   /全\s*\d+\s*章/,
   /已更新到第\s*\d+\s*章/,
   /这条线(已经完结|还在连载)/,
+  /通过[^。！？\n]{0,30}展现了/,
+  /在这个[^。！？\n]{0,24}的世界里/,
+  /这是一个关于[^。！？\n]{0,24}的故事/,
 ]
 
 /**
@@ -2388,6 +2421,7 @@ export function introViolationFor(value) {
   for (const pattern of INTRO_BANNED_PATTERNS) if (pattern.test(text)) return pattern.source
   for (const term of INTRO_ENGINE_TERMS) if (text.includes(term)) return term
   for (const marker of INTRO_FILLER_MARKERS) if (text.includes(marker)) return marker
+  for (const term of INTRO_OFFICIALESE_TERMS) if (text.includes(term)) return term
   return null
 }
 
