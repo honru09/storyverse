@@ -620,6 +620,16 @@
 .da-empty-mark .da-empty-glyph > svg{width:1em; height:1em; fill:currentColor}
 .da-empty-mark .da-empty-text{font-size:11px; letter-spacing:.14em; color:var(--dim-2)}
 
+/* ================= 接入批（ASSET-PICK 定案） =================
+   DTL-09 选区色全局接入：壳层页面与壳层弹层走 selected 族 token；
+   阅读页（.page-reader，含其内共壳弹窗）明确排除，阅读面不接。
+   其余接入件（BTN-03 / DTL-03 / DTL-05 / DTL-08 / DTL-10）均以
+   da- 类叠加在既有组件类名上引用本库，无额外规则。 */
+:is(.page:not(.page-reader), .profile-window, .profile-edit-overlay, .account-overlay, .sw-toast)::selection,
+:is(.page:not(.page-reader), .profile-window, .profile-edit-overlay, .account-overlay, .sw-toast) *::selection{
+  background:var(--selected-surface); color:var(--selected-text);
+}
+
 /* —— 动效总开关口径：减少动态时，循环动效停转/停扫，星点静态 —— */
 @media (prefers-reduced-motion: reduce){
   .da-shimmer::after{animation:none; transform:none; opacity:0}
