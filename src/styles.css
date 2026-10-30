@@ -80,6 +80,21 @@
      the new names while this palette stays value-for-value frozen. */
   --surface-card:var(--glass); --surface-glass:var(--surface); --surface-modal:var(--surface-solid); --surface-pill:var(--glass-2);
   --card-solid:var(--glass); --card-backdrop:blur(12px); --float-solid:var(--glass-dark);
+  /* AURORA-ALIGN (REQ-41, user order 2026-10-30 16:21 — aurora aligns
+     to the §53 salt structure): the §53 frosted-glass token group now
+     exists under aurora too, carrying AURORA values (the deep-navy
+     face family, blue-white hairlines, navy shadows) so the shared
+     salt rules below resolve in-palette. This supersedes the §53 note
+     "极光不在本批范围" and the DEVICE-FIX3 freeze for THESE names
+     only — every pre-SALT aurora value above stays untouched, and the
+     deep-navy ground/hue identity is unchanged. Alpha discipline
+     mirrors §53: card face .50 (the black theme's .48 floor, on
+     aurora's own navy), detail scope denser still, nav .98 per
+     ruling ②'s legibility floor. */
+  --card-top-hi:rgba(190,214,255,.12);
+  --glass-card-bg:rgba(13,24,52,.50); --glass-card-blur:blur(22px) saturate(1.45); --glass-card-line:rgba(168,196,255,.24); --glass-card-edge:rgba(168,196,255,.14); --glass-card-shadow:0 18px 44px -12px rgba(2,6,20,.55); --glass-card-radius:26px;
+  --glass-chip-bg:rgba(148,178,255,.16); --glass-chip-blur:blur(14px) saturate(1.35); --glass-nav-bg:rgba(6,13,31,.98); --glass-modal-bg:rgba(13,24,52,.74); --glass-panel-pad:rgba(4,8,20,.30);
+  --detail-amb-opacity:.38; --detail-amb-filter:blur(48px) saturate(1.3) brightness(.88);
   --shadow-card:var(--shadow-flat); --shadow-floating:var(--shadow-raised);
   --shadow-glass-top:inset 0 0 0 transparent;
   --text-disabled:var(--dim-2);
@@ -804,23 +819,26 @@ select{appearance:auto}
 .mobile-bottom-nav button.active{color:var(--ink);font-weight:700}
 
 /* ——— SALT-2 显形预览 (REQ-23, SALT2.md): floating glass capsule nav,
-   frosted topbar, lifted card faces, salt section labels. Scoped to
-   the black / white shell themes only — aurora chrome is frozen and
-   keeps its own rules above. The 16px / 18px bar blurs are this
+   frosted topbar, lifted card faces, salt section labels. Originally
+   scoped to the black / white shell themes only; AURORA-ALIGN
+   (REQ-41, user order 2026-10-30 16:21) extends these rules to
+   aurora as well — aurora resolves every shared token to its own
+   values (see the AURORA-ALIGN token group in its :root block), so
+   the structure aligns while the deep-navy palette stands. The 16px / 18px bar blurs are this
    batch's explicit override of the §51 12px blur cap (the salt-theme
    guard reports them; that failure is expected for this preview).
    The capsule's inner bottom padding drops the safe-area term the
    docked bar carried: the capsule's own bottom offset already
    includes env(safe-area-inset-bottom), counting it twice would
    double the inset. ——— */
-html[data-shell-theme='black'] .mobile-bottom-nav,html[data-shell-theme='white'] .mobile-bottom-nav{left:16px;right:16px;bottom:calc(10px + env(safe-area-inset-bottom));padding:6px 8px 8px;border:1px solid var(--line);border-radius:999px;background:var(--nav-bg);backdrop-filter:blur(18px) saturate(1.35);-webkit-backdrop-filter:blur(18px) saturate(1.35);box-shadow:var(--shadow-floating)}
-html.is-lite-gpu[data-shell-theme='black'] .mobile-bottom-nav,html.is-lite-gpu[data-shell-theme='white'] .mobile-bottom-nav{background:var(--float-solid);backdrop-filter:none;-webkit-backdrop-filter:none}
-html[data-shell-theme='black'] .topbar,html[data-shell-theme='white'] .topbar{backdrop-filter:blur(16px) saturate(1.3);-webkit-backdrop-filter:blur(16px) saturate(1.3);box-shadow:inset 0 1px 0 var(--card-top-hi)}
-html.is-lite-gpu[data-shell-theme='black'] .topbar,html.is-lite-gpu[data-shell-theme='white'] .topbar{backdrop-filter:none;-webkit-backdrop-filter:none}
-html[data-shell-theme='black'] .page:not(.page-reader),html[data-shell-theme='white'] .page:not(.page-reader){padding-bottom:calc(96px + env(safe-area-inset-bottom))}
-html[data-shell-theme='black'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card),html[data-shell-theme='white'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card){box-shadow:var(--shadow-card),inset 0 1px 0 var(--card-top-hi);border-radius:var(--radius-surface)}
+html[data-shell-theme='black'] .mobile-bottom-nav,html[data-shell-theme='white'] .mobile-bottom-nav,html[data-shell-theme='aurora'] .mobile-bottom-nav{left:16px;right:16px;bottom:calc(10px + env(safe-area-inset-bottom));padding:6px 8px 8px;border:1px solid var(--line);border-radius:999px;background:var(--nav-bg);backdrop-filter:blur(18px) saturate(1.35);-webkit-backdrop-filter:blur(18px) saturate(1.35);box-shadow:var(--shadow-floating)}
+html.is-lite-gpu[data-shell-theme='black'] .mobile-bottom-nav,html.is-lite-gpu[data-shell-theme='white'] .mobile-bottom-nav,html.is-lite-gpu[data-shell-theme='aurora'] .mobile-bottom-nav{background:var(--float-solid);backdrop-filter:none;-webkit-backdrop-filter:none}
+html[data-shell-theme='black'] .topbar,html[data-shell-theme='white'] .topbar,html[data-shell-theme='aurora'] .topbar{backdrop-filter:blur(16px) saturate(1.3);-webkit-backdrop-filter:blur(16px) saturate(1.3);box-shadow:inset 0 1px 0 var(--card-top-hi)}
+html.is-lite-gpu[data-shell-theme='black'] .topbar,html.is-lite-gpu[data-shell-theme='white'] .topbar,html.is-lite-gpu[data-shell-theme='aurora'] .topbar{backdrop-filter:none;-webkit-backdrop-filter:none}
+html[data-shell-theme='black'] .page:not(.page-reader),html[data-shell-theme='white'] .page:not(.page-reader),html[data-shell-theme='aurora'] .page:not(.page-reader){padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+html[data-shell-theme='black'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card),html[data-shell-theme='white'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card),html[data-shell-theme='aurora'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card){box-shadow:var(--shadow-card),inset 0 1px 0 var(--card-top-hi);border-radius:var(--radius-surface)}
 html[data-shell-theme='black'] .store-book-card .plaza-card-cover,html[data-shell-theme='white'] .store-book-card .plaza-card-cover{box-shadow:var(--shadow-card);border-radius:var(--radius-surface)}
-html[data-shell-theme='black'] :is(.plaza-feed-heading h2,.plaza-section-title,.section-heading h2),html[data-shell-theme='white'] :is(.plaza-feed-heading h2,.plaza-section-title,.section-heading h2){font-size:11px;line-height:1.5;letter-spacing:.14em;color:var(--dim-2)}
+html[data-shell-theme='black'] :is(.plaza-feed-heading h2,.plaza-section-title,.section-heading h2),html[data-shell-theme='white'] :is(.plaza-feed-heading h2,.plaza-section-title,.section-heading h2),html[data-shell-theme='aurora'] :is(.plaza-feed-heading h2,.plaza-section-title,.section-heading h2){font-size:11px;line-height:1.5;letter-spacing:.14em;color:var(--dim-2)}
 input[type="checkbox"]{accent-color:var(--cyan)}
 /* Hover (fine pointers only) */
 @media(hover:hover) and (pointer:fine){
@@ -2203,11 +2221,15 @@ button.settings-row{cursor:pointer}
    card faces to the --glass-card-* group: tinted translucent face,
    real backdrop blur, 26px shells, brighter glass chips riding on
    top, and cover art melting into the glass at its lower edge.
-   Aurora never matches these selectors; the reader surface is not
-   touched; every blur-bearing rule is :not(.is-lite-gpu) so low-end
-   devices keep the solid --card-solid fallback. ——— */
+   AURORA-ALIGN (REQ-41, user order 2026-10-30 16:21): aurora now
+   matches these selectors too, resolving the same token names to
+   its own deep-navy values; the reader surface is not touched;
+   every blur-bearing rule is :not(.is-lite-gpu) so low-end devices
+   keep the solid --card-solid fallback. The .store-book-card shell
+   rule below stays black/white-scoped — the store card is the
+   store-design batch's surface, not this batch's. ——— */
 .salt-ambient{display:none}
-html[data-shell-theme='black'] .salt-ambient,html[data-shell-theme='white'] .salt-ambient{display:block;position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+html[data-shell-theme='black'] .salt-ambient,html[data-shell-theme='white'] .salt-ambient,html[data-shell-theme='aurora'] .salt-ambient{display:block;position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
 html[data-shell-theme='black'] .salt-ambient{background:
   radial-gradient(62% 44% at 10% 2%,rgba(110,231,255,.07),transparent 70%),
   radial-gradient(56% 42% at 90% 26%,rgba(167,139,250,.08),transparent 70%),
@@ -2216,8 +2238,14 @@ html[data-shell-theme='white'] .salt-ambient{background:
   radial-gradient(62% 44% at 8% 0%,rgba(125,211,192,.14),transparent 70%),
   radial-gradient(56% 42% at 92% 24%,rgba(120,200,235,.12),transparent 70%),
   radial-gradient(68% 48% at 55% 68%,rgba(255,196,150,.13),transparent 72%)}
+/* AURORA-ALIGN: aurora's ambient halos ride the same geometry in its
+   own blue-violet family, layered over its native .aurora-bg drift. */
+html[data-shell-theme='aurora'] .salt-ambient{background:
+  radial-gradient(62% 44% at 10% 2%,rgba(110,231,255,.10),transparent 70%),
+  radial-gradient(56% 42% at 90% 26%,rgba(167,139,250,.13),transparent 70%),
+  radial-gradient(72% 52% at 50% 70%,rgba(110,231,255,.05),transparent 72%)}
 /* — Card faces: full glass material — */
-html:not(.is-lite-gpu)[data-shell-theme='black'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card),html:not(.is-lite-gpu)[data-shell-theme='white'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card){background:var(--glass-card-bg);backdrop-filter:var(--glass-card-blur);-webkit-backdrop-filter:var(--glass-card-blur);border:1px solid var(--glass-card-line);border-radius:var(--glass-card-radius);box-shadow:var(--glass-card-shadow),0 0 0 1px var(--glass-card-edge),inset 0 1px 0 var(--card-top-hi)}
+html:not(.is-lite-gpu)[data-shell-theme='black'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card),html:not(.is-lite-gpu)[data-shell-theme='white'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card),html:not(.is-lite-gpu)[data-shell-theme='aurora'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card){background:var(--glass-card-bg);backdrop-filter:var(--glass-card-blur);-webkit-backdrop-filter:var(--glass-card-blur);border:1px solid var(--glass-card-line);border-radius:var(--glass-card-radius);box-shadow:var(--glass-card-shadow),0 0 0 1px var(--glass-card-edge),inset 0 1px 0 var(--card-top-hi)}
 /* — Store grid card: the whole card is the glass shell, the cover an
    inset 18px piece inside it (the reference image's construction) — */
 html:not(.is-lite-gpu)[data-shell-theme='black'] .store-book-card,html:not(.is-lite-gpu)[data-shell-theme='white'] .store-book-card{background:var(--glass-card-bg);backdrop-filter:var(--glass-card-blur);-webkit-backdrop-filter:var(--glass-card-blur);border:1px solid var(--glass-card-line);border-radius:var(--glass-card-radius);box-shadow:var(--glass-card-shadow),0 0 0 1px var(--glass-card-edge),inset 0 1px 0 var(--card-top-hi);padding:10px 10px 12px}
@@ -2225,27 +2253,31 @@ html[data-shell-theme='black'] .store-book-card .plaza-card-cover,html[data-shel
 /* — Cover art melts into the glass at its lower edge (mask lives on
    the artwork only; the shade + title stay crisp for legibility) — */
 html[data-shell-theme='black'] :is(.store-book-card,.plaza-card) .plaza-card-cover .world-art,html[data-shell-theme='white'] :is(.store-book-card,.plaza-card) .plaza-card-cover .world-art{-webkit-mask-image:linear-gradient(180deg,#000 76%,transparent 99%);mask-image:linear-gradient(180deg,#000 76%,transparent 99%)}
+/* AURORA-ALIGN: the plaza card's cover melt joins aurora too; the
+   store-book-card half of the rule above stays salt-scoped (the
+   store-design batch owns the store card's final form). */
+html[data-shell-theme='aurora'] .plaza-card .plaza-card-cover .world-art{-webkit-mask-image:linear-gradient(180deg,#000 76%,transparent 99%);mask-image:linear-gradient(180deg,#000 76%,transparent 99%)}
 /* — Chips on glass: a second, brighter glass layer with its own
    edge and top light. Cover status pill keeps its dark face (white
    text legibility) and only gains the blur + bright rim. — */
-html:not(.is-lite-gpu)[data-shell-theme='black'] :is(.plaza-chip,.profile-main-chip),html:not(.is-lite-gpu)[data-shell-theme='white'] :is(.plaza-chip,.profile-main-chip){background:var(--glass-chip-bg);backdrop-filter:var(--glass-chip-blur);-webkit-backdrop-filter:var(--glass-chip-blur);border:1px solid var(--glass-card-line);box-shadow:inset 0 1px 0 var(--card-top-hi)}
+html:not(.is-lite-gpu)[data-shell-theme='black'] :is(.plaza-chip,.profile-main-chip),html:not(.is-lite-gpu)[data-shell-theme='white'] :is(.plaza-chip,.profile-main-chip),html:not(.is-lite-gpu)[data-shell-theme='aurora'] :is(.plaza-chip,.profile-main-chip){background:var(--glass-chip-bg);backdrop-filter:var(--glass-chip-blur);-webkit-backdrop-filter:var(--glass-chip-blur);border:1px solid var(--glass-card-line);box-shadow:inset 0 1px 0 var(--card-top-hi)}
 html[data-shell-theme='black'] .store-card-status,html[data-shell-theme='white'] .store-card-status{backdrop-filter:blur(14px) saturate(1.35);-webkit-backdrop-filter:blur(14px) saturate(1.35);border:1px solid rgba(255,255,255,.18)}
 /* — Chrome sync: topbar / capsule nav / dialogs take the same
    blur + tint family (topbar background alpha stays on the BH-10
    red line; only its blur rises) — */
-html:not(.is-lite-gpu)[data-shell-theme='black'] .topbar,html:not(.is-lite-gpu)[data-shell-theme='white'] .topbar{backdrop-filter:blur(20px) saturate(1.45);-webkit-backdrop-filter:blur(20px) saturate(1.45)}
-html:not(.is-lite-gpu)[data-shell-theme='black'] .mobile-bottom-nav,html:not(.is-lite-gpu)[data-shell-theme='white'] .mobile-bottom-nav{background:var(--glass-nav-bg);backdrop-filter:blur(12px) saturate(1.3);-webkit-backdrop-filter:blur(12px) saturate(1.3);border-color:var(--glass-card-line)}
-html:not(.is-lite-gpu)[data-shell-theme='black'] :is(.sw-dialog,.reading-dialog,.profile-edit-sheet),html:not(.is-lite-gpu)[data-shell-theme='white'] :is(.sw-dialog,.reading-dialog,.profile-edit-sheet){background:var(--glass-modal-bg);backdrop-filter:blur(20px) saturate(1.45);-webkit-backdrop-filter:blur(20px) saturate(1.45)}
+html:not(.is-lite-gpu)[data-shell-theme='black'] .topbar,html:not(.is-lite-gpu)[data-shell-theme='white'] .topbar,html:not(.is-lite-gpu)[data-shell-theme='aurora'] .topbar{backdrop-filter:blur(20px) saturate(1.45);-webkit-backdrop-filter:blur(20px) saturate(1.45)}
+html:not(.is-lite-gpu)[data-shell-theme='black'] .mobile-bottom-nav,html:not(.is-lite-gpu)[data-shell-theme='white'] .mobile-bottom-nav,html:not(.is-lite-gpu)[data-shell-theme='aurora'] .mobile-bottom-nav{background:var(--glass-nav-bg);backdrop-filter:blur(12px) saturate(1.3);-webkit-backdrop-filter:blur(12px) saturate(1.3);border-color:var(--glass-card-line)}
+html:not(.is-lite-gpu)[data-shell-theme='black'] :is(.sw-dialog,.reading-dialog,.profile-edit-sheet),html:not(.is-lite-gpu)[data-shell-theme='white'] :is(.sw-dialog,.reading-dialog,.profile-edit-sheet),html:not(.is-lite-gpu)[data-shell-theme='aurora'] :is(.sw-dialog,.reading-dialog,.profile-edit-sheet){background:var(--glass-modal-bg);backdrop-filter:blur(20px) saturate(1.45);-webkit-backdrop-filter:blur(20px) saturate(1.45)}
 /* — Detail page: cover ambience behind the first screen, panels
    lifted above it, and a local pad inside each panel so text over a
    bright cover glow keeps its contrast (spec red line) — */
 .detail-ambience{display:none}
-html[data-shell-theme='black'] .detail-ambience,html[data-shell-theme='white'] .detail-ambience{display:block;position:absolute;left:0;right:0;top:0;height:660px;z-index:0;overflow:hidden;pointer-events:none;-webkit-mask-image:linear-gradient(180deg,#000 50%,transparent 97%);mask-image:linear-gradient(180deg,#000 50%,transparent 97%)}
+html[data-shell-theme='black'] .detail-ambience,html[data-shell-theme='white'] .detail-ambience,html[data-shell-theme='aurora'] .detail-ambience{display:block;position:absolute;left:0;right:0;top:0;height:660px;z-index:0;overflow:hidden;pointer-events:none;-webkit-mask-image:linear-gradient(180deg,#000 50%,transparent 97%);mask-image:linear-gradient(180deg,#000 50%,transparent 97%)}
 .detail-ambience .world-art{position:absolute;inset:0;filter:var(--detail-amb-filter);opacity:var(--detail-amb-opacity);transform:scale(1.3)}
-html[data-shell-theme='black'] .page-plaza:has(> .detail-ambience),html[data-shell-theme='white'] .page-plaza:has(> .detail-ambience){position:relative}
-html[data-shell-theme='black'] .page-plaza:has(> .detail-ambience)>:is(.plaza-detail-top,.plaza-detail-cover,section),html[data-shell-theme='white'] .page-plaza:has(> .detail-ambience)>:is(.plaza-detail-top,.plaza-detail-cover,section){position:relative;z-index:1}
-html:not(.is-lite-gpu)[data-shell-theme='black'] .page-plaza:has(> .detail-ambience) .plaza-panel,html:not(.is-lite-gpu)[data-shell-theme='white'] .page-plaza:has(> .detail-ambience) .plaza-panel{position:relative}
-html:not(.is-lite-gpu)[data-shell-theme='black'] .page-plaza:has(> .detail-ambience) .plaza-panel::before,html:not(.is-lite-gpu)[data-shell-theme='white'] .page-plaza:has(> .detail-ambience) .plaza-panel::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:var(--glass-panel-pad);pointer-events:none}
+html[data-shell-theme='black'] .page-plaza:has(> .detail-ambience),html[data-shell-theme='white'] .page-plaza:has(> .detail-ambience),html[data-shell-theme='aurora'] .page-plaza:has(> .detail-ambience){position:relative}
+html[data-shell-theme='black'] .page-plaza:has(> .detail-ambience)>:is(.plaza-detail-top,.plaza-detail-cover,section),html[data-shell-theme='white'] .page-plaza:has(> .detail-ambience)>:is(.plaza-detail-top,.plaza-detail-cover,section),html[data-shell-theme='aurora'] .page-plaza:has(> .detail-ambience)>:is(.plaza-detail-top,.plaza-detail-cover,section){position:relative;z-index:1}
+html:not(.is-lite-gpu)[data-shell-theme='black'] .page-plaza:has(> .detail-ambience) .plaza-panel,html:not(.is-lite-gpu)[data-shell-theme='white'] .page-plaza:has(> .detail-ambience) .plaza-panel,html:not(.is-lite-gpu)[data-shell-theme='aurora'] .page-plaza:has(> .detail-ambience) .plaza-panel{position:relative}
+html:not(.is-lite-gpu)[data-shell-theme='black'] .page-plaza:has(> .detail-ambience) .plaza-panel::before,html:not(.is-lite-gpu)[data-shell-theme='white'] .page-plaza:has(> .detail-ambience) .plaza-panel::before,html:not(.is-lite-gpu)[data-shell-theme='aurora'] .page-plaza:has(> .detail-ambience) .plaza-panel::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:var(--glass-panel-pad);pointer-events:none}
 /* — Profile: the banner melts longer at its lower edge; the identity
    block and the stats bar become glass plates riding the fade band — */
 html[data-shell-theme='black'] .profile-hero-bg,html[data-shell-theme='white'] .profile-hero-bg{-webkit-mask-image:linear-gradient(180deg,#000 55%,transparent 96%);mask-image:linear-gradient(180deg,#000 55%,transparent 96%)}
@@ -2277,9 +2309,18 @@ html[data-shell-theme='black'] .page-profile :is(.profile-hero-id,.profile-stats
 html[data-shell-theme='black'] .page-profile .profile-hero-id,html[data-shell-theme='white'] .page-profile .profile-hero-id{padding:18px 2px 20px;margin-bottom:0}
 html[data-shell-theme='black'] .page-profile .profile-stats,html[data-shell-theme='white'] .page-profile .profile-stats{padding:0;margin-top:20px;position:static;z-index:auto}
 html[data-shell-theme='black'] .page-profile .profile-hero-bg,html[data-shell-theme='white'] .page-profile .profile-hero-bg{-webkit-mask-image:none;mask-image:none}
-html[data-shell-theme='black'] .page-profile .profile-store-card,html[data-shell-theme='white'] .page-profile .profile-store-card{background:var(--profile-card,var(--profile-panel));backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid var(--profile-edge);border-radius:18px;box-shadow:none}
+html[data-shell-theme='black'] .page-profile .profile-store-card,html[data-shell-theme='white'] .page-profile .profile-store-card,html[data-shell-theme='aurora'] .page-profile .profile-store-card{background:var(--profile-card,var(--profile-panel));backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid var(--profile-edge);border-radius:18px;box-shadow:none}
 html[data-shell-theme='black'] .page-plaza:has(> .detail-ambience){--glass-card-bg:rgba(26,29,35,.60);--glass-card-line:rgba(255,255,255,.20)}
 html[data-shell-theme='white'] .page-plaza:has(> .detail-ambience){--glass-card-bg:rgba(255,255,255,.72);--glass-card-edge:rgba(24,25,27,.12)}
+/* AURORA-ALIGN (REQ-41, user order 2026-10-30 16:21): aurora's detail
+   scope follows ruling ③'s structure too — denser face, one step
+   brighter edge, in its own navy values. The .profile-store-card
+   exemption above extends to aurora so ruling ① (profile exempt
+   from glass) holds in all three themes now that aurora's card
+   rules reach .profile-store-card. Aurora's hero-id/stats plates
+   were never extended — aurora's profile keeps its pre-glass base
+   presentation, which is ruling ①'s outcome by construction. */
+html[data-shell-theme='aurora'] .page-plaza:has(> .detail-ambience){--glass-card-bg:rgba(16,30,64,.64);--glass-card-line:rgba(168,196,255,.32)}
 
 /* DEVICE-FIX2 F7 (REQ-33): whole-app horizontal containment + the iOS
    focus-zoom floor. The shell backstop clips any stray wide element at

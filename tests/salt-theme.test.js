@@ -3,21 +3,22 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 /* SALT guard tests (§51, updated to the §53 final values). Three jobs:
-   1. The aurora palette (preservation order) keeps every pre-SALT
-      value — the batch may only ADD name aliases that resolve to
-      aurora's own tokens, never change a value.
+   1. The aurora palette keeps every pre-SALT value (its deep-navy
+      identity) — batches may only ADD names, never change a value.
+      AURORA-ALIGN (REQ-41, user order 2026-10-30 16:21) adds one more
+      name family: the §53 frosted-glass token group, defined under
+      aurora at AURORA values so the shared salt rules resolve
+      in-palette; the salt rules' scope now includes aurora.
    2. Black/white carry the frozen salt material tokens (§53: SALT-2
       ground/card lift + the SALT-3 frosted-glass group), and every
       information-bearing text grey clears the 4.5:1 contrast floor
       (ruling 2 / BH-02) on its ground AND on the card face.
    3. The blur discipline as amended by §53 (the user's frosted-glass
-      order supersedes §51's "list cards never blur" rule for the
-      black/white themes ONLY): literal backdrop blurs cap at the
-      card radius 22px, the named glass tiers stay pinned (cards 22 /
-      bars+dialogs 20 / chips 14 / nav 12), the legacy --blur-* tokens
-      stay ≤12, aurora stays frozen (its own values, separately pinned
-      above), and the spring easings carry no overshoot (ruling 3:
-      ζ ≥ 1 expressed in CSS). */
+      order supersedes §51's "list cards never blur" rule): literal
+      backdrop blurs cap at the card radius 22px, the named glass
+      tiers stay pinned (cards 22 / bars+dialogs 20 / chips 14 /
+      nav 12), the legacy --blur-* tokens stay ≤12, and the spring
+      easings carry no overshoot (ruling 3: ζ ≥ 1 expressed in CSS). */
 
 const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 
@@ -43,7 +44,7 @@ function contrast(hexA, hexB) {
   return (hi + 0.05) / (lo + 0.05)
 }
 
-test('SALT: aurora palette values are frozen; new names are aliases of its own tokens', () => {
+test('SALT: aurora identity values stand; added names resolve to aurora values (AURORA-ALIGN)', () => {
   const aurora = themeBlock('aurora')
   for (const pin of [
     '--bg:#060d1f', '--bg-2:#0a1430', '--ink:#eaf1ff', '--dim:#a9b9da', '--dim-2:#8498bd',
@@ -61,6 +62,21 @@ test('SALT: aurora palette values are frozen; new names are aliases of its own t
     '--shadow-floating:var(--shadow-raised)', '--text-disabled:var(--dim-2)',
     '--blur-bar:blur(16px) saturate(1.35)',
   ]) assert.ok(aurora.includes(pin), `aurora alias ${pin}`)
+  // AURORA-ALIGN (REQ-41, user order 2026-10-30 16:21): the §53
+  // frosted-glass group is defined under aurora too — same names and
+  // structure as black/white, values from aurora's own deep-navy
+  // family (face = its #0d1834 solid at .50, hairlines in the
+  // 168,196,255 family, shadows in its 2,6,20 family).
+  for (const pin of [
+    '--card-top-hi:rgba(190,214,255,.12)',
+    '--glass-card-bg:rgba(13,24,52,.50)', '--glass-card-blur:blur(22px) saturate(1.45)',
+    '--glass-card-line:rgba(168,196,255,.24)', '--glass-card-edge:rgba(168,196,255,.14)',
+    '--glass-card-shadow:0 18px 44px -12px rgba(2,6,20,.55)', '--glass-card-radius:26px',
+    '--glass-chip-bg:rgba(148,178,255,.16)', '--glass-chip-blur:blur(14px) saturate(1.35)',
+    '--glass-nav-bg:rgba(6,13,31,.98)', '--glass-modal-bg:rgba(13,24,52,.74)',
+    '--glass-panel-pad:rgba(4,8,20,.30)',
+    '--detail-amb-opacity:.38', '--detail-amb-filter:blur(48px) saturate(1.3) brightness(.88)',
+  ]) assert.ok(aurora.includes(pin), `aurora glass ${pin}`)
 })
 
 test('SALT: black and white carry the frozen salt material tokens (§53 final values)', () => {
@@ -126,11 +142,12 @@ test('SALT: information greys clear 4.5:1 on ground and card face in black and w
   }
 })
 
-test('SALT: blur discipline per §53 — caps at the card tier, named tiers pinned, aurora frozen', () => {
-  // Aurora's chrome blur (16px bar) predates the batch and is frozen;
-  // it reaches components only through aurora's own --blur-bar alias,
-  // so the aurora block is excluded from the cap scan (its values are
-  // pinned verbatim by the aurora test above — never weakened).
+test('SALT: blur discipline per §53 — caps at the card tier, named tiers pinned', () => {
+  // The aurora :root block is excluded from the literal cap scan: its
+  // token values (incl. the legacy --blur-bar alias at 16px, an
+  // aurora identity value) are pinned verbatim by the aurora test
+  // above. Aurora's salt-scoped rules share their declarations with
+  // the black/white rules, so they are scanned here exactly once.
   const shellCss = css.replace(themeBlock('aurora'), '')
   for (const match of shellCss.matchAll(/backdrop-filter:blur\((\d+)px\)/g)) {
     assert.ok(Number(match[1]) <= 22, `literal backdrop blur ${match[1]}px within the §53 card-tier cap`)
@@ -167,9 +184,44 @@ test('SALT §53 rulings: profile exempt from glass, bottom nav near-solid', () =
   const alphaOf = (id) => Number(tokenValue(themeBlock(id), '--glass-nav-bg').match(/,([\d.]+)\)$/)[1])
   assert.ok(alphaOf('black') >= 0.98, `black nav alpha ${alphaOf('black')} >= .98`)
   assert.ok(alphaOf('white') >= 0.99, `white nav alpha ${alphaOf('white')} >= .99`)
-  // The ambient layer the glass refracts exists for black/white only.
+  // AURORA-ALIGN (REQ-41): aurora's capsule is near-solid to the same
+  // legibility floor — its nav tint pins at .98 like black's.
+  assert.ok(alphaOf('aurora') >= 0.98, `aurora nav alpha ${alphaOf('aurora')} >= .98`)
+  // The ambient layer the glass refracts renders in all three themes
+  // (aurora included since AURORA-ALIGN, at its own halo values).
   assert.ok(css.includes("html[data-shell-theme='black'] .salt-ambient"), 'ambient layer renders for black')
   assert.ok(css.includes("html[data-shell-theme='white'] .salt-ambient"), 'ambient layer renders for white')
+  assert.ok(css.includes("html[data-shell-theme='aurora'] .salt-ambient"), 'ambient layer renders for aurora')
+  // Ruling ① parity under AURORA-ALIGN: aurora's card rules now reach
+  // .profile-store-card, so its profile exemption extends too.
+  assert.ok(css.includes("html[data-shell-theme='aurora'] .page-profile .profile-store-card{background:var(--profile-card,var(--profile-panel))"), 'aurora profile store card exempt from glass')
+})
+
+test('AURORA-ALIGN (REQ-41): the §53 salt rules include aurora in scope, store card excluded', () => {
+  // User order 2026-10-30 16:21 「极光也向黑白看齐」: every salt rule
+  // family that defines the §53 look — capsule nav, frosted topbar
+  // with inset highlight, section labels, glass card faces, glass
+  // chips, glass dialogs, detail ambience + panel pad — names aurora
+  // alongside black/white and resolves through aurora's own tokens.
+  for (const pin of [
+    "html[data-shell-theme='aurora'] .mobile-bottom-nav{left:16px",
+    "html[data-shell-theme='aurora'] .topbar{backdrop-filter:blur(16px) saturate(1.3)",
+    "html[data-shell-theme='aurora'] :is(.plaza-feed-heading h2,.plaza-section-title,.section-heading h2){font-size:11px",
+    "html:not(.is-lite-gpu)[data-shell-theme='aurora'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card){background:var(--glass-card-bg)",
+    "html:not(.is-lite-gpu)[data-shell-theme='aurora'] :is(.plaza-chip,.profile-main-chip){background:var(--glass-chip-bg)",
+    "html:not(.is-lite-gpu)[data-shell-theme='aurora'] .topbar{backdrop-filter:blur(20px) saturate(1.45)",
+    "html:not(.is-lite-gpu)[data-shell-theme='aurora'] .mobile-bottom-nav{background:var(--glass-nav-bg)",
+    "html:not(.is-lite-gpu)[data-shell-theme='aurora'] :is(.sw-dialog,.reading-dialog,.profile-edit-sheet){background:var(--glass-modal-bg)",
+    "html[data-shell-theme='aurora'] .salt-ambient{background:",
+    "html[data-shell-theme='aurora'] .plaza-card .plaza-card-cover .world-art{",
+    // §53 ruling ③ structure, aurora values: detail scope denser.
+    "html[data-shell-theme='aurora'] .page-plaza:has(> .detail-ambience){--glass-card-bg:rgba(16,30,64,.64);--glass-card-line:rgba(168,196,255,.32)}",
+  ]) assert.ok(css.includes(pin), `aurora salt scope ${pin}`)
+  // The store-book-card glass shell stays salt-scoped: the store
+  // card is the store-design batch's surface (its final form rules),
+  // this batch only aligns the shared chrome around it.
+  assert.ok(css.includes("[data-shell-theme='black'] .store-book-card,html:not(.is-lite-gpu)[data-shell-theme='white'] .store-book-card{background:var(--glass-card-bg)"), 'store card glass shell still exists for salt themes')
+  assert.ok(!css.includes("[data-shell-theme='aurora'] .store-book-card{background:var(--glass-card-bg)"), 'store card glass shell not extended to aurora')
 })
 
 test('CONTRAST-FIX: page-level titles are pinned to the L1 ink, clearing 7:1 in black and white', () => {

@@ -40,22 +40,24 @@ test('REQ-35: the service worker version moved, so installed clients retire v1 c
   assert.ok(!sw.includes("const VERSION = 'storyweave-v1'"), 'v1 is gone')
 })
 
-/* ——— G2 (REQ-36): aurora resolves the post-freeze detail tokens —— */
+/* ——— G2 (REQ-36 → REQ-41): aurora and the detail ambience ——————— */
 
-test('REQ-36: the detail ambience stays a salt-scoped layer; aurora keeps its frozen detail look', () => {
-  // DEVICE-FIX3 audit finding, corrected on measurement: the §53
-  // ambience layer is display:none outside the salt themes (its
-  // display:block rule names black/white only), so the undefined
-  // --detail-amb-* tokens in aurora are inert — no bleed, no missing
-  // content; aurora's detail page is its pre-freeze design. The
-  // disposition is 冻结保留, pinned here so a future batch does not
-  // "fix" it by un-hiding a salt treatment inside the frozen theme.
-  const ambienceDisplay = ruleBody("html[data-shell-theme='black'] .detail-ambience,html[data-shell-theme='white'] .detail-ambience{")
+test('REQ-36/41: the detail ambience renders in all three themes; aurora carries its own ambience tokens', () => {
+  // DEVICE-FIX3 (REQ-36) disposition was 冻结保留: the §53 ambience
+  // layer was display:none outside the salt themes, the undefined
+  // --detail-amb-* tokens in aurora inert, aurora's detail page its
+  // pre-freeze design — pinned then so no batch would un-hide a salt
+  // treatment inside the frozen theme.
+  // SUPERSEDED by AURORA-ALIGN (REQ-41, user order 2026-10-30 16:21
+  // 「极光也向黑白看齐」): the ambience now renders under aurora too,
+  // with aurora's own token values (deep-navy identity untouched —
+  // the identity pins below still stand verbatim).
+  const ambienceDisplay = ruleBody("html[data-shell-theme='black'] .detail-ambience,html[data-shell-theme='white'] .detail-ambience,html[data-shell-theme='aurora'] .detail-ambience{")
   assert.match(ambienceDisplay, /display:block/)
-  assert.ok(!css.includes("[data-shell-theme='aurora'] .detail-ambience{display:block"), 'aurora never un-hides the ambience')
   const aurora = css.slice(css.indexOf(":root[data-shell-theme='aurora']"), css.indexOf(":root[data-shell-theme='black']"))
-  assert.ok(!aurora.includes('--detail-amb-'), 'aurora does not adopt the salt ambience tokens')
-  // The freeze itself is untouched: aurora's own values stand.
+  assert.ok(aurora.includes('--detail-amb-opacity:.38'), 'aurora adopts the ambience tokens at its own values')
+  assert.ok(aurora.includes('--detail-amb-filter:blur(48px) saturate(1.3) brightness(.88)'), 'aurora ambience filter is its own value')
+  // The identity itself is untouched: aurora's own values stand.
   assert.match(aurora, /--bg:#060d1f/)
   assert.match(aurora, /--nav-bg:rgba\(6,13,31,\.94\)/)
 })
