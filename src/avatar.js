@@ -1,18 +1,27 @@
 // The avatar （化身）: the reader's own fixed character, carried across every
-// world they open. This module is the shared vocabulary — appearance
-// options, presets, profile validation and the appearance line a story
-// carries — plus the client-side API. The server imports the pure parts
-// (options / validation / prompt fragments) so the profile a reader saves
-// is validated by exactly one definition, here.
+// world they open. This module is the shared vocabulary — presets,
+// profile validation and the appearance line a story carries — plus
+// the client-side API. The server imports the pure parts (validation /
+// prompt fragments) so the profile a reader saves is validated by
+// exactly one definition, here.
+//
+// Who the avatar is lives in two fields only: the name and the written
+// description. There is deliberately NO per-part customisation
+// (AVATAR-TRIM, ruling 2026-10-30): painted figures vary too much —
+// animals, proportions, heights — for preset parts to fit, and
+// changing an outfit is a whole-image repaint anyway. To change how an
+// avatar looks, the reader edits the description and repaints the
+// whole portrait. Profiles saved before the trim may still carry a
+// stored `appearance` object; it is inert data now — nothing reads,
+// renders or submits it.
 //
 // Consistency boundary (also written into DESIGN.md): cross-world sameness
-// is anchored by this structured profile plus the previous portrait fed
+// is anchored by this written profile plus the previous portrait fed
 // back as a reference image. The goal is a character readers recognise as
 // the same person — never pixel-identical reproduction.
 
 export const AVATAR_NAME_MAX = 20
 export const AVATAR_DESCRIPTION_MAX = 300
-export const AVATAR_FACE_NOTE_MAX = 60
 export const AVATAR_APPEARANCE_TEXT_MAX = 300
 // One account may keep a small drawer of avatars (PERSONA-QA F-27): the
 // main avatar is the identity every public surface resolves, the rest are
@@ -26,126 +35,18 @@ export function mainAvatarOf(avatars, mainId) {
   return avatars.find((item) => item?.id === mainId) || avatars[0] || null
 }
 
-// Appearance options are fixed site vocabulary: an id, the Chinese label
-// the reader picks, and the English fragment the image prompt paints.
-// Free text never reaches the image prompt except through the sanitised
-// description and face note.
-const option = (id, label, prompt) => ({ id, label, prompt })
-
-export const HAIR_COLORS = [
-  option('black', '乌黑', 'black hair'),
-  option('brown', '茶棕', 'warm brown hair'),
-  option('silver', '银灰', 'silver-grey hair'),
-  option('white', '雪白', 'white hair'),
-  option('red', '红铜', 'copper-red hair'),
-  option('blonde', '浅金', 'pale blonde hair'),
-  option('blue', '深蓝', 'deep blue hair'),
-  option('pink', '樱粉', 'sakura-pink hair'),
-  option('purple', '藤紫', 'violet-purple hair'),
-]
-
-export const HAIR_STYLES = [
-  option('long-straight', '长直发', 'long straight hair worn loose'),
-  option('long-wavy', '大波浪长发', 'long wavy hair with soft curls'),
-  option('short', '利落短发', 'neat short hair'),
-  option('ponytail', '高马尾', 'a high ponytail'),
-  option('bun', '束发发髻', 'hair tied up in a bun'),
-  option('bob', '波波头', 'a chin-length bob cut'),
-  option('twin-tails', '双马尾', 'twin tails'),
-  option('buzz', '寸头', 'a very short buzz cut'),
-]
-
-export const OUTFIT_STYLES = [
-  option('xianxia-robe', '仙气长袍', 'flowing pale xianxia robes with wide sleeves'),
-  option('scholar', '文人长衫', 'a scholar’s long cloth gown'),
-  option('modern-street', '现代街头', 'modern streetwear, layered jacket and casual trousers'),
-  option('school', '学院制服', 'a neat school uniform'),
-  option('tactical', '机能装束', 'functional techwear with straps and pockets'),
-  option('dress', '礼服长裙', 'an elegant long dress'),
-  option('armor', '轻甲战袍', 'light ornamental armour over a war robe'),
-  option('coat', '长风衣', 'a long tailored trench coat'),
-]
-
-export const SHOE_STYLES = [
-  option('boots', '长靴', 'tall boots'),
-  option('sneakers', '运动鞋', 'sneakers'),
-  option('cloth-shoes', '布鞋', 'plain cloth shoes'),
-  option('leather-shoes', '皮鞋', 'polished leather shoes'),
-  option('sandals', '凉鞋', 'open sandals'),
-  option('heels', '缎面高跟鞋', 'satin high heels'),
-]
-
-export const FACE_FEATURES = [
-  option('none', '无特别标记', ''),
-  option('tear-mole', '眼下泪痣', 'a small beauty mark under one eye'),
-  option('freckles', '雀斑', 'a dusting of freckles across the nose'),
-  option('glasses', '眼镜', 'slim round glasses'),
-  option('dimples', '酒窝', 'gentle dimples when smiling'),
-  option('scar', '眉尾浅疤', 'a faint scar through the tail of one eyebrow'),
-  option('earring', '耳饰', 'a single slender earring'),
-]
-
-export const AVATAR_APPEARANCE_FIELDS = [
-  { key: 'hairColor', label: '发色', options: HAIR_COLORS },
-  { key: 'hairStyle', label: '发型', options: HAIR_STYLES },
-  { key: 'outfit', label: '服装', options: OUTFIT_STYLES },
-  { key: 'shoes', label: '鞋', options: SHOE_STYLES },
-  { key: 'face', label: '脸部特征', options: FACE_FEATURES },
-]
-
-const optionById = (options, id) => options.find((item) => item.id === id) || null
-
-// Kept for reference only (FINAL-FIX R-07): profiles created before
-// the unpicked-means-unspecified change carry these values baked in
-// as explicit picks. Nothing fills new profiles from it any more.
-export const DEFAULT_APPEARANCE = Object.freeze({
-  hairColor: 'black',
-  hairStyle: 'long-straight',
-  outfit: 'coat',
-  shoes: 'boots',
-  face: 'none',
-  faceNote: '',
-})
-
 /**
- * Normalise an appearance object against the fixed vocabulary.
- *
- * A field the reader never picked stays null (FINAL-FIX R-07): it used
- * to be filled from DEFAULT_APPEARANCE, which silently rewrote the
- * reader's own words — a description that said 「短发」 came back as
- * long straight hair, a long coat and boots, because the untouched
- * chips had "defaults". Unpicked now means UNSPECIFIED everywhere
- * downstream: the text and prompt composers skip the field, and the
- * portrait prompt states outright that unspecified aspects follow the
- * written description. An id outside the vocabulary also normalises
- * to null (unspecified) rather than failing the whole profile — a
- * reader's saved look must never be lost to one stale option. Returns
- * null only when the input is not an object at all. Profiles saved
- * before this change carry their baked-in defaults as explicit picks;
- * they keep rendering exactly as before.
+ * The one-line look a story (and every public avatar surface) carries
+ * for this avatar. Since AVATAR-TRIM the line is simply the avatar's
+ * own written description, whitespace-folded and bounded: the
+ * description is the only definition of the look now, so the line a
+ * story paints its protagonist from and the line a profile shows are
+ * the same words the reader wrote. Anything else stored on the profile
+ * (a legacy `appearance` object) is inert and never composes into it.
  */
-export function normalizeAppearance(input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return null
-  const result = {}
-  for (const field of AVATAR_APPEARANCE_FIELDS) {
-    const picked = optionById(field.options, input[field.key])
-    result[field.key] = picked ? picked.id : null
-  }
-  result.faceNote = typeof input.faceNote === 'string' ? input.faceNote.trim().slice(0, AVATAR_FACE_NOTE_MAX) : ''
-  return result
-}
-
-/** The one-line Chinese appearance a story carries in its config. */
-export function avatarAppearanceText(appearance) {
-  const look = normalizeAppearance(appearance)
-  if (!look) return ''
-  const parts = []
-  for (const field of AVATAR_APPEARANCE_FIELDS) {
-    const picked = optionById(field.options, look[field.key])
-    if (picked && picked.id !== 'none') parts.push(picked.label)
-  }
-  if (look.faceNote) parts.push(look.faceNote)
-  return parts.join('，').slice(0, AVATAR_APPEARANCE_TEXT_MAX)
+export function avatarAppearanceText(avatar) {
+  const description = typeof avatar?.description === 'string' ? avatar.description : ''
+  return description.replace(/\s+/g, ' ').trim().slice(0, AVATAR_APPEARANCE_TEXT_MAX)
 }
 
 /**
@@ -168,22 +69,11 @@ export function avatarDraftPatch(avatar) {
   return {
     name: typeof avatar.name === 'string' ? avatar.name : '',
     avatarId: typeof avatar.id === 'string' ? avatar.id : '',
-    avatarAppearance: avatarAppearanceText(avatar.appearance),
+    avatarAppearance: avatarAppearanceText(avatar),
     ...(description ? { persona: description } : {}),
   }
 }
 
-/** The English appearance fragments the portrait prompt paints from. */
-export function avatarAppearancePrompt(appearance) {
-  const look = normalizeAppearance(appearance)
-  if (!look) return ''
-  const parts = []
-  for (const field of AVATAR_APPEARANCE_FIELDS) {
-    const picked = optionById(field.options, look[field.key])
-    if (picked?.prompt) parts.push(picked.prompt)
-  }
-  return parts.join(', ')
-}
 
 /**
  * Validate and normalise a profile payload (create or update). Text is
@@ -196,17 +86,15 @@ export function validateAvatarProfile(input) {
   const name = typeof input.name === 'string' ? input.name.trim().slice(0, AVATAR_NAME_MAX) : ''
   if (!name) return { error: '先给化身取个名字。' }
   const description = typeof input.description === 'string' ? input.description.trim().slice(0, AVATAR_DESCRIPTION_MAX) : ''
-  // No appearance payload at all is a valid profile: every field
-  // unpicked, the written description leads (FINAL-FIX R-07). A payload
-  // that IS present but not an object still fails, as before.
-  const appearance = input.appearance === undefined ? normalizeAppearance({}) : normalizeAppearance(input.appearance)
-  if (!appearance) return { error: '化身的样子没能读懂，请重新选一次。' }
+  // A profile is name + description, nothing else (AVATAR-TRIM): any
+  // `appearance` a stale client still sends is ignored here and never
+  // stored from the payload — the stored record's own legacy field, if
+  // one exists, is carried by the server untouched (see server/avatar.js).
   return {
     profile: {
       ...(typeof input.id === 'string' && input.id ? { id: input.id.slice(0, 64) } : {}),
       name,
       description,
-      appearance,
     },
   }
 }
@@ -231,20 +119,17 @@ export const AVATAR_PRESETS = [
   {
     id: 'preset-lin-wanzhou',
     name: '林晚舟',
-    description: '清冷安静的剑客，话不多，站在人群里也像站在风里。',
-    appearance: { hairColor: 'black', hairStyle: 'long-straight', outfit: 'xianxia-robe', shoes: 'cloth-shoes', face: 'tear-mole', faceNote: '' },
+    description: '清冷安静的剑客，乌黑长发，一袭浅色长袍，眼下一点泪痣，话不多，站在人群里也像站在风里。',
   },
   {
     id: 'preset-a-can',
     name: '阿灿',
-    description: '笑起来很亮的街头少年，好奇心比胆子大，口袋里总有糖。',
-    appearance: { hairColor: 'silver', hairStyle: 'short', outfit: 'modern-street', shoes: 'sneakers', face: 'freckles', faceNote: '' },
+    description: '笑起来很亮的街头少年，银灰短发，鼻尖几点雀斑，穿街头夹克和运动鞋，好奇心比胆子大，口袋里总有糖。',
   },
   {
     id: 'preset-bai-yu',
     name: '白榆',
-    description: '温润耐心的年轻学者，喜欢把袖口挽起来，慢慢把事情讲清楚。',
-    appearance: { hairColor: 'brown', hairStyle: 'long-wavy', outfit: 'scholar', shoes: 'leather-shoes', face: 'glasses', faceNote: '' },
+    description: '温润耐心的年轻学者，茶棕长发，戴细框眼镜，穿文人长衫，喜欢把袖口挽起来，慢慢把事情讲清楚。',
   },
 ]
 
@@ -380,14 +265,14 @@ export async function saveAvatar({ profile, getAccessToken, fetchImpl = globalTh
  * generation takes tens of seconds — so the caller shows the pending
  * state from the profile it already holds rather than blocking on this.
  * `avatarId` targets one avatar of the collection (the profile's own id
- * works too); `lockPart` marks a single-part adjustment — the server
- * then paints under the repaint lock: only that part may change.
+ * works too). A repaint is always a whole-image repaint from the
+ * current name + description (AVATAR-TRIM): there is no single-part
+ * adjustment any more.
  */
-export async function generateAvatar({ profile, avatarId, lockPart, getAccessToken, fetchImpl = globalThis.fetch, timeoutMs = 120_000 } = {}) {
+export async function generateAvatar({ profile, avatarId, getAccessToken, fetchImpl = globalThis.fetch, timeoutMs = 120_000 } = {}) {
   const headers = { 'Content-Type': 'application/json', ...(await avatarHeaders(getAccessToken)) }
   const body = { profile }
   if (typeof avatarId === 'string' && avatarId) body.avatarId = avatarId
-  if (typeof lockPart === 'string' && lockPart) body.lockPart = lockPart
   const response = await fetchImpl('/api/avatar/generate', {
     method: 'POST', headers, body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),

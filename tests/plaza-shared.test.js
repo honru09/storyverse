@@ -90,11 +90,11 @@ test('an avatar-less line can take an avatar in and then passes the gate (FINAL-
   assert.equal(gate.publishable, false)
   assert.equal(gate.needsAvatar, true, 'the avatar refusal is the one carrying the remedy flag')
 
-  const avatar = { id: AVATAR_ID, name: '沈砚', appearance: { hairColor: 'silver', hairStyle: null, outfit: null, shoes: null, face: null, faceNote: '' } }
+  const avatar = { id: AVATAR_ID, name: '沈砚', description: '银灰短发，眼神很冷。' }
   const carried = bringAvatarIntoStory(noAvatar, avatar)
   assert.notEqual(carried, noAvatar)
   assert.equal(carried.config.avatarId, AVATAR_ID)
-  assert.equal(carried.config.avatarAppearance, '银灰', 'only the picked parts ride along (R-07 semantics)')
+  assert.equal(carried.config.avatarAppearance, '银灰短发，眼神很冷。', 'the written description rides along (AVATAR-TRIM)')
   assert.equal(plazaGateFor(carried).publishable, true, 'the gate re-reads clean after the bring-in')
   assert.equal(noAvatar.config.avatarId, '', 'the original record is untouched')
 
@@ -144,7 +144,7 @@ test('enter draft seeds a new line from the publication template', () => {
   const entrantAvatar = {
     id: 'avatar-entrant-9',
     name: '林晚舟',
-    appearance: { hairColor: 'black', hairStyle: 'long-wavy', outfit: 'coat', shoes: 'boots', face: 'mole-cheek' },
+    description: '黑色大波浪长发，左颊一颗痣。',
   }
   const draft = enterDraftFor(detail, { avatar: entrantAvatar, identityId: 'heir', startPointName: '外门柴房', ability: '读心一瞥' })
   assert.equal(draft.sourcePublicationId, 'pub-test-1')

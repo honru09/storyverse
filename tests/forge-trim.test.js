@@ -107,7 +107,7 @@ test('avatarDraftPatch maps the profile description into the draft persona', () 
   assert.equal(patch.name, '沈砚')
   assert.equal(patch.avatarId, 'avatar-1')
   assert.equal(patch.persona, '从山里走出来的年轻人，话少，手稳。')
-  assert.ok(patch.avatarAppearance.length > 0)
+  assert.equal(patch.avatarAppearance, '从山里走出来的年轻人，话少，手稳。', 'the look line is the description; stored parts contribute nothing (AVATAR-TRIM)')
   // An avatar without a written description leaves persona alone.
   const bare = avatarDraftPatch({ id: 'a2', name: '无名', description: '  ', appearance: null })
   assert.ok(!('persona' in bare))

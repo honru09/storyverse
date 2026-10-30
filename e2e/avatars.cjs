@@ -112,14 +112,21 @@ async function library(page) {
       const nameInput = page.getByLabel('名字', { exact: true });
       assert.equal(await nameInput.inputValue(), '沈砚', 'the editor is seeded with the migrated avatar');
     });
-    await check('the repaint lock + cost line is stated before any adjustment', async () => {
-      const note = page.locator('.avatar-lock-note');
+    await check('the whole-image repaint + cost line is stated up front (AVATAR-TRIM)', async () => {
+      const note = page.locator('.avatar-repaint-note');
       await note.waitFor();
-      assert.match(await note.innerText(), /只改你动的那一项/);
+      assert.match(await note.innerText(), /整张/);
+      assert.match(await note.innerText(), /按描述重画立绘/);
       assert.match(await note.innerText(), /1 次立绘额度/);
+      // Per-part personalisation is offline: no part controls anywhere
+      // in the editor, and the part labels are gone from its text.
+      assert.equal(await page.locator('.avatar-fields').count(), 0);
+      const editorText = await page.locator('.avatar-editor').innerText();
+      assert.ok(!/发色|发型|脸部细节/.test(editorText), 'no part-adjustment labels remain');
+      assert.equal(await page.getByRole('button', { name: '按描述重画立绘' }).count(), 1);
       await note.scrollIntoViewIfNeeded();
       await page.waitForTimeout(300);
-      await page.screenshot({ path: path.join(shotsDir, '03-repaint-lock-line.png') });
+      await page.screenshot({ path: path.join(shotsDir, '03-repaint-note.png') });
     });
 
     // --- a second avatar joins the drawer -----------------------------
@@ -185,11 +192,13 @@ async function library(page) {
       const progress = document.querySelector('[role="progressbar"][aria-label="阅读进度"]');
       return progress?.getAttribute('aria-valuenow') === '1';
     });
-    await check('the book config carries the first avatar id and its appearance snapshot', async () => {
+    await check('the book config carries the first avatar id and its written look snapshot', async () => {
       const saved = await library(page);
       assert.equal(saved.stories.length, 1);
       assert.equal(saved.stories[0].config.avatarId, LEGACY_ID);
-      assert.match(saved.stories[0].config.avatarAppearance, /长直发/);
+      // AVATAR-TRIM: the snapshot is the avatar's written description —
+      // the legacy record's stored parts (长直发 etc.) contribute nothing.
+      assert.equal(saved.stories[0].config.avatarAppearance, '从山里走出来的年轻人，话少，手稳。');
       assert.equal(saved.stories[0].config.name, '沈砚');
       // FORGE-TRIM: the avatar's written profile (its 性格与设定） rides
       // into the book's persona — the forge no longer re-asks for a

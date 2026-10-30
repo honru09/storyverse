@@ -86,16 +86,16 @@ test('collection client: list, create, set main and delete hit their routes', as
   ])
 })
 
-test('generateAvatar carries the target avatar and the repaint lock part', async () => {
+test('generateAvatar carries the target avatar id and never a repaint lock (AVATAR-TRIM)', async () => {
   let request
   const fetchImpl = async (url, options) => {
     request = { url, body: JSON.parse(options.body) }
     return jsonResponse(200, { avatar: readyAvatar() })
   }
-  await generateAvatar({ profile: { name: '林晚舟' }, avatarId: 'avatar-9', lockPart: 'hairColor', getAccessToken: token, fetchImpl })
+  await generateAvatar({ profile: { name: '林晚舟' }, avatarId: 'avatar-9', getAccessToken: token, fetchImpl })
   assert.equal(request.url, '/api/avatar/generate')
   assert.equal(request.body.avatarId, 'avatar-9')
-  assert.equal(request.body.lockPart, 'hairColor')
+  assert.equal('lockPart' in request.body, false, 'per-part repaint locks are gone; a repaint is whole-image')
 })
 
 test('fetchAvatarObjectUrl addresses the painting by avatar id', async () => {

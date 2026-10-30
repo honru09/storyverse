@@ -4,13 +4,9 @@ import { dayKeyFor } from './usage.js'
 import { createAvatarStore, collectionFromRecord, imageSlotFor } from './avatar-store.js'
 import { transcodePortraitImage, normalizedStoredImage } from './portrait-image.js'
 import {
-  AVATAR_APPEARANCE_FIELDS,
   AVATAR_DESCRIPTION_MAX,
-  AVATAR_FACE_NOTE_MAX,
   AVATAR_LIMIT,
   AVATAR_NAME_MAX,
-  avatarAppearancePrompt,
-  normalizeAppearance,
   validateAvatarProfile,
 } from '../src/avatar.js'
 
@@ -27,8 +23,9 @@ import {
  * crop every small round surface relies on keeps working.
  *
  * Cross-generation consistency has two anchors, used together:
- *   1. the structured profile (fixed-vocabulary appearance), restated in
- *      full in every prompt, and
+ *   1. the written profile (name + description — the avatar's only
+ *      definition since AVATAR-TRIM removed per-part customisation),
+ *      restated in full in every prompt, and
  *   2. the previous portrait itself, passed back as a reference image
  *      whenever one exists (the model accepts image parts on the same
  *      generateContent call). The first painting has no reference and is
@@ -54,45 +51,6 @@ const clip = (value, length) => typeof value === 'string' ? value.slice(0, lengt
 // as god-mode settings before they can reach any prompt.
 const safeText = (value, length) => sanitizeSettingText(clip(value, length)).trim()
 
-// The parts a single-part repaint may name (PERSONA-QA F-28). The keys
-// are the appearance field ids; faceNote is the free-text facial detail.
-export const AVATAR_LOCK_PARTS = Object.freeze({
-  hairColor: 'hair colour',
-  hairStyle: 'hairstyle',
-  outfit: 'outfit',
-  shoes: 'shoes',
-  face: 'facial feature',
-  faceNote: 'facial detail note',
-})
-
-function appearanceFragment(appearance, key) {
-  const field = AVATAR_APPEARANCE_FIELDS.find((item) => item.key === key)
-  if (!field) return ''
-  const picked = field.options.find((item) => item.id === appearance?.[key])
-  return picked?.prompt || ''
-}
-
-/**
- * The repaint lock (F-28): a part adjustment used to be a plain re-draw,
- * so a stated outfit could come back as a different outfit. The lock
- * names the ONE part that may change, restates every other part's
- * descriptor as preserved, and flips the usual precedence for the rest:
- * on everything but the locked part, the reference wins.
- */
-function lockInstruction(profile, lockPart) {
-  const look = normalizeAppearance(profile?.appearance)
-  if (!look || !AVATAR_LOCK_PARTS[lockPart]) return ''
-  const changed = lockPart === 'faceNote'
-    ? safeText(profile?.appearance?.faceNote, AVATAR_FACE_NOTE_MAX)
-    : appearanceFragment(look, lockPart)
-  const preserved = AVATAR_APPEARANCE_FIELDS
-    .filter((field) => field.key !== lockPart)
-    .map((field) => appearanceFragment(look, field.key))
-    .filter(Boolean)
-    .join(', ')
-  return `REPAINT LOCK — this is a single-part adjustment: change ONLY the ${AVATAR_LOCK_PARTS[lockPart]}${changed ? ` (now: ${changed})` : ''}. Everything else must stay exactly as it is in the reference image and as restated below; preserved unchanged: ${preserved || 'the full stated look'}. Do not substitute, restyle, drop or add any other garment, accessory or feature, and any clothing named in the character impression stays on the character.`
-}
-
 // The poster composition vocabulary (POSTER-AVATAR). A portrait is a
 // key visual, not an ID photo: the camera and the pose rotate between
 // dramatic options, picked deterministically from the profile so one
@@ -110,9 +68,9 @@ export const AVATAR_POSTER_POSES = Object.freeze([
   { id: 'reach', prompt: 'Pose: one arm raised in a decisive gesture, weight shifted onto one leg, garments caught mid-motion.' },
 ])
 
-/** The composition one profile paints with — stable per avatar + look. */
+/** The composition one profile paints with — stable per name + description. */
 export function posterCompositionFor(profile) {
-  const seed = `${profile?.name || ''}|${avatarAppearancePrompt(profile?.appearance)}|${profile?.description || ''}`
+  const seed = `${profile?.name || ''}|${profile?.description || ''}`
   let hash = 0
   for (let index = 0; index < seed.length; index += 1) hash = (hash * 31 + seed.charCodeAt(index)) >>> 0
   return {
@@ -122,44 +80,33 @@ export function posterCompositionFor(profile) {
 }
 
 /**
- * Assemble the portrait prompt from the structured profile. The structured
- * appearance is restated in full every time (that is the text anchor);
- * with a reference image the prompt additionally instructs the model to
- * keep the same person and apply the stated look. A `lockPart` narrows
- * that instruction to the one changed part (see lockInstruction) — under
- * a lock the reference also wins the composition, so the poster lines
- * step aside and only a full repaint restyles the painting.
+ * Assemble the portrait prompt from the written profile. The name +
+ * description are restated in full every time (that is the text
+ * anchor); with a reference image the prompt additionally instructs
+ * the model to keep the same person and repaint them as the
+ * description now states. Every repaint is a whole-image repaint
+ * (AVATAR-TRIM): there is no single-part adjustment, so the poster
+ * composition always applies.
  */
-export function buildAvatarPrompt(profile, { hasReference = false, lockPart = null } = {}) {
-  const look = avatarAppearancePrompt(profile?.appearance)
+export function buildAvatarPrompt(profile, { hasReference = false } = {}) {
   const description = safeText(profile?.description, AVATAR_DESCRIPTION_MAX)
-  const faceNote = safeText(profile?.appearance?.faceNote, AVATAR_FACE_NOTE_MAX)
-  const lock = hasReference ? lockInstruction(profile, lockPart) : ''
   const composition = posterCompositionFor(profile)
-  const poster = !lock
   const parts = [
     'A vertical 3:4 poster-style character key visual illustration for a fiction companion character. The image must contain absolutely no text: no letters, no words, no typography or lettering of any kind, no watermark, no logo.',
     hasReference
-      ? lock
-        ? 'The attached reference image shows the SAME character. Keep the same person — same face, same identity, recognisably them. This repaint changes one part only, under the lock below: where the stated look and the reference disagree on any OTHER part, the reference wins.'
-        : 'The attached reference image shows the SAME character. Keep the same person — same face, same identity, recognisably them — and repaint them with the look stated below, in the poster composition below. Where the stated look and the reference disagree, the stated look wins.'
+      ? 'The attached reference image shows the SAME character. Keep the same person — same face, same identity, recognisably them — and repaint them as the character impression below now describes, in the poster composition below. Where the impression and the reference disagree, the impression wins.'
       : 'Paint this character as the key visual of a poster.',
-    lock,
-    poster ? 'Framing: one single character only, full body or large three-quarter body, and no other people.' : '',
-    poster ? composition.camera.prompt : '',
-    poster ? composition.pose.prompt : '',
-    poster ? 'Backdrop: a poster-style graphic backdrop themed to the character\'s world and impression — bold flat colour-block shapes, graphic texture and thematic motifs. Never a plain empty background, and never a realistic photographed scene.' : '',
-    poster ? 'Light and effects: strong rim light tracing the silhouette in a colour drawn from the backdrop, plus one genre effect painted into the image itself — drifting mist, electric arcs, sword-light streaks, floating embers or neon glow — matched to the character\'s world.' : '',
+    'Framing: one single character only, full body or large three-quarter body, and no other people.',
+    composition.camera.prompt,
+    composition.pose.prompt,
+    'Backdrop: a poster-style graphic backdrop themed to the character\'s world and impression — bold flat colour-block shapes, graphic texture and thematic motifs. Never a plain empty background, and never a realistic photographed scene.',
+    'Light and effects: strong rim light tracing the silhouette in a colour drawn from the backdrop, plus one genre effect painted into the image itself — drifting mist, electric arcs, sword-light streaks, floating embers or neon glow — matched to the character\'s world.',
     'Face: the face sits in the UPPER part of the frame, fully visible, sharply detailed and clearly lit — never cropped by the frame edge, never turned fully away, never covered by hair, hands or effects.',
-    // The precedence rule for unpicked aspects (FINAL-FIX R-07): an
-    // appearance field the reader never chose is absent from this
-    // prompt — it must not be filled from any default look, and the
-    // reader's own written description (including the character name's
-    // story-config snapshot) is the only authority for it.
-    'Any aspect of the look NOT stated below — hair length or style, outfit, footwear, features — follows the character impression and any written description of this character, and nothing else: never substitute a generic default look for an unstated aspect.',
-    look ? `Appearance: ${look}.` : '',
-    faceNote ? `Facial detail: ${faceNote}.` : '',
-    description ? `Character impression (mood and personality to express, not scenery): ${description}` : '',
+    // The written description is the ONLY authority for the look
+    // (AVATAR-TRIM): no part vocabulary and no default look exists any
+    // more, so nothing may be filled in from anywhere else.
+    'Every aspect of the look — hair, outfit, footwear, features, build, species — follows the character impression below and nothing else: never substitute a generic default look for anything it does not mention.',
+    description ? `Character impression (the character's look, mood and personality to express, not scenery): ${description}` : '',
     'Style: polished 2.5D painterly illustration, gentle cel shading over soft rendering, bold poster colour design, cinematic contrast, consistent character-design quality.',
   ]
   return parts.filter(Boolean).join('\n')
@@ -170,10 +117,6 @@ function scrubProfile(profile) {
     ...profile,
     name: safeText(profile.name, AVATAR_NAME_MAX),
     description: safeText(profile.description, AVATAR_DESCRIPTION_MAX),
-    appearance: {
-      ...profile.appearance,
-      faceNote: safeText(profile.appearance.faceNote, AVATAR_FACE_NOTE_MAX),
-    },
   }
 }
 
@@ -189,7 +132,10 @@ function validatedProfile(body, existing) {
     id: existing?.id || profile.id || `avatar-${randomUUID().slice(0, 12)}`,
     name: scrubbed.name,
     description: scrubbed.description,
-    appearance: normalizeAppearance(scrubbed.appearance) || scrubbed.appearance,
+    // AVATAR-TRIM: a stored legacy `appearance` object is inert data —
+    // carried through untouched (never read, never re-submitted, no
+    // migration), and never taken from the request payload.
+    ...(existing?.appearance !== undefined ? { appearance: existing.appearance } : {}),
     portrait: existing?.portrait || { status: 'none', version: 0, hasPrevious: false },
     createdAt: existing?.createdAt || now,
     updatedAt: now,
@@ -286,7 +232,7 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
     return typeof candidate?.id === 'string' && candidate.id ? candidate.id : null
   }
 
-  async function produce(identity, collection, avatar, { lockPart = null, credit = false } = {}) {
+  async function produce(identity, collection, avatar, { credit = false } = {}) {
     const uid = identity.uid
     const commit = async (nextAvatar) => {
       const at = collection.avatars.findIndex((item) => item.id === nextAvatar.id)
@@ -309,7 +255,7 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
       : null
     const anchor = reference ? 'reference' : 'text'
     await commit({ ...avatar, portrait: { ...avatar.portrait, status: 'pending' } })
-    const prompt = buildAvatarPrompt(avatar, { hasReference: Boolean(reference), lockPart })
+    const prompt = buildAvatarPrompt(avatar, { hasReference: Boolean(reference) })
     const generate = await getGenerate()
     let produced
     try {
@@ -520,10 +466,7 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
           await persistCollection(identity.uid, collection)
         }
         if (!avatar) throw new ApiError(400, '先创建你的化身，再生成立绘。')
-        const lockPart = typeof body?.lockPart === 'string' && AVATAR_LOCK_PARTS[body.lockPart]
-          ? body.lockPart
-          : null
-        return produce(identity, collection, avatar, { lockPart, credit: options?.credit === true })
+        return produce(identity, collection, avatar, { credit: options?.credit === true })
       })
     },
     async fetchImage(identity, which = 'current', avatarId = null) {

@@ -185,7 +185,7 @@ export function bringAvatarIntoStory(story, avatar) {
     config: {
       ...story.config,
       avatarId: avatar.id,
-      avatarAppearance: avatarAppearanceText(avatar.appearance),
+      avatarAppearance: avatarAppearanceText(avatar),
     },
     updatedAt: new Date().toISOString(),
   }
@@ -456,7 +456,7 @@ export function enterDraftFor(detail, { avatar, identityId = '', startPointName 
     startPointName: startPointName || '',
     startPointHook: startPointHook || '',
     avatarId: avatar?.id || '',
-    avatarAppearance: avatar ? avatarAppearanceText(avatar.appearance) : '',
+    avatarAppearance: avatar ? avatarAppearanceText(avatar) : '',
     name: avatar?.name || '',
     trait: '冷静观察者',
     origin: '',
