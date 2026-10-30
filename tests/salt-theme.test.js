@@ -2,16 +2,22 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-/* SALT §51 guard tests. Three jobs:
+/* SALT guard tests (§51, updated to the §53 final values). Three jobs:
    1. The aurora palette (preservation order) keeps every pre-SALT
       value — the batch may only ADD name aliases that resolve to
       aurora's own tokens, never change a value.
-   2. Black/white carry the frozen salt material tokens, and every
+   2. Black/white carry the frozen salt material tokens (§53: SALT-2
+      ground/card lift + the SALT-3 frosted-glass group), and every
       information-bearing text grey clears the 4.5:1 contrast floor
       (ruling 2 / BH-02) on its ground AND on the card face.
-   3. The blur discipline (ruling 1): no backdrop blur anywhere in the
-      shell stylesheet exceeds 12px, and the spring easings carry no
-      overshoot (ruling 3: ζ ≥ 1 expressed in CSS). */
+   3. The blur discipline as amended by §53 (the user's frosted-glass
+      order supersedes §51's "list cards never blur" rule for the
+      black/white themes ONLY): literal backdrop blurs cap at the
+      card radius 22px, the named glass tiers stay pinned (cards 22 /
+      bars+dialogs 20 / chips 14 / nav 12), the legacy --blur-* tokens
+      stay ≤12, aurora stays frozen (its own values, separately pinned
+      above), and the spring easings carry no overshoot (ruling 3:
+      ζ ≥ 1 expressed in CSS). */
 
 const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 
@@ -57,27 +63,54 @@ test('SALT: aurora palette values are frozen; new names are aliases of its own t
   ]) assert.ok(aurora.includes(pin), `aurora alias ${pin}`)
 })
 
-test('SALT: black and white carry the frozen salt material tokens', () => {
+test('SALT: black and white carry the frozen salt material tokens (§53 final values)', () => {
+  // §53 (SALT-2/3 + FIX, user-reviewed 2026-10-30) supersedes the §51
+  // ground/card values and adds the frosted-glass token group; the
+  // pins below are the final values copied from DESIGN §53.
   const black = themeBlock('black')
   for (const pin of [
-    '--bg:#111214', '--bg-2:#17181b', '--ink:#eae9e4',
-    '--surface-card:rgba(28,30,35,.72)', '--surface-modal:rgba(24,26,31,.88)',
-    '--card-solid:#1c1e22', '--card-backdrop:none', '--float-solid:rgba(18,19,22,.94)',
+    '--bg:#101012', '--bg-2:#151619', '--ink:#eae9e4',
+    '--surface-card:rgba(32,34,39,.78)', '--surface-modal:rgba(24,26,31,.88)',
+    '--card-solid:#202227', '--card-backdrop:none', '--float-solid:rgba(18,19,22,.94)',
+    '--line:rgba(255,255,255,.10)', '--card-top-hi:rgba(255,255,255,.07)',
     '--blur-bar:blur(12px) saturate(1.2)', '--blur-card:blur(10px) saturate(1.2)',
     '--text-disabled:#454850',
+    // §53 frosted-glass group (black): tint floor .48 is the contrast
+    // red line; the nav tint lives here too (near-solid, ruling ②).
+    '--glass-card-bg:rgba(24,27,33,.48)', '--glass-card-blur:blur(22px) saturate(1.45)',
+    '--glass-card-line:rgba(255,255,255,.14)', '--glass-card-edge:rgba(255,255,255,.10)',
+    '--glass-card-shadow:0 18px 44px -12px rgba(0,0,0,.55)', '--glass-card-radius:26px',
+    '--glass-chip-bg:rgba(255,255,255,.10)', '--glass-chip-blur:blur(14px) saturate(1.35)',
+    '--glass-nav-bg:rgba(19,20,23,.98)', '--glass-modal-bg:rgba(24,27,33,.66)',
+    '--glass-panel-pad:rgba(10,12,16,.25)',
+    '--detail-amb-opacity:.35', 'blur(48px) saturate(1.3) brightness(.82)',
     // Brand identity is NOT part of this batch (ruling 4): the accent
     // family keeps its pre-SALT values in both themes.
     '--action:#6ee7ff', '--cyan:#6ee7ff',
   ]) assert.ok(black.includes(pin), `black ${pin}`)
   const white = themeBlock('white')
   for (const pin of [
-    '--bg:#f6f5f2', '--bg-2:#efece6', '--ink:#1f2124',
-    '--surface-card:rgba(255,255,255,.76)', '--surface-modal:rgba(250,249,246,.92)',
-    '--card-solid:#faf9f6', '--card-backdrop:none', '--float-solid:rgba(248,249,251,.95)',
+    '--bg:#edeae3', '--bg-2:#e6e2d9', '--ink:#1f2124',
+    '--surface-card:rgba(255,255,255,.82)', '--surface-modal:rgba(250,249,246,.92)',
+    '--card-solid:#ffffff', '--card-backdrop:none', '--float-solid:rgba(248,249,251,.95)',
+    '--line:rgba(24,25,27,.09)', '--card-top-hi:rgba(255,255,255,.9)',
     '--blur-bar:blur(12px) saturate(1.2)', '--blur-card:blur(10px) saturate(1.2)',
     '--text-disabled:#b4b8bf',
+    // §53 frosted-glass group (white): the glass edge is a BRIGHT edge
+    // (line .70 white) with a faint dark outer ring; tint floor .50.
+    '--glass-card-bg:rgba(255,255,255,.50)', '--glass-card-blur:blur(22px) saturate(1.45)',
+    '--glass-card-line:rgba(255,255,255,.70)', '--glass-card-edge:rgba(24,25,27,.07)',
+    '--glass-card-shadow:0 18px 44px -16px rgba(30,27,20,.18)', '--glass-card-radius:26px',
+    '--glass-chip-bg:rgba(255,255,255,.55)', '--glass-chip-blur:blur(14px) saturate(1.35)',
+    '--glass-nav-bg:rgba(252,252,249,.99)', '--glass-modal-bg:rgba(255,255,255,.68)',
+    '--glass-panel-pad:rgba(255,255,255,.25)',
+    '--detail-amb-opacity:.20', 'blur(48px) saturate(1.12) brightness(1.08)',
     '--action:#0891b2',
   ]) assert.ok(white.includes(pin), `white ${pin}`)
+  // §53 detail-scope overrides (ruling ③): on the detail root the
+  // glass tokens go denser + one step brighter-edged.
+  assert.ok(css.includes("html[data-shell-theme='black'] .page-plaza:has(> .detail-ambience){--glass-card-bg:rgba(26,29,35,.60);--glass-card-line:rgba(255,255,255,.20)}"), 'detail scope black denser glass')
+  assert.ok(css.includes("html[data-shell-theme='white'] .page-plaza:has(> .detail-ambience){--glass-card-bg:rgba(255,255,255,.72);--glass-card-edge:rgba(24,25,27,.12)}"), 'detail scope white denser glass')
 })
 
 test('SALT: information greys clear 4.5:1 on ground and card face in black and white', () => {
@@ -93,21 +126,50 @@ test('SALT: information greys clear 4.5:1 on ground and card face in black and w
   }
 })
 
-test('SALT: no shell backdrop blur exceeds 12px; aurora bar keeps its own 16px', () => {
-  // Aurora's chrome blur (16px) predates the batch and is frozen; it
-  // reaches components only through aurora's own --blur-bar alias.
+test('SALT: blur discipline per §53 — caps at the card tier, named tiers pinned, aurora frozen', () => {
+  // Aurora's chrome blur (16px bar) predates the batch and is frozen;
+  // it reaches components only through aurora's own --blur-bar alias,
+  // so the aurora block is excluded from the cap scan (its values are
+  // pinned verbatim by the aurora test above — never weakened).
   const shellCss = css.replace(themeBlock('aurora'), '')
   for (const match of shellCss.matchAll(/backdrop-filter:blur\((\d+)px\)/g)) {
-    assert.ok(Number(match[1]) <= 12, `literal backdrop blur ${match[1]}px within cap`)
+    assert.ok(Number(match[1]) <= 22, `literal backdrop blur ${match[1]}px within the §53 card-tier cap`)
   }
   for (const id of ['black', 'white']) {
     const block = themeBlock(id)
+    // The legacy §51 blur tokens keep their restrained radii.
     for (const name of ['--blur-bar', '--blur-card', '--blur-modal', '--blur-panel']) {
       const value = tokenValue(block, name)
       const radius = Number(value.match(/blur\((\d+)px\)/)[1])
-      assert.ok(radius <= 12, `${id} ${name} radius ${radius}px within cap`)
+      assert.ok(radius <= 12, `${id} ${name} radius ${radius}px within the legacy cap`)
     }
+    // The §53 glass tiers are pinned, not capped: cards 22, chips 14.
+    assert.ok(tokenValue(block, '--glass-card-blur').startsWith('blur(22px)'), `${id} card glass tier is 22px`)
+    assert.ok(tokenValue(block, '--glass-chip-blur').startsWith('blur(14px)'), `${id} chip glass tier is 14px`)
   }
+  // Bars and dialogs ride the 20px tier (topbar background alpha stays
+  // on the BH-10 line; only the blur rose).
+  assert.ok(css.includes('backdrop-filter:blur(20px) saturate(1.45)'), 'topbar/dialog glass tier is 20px')
+})
+
+test('SALT §53 rulings: profile exempt from glass, bottom nav near-solid', () => {
+  // Ruling ① (user, 2026-10-30): the profile page keeps the pre-glass
+  // (00042) presentation — the .page-profile scope neutralises the
+  // hero-id/stats glass plates and the store-card glass, and drops
+  // the SALT-3 banner mask.
+  assert.ok(css.includes(".page-profile :is(.profile-hero-id,.profile-stats){background:none;backdrop-filter:none"), 'profile glass plates are neutralised in scope')
+  assert.ok(css.includes('.page-profile .profile-store-card{background:var(--profile-card,var(--profile-panel))'), 'profile store card back on the 00042 surface')
+  assert.ok(css.includes('.page-profile .profile-hero-bg'), 'profile banner mask override exists')
+  // Ruling ②: nothing behind the floating capsule may stay legible —
+  // the nav tint alpha is pinned at .98 (black) / .99 (white). The
+  // spec's nominal .95/.97 still leaked heading strokes in the check
+  // shots, so the floor is the measured value, not the nominal one.
+  const alphaOf = (id) => Number(tokenValue(themeBlock(id), '--glass-nav-bg').match(/,([\d.]+)\)$/)[1])
+  assert.ok(alphaOf('black') >= 0.98, `black nav alpha ${alphaOf('black')} >= .98`)
+  assert.ok(alphaOf('white') >= 0.99, `white nav alpha ${alphaOf('white')} >= .99`)
+  // The ambient layer the glass refracts exists for black/white only.
+  assert.ok(css.includes("html[data-shell-theme='black'] .salt-ambient"), 'ambient layer renders for black')
+  assert.ok(css.includes("html[data-shell-theme='white'] .salt-ambient"), 'ambient layer renders for white')
 })
 
 test('CONTRAST-FIX: page-level titles are pinned to the L1 ink, clearing 7:1 in black and white', () => {

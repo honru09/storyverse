@@ -46,10 +46,10 @@ test('three shell themes: black default, white, and aurora preserved value-for-v
   assert.ok(themeBlock('black').includes('--topbar-bg:rgba(17,18,20,.88)'), 'black topbar stays unread-through (BH-10 under SALT §51)')
   assert.ok(themeBlock('white').includes('--topbar-bg:rgba(246,245,242,.90)'), 'white topbar stays unread-through (BH-10 under SALT §51)')
   const black = themeBlock('black')
-  assert.ok(black.includes('--bg:#111214'))
+  assert.ok(black.includes('--bg:#101012'), 'black ground is the §53 (SALT-2) value')
   assert.ok(black.includes('color-scheme:dark'))
   const white = themeBlock('white')
-  assert.ok(white.includes('--bg:#f6f5f2'))
+  assert.ok(white.includes('--bg:#edeae3'), 'white ground is the §53 (SALT-2) value')
   assert.ok(white.includes('--ink:#1f2124'))
   assert.ok(white.includes('color-scheme:light'))
   // Every theme defines the same core token names (one layout system).

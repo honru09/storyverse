@@ -8181,6 +8181,16 @@ function ShareProfileSheet({ text, isSelf, onClose, onCopied, onCopyFailed }) {
   );
 }
 
+// The designed default banner ships two widths; small viewports take
+// the 800w file (66KB) instead of the 1600w one (227KB) — the hero is
+// at most ~430 CSS px wide, so the smaller file looks identical and
+// the first paint no longer flashes the pale placeholder while the
+// big file loads. Uploaded banners (API URLs) are never rewritten.
+const responsiveDefaultBannerUrl = (url) => (url === "/art/banner-profile-1600.webp"
+  && typeof window !== "undefined" && window.innerWidth <= 640
+  ? "/art/banner-profile-800.webp"
+  : url);
+
 function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onOpenDetail, onOpenProfile, onClose = null, ownStories = null, onOpenStory = null, shellTheme, onShellThemeChange, onOpenLibrary, onOpenHelp }) {
   // Two forms, one component (PROFILE-FIX §33): the WINDOW form (a
   // sheet over the current page, onClose set) for someone else's
@@ -8554,7 +8564,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
             banner — an upload or the designed default shows SHARP;
             only the portrait fallback keeps the blurred ambience. */}
         {profile.banner?.kind === "upload" || profile.banner?.kind === "default" ? (
-          <span className="profile-hero-bg is-clear" style={{ backgroundImage: `url("${profile.banner.url}")` }} aria-hidden="true" />
+          <span className="profile-hero-bg is-clear" style={{ backgroundImage: `url("${responsiveDefaultBannerUrl(profile.banner.url)}")` }} aria-hidden="true" />
         ) : mainAvatar?.hasPortrait && mainAvatar?.portraitUrl ? (
           <span className="profile-hero-bg" style={{ backgroundImage: `url("${mainAvatar.portraitUrl}")` }} aria-hidden="true" />
         ) : null}
