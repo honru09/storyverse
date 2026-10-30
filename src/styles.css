@@ -391,7 +391,7 @@ html.is-lite-gpu .plaza-panel,html.is-lite-gpu .plaza-publish-card,html.is-lite-
 .wood-shelf::after{right:0;border-radius:0 10px 10px 0;box-shadow:inset 3px 0 5px rgba(0,0,0,.5)}
 /* DEVICE-FIX REQ-20: the action row keeps clear air above the plank
    (padding-bottom 8px) — a button's bottom edge never meets the plank. */
-.wood-shelf-books{display:flex;align-items:flex-end;gap:14px;padding:0 6px 8px}
+.wood-shelf-books{display:flex;align-items:flex-end;gap:var(--shelf-gap,14px);padding:0 6px 8px}
 .wood-book{position:relative;flex:1 1 0;min-width:0;max-width:190px;padding:0;border:0;background:none;color:var(--ink);cursor:pointer;transition:transform 160ms var(--ease-out)}
 .wood-book::after{content:"";position:absolute;left:5%;right:1%;bottom:-6px;height:11px;border-radius:50%;background:radial-gradient(50% 100% at 50% 0,rgba(0,0,0,.55),transparent 72%);z-index:-1}
 .wood-book.is-pulled{transform:translateY(-14px) scale(1.04);z-index:3}
@@ -724,7 +724,7 @@ select{appearance:auto}
    flex-grown: a lone book used to stretch to the 190px cap (≈2× the
    natural slot, 253px tall) and read as a giant tome. Short rows now
    leave the rest of the plank empty. */
-.wood-book-cell{position:relative;flex:0 0 auto;width:calc((100% - (var(--shelf-cap,3) - 1)*14px)/var(--shelf-cap,3));max-width:190px;display:flex;flex-direction:column}
+.wood-book-cell{position:relative;flex:0 0 auto;width:calc((100% - (var(--shelf-cap,3) - 1)*var(--shelf-gap,14px))/var(--shelf-cap,3));max-width:190px;display:flex;flex-direction:column}
 .wood-book-cell .wood-book{flex:none;width:100%;max-width:none}
 /* BH-14: fuse/delete are a real in-flow action row under the cover, not
    absolute pills floating over the face meta line (they intersected the
@@ -882,7 +882,7 @@ input[type="checkbox"]{accent-color:var(--cyan)}
   .merge-action{align-self:end;margin-top:0}
   .page-reader{padding-top:18px}.reader-layout{margin-top:48px}.reader-article{font-size:18px}
   .opening-art{width:260px}
-  .wood-shelf-books{gap:18px}
+  .wood-shelf-books{--shelf-gap:18px}
   .home-heading{margin-bottom:24px}
   .protagonist-form{padding:26px}
   .template-brick-copy{padding:11px 12px}
@@ -912,7 +912,7 @@ input[type="checkbox"]{accent-color:var(--cyan)}
   .preview-facts dt{color:var(--dim)}
   .preview-facts dd{margin:0;overflow-wrap:anywhere}
   .book-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
-  .wood-shelf-books{gap:22px}
+  .wood-shelf-books{--shelf-gap:22px}
 }
 @media(max-width:699px){
   .merge-controls{display:grid;gap:8px}
@@ -2112,7 +2112,8 @@ button.settings-row{cursor:pointer}
 .plaza-post-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 .plaza-post-person{display:flex;align-items:center;gap:11px;border:0;background:transparent;color:var(--ink);padding:0;text-align:left;cursor:pointer;min-width:0}
 .plaza-post-person-copy{display:grid;gap:1px;min-width:0}
-.plaza-post-person-name{display:flex;align-items:center;gap:7px;font-size:15px}
+.plaza-post-person-name{display:flex;align-items:center;gap:7px;font-size:15px;min-width:0}
+.plaza-post-person-name strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .plaza-post-person-copy small{color:var(--dim-2);font-size:12.5px}
 .plaza-post-menu-wrap{position:relative;flex-shrink:0}
 .plaza-post-menu-button{border:0;background:transparent;color:var(--dim);padding:6px;cursor:pointer;border-radius:999px}

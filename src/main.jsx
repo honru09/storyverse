@@ -1330,14 +1330,21 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
   const startCreate = () => { setEditingId(""); seedForm(null); setNotice(""); };
 
   // First seed once the collection lands: edit the main avatar, or open
-  // the creation form when there is none yet.
+  // the creation form when there is none yet. The seed must wait for
+  // sign-in: on a cold deep link the guest refresh marks loaded=true
+  // with an empty list, and seeding then would strand a signed-in
+  // owner on a blank creation form (the guard below would never reseed).
   useEffect(() => {
+    if (!signedIn) {
+      if (editingId !== undefined) { setEditingId(undefined); setForm(null); }
+      return;
+    }
     if (!avatarState.loaded || editingId !== undefined) return;
     const main = mainAvatarOf(avatars, mainId);
     if (main) { setEditingId(main.id); seedForm(main); }
     else { setEditingId(""); seedForm(null); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [avatarState.loaded, editingId]);
+  }, [avatarState.loaded, editingId, signedIn]);
 
   if (!signedIn) {
     return (
@@ -3842,11 +3849,24 @@ function InterventionSheet({ story, readerIndex, onClose, onSubmit }) {
   const queued = target === null ? [] : queuedInterventionsFor(story, target);
   const targetWritten = target !== null && target < (story.chapters?.length || 0);
   const submit = () => {
-    if (chipId) {
+    const trimmed = text.trim();
+    if (chipId && !trimmed) {
       onSubmit({ kind: "chip", chipId });
       return;
     }
-    const trimmed = text.trim();
+    if (chipId) {
+      // A chip used to silently discard typed text at submit time. Merge
+      // instead: the reader's own words lead, the chip direction follows.
+      const chip = INTERVENTION_CHIPS.find((item) => item.id === chipId);
+      const combined = chip?.text ? `${trimmed}${trimmed.endsWith("。") ? "" : "。"}${chip.text}` : trimmed;
+      const violation = findSettingViolation(combined);
+      if (violation) {
+        setError(violation);
+        return;
+      }
+      onSubmit({ kind: "text", text: combined });
+      return;
+    }
     const violation = findSettingViolation(trimmed);
     if (violation) {
       setError(violation);
@@ -3913,6 +3933,11 @@ function InterventionSheet({ story, readerIndex, onClose, onSubmit }) {
           <p className="intervention-hint">
             写给这个世界，而不是主角：一件会发生的事——一场雨、一个人的到来、一次运气的转向。
           </p>
+          {chipId && text.trim() && (
+            <p className="intervention-hint">
+              提交时，你写的文字会和这个方向一并送出。
+            </p>
+          )}
           {queued.length > 0 && (
             <div className="intervention-queued">
               <b>已排队 · 将合并生效</b>
@@ -4558,6 +4583,10 @@ function Reader({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [intervening, setIntervening] = useState(false);
   const [interveneSettled, setInterveneSettled] = useState(false);
+  // Cancelling the overlay only releases the UI trap: the revision pass
+  // keeps running and its landing (or the surviving queue, on failure)
+  // still applies, so post-cancel settle/error updates are suppressed.
+  const interveneCancelledRef = useRef(false);
   const [interveneNote, setInterveneNote] = useState("");
   const [rerollConfirm, setRerollConfirm] = useState(false);
   const [rerolling, setRerolling] = useState(false);
@@ -4860,15 +4889,16 @@ function Reader({
     }
     setIntervening(true);
     setInterveneSettled(false);
+    interveneCancelledRef.current = false;
     if (story.engine === "gemini" && onReviseChapter) {
       try {
         await onReviseChapter(story.id, target, queuedStory);
-        setInterveneSettled(true);
+        if (!interveneCancelledRef.current) setInterveneSettled(true);
       } catch (failure) {
         // The queue was landed before the pass ran, so the nudge survives
         // the failure and folds into the chapter's next generation.
         setIntervening(false);
-        setError(failure.message || "重写没能完成，介入还排在队列里。");
+        if (!interveneCancelledRef.current) setError(failure.message || "重写没能完成，介入还排在队列里。");
       }
       return;
     }
@@ -5520,6 +5550,7 @@ function Reader({
         <InterventionOverlay
           settled={interveneSettled}
           onDone={() => setIntervening(false)}
+          onCancel={() => { interveneCancelledRef.current = true; setIntervening(false); }}
         />
       )}
       {rerolling && (
@@ -5944,6 +5975,7 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
   const [content, setContent] = useState("");
   const [book, setBook] = useState(initialBook);
   const [books, setBooks] = useState(null);
+  const [booksFailed, setBooksFailed] = useState(false);
   const [bookQuery, setBookQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -5954,8 +5986,8 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
     if (mode !== "share" || books !== null) return undefined;
     let live = true;
     fetchStoreBooks({ limit: 60 })
-      .then((result) => { if (live) setBooks(result.books); })
-      .catch(() => { if (live) setBooks([]); });
+      .then((result) => { if (live) { setBooks(result.books); setBooksFailed(false); } })
+      .catch(() => { if (live) { setBooks([]); setBooksFailed(true); } });
     return () => { live = false; };
   }, [mode, books]);
 
@@ -6030,6 +6062,8 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
             </div>
             {books === null ? (
               <p className="plaza-note">正在打开书城…</p>
+            ) : booksFailed ? (
+              <p className="plaza-note">书城这次没能打开，你的书还在，不用担心。<button type="button" className="small-link" onClick={() => { setBooksFailed(false); setBooks(null); }}>再试一次</button></p>
             ) : pickable.length === 0 ? (
               <p className="plaza-note">书城里还没有能分享的书。</p>
             ) : (
@@ -6229,6 +6263,22 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
   const [likeCount, setLikeCount] = useState(post.likeCount || 0);
   const [commentCount, setCommentCount] = useState(post.commentCount || 0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuWrapRef = useRef(null);
+  // A post menu that never closes on outside tap / Esc can stack up
+  // across posts, so close it on either.
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onPointerDown = (event) => {
+      if (menuWrapRef.current && !menuWrapRef.current.contains(event.target)) setMenuOpen(false);
+    };
+    const onKeyDown = (event) => { if (event.key === "Escape") setMenuOpen(false); };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menuOpen]);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [threadOpen, setThreadOpen] = useState(false);
   const [note, setNote] = useState("");
@@ -6237,6 +6287,7 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
   const toggleLike = async () => {
     if (!account.user) { onOpenAccount(); return; }
     const wasLiked = liked;
+    const wasCount = likeCount;
     setLiked(!wasLiked);
     setLikeCount((count) => Math.max(0, count + (wasLiked ? -1 : 1)));
     try {
@@ -6245,7 +6296,7 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
       setLikeCount(result.likeCount);
     } catch (failure) {
       setLiked(wasLiked);
-      setLikeCount(post.likeCount || 0);
+      setLikeCount(wasCount);
       if (failure?.code === "auth-required") onOpenAccount();
     }
   };
@@ -6304,7 +6355,7 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
             </small>
           </span>
         </button>
-        <div className="plaza-post-menu-wrap">
+        <div className="plaza-post-menu-wrap" ref={menuWrapRef}>
           <button
             type="button"
             className="plaza-post-menu-button"
@@ -6412,15 +6463,31 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
     setOnlineCount(result.onlineCount);
   }, [getToken]);
 
+  // The 60s tick must never silently drop pages the reader already
+  // flipped to: once loadMore has run, the tick only merges the fresh
+  // first page in front (dedupe by id) and leaves the cursor alone.
+  const pagedRef = useRef(false);
+  const refreshFeed = useCallback(async () => {
+    const result = await fetchPlazaPosts({ getAccessToken: getToken, limit: 20 });
+    setOnlineCount(result.onlineCount);
+    if (pagedRef.current) {
+      const freshIds = new Set((result.posts || []).map((post) => post.id));
+      setPosts((current) => [...(result.posts || []), ...(current || []).filter((post) => !freshIds.has(post.id))]);
+    } else {
+      setPosts(result.posts);
+      setNextCursor(result.nextCursor);
+    }
+  }, [getToken]);
+
   useEffect(() => {
     let live = true;
     setError("");
     load().catch(() => { if (live) { setPosts([]); setError("广场暂时没能打开，请稍后再试。"); } });
     // The presence count must not go stale while the plaza sits open:
     // refetch on a slow tick (which also freshens the list itself).
-    const timer = window.setInterval(() => { void load().catch(() => {}); }, 60_000);
+    const timer = window.setInterval(() => { void refreshFeed().catch(() => {}); }, 60_000);
     return () => { live = false; window.clearInterval(timer); };
-  }, [load, retry]);
+  }, [load, refreshFeed, retry]);
 
   // A post permalink (#/plaza/post-<id>) pins its post above the
   // stream: the post itself, fetched on its own, so the link works
@@ -6455,7 +6522,11 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
     setLoadingMore(true);
     try {
       const result = await fetchPlazaPosts({ getAccessToken: getToken, cursor: nextCursor, limit: 20 });
-      setPosts((current) => [...(current || []), ...result.posts]);
+      setPosts((current) => {
+        const seen = new Set((current || []).map((post) => post.id));
+        return [...(current || []), ...(result.posts || []).filter((post) => !seen.has(post.id))];
+      });
+      pagedRef.current = true;
       setNextCursor(result.nextCursor);
     } catch { /* the button stays; a tap retries */ } finally { setLoadingMore(false); }
   };
@@ -7838,9 +7909,17 @@ function FriendsPanel({ authClient, onOpenProfile }) {
       } else if (action === "accept") {
         await respondFriendRequest({ uid: person.uid, accept: true, getAccessToken: getToken });
         setNote(`你和 ${person.displayName} 已经是好友了。`);
+        setSearchResult((current) => current ? {
+          ...current,
+          people: current.people.map((row) => (row.uid === person.uid ? { ...row, friendState: "friends" } : row)),
+        } : current);
       } else if (action === "decline") {
         await respondFriendRequest({ uid: person.uid, accept: false, getAccessToken: getToken });
         setNote("已婉拒这条申请。");
+        setSearchResult((current) => current ? {
+          ...current,
+          people: current.people.map((row) => (row.uid === person.uid ? { ...row, friendState: "none" } : row)),
+        } : current);
       } else if (action === "cancel") {
         await cancelFriendRequest({ uid: person.uid, getAccessToken: getToken });
         setNote("申请已取消。");
