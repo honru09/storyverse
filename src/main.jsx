@@ -1791,11 +1791,11 @@ function GenerationMode({ provider, value, onChange, disabled }) {
   return <div className="generation-mode">
     <div className="generation-options" role="group" aria-label="故事方式">
       <button disabled={disabled} aria-pressed={value === "local"} onClick={() => onChange("local")}>预设体验</button>
-      <button disabled={disabled || !provider.configured} aria-pressed={value === "gemini"} onClick={() => onChange("gemini")}>Gemini 创作</button>
+      <button disabled={disabled || !provider.configured} aria-pressed={value === "gemini"} onClick={() => onChange("gemini")}>在线塑造</button>
     </div>
     <p className="experience-note">{value === "gemini"
-      ? "设定与剧情会发送给 Gemini。请使用昵称或虚构资料；每次续写会使用服务端额度。"
-      : provider.configured ? "无需等待，按所选篇幅体验预设故事。" : provider.reason === "generation-disabled" ? "在线创作暂未开放，可先体验预设故事。" : "预设剧情体验 · Gemini 尚未连接"}</p>
+      ? "设定与剧情会用于在线塑造。请使用昵称或虚构资料；每次续写会使用服务端额度。"
+      : provider.configured ? "无需等待，按所选篇幅体验预设故事。" : provider.reason === "generation-disabled" ? "在线创作暂未开放，可先体验预设故事。" : "预设剧情体验 · 在线塑造暂不可用"}</p>
   </div>;
 }
 
@@ -2584,7 +2584,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                 <Icon name="pencil" size={20} />
                 <span className="forge-manual-copy">
                   <strong>自己写一本</strong>
-                  <small>不用 AI——书名、简介和每一章都由你亲手写，草稿存在云端书库，换设备接着写。</small>
+                  <small>纯手写——书名、简介和每一章都由你亲手写，草稿存在云端书库，换设备接着写。</small>
                 </span>
                 <Icon name="chevron" size={16} />
               </button>
@@ -3038,7 +3038,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                   </div>
                   {draft.immersive && (
                     <div className="life-fields">
-                      <p className="field-hint">这是你现实里的底子，会揉进主角的来历里——和前面选的虚构身份并不冲突。建议用昵称或虚构内容。选择 Gemini 时，设定会发送给模型服务。</p>
+                      <p className="field-hint">这是你现实里的底子，会揉进主角的来历里——和前面选的虚构身份并不冲突。建议用昵称或虚构内容；在线塑造时，设定会发送到织界处理。</p>
                       <label className="field-label">
                         成长的地方（选填）
                         <input
@@ -10363,11 +10363,11 @@ function HelpContent() {
   const items = [
     {
       q: "织界是什么？怎么开始？",
-      a: "织界是和 AI 一起写的互动小说：选世界、定出生点、捏一个化身，就能开一本只属于你的书。先去「造世」开第一本；读到中途想改走向，用阅读器里的「介入」给世界线添一把力——已经发生的不会变，下一章会绕着你的介入走。",
+      a: "织界是一部由你亲手塑造走向的互动小说：选世界、定出生点、捏一个化身，就能开一本只属于你的书。先去「造世」开第一本；读到中途想改走向，用阅读器里的「介入」给世界线添一把力——已经发生的不会变，下一章会绕着你的介入走。",
     },
     {
       q: "生成要花什么？额度怎么算？",
-      a: "生成按 token 计量，汇总在你的账号里（账号页「我的消耗」能看到累计）。全站每天有一个总上限（按 UTC 日计算），到达上限后当天的新生成会暂停，第二天自动恢复。读已经生成的章节、介入已排队的内容都不额外计费。",
+      a: "塑造按量计量，汇总在你的账号里（账号页「我的消耗」能看到累计）。全站每天有一个总上限（按 UTC 日计算），到达上限后当天的新塑造会暂停，第二天自动恢复。读已经写好的章节、介入已排队的内容都不额外计费。",
     },
     {
       q: "我的故事存在哪里？换设备会丢吗？",

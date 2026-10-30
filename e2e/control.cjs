@@ -156,7 +156,7 @@ async function savedChapters(page, count) {
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.getByLabel('主角昵称（选填）').fill('控制测试旅人');
     await page.getByRole('button', { name: '继续', exact: true }).click();
-    const mode = page.getByRole('group', { name: '故事方式' }).getByRole('button', { name: 'Gemini 创作' });
+    const mode = page.getByRole('group', { name: '故事方式' }).getByRole('button', { name: '在线塑造' });
     await mode.waitFor();
     assert.equal(await mode.getAttribute('aria-pressed'), 'true');
     await page.getByRole('button', { name: '进入第一章', exact: true }).click();

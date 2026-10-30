@@ -877,8 +877,8 @@ export function createGeminiGenerator({
           })
         } catch (error) {
           const status = Number(error?.status || error?.code)
-          if (status === 429 || status === 8) throw retryableError(429, 'Gemini 当前请求较多或额度不足，请稍后重试。')
-          if ([400, 401, 403, 404, 7, 16].includes(status)) throw new ApiError(503, 'Vertex AI 暂时不可用，请检查项目、模型与服务账号权限。')
+          if (status === 429 || status === 8) throw retryableError(429, '世界线正忙，请稍后重试。')
+          if ([400, 401, 403, 404, 7, 16].includes(status)) throw new ApiError(503, '塑造服务暂时不可用，请稍后再试。')
           throw error
         }
         if (payload?.blocked || payload?.finishReason === 'SAFETY') {
@@ -919,9 +919,9 @@ export function createGeminiGenerator({
       if (!response.ok) {
         // Upstream bodies may contain prompts or credential details. Never relay them.
         await response.body?.cancel?.()
-        if (response.status === 429) throw retryableError(429, 'Gemini 当前请求较多或额度不足，请稍后重试。')
-        if ([400, 401, 403, 404].includes(response.status)) throw new ApiError(503, 'Gemini 暂时不可用，请检查服务端模型与密钥配置。')
-        throw retryableError(502, 'Gemini 暂时没有响应，请稍后重试。')
+        if (response.status === 429) throw retryableError(429, '世界线正忙，请稍后重试。')
+        if ([400, 401, 403, 404].includes(response.status)) throw new ApiError(503, '塑造服务暂时不可用，请稍后再试。')
+        throw retryableError(502, '世界线暂时没有回应，请稍后重试。')
       }
       let payload
       try { payload = JSON.parse(await readResponse(response)) } catch (error) {
@@ -964,7 +964,7 @@ export function createGeminiGenerator({
           stack: String(error?.stack || ''),
         })}\n`)
       } catch { /* logging is best-effort */ }
-      throw retryableError(502, '连接 Gemini 失败，请检查网络后重试。')
+      throw retryableError(502, '暂时连不上世界线，请检查网络后重试。')
     } finally { clearTimeout(timeout) }
   }
 
@@ -972,7 +972,7 @@ export function createGeminiGenerator({
     status,
     async generate(request) {
       const prepared = validatedRequest(request)
-      if (!status().configured) throw new ApiError(503, '尚未连接 Gemini，请先在服务端配置密钥。')
+      if (!status().configured) throw new ApiError(503, '塑造服务尚未就绪，请稍后再试。')
       // Settle an unnamed protagonist before the opening is written
       // (FINAL-FIX R-03): the prepared copy carries the derived name,
       // so the context, the beat plan and the prose all speak of the

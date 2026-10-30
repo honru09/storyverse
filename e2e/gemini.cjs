@@ -65,7 +65,7 @@ async function prepareOpening(page, name, genre = '奇幻') {
   await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.getByLabel('主角昵称（选填）').fill(name);
   await page.getByRole('button', { name: '继续', exact: true }).click();
-  const mode = page.getByRole('group', { name: '故事方式' }).getByRole('button', { name: 'Gemini 创作' });
+  const mode = page.getByRole('group', { name: '故事方式' }).getByRole('button', { name: '在线塑造' });
   await mode.waitFor();
   assert.equal(await mode.getAttribute('aria-pressed'), 'true');
 }
