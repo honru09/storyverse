@@ -10709,6 +10709,11 @@ function App() {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
     navigator.serviceWorker.register("/sw.js").catch(() => {});
+    // LOCAL-CACHE (REQ-50): ask the browser to keep the shell/media
+    // caches out of best-effort eviction. Persistence is a request,
+    // never a guarantee — iOS may still reclaim the storage under
+    // pressure, and the app must (and does) stay correct when it does.
+    try { void navigator.storage?.persist?.().catch(() => {}); } catch { /* older engines */ }
   }, []);
   const { library, warning, unsaved } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const setLibrary = store.update;
