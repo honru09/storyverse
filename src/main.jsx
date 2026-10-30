@@ -150,6 +150,7 @@ import ReadingPreferences from "./components/ReadingPreferences.jsx";
 import { createReadingPreferencesStore, getReaderAppearance } from "./reading-preferences.js";
 import { chapterLocationKey, READING_LOCATION_KEY, readingStateWithoutStory } from "./reading-location.js";
 import { useReaderExperience } from "./useReaderExperience.js";
+import ReaderPager from "./components/ReaderPager.jsx";
 import ReadingTools from "./components/ReadingTools.jsx";
 import "./reader-experience.css";
 import {
@@ -5037,10 +5038,20 @@ function Reader({
   const handleReaderCancel = () => { reading.dragCancel(); forgetTap(); };
   const turnScreen = (direction) => {
     setChromeOpen(false);
+    if (preferences.settings.readingMode === "page") {
+      // READER-FIX2 (REQ-46): in paged mode the window never scrolls,
+      // so chapter edges are page edges — the pager's own page/total
+      // decides whether a tap turns a page or crosses the chapter.
+      const info = reading.pageInfo();
+      if (!info) return;
+      if (direction > 0 && info.page >= info.total - 1) { chapterTurn(1); return; }
+      if (direction < 0 && info.page <= 0) { if (index > 0) chapterTurn(-1); return; }
+      reading.pageBy(direction);
+      return;
+    }
     const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
     if (direction > 0 && window.scrollY >= maxY - 2) { chapterTurn(1); return; }
     if (direction < 0 && window.scrollY <= 2) { if (index > 0) chapterTurn(-1); return; }
-    if (preferences.settings.readingMode === "page") { reading.pageBy(direction); return; }
     const step = Math.max(160, window.innerHeight - 56);
     window.scrollTo({ top: Math.min(maxY, Math.max(0, window.scrollY + direction * step)), behavior: "smooth" });
   };
@@ -5098,6 +5109,211 @@ function Reader({
     } else setFrontStage(null);
   };
 
+  // READER-FIX2 (REQ-46): the chapter-end matter renders after the
+  // prose in scroll mode and as the pager's final page in paged mode —
+  // one definition, two hosts.
+  const endMatter = (
+    <>
+  {chapter.interventions?.length > 0 && (
+    <div className="intervention-marker" role="note">
+      <Icon name="ripple" size={16} />
+      <div>
+        <b>命运在这一章伸过手</b>
+        {chapter.interventions.map((entry, entryIndex) => (
+          <p key={entryIndex}>{entry.text}</p>
+        ))}
+      </div>
+    </div>
+  )}
+  {interveneNote && (
+    <p className="intervention-note" role="status">
+      <Icon name="ripple" size={14} />
+      {interveneNote}
+    </p>
+  )}
+  {isFrontier && (
+    <div className="frontier-actions">
+      <p className="frontier-note">
+        这是你正在读的最新章节——现在还能亲手调度这一章。翻开下一章，这一章就此定稿。
+      </p>
+      {chapter.degraded && (
+        <p className="frontier-degraded">本章由备用通道生成</p>
+      )}
+      {rerollConfirm ? (
+        <div className="frontier-buttons">
+          <Button variant="secondary" onClick={submitReroll}>
+            确认换掉这一版
+          </Button>
+          <button
+            type="button"
+            className="reader-directory-button"
+            onClick={() => setRerollConfirm(false)}
+          >
+            再想想
+          </button>
+          <span className="frontier-warn">换掉的版本不会保留，也没有历史版本可以找回。</span>
+        </div>
+      ) : (
+        <div className="frontier-buttons">
+          <button
+            type="button"
+            className="reader-directory-button"
+            onClick={() => setRerollConfirm(true)}
+          >
+            <Icon name="reroll" size={15} />
+            换一版
+          </button>
+          <button
+            type="button"
+            className="reader-directory-button"
+            onClick={() => setProseOpen(true)}
+            aria-haspopup="dialog"
+          >
+            <Icon name="pencil" size={15} />
+            编辑正文
+          </button>
+        </div>
+      )}
+    </div>
+  )}
+  <div className="reader-starmap">
+    <div className="reader-starmap-head">
+      <b>剧情星图</b>
+      <span>{serializing ? `连载中 · 第 ${index + 1} 章` : `第 ${index + 1} / ${total} 章`}</span>
+    </div>
+    <StoryMapMini
+      total={displayTotal}
+      generated={story.chapters?.length || 0}
+      current={index}
+      state={readOnly ? null : generationState({ total: displayTotal, generated: story.chapters?.length || 0, current: index, engine: story.engine, preparing, complete: story.status === "complete" || isStoryComplete(story) })}
+    />
+  </div>
+  {!readOnly && lengthMode === "endless" && !isManuallyFinished(story) && (
+    <div className="reader-endless-actions">
+      {finishConfirm ? (
+        <>
+          <p>在第 {story.chapters?.length || 0} 章这里收尾？收尾后这条线就完结了，广场上的连载标记也会跟着转成完结。</p>
+          <div className="reader-endless-confirm">
+            <Button
+              variant="secondary"
+              onClick={() => { update(finishEndlessLine(story)); setFinishConfirm(false); }}
+            >
+              确认完结
+            </Button>
+            <button type="button" className="reader-directory-button" onClick={() => setFinishConfirm(false)}>再想想</button>
+          </div>
+        </>
+      ) : (
+        <button type="button" className="reader-directory-button" onClick={() => setFinishConfirm(true)}>
+          完结这条线
+        </button>
+      )}
+    </div>
+  )}
+  {!isFinal && (!readOnly || nextAvailable) && !(manual && !nextAvailable) && (
+    <div className="sw-next-action">              <Button
+        icon="arrow"
+        onClick={handleNext}
+        disabled={!readOnly && preparing && !nextAvailable}
+      >
+        {preparing && !nextAvailable ? "下一章准备中…" : generationError && !nextAvailable ? "重试下一章" : "下一章"}
+      </Button>
+      {generationError && <span role="alert">{generationError}</span>}
+    </div>
+  )}
+  {manual && !readOnly && !isFinal && !nextAvailable && (
+    <div className="sw-next-action">
+      <Button icon="pencil" onClick={() => onNavigate("write", { storyId: story.id })}>
+        写下一章
+      </Button>
+      <span>这一章之后还空着——下一章由你来写。</span>
+    </div>
+  )}
+  {(isFinal || (readOnly && !nextAvailable)) && (
+    <section className="reading-end">
+      <h2>
+        {isFinal
+          ? lengthMode === "season"
+            ? "这一季，读完了。"
+            : lengthMode === "long"
+              ? "这部长线，读完了。"
+              : lengthMode === "endless"
+                ? "这条无限长线，在这里收尾了。"
+                : "这一卷，读完了。"
+          : "已读完分享章节"}
+      </h2>
+      {isFinal && !readOnly && lengthMode === "season" ? (
+        <>
+          <p>标尺已经抬高一格：下一季的对手、价码和要守的东西，都会比这一季更重。</p>
+          <Button icon="spark" onClick={() => onStartNextSeason?.(story)}>
+            开启下一季
+          </Button>
+          <button onClick={() => onNavigate("merge")}>
+            开启合流本
+          </button>
+          <button onClick={() => onNavigate("forge")}>
+            再开一本
+          </button>
+        </>
+      ) : manual && !readOnly ? (
+        <>
+          <p>这本书是你一个字一个字写下来的。书名和简介在设定集里改，正文在写作台里写。</p>
+          <Button icon="pencil" onClick={() => onNavigate("write", { storyId: story.id })}>
+            回写作台
+          </Button>
+          <button onClick={() => onNavigate("forge")}>
+            再开一本
+          </button>
+        </>
+      ) : (
+        <>
+          {(!readOnly || !isFinal) && (
+            <p>
+              {readOnly
+                ? "此副本只包含已分享的章节。"
+                : "让另一个主角加入，开启独立的新故事。"}
+            </p>
+          )}
+          <Button
+            icon={readOnly ? "book" : "git"}
+            onClick={() => onNavigate(readOnly ? "store" : "merge")}
+          >
+            {readOnly ? "回到书城" : "开启合流本"}
+          </Button>
+          {!readOnly && (
+            <button onClick={() => onNavigate("forge")}>
+              再开一本
+            </button>
+          )}
+        </>
+      )}
+    </section>
+  )}
+  <div className="chapter-navigation">
+    {index > 0 && (
+      <button
+        className="reader-directory-button"
+        onClick={() => goToChapter(index - 1)}
+      >
+        <Icon name="chevron" size={15} className="rotate-180" />
+        上一章
+      </button>
+    )}
+    <button
+      className="reader-directory-button"
+      onClick={() => setDirectoryOpen(true)}
+    >
+      <Icon name="menu" size={15} />
+      目录
+    </button>
+  </div>
+  {!readOnly && (
+    <div className="article-footer">
+      <span role="status">{unsaved ? "进度暂存于此页，请先备份" : "进度已保存在本机"}</span>
+    </div>
+  )}
+    </>
+  );
   return (
     <div ref={readerRef} className="page page-reader page-enter" data-reader-focused={focused ? 'true' : 'false'} data-chrome-lift={chromeLift || undefined} data-chrome-open={chromeOpen || undefined} onPointerDown={noteTapStart} onPointerUp={handleReaderTap} onPointerMove={handleReaderMove} onPointerCancel={handleReaderCancel} {...getReaderAppearance(preferences.settings, { inputMethod: preferences.inputMethod })}>
       {frontStage && story && (
@@ -5291,217 +5507,32 @@ function Reader({
         </div>
       )}
       <div className="reader-layout">
-        <article className="reader-article">
-          <h1 ref={titleRef} tabIndex={-1}>
-            {displayChapterTitle || `第 ${index + 1} 章`}
-          </h1>
-          <div className="reader-prose" lang="zh-CN">
-          <p className="article-lede" data-reading-paragraph="0">{chapter.paragraphs[0]}</p>
-          <div className="article-body">
-            {chapter.paragraphs.slice(1).map((paragraph, paragraphIndex) => (
-              <p data-reading-paragraph={paragraphIndex + 1} key={`${chapter.id}-${paragraphIndex}`}>{paragraph}</p>
-            ))}
-          </div>
-          </div>
-          {chapter.interventions?.length > 0 && (
-            <div className="intervention-marker" role="note">
-              <Icon name="ripple" size={16} />
-              <div>
-                <b>命运在这一章伸过手</b>
-                {chapter.interventions.map((entry, entryIndex) => (
-                  <p key={entryIndex}>{entry.text}</p>
+        {preferences.settings.readingMode === "page" ? (
+          <ReaderPager
+            registerPager={reading.registerPager}
+            chapterKey={locationKey}
+            title={displayChapterTitle || `第 ${index + 1} 章`}
+            paragraphs={chapter.paragraphs}
+            endMatter={endMatter}
+            motionOn={turnMotion}
+            onSettle={reading.notePagerSettle}
+          />
+        ) : (
+          <article className="reader-article">
+            <h1 ref={titleRef} tabIndex={-1}>
+              {displayChapterTitle || `第 ${index + 1} 章`}
+            </h1>
+            <div className="reader-prose" lang="zh-CN">
+              <p className="article-lede" data-reading-paragraph="0">{chapter.paragraphs[0]}</p>
+              <div className="article-body">
+                {chapter.paragraphs.slice(1).map((paragraph, paragraphIndex) => (
+                  <p data-reading-paragraph={paragraphIndex + 1} key={`${chapter.id}-${paragraphIndex}`}>{paragraph}</p>
                 ))}
               </div>
             </div>
-          )}
-          {interveneNote && (
-            <p className="intervention-note" role="status">
-              <Icon name="ripple" size={14} />
-              {interveneNote}
-            </p>
-          )}
-          {isFrontier && (
-            <div className="frontier-actions">
-              <p className="frontier-note">
-                这是你正在读的最新章节——现在还能亲手调度这一章。翻开下一章，这一章就此定稿。
-              </p>
-              {chapter.degraded && (
-                <p className="frontier-degraded">本章由备用通道生成</p>
-              )}
-              {rerollConfirm ? (
-                <div className="frontier-buttons">
-                  <Button variant="secondary" onClick={submitReroll}>
-                    确认换掉这一版
-                  </Button>
-                  <button
-                    type="button"
-                    className="reader-directory-button"
-                    onClick={() => setRerollConfirm(false)}
-                  >
-                    再想想
-                  </button>
-                  <span className="frontier-warn">换掉的版本不会保留，也没有历史版本可以找回。</span>
-                </div>
-              ) : (
-                <div className="frontier-buttons">
-                  <button
-                    type="button"
-                    className="reader-directory-button"
-                    onClick={() => setRerollConfirm(true)}
-                  >
-                    <Icon name="reroll" size={15} />
-                    换一版
-                  </button>
-                  <button
-                    type="button"
-                    className="reader-directory-button"
-                    onClick={() => setProseOpen(true)}
-                    aria-haspopup="dialog"
-                  >
-                    <Icon name="pencil" size={15} />
-                    编辑正文
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-          <div className="reader-starmap">
-            <div className="reader-starmap-head">
-              <b>剧情星图</b>
-              <span>{serializing ? `连载中 · 第 ${index + 1} 章` : `第 ${index + 1} / ${total} 章`}</span>
-            </div>
-            <StoryMapMini
-              total={displayTotal}
-              generated={story.chapters?.length || 0}
-              current={index}
-              state={readOnly ? null : generationState({ total: displayTotal, generated: story.chapters?.length || 0, current: index, engine: story.engine, preparing, complete: story.status === "complete" || isStoryComplete(story) })}
-            />
-          </div>
-          {!readOnly && lengthMode === "endless" && !isManuallyFinished(story) && (
-            <div className="reader-endless-actions">
-              {finishConfirm ? (
-                <>
-                  <p>在第 {story.chapters?.length || 0} 章这里收尾？收尾后这条线就完结了，广场上的连载标记也会跟着转成完结。</p>
-                  <div className="reader-endless-confirm">
-                    <Button
-                      variant="secondary"
-                      onClick={() => { update(finishEndlessLine(story)); setFinishConfirm(false); }}
-                    >
-                      确认完结
-                    </Button>
-                    <button type="button" className="reader-directory-button" onClick={() => setFinishConfirm(false)}>再想想</button>
-                  </div>
-                </>
-              ) : (
-                <button type="button" className="reader-directory-button" onClick={() => setFinishConfirm(true)}>
-                  完结这条线
-                </button>
-              )}
-            </div>
-          )}
-          {!isFinal && (!readOnly || nextAvailable) && !(manual && !nextAvailable) && (
-            <div className="sw-next-action">              <Button
-                icon="arrow"
-                onClick={handleNext}
-                disabled={!readOnly && preparing && !nextAvailable}
-              >
-                {preparing && !nextAvailable ? "下一章准备中…" : generationError && !nextAvailable ? "重试下一章" : "下一章"}
-              </Button>
-              {generationError && <span role="alert">{generationError}</span>}
-            </div>
-          )}
-          {manual && !readOnly && !isFinal && !nextAvailable && (
-            <div className="sw-next-action">
-              <Button icon="pencil" onClick={() => onNavigate("write", { storyId: story.id })}>
-                写下一章
-              </Button>
-              <span>这一章之后还空着——下一章由你来写。</span>
-            </div>
-          )}
-          {(isFinal || (readOnly && !nextAvailable)) && (
-            <section className="reading-end">
-              <h2>
-                {isFinal
-                  ? lengthMode === "season"
-                    ? "这一季，读完了。"
-                    : lengthMode === "long"
-                      ? "这部长线，读完了。"
-                      : lengthMode === "endless"
-                        ? "这条无限长线，在这里收尾了。"
-                        : "这一卷，读完了。"
-                  : "已读完分享章节"}
-              </h2>
-              {isFinal && !readOnly && lengthMode === "season" ? (
-                <>
-                  <p>标尺已经抬高一格：下一季的对手、价码和要守的东西，都会比这一季更重。</p>
-                  <Button icon="spark" onClick={() => onStartNextSeason?.(story)}>
-                    开启下一季
-                  </Button>
-                  <button onClick={() => onNavigate("merge")}>
-                    开启合流本
-                  </button>
-                  <button onClick={() => onNavigate("forge")}>
-                    再开一本
-                  </button>
-                </>
-              ) : manual && !readOnly ? (
-                <>
-                  <p>这本书是你一个字一个字写下来的。书名和简介在设定集里改，正文在写作台里写。</p>
-                  <Button icon="pencil" onClick={() => onNavigate("write", { storyId: story.id })}>
-                    回写作台
-                  </Button>
-                  <button onClick={() => onNavigate("forge")}>
-                    再开一本
-                  </button>
-                </>
-              ) : (
-                <>
-                  {(!readOnly || !isFinal) && (
-                    <p>
-                      {readOnly
-                        ? "此副本只包含已分享的章节。"
-                        : "让另一个主角加入，开启独立的新故事。"}
-                    </p>
-                  )}
-                  <Button
-                    icon={readOnly ? "book" : "git"}
-                    onClick={() => onNavigate(readOnly ? "store" : "merge")}
-                  >
-                    {readOnly ? "回到书城" : "开启合流本"}
-                  </Button>
-                  {!readOnly && (
-                    <button onClick={() => onNavigate("forge")}>
-                      再开一本
-                    </button>
-                  )}
-                </>
-              )}
-            </section>
-          )}
-          <div className="chapter-navigation">
-            {index > 0 && (
-              <button
-                className="reader-directory-button"
-                onClick={() => goToChapter(index - 1)}
-              >
-                <Icon name="chevron" size={15} className="rotate-180" />
-                上一章
-              </button>
-            )}
-            <button
-              className="reader-directory-button"
-              onClick={() => setDirectoryOpen(true)}
-            >
-              <Icon name="menu" size={15} />
-              目录
-            </button>
-          </div>
-          {!readOnly && (
-            <div className="article-footer">
-              <span role="status">{unsaved ? "进度暂存于此页，请先备份" : "进度已保存在本机"}</span>
-            </div>
-          )}
-        </article>
+            {endMatter}
+          </article>
+        )}
       </div>
       {reading.warning && <p className="reader-location-warning" role="status">{reading.warning}</p>}
       {preferencesOpen && <ReadingDialog title="阅读设置" onClose={() => setPreferencesOpen(false)}>

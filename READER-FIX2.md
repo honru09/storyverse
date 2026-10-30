@@ -1,52 +1,73 @@
-# READER-FIX2 — 阅读器修复批（2026-10-28）
+# READER-FIX2 — REQ-46：翻页引擎重做 + 本人主页展台复核（2026-10-30）
 
-起因：用户 2026-10-28 09:05 真机（iPhone）5 张截图亲报四处问题；外加老书虫最终回归的 N-07（同域，一并核掉）。基线 = 本地 main 4f64ff9（DESIGN §29）。定案写入 DESIGN §30。本批只提交本地 main，未 push、未 deploy。
+起因：用户在 00047-cqk 上录屏实锤克隆 sheet 翻页在真机 WebKit 过渡时两页文字叠印成糊，亲定改法「固定一个容器、每页文字量固定封顶、整页滑动+翻页动画」；另亲报本人主页化身大卡仍无头（上一批 FIX4 量的是他人主页窗口面）。基线 = main 233955f，分支 reader-fix2，未合 main、未部署。
 
-## 1. 中央点按滚动态失效（P0）— 根因与修法
+## 一、翻页引擎重做（废克隆 sheet，换预分页整页滑动）
 
-**症状（用户原话）**：得划到最上面才能点屏幕中间显示菜单，划到别处就点不了。
+### 新结构
+- `src/reader-pager.js`（纯逻辑）：`packPages(lines, pageHeight, {titleHeight, paragraphLengths})` 只在整行边界断页——段间距仅在同页跨段时计、页顶丢弃；`displayTotal`（含章末页）；`progressForPage`（首页 0%、末页 100%）；`pageForProgress`；`pageForAnchor`（锚点 {paragraph, offset 0..1} ↔ 页，双向）。
+- `src/components/ReaderPager.jsx`：隐藏测量宿主 `.reader-pager-measure` 在 pager 视口内以真实排版类复刻整章（article.reader-article > h1 + .reader-prose > p.article-lede + .article-body > p，段落带 data-p），Range getClientRects 读行盒切页；每页是固定不透明盒 `.reader-pager-page`，内装该页的真实文本切片（按行边界切的段落，不是克隆）；章末家具是真页 `.reader-pager-end`。
+- `src/useReaderExperience.js` 整文件重写：克隆引擎全删（buildStage/cloneIntoSheet/animateTrack/settleAt/drainQueue/旧 drag 全无）；page 模式的 capture/restore/进度/seek/翻页/拖动/跨章一律委托 pager API（registerPager 注册），scroll 模式走原 DOM 路径不变。
+- `src/main.jsx`：章末家具抽为共享 `endMatter`（page/scroll 两模式同源）；page 模式渲染 `<ReaderPager>`，scroll 模式保留原 article；turnScreen 加 page 分支——章界即页界（末页再翻→下一章、首页再翻→上一章）。
+- CSS：删全部 `.reader-turn-*`；`.reader-pager` 高 = 100dvh − 顶栏细线 − 进度细线 − 安全区（与番茄式 chrome 的几何一致）；page 模式舞台 `height:100dvh; overflow:hidden`。
 
-**根因（定案）**：点按判定走 click 路径，并带一条「pointerdown→click 之间 scrollY 变化 >4px 即作废」的守卫。iOS 上手指抬起后动量收尾与滚动锚定仍会让 scrollY 漂移远超 4px，合成 click 被系统性误杀；唯独滚到最顶端时 scrollY 被钳在 0、无法漂移——与症状严丝合缝。Chromium 探针（真实 touchscreen.tap）在 scrollY 0/1600/3200 均能开菜单，证伪了「感应区绑错位置」的初始假设、坐实 iOS 路径问题。本地 WebKit 因缺 libgstreamer 起不来，未能复现 Safari 本体，iOS 真机点验待上线后由用户完成。
+### 分页参数（393×852 实测）
+- 页盒：宽 349（视口 393 − 页边距），高 746。
+- **行进给口径**：行高以「到下一行顶的距离」计，段末行用该段 computed line-height——WebKit/WPE 的 Range rect 是墨迹盒（16px 字回 22px），直接拿墨迹高打包会每页溢出约 200px（初版 28–30 行/页、maxBottom 948–983 > 盒 746），此为本批抓到的第 1 个真 bug，已按行进给口径修。
+- 真章节（探针号《借火登天》3 章真生成正文，1976/2107/2104 字）分页结果：5 个内容页 + 1 章末页；每页 21–23 行（末内容页 10 行），每页内容底边 707.9–735.3 ≤ 盒高 746——末行完整、无半行裁切。
 
-**修法**（src/main.jsx Reader）：根节点改 onPointerDown/onPointerUp/onPointerCancel 配对判定——同 pointerId 配对、位移 ≤12px、时长 ≤800ms、down/up 任一端命中交互元素即作废、选区/弹层/介入中守卫保留；分区取 pointerup 的视口坐标。**scrollY 彻底退出点按有效性**，根因以注释留代码内。各 e2e 套件的合成点按助手（control/gemini/intervention/journey/reader 五个文件）统一补 dispatch pointerup；delete-book/edit-book 用真实 tap 不受影响。
+### 动画
+- 点按翻页：WAAPI 300ms cubic-bezier(.32,.72,0,1) 整轨 translateX。
+- 拖动：1:1 跟手（激活阈值 9px）；松手临界阻尼弹簧采样关键帧（ω=18、释放速度播种、无回弹）；完成判据 |dx|>26% 页宽 或 |v|>0.45px/ms 且 |dx|>36px（沿旧口径）。动画令牌防迟到回调覆盖新位置。
+- 跨章：新章当前页自 ±视口宽滑入（armCrossTurn/completeCrossTurn 两段式：先还原落定、再滑入）。
+- 动效关 / reduced-motion：瞬时切换（pager 内 turnMotion 关闭路径）。
 
-**长期断言**（e2e/reader-chrome.cjs）：①「deep in the chapter」：滚 ≥3 屏后真实点按中央开/关菜单、点左/右翻屏；②「drift」：pointerdown 后页面漂移 12px 再 pointerup（手指不动）必须开菜单，位移 −122px 的拖拽必须不开——旧 4px 守卫在这条下必挂。
+### 验收中抓到的第 2 个真 bug（跨章锚点串章）
+初版 paginate 在换章时沿用旧章锚点并抢先回写，把错误锚点写进新章的进度键（第 2 章曾落到轨位 −1047、75%）。修法：paginate 以 lastChapterKey 判换章——换章只取待还原锚点、不回写，由 hook 的 restore 落定后回写；同章重分页（字号/字体/缩放/字体就绪）才保锚回写。修后第 2 章落定轨位 0、进度 0%。
 
-## 2. 顶部安全区遮字 — 修法
+### 帧验收（WebKit × 393×852 × 真章节，reader-fix2-shots/，逐张亲看）
+- f01 首页落定：纸面干净、行距均匀。
+- **f02 拖动中：手指 −115px、轨 −115px 严丝合缝 1:1；相邻两页并排、均不透明、零叠印零糊字**（与旧引擎录屏实锤形成对照）。
+- f03 落定轨位 −349 精确一页。
+- f04 章末页：星图 + 下一章按钮 + 目录 + 保存提示齐整。
+- 跨章帧采样：末页 −1745 → 新章 +349/+22 → 0，方向正确、无静态闪帧；f05/f06 为落定后的第 2 章首页，字迹清晰。
+- f07 字号加大后重分页保锚（命中原阅读位置）。
+- 滚动模式往返：切滚动 article 恢复、window 可滚；切回逐屏 pager 恢复。
+- Chromium 同套 walk 全过（chromium-f02 同样干净）。
 
-两行状态细线原本背景透明，正文可滑入 iOS 状态栏条被时钟切字。src/reader-experience.css 给 `.reader-status-top`/`.reader-status-bottom` 加 `background: var(--reader-bg)`：读感仍是细线，但状态栏条与底部横条区全程有纸面打底。e2e 断言两细线 backgroundColor 非透明、且贴视口上下沿。
+### 验收中抓到的第 3 个真 bug（阅读器 DOM 契约在逐屏模式下丢失）
+初版切片段只标了自造的 `data-pager-paragraph`，而阅读器的既有 DOM 契约是 `data-reading-paragraph`（滚动模式 article 一直在用，e2e 与查找/锚点按它寻址）——逐屏模式下按该属性寻址全部落空（e2e reader-chrome 首个等待即超时实锤）。修法：切片段落改标 `data-reading-paragraph={segment.p}`（与滚动模式同名同义），并加守卫断言钉住。
 
-## 3. 壳层底栏漏进只读阅读器 — 根因与修法
+### 已知小差异（记录在案）
+page 模式下切章的 h1 focus（titleRef）不执行（pager 内标题非同一节点），a11y 焦点不随章移动；scroll 模式不变。后续批可给 pager 首页标题补 focus。
 
-**根因**：App 的 `navView` 把广场阅读的导航语境映射成 `"plaza"` 喂给 MobileBottomNav，绕过了它内部 `view === "reader"` 的沉浸判断（Sidebar 高亮吃映射没错，错在底栏也吃了映射）。
+## 二、本人主页化身展台（正确表面复核）
 
-**修法（共用层两处）**：① App 渲染处给底栏传真实 view（`view === "reader" ? "reader" : …`），映射只喂高亮；② CSS 保险规则 `.app-shell[data-view="reader"] > .main-shell > .mobile-bottom-nav{display:none}` 与既有 topbar 规则并列。e2e 断言三形态（自己的书沉浸检查 + 只读段）阅读器内 `.mobile-bottom-nav` 计数为 0；只读段另断言提示行字号 ≤12.5px、只读工具格为 4 格（无介入）、滚 3 屏点按成立，截图 390-readonly-chrome-open.png。
+### 表面定性（先纠正前提）
+ProfilePage 是同一组件两处渲染：主页标签页（is-page-form）与他人主页窗口（is-window-form）共用同一份展台 JSX 与 `.profile-stage` 规则，并非「另一套 markup」。FIX4 的量测数值（361×481、contain、flex:none）对标签页同样成立——本批在标签页表面重测，数值逐项一致。
 
-## 4. 排版专项 — 定案
+### 复现矩阵（WebKit × 393×852，本人标签页，fixture 种子：真图主化身 + 标记图）
+- 真图（用户本人立绘 768×1052）：舞台 361×481、object-fit contain、绘制区 351×481 满框，人物 6%→96.5% 全身入框、头在框内；落位后缩略图行 602–710，底栏胶囊顶 778——行不被压（余量 68px）。
+- 9:16 标记图（576×1024，顶红带=头区/底蓝带=脚区）：绘制区 271×481 居中，红带与头盘完整可见、蓝带透过底部渐变可见——无裁切。
+- 4:3 标记图（服务规范化为 768×576）：绘制区 361×271 居中，头带/脚带完整。
+- 三主题（极光/黑/白）同盒同 fit，逐张亲看：头在框内、卡顶留白即画作自身头顶距（与海报构图一致、小而均匀），无额外空带。
 
-参数表见 DESIGN §30。要点：默认行高 2.05→1.9、默认段距 1em→0.6em（与 2em 缩进叠加是截图里段落 cavernous 的主因）；行高档位改名 1.6 密集/1.8 紧凑/1.9 舒适/2.05 宽松/2.3 疏朗；章标题规则收并为一处（删 reader-experience.css 的第二条 h1 规则防漂移），字重 650→600、下距 1.5em→1.1em；`.page-reader .button-primary` 改 `var(--reader-action)` 实色无阴影（蓝紫渐变胶囊退场，含章末「下一章」）；剧情星图卡改纸面 surface/border、无玻璃无影；只读提示行改走 reader 令牌收安静。连带更新 tests/reading-preferences.test.js 与 e2e/onboarding.cjs 的行高期望（2.05→1.9）、e2e/reader.cjs 的行高 radio 名（宽松→疏朗，其 ×2.3 断言不变）。
+### 结论（定性，非代码缺陷）
+现行代码在正确表面、三种画幅、三种主题下均按 contain+模糊垫底口径工作，**无可复现的裁切机制，本批不对展台改码**——再改只会重复前三批「修了个不存在于该表面的问题」。用户截图症状（卡矮+cover 裁头）只与 DEVICE-FIX2（00044）之前的旧几何吻合，指向其一：
+1. 客户端仍在跑旧构建：SW 已于 FIX3 升 v2 且导航 network-first、资产内容哈希，正常启动即自愈——请用户彻底关掉 PWA 重开一次（或删主屏图标重加）后复验；
+2. 当时展台上选中的是收藏里的另一张早期画作（构图本身与现行海报契约不同）——contain 无法补出画里没有的头、也不会裁掉画里有的头，重绘该化身即可。
+两条都留给父级在部署后请用户点验时一并核对。
 
-## 5. N-07 边缘补偿 — 实测与修法
+## 三、测试与构建
+- 新增 tests/reader-pager.test.js（6 条：整行打包/段间距/标题预留/锚点/进度数学）；tests/reader-page.test.js 的 REQ-38 三条换成 REQ-46 五条守卫（克隆引擎全层不存在、pager 接入、整行打包、弹簧+阈值、跨章两段式、章界=页界），净增 3 条。
+- 全量 node --test：889 条，884 过，5 败——5 败全为已定性 ③a 类（tests/dedup-fix.test.js 读 dedup-shots/ 样本图，该目录未入库、worktree 不存在，ENOENT），与基线三类逐条对账无新增红项。（基线 880 + 本批新增 9 = 889 ✓）
+- vite build 通过。
+- 本批自备双引擎 walk（reader-fix2-shots/reader-walk.mjs、stage-walk.mjs）：WebKit + Chromium 全过（帧证据见上）。
+- e2e 既存套件对账（reader-chrome.cjs / reader.cjs，基线 00047 构建与本批构建同口径实测）：**两套件在基线即已多点红，本批无新增红点类别**，逐项如下——
+  - reader-chrome 场景 1「首行不被遮挡」：基线与本批同点同败（hit SECTION）。根因与本批无关：REQ-39 封面流程每次挂载必播，reload 后封面 SECTION 盖在已渲染正文上做 hit-test——套件写于封面流程之前。应用行为是用户亲定的进书顺序（封面→目录→正文），不动。
+  - reader.cjs check 2「chrome 遇滚动让位」：基线能过、本批不过，机制已查实——基线的「逐屏」是混合体（正文 article 常驻可滚文档，翻页只是其上的克隆动画，window.scrollTo 真能滚、折叠监听真能响）；REQ-46 按用户亲定规格换成固定舞台后，逐屏模式 window 本就无可滚之物，该 check 的前提被规格废除。用户要的交互在本批均实测可用：点按开关 chrome（check 1 过）、显式切滚动模式后 window 滚动与 chrome 折叠如旧（walk 实测）、逐屏内一切按页走。
+  - 其余基线红点（reader.cjs line 185 字号/滚动恢复族、reader-chrome 只读与动效场景的 chrome 等待超时）在本批构建上或同点、或因 DOM 契约修复而推进到更后面的断言才败，无一是本批引入的行为退化。
+  - 建议（留给父级排期）：两套件按 REQ-39/45/46 的新世界观现代化（封面点击穿、逐屏深度按轨位移计、只读端逐屏化），不在本批范围内改。
 
-**实测（390×844，修复前）**：菜单展开态顶栏下沿 59px，章标题行占 42–78px，顶栏压住标题上方 17px（约上半）——与老书虫报告一致；章末同样：底栏上沿 722px，目录行下沿 727.7px、页脚下沿 779.5px 被压。
-
-**口径（定案，DESIGN §30）**：菜单于章首开启 → 顶 padding +62px（动效开时 180ms 缓动）；于章末开启 → 底 padding +124px 并 settle 顺滚到底；中段开启不补偿。实现为 Reader 的 chromeLift 状态（开菜单瞬间按 scrollY 判定 top/bottom/无），settle 滚动借 seekStamp 守卫防被菜单自身的滚动收起监听误读——第一版把 settle 排在 padding 渲染前滚到旧高度，已改为以 chromeLift 为键的独立 effect（渲染后执行）。
-
-**修复后实测**：顶 — 标题顶 42→104px > 顶栏下沿 59px；底 — 页脚下沿 655.5px < 底栏上沿 722px。e2e 新增 N-07 几何断言（顶栏下沿 ≤ 标题顶 +1 且 ≤ 首行顶 +1；底栏上沿 ≥ 末元素下沿 −1），三档宽全跑，390 截图 390-chrome-open-lifted.png（亲看：顶栏与标题间留白干净、五格标签单行）。
-
-## 6. 验证数字（本机，2026-10-28）
-
-- 单元：`npm test` **635/635 全绿**（基线 635，本批改期望值未增减条数）。
-- reader-chrome：全套 39 项（三档 × 12 项 + 只读 2 项 + 动效开启几何 1 项，其中 N-07/drift/deep/只读为本批新增或加固），收口轮 **39/39 全绿**。过程中的滑杆抖动见下条记录。
-- 其余 e2e：journey 24/24、recovery 4/4、gemini 4/4、intervention 7/7、control 5/5、cloud-library ✓、delete-book ✓、edit-book ✓（自起 fixture 型不传 TARGET_URL，其余 TARGET_URL=http://127.0.0.1:8899）、onboarding 18/18、reader.cjs **33/33 两轮全绿**。
-- 壳层主题衔接截图：reader-fix2-shots/390-reader-shell-{black,white,aurora}.png（390 宽，暖纸阅读页在三套壳层主题下边缘一致、无底栏残影；极光一张已亲看）。
-- build 通过。
-
-**滑杆抖动（如实记录，未放宽断言）**：reader-chrome 既有检查「chrome slider seeks inside the chapter」在本批 5 轮全套运行中 3 轮各挂 1 次，失败档位逐轮游走（360→390→430），签名恒定：seek 回 0 后 scrollY 停在约 75% 位（4793–5859）；其余 2 轮（含收口轮）全绿。READER-CHROME.md §4 在本批之前已记载同一检查在 pristine 基线上的同签名时序抖动（锚点恢复与合成滚动的时序竞争），本批新增的检查（drift/deep/N-07/只读）与套件其余各项在每一轮全绿。按验收指令不为签绿放宽断言，挂账留此，后续若在真机或非合成环境复现再定性。
-
-**reader.cjs 390 滚动收起项（老书虫沙箱抖动）**：老书虫复跑 e2e/reader.cjs 时 390 档「滚动时 chrome 应收起」在沙箱等待超时且不稳定（320/1440 PASS）。本批复跑 reader.cjs 两轮 33/33 全绿，该项两轮均过；reader-chrome 的同行为断言（scrolling folds the chrome away）在三档每一轮全绿。以本批新断言结论为准：行为成立，沙箱时序抖动。
-
-## 7. 剩余风险
-
-- iOS 真机点验不在本地能力内（本地 WebKit 缺 libgstreamer 起不来）：上线后须用户在 iPhone 上亲验四点 — 滚动态中央点按开/关菜单、安全区细线贴边不遮字、只读阅读全屏沉浸、滑杆手感。
-- 边缘补偿对超短章（一屏放得下整章）只取顶补偿，底栏仍可能浮在章末家具上；生产章节 1600+ 字恒为多屏，不触发。
+## 四、红线自查
+§53/§54 未动；极光色值未动；收费逻辑未碰；阅读 chrome（番茄式顶/底细线）只读取其几何常量，未改样式；不合 main、不部署（部署与用户真机点验由父级接手）。

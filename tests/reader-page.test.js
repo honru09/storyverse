@@ -4,45 +4,91 @@ import { readFileSync } from "node:fs";
 
 const main = readFileSync(new URL("../src/main.jsx", import.meta.url), "utf8");
 const hook = readFileSync(new URL("../src/useReaderExperience.js", import.meta.url), "utf8");
+const pager = readFileSync(new URL("../src/components/ReaderPager.jsx", import.meta.url), "utf8");
+const pagerCore = readFileSync(new URL("../src/reader-pager.js", import.meta.url), "utf8");
 const flowCss = readFileSync(new URL("../src/reader-flow.css", import.meta.url), "utf8");
 const experienceCss = readFileSync(new URL("../src/reader-experience.css", import.meta.url), "utf8");
 
-// --- REQ-38: real page turns -------------------------------------------
+// --- REQ-46: pre-paginated whole-page turns (clone engine retired) ------
 
-test("REQ-38: turns run on a cloned-sheet stage, transform/opacity only", () => {
-  assert.match(hook, /reader-turn-host/);
-  assert.match(hook, /cloneNode\(true\)/);
-  assert.match(hook, /\.animate\(/);
-  assert.match(hook, /cubic-bezier\(\.32,\.72,0,1\)/);
-  // The commit is an instant scroll AFTER the slide: pagination is the
-  // scroll geometry itself, so nothing reflows between frames.
-  assert.match(hook, /settleAt\(toY\)/);
-  assert.match(experienceCss, /\.reader-turn-track\{display:flex/);
-  assert.match(experienceCss, /will-change:transform/);
-  assert.match(experienceCss, /\.reader-turn-shade-in\{/);
+test("REQ-46: the clone-sheet engine is gone from every layer", () => {
+  for (const source of [main, hook, pager, experienceCss]) {
+    assert.doesNotMatch(source, /cloneNode\(true\)/);
+    assert.doesNotMatch(source, /reader-turn-(host|track|sheet|shade)/);
+    assert.doesNotMatch(source, /cloneIntoSheet|buildStage|queuedTurnRef|drainQueue/);
+  }
 });
 
-test("REQ-38: drag follows the finger and settles by travel or velocity", () => {
-  assert.match(hook, /dragStart/);
-  assert.match(hook, /dragMove/);
-  assert.match(hook, /dragEnd/);
-  assert.match(hook, /width \* 0\.26/);
-  assert.match(hook, /Math\.abs\(velocity\) > 0\.45/);
-  // Boundary drags build nothing: chapter turns stay tap-driven.
-  assert.match(hook, /if \(toY === fromY\) \{ drag\.dead = true; return false; \}/);
+test("REQ-46: paged mode renders the pre-paginating ReaderPager in one fixed container", () => {
+  assert.match(main, /import ReaderPager from "\.\/components\/ReaderPager\.jsx"/);
+  assert.match(main, /readingMode === "page" \? \(\s*<ReaderPager/);
+  assert.match(main, /registerPager=\{reading\.registerPager\}/);
+  assert.match(main, /onSettle=\{reading\.notePagerSettle\}/);
+  // The chapter-end matter is one definition hosted by both modes.
+  assert.match(main, /const endMatter = \(/);
+  assert.match(main, /endMatter=\{endMatter\}/);
+  // The window never scrolls in paged mode; the pager viewport is the
+  // fixed stage between the hairlines.
+  assert.match(experienceCss, /\[data-reader-mode="page"\]\{touch-action:pan-y;height:100dvh;overflow:hidden\}/);
+  assert.match(experienceCss, /\.reader-pager\{position:relative;overflow:hidden/);
+  assert.match(experienceCss, /\.reader-pager-track\{display:flex;height:100%;will-change:transform\}/);
+  assert.match(experienceCss, /\.reader-pager-page\{position:relative;flex:0 0 100%;height:100%;overflow:hidden;background:var\(--reader-bg\)\}/);
+  // The reader's DOM contract survives in paged mode: every rendered
+  // slice stays addressable by its source paragraph index, exactly
+  // like the scroll-mode article's paragraphs (e2e + find rely on it).
+  assert.match(pager, /data-reading-paragraph=\{segment\.p\}/);
+});
+
+test("REQ-46: pagination measures real line boxes and packs whole lines only", () => {
+  // Measurement typesets the chapter in a hidden host with the
+  // article's own structure and reads Range line geometry.
+  assert.match(pager, /reader-pager-measure/);
+  assert.match(pager, /getClientRects\(\)/);
+  assert.match(pager, /packPages\(lines, h,/);
+  // Pages render the chapter's own text sliced at line boundaries —
+  // never a cloned layout.
+  assert.match(pager, /paragraphs\[segment\.p\] \|\| ""\)\.slice\(segment\.start, segment\.end\)/);
+  assert.match(pagerCore, /export function packPages/);
+  // The end matter is a real final page; progress is by page.
+  assert.match(pager, /reader-pager-end/);
+  assert.match(pagerCore, /export function progressForPage/);
+});
+
+test("REQ-46: turns slide the whole-page track; drag is 1:1 and spring-settled", () => {
+  assert.match(pager, /track\.animate\(/);
+  assert.match(pager, /cubic-bezier\(\.32,\.72,0,1\)/);
+  // Release thresholds keep the established feel (26% travel or a
+  // decisive flick), and the release runs on a critically damped
+  // spring seeded with the finger's velocity — no overshoot.
+  assert.match(pager, /Math\.abs\(dx\) > w \* 0\.26/);
+  assert.match(pager, /Math\.abs\(velocity\) > 0\.45 && Math\.abs\(dx\) > 36/);
+  assert.match(pager, /springKeyframes\(from, to, springVelocity\)/);
+  assert.match(pager, /Math\.exp\(-omega \* t\)/);
+  // Chapter boundaries stay tap-only: the pager refuses to drag past
+  // its first/last page.
+  assert.match(pager, /if \(!canTurn\(direction\)\) \{ drag\.dead = true; return false; \}/);
   // Rapid taps during a turn queue one deep, never skip or double.
-  assert.match(hook, /queuedTurnRef/);
-  assert.match(hook, /drainQueue/);
+  assert.match(pager, /queuedRef\.current = direction/);
 });
 
-test("REQ-38: cross-chapter turns capture first, complete on the new chapter", () => {
+test("REQ-46: cross-chapter turns arm first, complete on the new chapter", () => {
   assert.match(hook, /beginCrossTurn/);
   assert.match(hook, /completeCrossTurn/);
   assert.match(main, /reading\.beginCrossTurn\(direction\)/);
   assert.match(main, /reading\.completeCrossTurn\(\)/);
+  assert.match(pager, /armCrossTurn/);
+  assert.match(pager, /runCrossTurn/);
   // Motion off or scroll mode keeps the old instant behaviour.
   assert.match(hook, /turnMotionRef\.current/);
-  assert.match(experienceCss, /\[data-reader-mode="page"\]\{touch-action:pan-y\}/);
+  assert.match(experienceCss, /\[data-reader-mode="page"\]\{touch-action:pan-y/);
+});
+
+test("REQ-46: chapter edges in paged mode are page edges, not scroll positions", () => {
+  assert.match(main, /const info = reading\.pageInfo\(\);/);
+  assert.match(main, /info\.page >= info\.total - 1\) \{ chapterTurn\(1\); return; \}/);
+  assert.match(main, /info\.page <= 0\) \{ if \(index > 0\) chapterTurn\(-1\); return; \}/);
+  assert.match(hook, /notePagerSettle/);
+  assert.match(hook, /registerPager/);
 });
 
 // --- REQ-39: cover → contents → prose -----------------------------------
