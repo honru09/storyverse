@@ -113,9 +113,6 @@
 .page-reader .reader-starmap{background:var(--reader-surface);border-color:var(--reader-border);box-shadow:none}
 .page-reader .reader-starmap-head b{color:var(--reader-text)}
 .page-reader .reader-starmap-head span{color:var(--reader-secondary)}
-/* The read-only note is a whisper, not a banner: small, secondary,
-   reader tokens (the shell's --dim once bled a blue-grey onto paper). */
-.page-reader .reader-readonly-note{color:var(--reader-secondary);font-size:.75rem;letter-spacing:.02em;margin:10px 0 0}
 .reading-tools{font-family:var(--font-ui);color:var(--reader-text)}
 .reading-tools-tabs{display:grid;grid-template-columns:1fr 1fr;padding:4px;border-radius:14px;background:var(--reader-soft)}
 .reading-tools-tabs.has-dossier{grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -193,9 +190,27 @@
    full-stage opaque paper; the fold is driven per frame by
    clip-path polygons, and the flap's text is the sheet's own DOM
    reflected across the fold axis — the mirror layer therefore runs
-   with transform-origin 0 0 (ReaderPager sets the matrix). */
-.reader-curl{position:absolute;inset:0;z-index:3;pointer-events:none}
+   with transform-origin 0 0 (ReaderPager sets the matrix).
+   READER-POLISH2 (REQ-54): the stage is the whole reading page, not
+   the page box — the overlay is fixed to the viewport (the desktop
+   rail respected, like the hairlines), so the fold, its bright
+   ridge and its cast shadow run the full height and the sheet
+   sweeps edge to edge instead of stopping at the box's edges. The
+   text itself stays pinned to the static page box: each layer's
+   article rides in a .reader-curl-box that ReaderPager positions
+   at the pager's own rect, so the turn's first and last frames
+   coincide with the settled page to the pixel. */
+.reader-curl{position:fixed;inset:0;z-index:11;pointer-events:none}
+@media(min-width:1050px){.reader-curl{left:88px}}
 .reader-curl-layer{position:absolute;inset:0;background:var(--reader-bg)}
+.reader-curl-box{position:absolute;left:var(--curl-box-x,0px);top:var(--curl-box-y,0px);width:var(--curl-box-w,100%);height:var(--curl-box-h,100%);overflow:hidden}
+.reader-curl-box .reader-article{width:100%}
 .reader-curl-flap{position:absolute;inset:0}
 .reader-curl-mirror{position:absolute;inset:0;background:var(--reader-bg);transform-origin:0 0}
+/* The paper's back is print-through, not a second printing: the
+   mirrored glyphs are blurred and faded against the mirror layer's
+   own opaque paper — ink soaking through the sheet, visible as
+   text, never legible, and never sharp enough to read as a
+   rendering error. */
+.reader-curl-mirror .reader-curl-box{filter:blur(1.6px);opacity:.5}
 .reader-curl-shade,.reader-curl-shadow{position:absolute;inset:0}

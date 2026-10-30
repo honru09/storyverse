@@ -236,7 +236,10 @@ async function runJourney(browser, width) {
     await page.getByRole('button').filter({ hasText: '本机分享' }).click();
     await currentChapter(page, 1);
     await check(`${label} published book is read-only and leaves originals intact`, async () => {
-      await page.getByText('只读版本 · 不会改变原作', { exact: true }).waitFor();
+      await page.locator('[data-reading-paragraph]').first().waitFor();
+      // REQ-54: the read-only note no longer rides in the reader —
+      // it is stated once on the book's detail page instead.
+      assert.equal(await page.getByText('只读版本 · 不会改变原作', { exact: true }).count(), 0);
       await openChrome(page);
       assert.equal(await page.getByRole('button', { name: '分享', exact: true }).count(), 0);
       // A read-only copy offers no way to reach into the worldline either.
@@ -246,7 +249,8 @@ async function runJourney(browser, width) {
       await currentChapter(page, 2);
       assert.equal(await page.getByRole('group', { name: '剧情选择' }).count(), 0);
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.getByText('只读版本 · 不会改变原作', { exact: true }).waitFor();
+      await page.locator('[data-reading-paragraph]').first().waitFor();
+      assert.equal(await page.getByText('只读版本 · 不会改变原作', { exact: true }).count(), 0);
       await selectChapter(page, 23);
       await page.getByRole('button', { name: '回到书城', exact: true }).waitFor();
       assert.deepEqual((await library(page)).stories, publishedLibrary.stories);

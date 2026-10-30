@@ -6217,12 +6217,9 @@ function Reader({
           </div>
         </>
       )}
-      {readOnly && (
-        <p className="reader-readonly-note">
-          <Icon name="lock" size={14} />
-          只读版本 · 不会改变原作
-        </p>
-      )}
+      {/* READER-POLISH2 (REQ-54): the read-only note no longer rides
+          above every chapter — it is stated once on the book's detail
+          page (PlazaDetail) and nowhere in the reader. */}
       {error && (
         <div className="sw-inline-alert" role="alert">
           <Icon name="x" size={14} />
@@ -7926,6 +7923,11 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
           <p>{detail.manual
             ? <>{shelfById(detail.shelfId)?.name ? `${shelfById(detail.shelfId).name} · ` : ""}作者手写 · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"} · 作者 {detail.authorName}</>
             : <>{detail.worldName} × {templateName} · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"} · 作者 {detail.authorName}</>} · 阅读量 {countTextFor(detail.readCount)}</p>
+          {/* READER-POLISH2 (REQ-54): the one place the read-only
+              nature of the original line is stated — the detail
+              page's status area, once. The reader itself stays
+              silent about it. */}
+          <p className="plaza-detail-readonly">只读版本 · 不会改变原作</p>
           {detail.merged && Array.isArray(detail.sourceTitles) && detail.sourceTitles.length >= 2 && (
             <span className="plaza-badge is-fused">由{detail.sourceTitles.map((title) => `《${title}》`).join("×")}融合而来</span>
           )}
