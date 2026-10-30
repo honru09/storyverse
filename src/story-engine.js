@@ -3133,6 +3133,12 @@ export function createMergedStory(a, b, options = {}) {
     // plaza can say 「由《A》×《B》融合而来」 without re-resolving the
     // sources — which may since have been renamed or deleted.
     derivedFrom: [a.id, b.id],
+    // 合流授权 (REQ-49): the publications each source line was entered
+    // from ('' for the owner's own originals). The ids stay on the
+    // local story and ride the publish request so the server can
+    // re-verify fusion consent at shelving time; the public snapshot
+    // never carries them (plazaSnapshot does not copy this field).
+    sourcePublicationIds: [a.config?.sourcePublicationId || '', b.config?.sourcePublicationId || ''],
     sourceTitles: [cleanText(a.title, '未命名故事'), cleanText(b.title, '未命名故事')],
     author: '我',
     createdAt: timestamp,

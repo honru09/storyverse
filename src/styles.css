@@ -714,7 +714,12 @@ select{appearance:auto}
 .merge-line-badge{flex-shrink:0;padding:2px 8px;border-radius:6px;background:rgba(148,163,184,.16);color:var(--dim);font-size:11px;font-weight:700}
 .merge-line-badge.is-serial{background:rgba(125,232,195,.14);color:#7de8c3}
 .merge-line-badge.is-done{background:rgba(246,178,62,.16);color:#f6b23e}
+/* REQ-49: a line gated by its author's fusion setting — visibly not
+   pickable, its badge naming the consent state instead of progress. */
+.merge-line-card.is-locked{opacity:.55}
+.merge-line-badge.is-gate{background:rgba(246,178,62,.16);color:#f6b23e}
 .merge-line-card>svg{flex-shrink:0;color:var(--cyan)}
+.merge-fusion-note{margin-top:22px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass);color:var(--dim);font-size:13.5px;line-height:1.7}
 .merge-pending{margin-top:22px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass)}
 .merge-pending p{margin:0 0 12px;color:var(--dim);font-size:13.5px;line-height:1.7}
 .merge-product-note{margin:18px 0 0;color:var(--dim);font-size:13.5px;line-height:1.7}
@@ -1941,6 +1946,11 @@ button.notify-row:hover{background:var(--glass)}
 .notify-row-title{font-size:14.5px;font-weight:650;line-height:1.45}
 .notify-row-body{font-size:13.5px;line-height:1.55;color:var(--dim);white-space:pre-wrap;overflow-wrap:anywhere}
 .notify-row-copy small{font-size:12px;color:var(--dim-2)}
+/* REQ-49: the fusion application's answer buttons, in-row. */
+.notify-actions{display:flex;gap:8px;margin-top:8px}
+.notify-action{min-height:34px;padding:5px 16px;border:1px solid var(--line);border-radius:999px;background:var(--glass);color:var(--ink);font-size:13px;font-weight:600;cursor:pointer}
+.notify-action.is-approve{background:var(--selected-surface);border-color:var(--selected-border);color:var(--selected-text)}
+.notify-action:disabled{opacity:.5;cursor:default}
 .notify-empty{margin:0;padding:26px 12px;text-align:center;color:var(--dim);font-size:14px;line-height:1.7}
 .profile-settings{margin-top:34px}
 .settings-group-title{margin:26px 0 8px;font-size:13px;font-weight:650;color:var(--profile-dim)}
@@ -1954,6 +1964,12 @@ button.notify-row:hover{background:var(--glass)}
    grammar as every other settings row. */
 .settings-row .account-theme-options{flex:0 0 178px;gap:6px}
 .settings-row .account-theme-options button{min-height:34px;padding:4px 6px;font-size:13px}
+/* REQ-49: the fusion-permission segments sit under their settings
+   row, full width (three labels + the rule copy above them). */
+.fusion-permission-options{padding:2px 16px 16px}
+.fusion-permission-options .account-theme-options{display:flex;gap:8px}
+.fusion-permission-options .account-theme-options button{flex:1;min-height:38px}
+.fusion-permission-error{margin:10px 0 0;color:#e5484d;font-size:13px;line-height:1.6}
 .settings-row{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:10px 16px;border:0;border-top:1px solid var(--profile-edge);background:transparent;color:var(--profile-ink);text-align:left;font:inherit}
 button.settings-row{cursor:pointer}
 .settings-row:first-child{border-top:0}

@@ -32,6 +32,11 @@ export const notifyReadKeyFor = (uid, category) =>
   createHash('sha256').update(`notify-read\n${uid}\n${category}`).digest('hex')
 export const friendRequestKeyFor = (fromUid, toUid) =>
   createHash('sha256').update(`friend-request\n${fromUid}\n${toUid}`).digest('hex')
+export const fusionRequestKeyFor = (id) =>
+  createHash('sha256').update(`fusion-request\n${id}`).digest('hex')
+/** One fusion grant per (applicant, publication): the grant IS the pair record. */
+export const fusionGrantKeyFor = (applicantUid, publicationId) =>
+  createHash('sha256').update(`fusion-grant\n${applicantUid}\n${publicationId}`).digest('hex')
 /** Friendships are mutual: one record per unordered pair, keyed by the sorted pair. */
 export const friendshipKeyFor = (a, b) => {
   const [first, second] = [String(a), String(b)].sort()
@@ -86,6 +91,8 @@ export function createMemorySocialStore() {
   const accountEvents = new Map()
   const friendRequests = new Map()
   const friendships = new Map()
+  const fusionRequests = new Map()
+  const fusionGrants = new Map()
   return {
     kind: 'memory',
     async getFollow(followerUid, followeeUid) {
@@ -180,6 +187,27 @@ export function createMemorySocialStore() {
       return [...friendships.values()]
         .filter((record) => record.uidA === uid || record.uidB === uid)
         .map((record) => ({ ...record }))
+    },
+    async getFusionRequest(id) {
+      return fusionRequests.get(fusionRequestKeyFor(id)) ?? null
+    },
+    async putFusionRequest(record) {
+      fusionRequests.set(fusionRequestKeyFor(record.id), { ...record })
+    },
+    async listFusionRequestsByAuthor(uid) {
+      return [...fusionRequests.values()].filter((record) => record.authorUid === uid).map((record) => ({ ...record }))
+    },
+    async listFusionRequestsByApplicant(uid) {
+      return [...fusionRequests.values()].filter((record) => record.applicantUid === uid).map((record) => ({ ...record }))
+    },
+    async getFusionGrant(applicantUid, publicationId) {
+      return fusionGrants.get(fusionGrantKeyFor(applicantUid, publicationId)) ?? null
+    },
+    async putFusionGrant(record) {
+      fusionGrants.set(fusionGrantKeyFor(record.applicantUid, record.publicationId), { ...record })
+    },
+    async listFusionGrantsByApplicant(uid) {
+      return [...fusionGrants.values()].filter((record) => record.applicantUid === uid).map((record) => ({ ...record }))
     },
   }
 }
@@ -322,6 +350,32 @@ export function createFirestoreSocialStore(loadDb) {
         database.collection('friendships').where('uidB', '==', uid).get(),
       ])
       return [...asA.docs, ...asB.docs].map((doc) => doc.data())
+    },
+    async getFusionRequest(id) {
+      const snapshot = await (await db()).collection('fusion_requests').doc(fusionRequestKeyFor(id)).get()
+      return snapshot.exists ? snapshot.data() : null
+    },
+    async putFusionRequest(record) {
+      await (await db()).collection('fusion_requests').doc(fusionRequestKeyFor(record.id)).set({ ...record })
+    },
+    async listFusionRequestsByAuthor(uid) {
+      const snapshot = await (await db()).collection('fusion_requests').where('authorUid', '==', uid).get()
+      return snapshot.docs.map((doc) => doc.data())
+    },
+    async listFusionRequestsByApplicant(uid) {
+      const snapshot = await (await db()).collection('fusion_requests').where('applicantUid', '==', uid).get()
+      return snapshot.docs.map((doc) => doc.data())
+    },
+    async getFusionGrant(applicantUid, publicationId) {
+      const snapshot = await (await db()).collection('fusion_grants').doc(fusionGrantKeyFor(applicantUid, publicationId)).get()
+      return snapshot.exists ? snapshot.data() : null
+    },
+    async putFusionGrant(record) {
+      await (await db()).collection('fusion_grants').doc(fusionGrantKeyFor(record.applicantUid, record.publicationId)).set({ ...record })
+    },
+    async listFusionGrantsByApplicant(uid) {
+      const snapshot = await (await db()).collection('fusion_grants').where('applicantUid', '==', uid).get()
+      return snapshot.docs.map((doc) => doc.data())
     },
   }
 }

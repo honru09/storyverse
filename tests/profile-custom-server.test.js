@@ -134,7 +134,7 @@ test('a fresh user has the default avatar picture, an editable block, and no pic
   const profile = await getProfile(base, user.uid, user.token)
   assert.deepEqual(profile.picture, { kind: 'default', url: '/default-avatar.svg' })
   assert.deepEqual(profile.editable, {
-    displayName: '', handle: '', bio: '', pictureKind: null, hasUpload: false, hasPortrait: false, hasBanner: false,
+    displayName: '', handle: '', bio: '', fusionPermission: 'free', pictureKind: null, hasUpload: false, hasPortrait: false, hasBanner: false,
   })
   assert.equal(profile.bio, '', 'a fresh user has an empty bio, never a borrowed avatar description')
   const picture = await fetch(`${base}/api/users/${encodeURIComponent(user.uid)}/picture`)

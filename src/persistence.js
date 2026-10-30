@@ -369,6 +369,7 @@ function validateStory(story, prefix) {
   // titles at fusion time. Absent on every solo line and on fused lines
   // minted before the field existed.
   if (story.derivedFrom !== undefined) validateStringArray(story.derivedFrom, `${prefix}.derivedFrom`, errors)
+  if (story.sourcePublicationIds !== undefined) validateStringArray(story.sourcePublicationIds, `${prefix}.sourcePublicationIds`, errors)
   if (story.sourceTitles !== undefined) validateStringArray(story.sourceTitles, `${prefix}.sourceTitles`, errors)
 
   return errors

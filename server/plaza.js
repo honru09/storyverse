@@ -16,6 +16,7 @@ import { createSocialStore, pictureSourceFor } from './social-store.js'
 // from this module the same way, and neither side calls the other
 // during module evaluation.
 import { publicHandle } from './social.js'
+import { normalizeFusionPermission } from '../src/fusion-permission.js'
 
 /**
  * The bookstore service (the plaza service, renamed by BOOKSTORE-PLAZA:
@@ -578,6 +579,29 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         }
         if (!profile) {
           throw new ApiError(400, '这条故事线不是用你的化身走完的，无法发布。')
+        }
+        // 合流授权复检 (REQ-49): a fused book built on someone else's
+        // publication may only shelve while the fusion is allowed —
+        // the source author's CURRENT setting is free, or a durable
+        // grant from an approved application covers this publisher.
+        // The merged story names its outside sources itself
+        // (sourcePublicationIds, pinned at creation); a source whose
+        // publication is gone has no author left to consult and does
+        // not block. Fused lines minted before the field existed
+        // carry no source ids and pass unchecked — the boundary is
+        // stated in FUSION-PERMISSION.md, not hidden.
+        if (story.kind === 'merged' && socialBackend && typeof socialBackend.getFusionGrant === 'function') {
+          const sourceIds = Array.isArray(story.sourcePublicationIds)
+            ? [...new Set(story.sourcePublicationIds.filter((id) => typeof id === 'string' && id))]
+            : []
+          for (const publicationId of sourceIds) {
+            const source = await backend.getPublication(publicationId).catch(() => null)
+            if (!source || source.status !== 'published' || source.authorUid === identity.uid) continue
+            if (await socialBackend.getFusionGrant(identity.uid, publicationId)) continue
+            const authorRecord = await socialBackend.getProfileRecord(source.authorUid).catch(() => null)
+            if (normalizeFusionPermission(authorRecord?.fusionPermission) === 'free') continue
+            throw new ApiError(403, '这本合流书里有一本别人的书还没拿到合流授权，暂时不能发布。先向对方申请合流，或等对方把合流权限设为自由。')
+          }
         }
         const violation = redLineViolation(story)
         if (violation) throw new ApiError(400, violation)

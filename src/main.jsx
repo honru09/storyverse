@@ -139,6 +139,14 @@ import {
   subscribeProfile,
 } from "./profile-cache.js";
 import { armRestoredStageGuard } from "./profile-stage-guard.js";
+import {
+  FUSION_PERMISSION_OPTIONS,
+  applyForFusion,
+  decideFusionRequest,
+  fetchFusionStatus,
+  fusionGateFor,
+  normalizeFusionPermission,
+} from "./fusion-permission.js";
 import { acceptGeneratedChapter, acceptRerolledChapter, acceptRevisedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter, requestChapterReroll, requestChapterRevision } from "./generation.js";
 import InterventionOverlay from "./components/InterventionOverlay.jsx";
 import WorldArtwork from "./components/WorldArtwork.jsx";
@@ -3520,6 +3528,21 @@ const NOTIFY_SYSTEM_COPY = {
 };
 
 function notifySystemCopy(item) {
+  // 合流申请结果 (REQ-49): the event's detail carries the book title,
+  // so these two are composed, not tabled. The approved body keeps
+  // the wording the applicant was promised: 申请已通过，可以进行合流了。
+  if (item.kind === "fusion-approved") {
+    return {
+      title: "合流申请已通过",
+      body: item.detail ? `你申请合流的《${item.detail}》已通过，可以进行合流了。` : "你的合流申请已通过，可以进行合流了。",
+    };
+  }
+  if (item.kind === "fusion-rejected") {
+    return {
+      title: "合流申请未通过",
+      body: item.detail ? `《${item.detail}》的作者这次没有同意合流申请。` : "对方这次没有同意合流申请。",
+    };
+  }
   return NOTIFY_SYSTEM_COPY[`${item.kind}:${item.detail || ""}`]
     || NOTIFY_SYSTEM_COPY[item.kind]
     || { title: "账号动态", body: "" };
@@ -3535,6 +3558,20 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const getToken = useCallback(() => authClient.getAccessToken(), [authClient]);
+  // 合流申请裁决 (REQ-49): approving writes the applicant's durable
+  // grant server-side; either answer retracts the item, so the panel
+  // simply refetches and the row is gone.
+  const [decidingId, setDecidingId] = useState("");
+  const decideFusion = async (item, approve) => {
+    if (!item.requestId || decidingId) return;
+    setDecidingId(item.requestId);
+    try {
+      await decideFusionRequest({ requestId: item.requestId, approve, getAccessToken: getToken });
+      setRetry((value) => value + 1);
+    } catch {
+      setDecidingId("");
+    }
+  };
 
   useEffect(() => {
     let live = true;
@@ -3612,9 +3649,9 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
         <div className="notify-empty">
           <img className="empty-art" src="/art/empty-messages-512.webp" alt="" loading="lazy" />
           <p>
-            {tab === "activity" && "还没有互动消息——关注、好友申请、评论和评价都会记在这里。"}
+            {tab === "activity" && "还没有互动消息——关注、好友申请、合流申请、评论和评价都会记在这里。"}
             {tab === "announcements" && "暂无公告。"}
-            {tab === "system" && "暂无系统消息。密码重设、恢复邮箱变更这类账号动态会记在这里。"}
+            {tab === "system" && "暂无系统消息。密码重设、恢复邮箱变更、合流申请结果这类账号动态会记在这里。"}
           </p>
         </div>
       ) : (
@@ -3622,6 +3659,50 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
           {items.map((item) => {
             if (tab === "activity") {
               const portrait = item.picture?.kind === "avatar";
+              if (item.kind === "fusion_request") {
+                // 合流申请 (REQ-49): the one actionable row in the
+                // centre — the author answers here, and the answer
+                // (grant or refusal) is written server-side.
+                return (
+                  <li key={item.id}>
+                    <div className="notify-row notify-row-static">
+                      <span className={`nav-face-frame is-person ${portrait ? "is-portrait" : ""}`} aria-hidden="true">
+                        <img className="nav-face-img" src={item.picture?.url || "/default-avatar.svg"} alt="" loading="lazy" />
+                      </span>
+                      <span className="notify-row-copy">
+                        <span className="notify-row-text">
+                          <strong>{item.displayName}</strong>
+                          {" 申请用你的"}
+                          {item.target?.bookTitle ? `《${item.target.bookTitle}》` : "书"}
+                          {"合流"}
+                        </span>
+                        {item.target?.storyTitle ? (
+                          <span className="notify-row-body">对方的线：《{item.target.storyTitle}》</span>
+                        ) : null}
+                        {item.at && <small>{notifyTime(item.at)}</small>}
+                        <span className="notify-actions">
+                          <button
+                            type="button"
+                            className="notify-action is-approve"
+                            disabled={Boolean(decidingId)}
+                            onClick={() => void decideFusion(item, true)}
+                          >
+                            同意
+                          </button>
+                          <button
+                            type="button"
+                            className="notify-action"
+                            disabled={Boolean(decidingId)}
+                            onClick={() => void decideFusion(item, false)}
+                          >
+                            拒绝
+                          </button>
+                        </span>
+                      </span>
+                    </div>
+                  </li>
+                );
+              }
               return (
                 <li key={item.id}>
                   <button
@@ -8323,6 +8404,45 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
   const motion = useMotionSettings();
   const systemPaused = motion.reducedMotion || motion.saveData;
   const motionOn = motion.enabled && !systemPaused;
+  // 合流权限 (REQ-49): the account-level consent for other readers
+  // fusing MY books — free / ask / forbidden, default free. The saved
+  // value rides the profile record; this control loads it from the
+  // owner's own profile payload and saves through the same profile
+  // endpoint as every other profile field.
+  const ownUid = account?.user?.uid || "";
+  const [fusionPermission, setFusionPermission] = useState("free");
+  const [fusionLoaded, setFusionLoaded] = useState(false);
+  const [fusionSaving, setFusionSaving] = useState(false);
+  const [fusionError, setFusionError] = useState("");
+  useEffect(() => {
+    if (!ownUid) return undefined;
+    let live = true;
+    fetchUserProfile({ uid: ownUid, getAccessToken: () => authClient.getAccessToken() })
+      .then((profile) => {
+        if (!live) return;
+        setFusionPermission(normalizeFusionPermission(profile?.editable?.fusionPermission));
+        setFusionLoaded(true);
+      })
+      .catch(() => { if (live) setFusionLoaded(true); });
+    return () => { live = false; };
+  }, [ownUid, authClient]);
+  const changeFusionPermission = async (next) => {
+    if (!fusionLoaded || fusionSaving || next === fusionPermission) return;
+    const previous = fusionPermission;
+    setFusionPermission(next);
+    setFusionSaving(true);
+    setFusionError("");
+    try {
+      const saved = await updateMyProfile({
+        patch: { fusionPermission: next },
+        getAccessToken: () => authClient.getAccessToken(),
+      });
+      setFusionPermission(normalizeFusionPermission(saved?.editable?.fusionPermission || next));
+    } catch {
+      setFusionPermission(previous);
+      setFusionError("合流权限没能保存，请稍后再试。");
+    } finally { setFusionSaving(false); }
+  };
   const [signingOut, setSigningOut] = useState(false);
   const signOut = async () => {
     if (signingOut) return;
@@ -8391,6 +8511,34 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
             <strong>{signingOut ? "正在退出…" : "退出登录"}</strong>
           </span>
         </button>
+      </div>
+
+      <h3 className="settings-group-title">社交</h3>
+      <div className="settings-card">
+        <div className="settings-row settings-row-static">
+          <span className="settings-row-ic"><Icon name="git" size={19} /></span>
+          <span className="settings-row-copy">
+            <strong>合流权限</strong>
+            <small>别人用你的书合流时按这里办。选「询问」，对方要先申请、你同意后才能合。</small>
+          </span>
+        </div>
+        <div className="fusion-permission-options">
+          <div className="account-theme-options" role="group" aria-label="合流权限">
+            {FUSION_PERMISSION_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={fusionPermission === option.id}
+                className={fusionPermission === option.id ? "is-active" : ""}
+                disabled={!fusionLoaded || fusionSaving}
+                onClick={() => void changeFusionPermission(option.id)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {fusionError && <p className="fusion-permission-error" role="alert">{fusionError}</p>}
+        </div>
       </div>
 
       <h3 className="settings-group-title">数据</h3>
@@ -9753,19 +9901,28 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
   );
 }
 
-function MergeLineCard({ book, selected, onSelect, badge = "", ambiguous = false }) {
+function MergeLineCard({ book, selected, onSelect, badge = "", ambiguous = false, gate = null }) {
   const genre = genreOf(book);
   const meta = fusionLineMetaFor(book);
   // N-03: when the same title appears twice in one picker, the card
   // grows a second fact line (world · protagonist · birth point) so
   // the two lines can be told apart before choosing, not after.
   const distinguisher = ambiguous ? storyDistinguisherFor(book) : "";
+  // 合流权限 (REQ-49): a line entered from someone else's book carries
+  // the author's consent state as its badge — 已获授权 when a grant
+  // covers the reader, 需先申请 / 申请中 / 对方未开放合流 while it
+  // cannot be picked. A locked card still takes the click so the page
+  // can explain (or, for 需先申请， submit the application).
+  const locked = Boolean(gate && !gate.canFuse);
+  const badgeText = gate?.label || badge || meta.stateLabel;
+  const badgeClass = gate?.label ? "is-gate" : badge ? "is-sample" : meta.stateKind;
   return (
     <button
       type="button"
       role="radio"
       aria-checked={selected}
-      className={`merge-line-card ${selected ? "active" : ""}`}
+      aria-disabled={locked || undefined}
+      className={`merge-line-card ${selected ? "active" : ""} ${locked ? "is-locked" : ""}`}
       onClick={onSelect}
     >
       <span className="merge-line-thumb">
@@ -9776,7 +9933,7 @@ function MergeLineCard({ book, selected, onSelect, badge = "", ambiguous = false
         <small>{genre.world} · {meta.modeLabel} · {meta.progressLabel}</small>
         {distinguisher && <small className="merge-line-distinguisher">{distinguisher}</small>}
       </span>
-      <span className={`merge-line-badge ${badge ? "is-sample" : meta.stateKind}`}>{badge || meta.stateLabel}</span>
+      <span className={`merge-line-badge ${badgeClass}`}>{badgeText}</span>
       {selected && <Icon name="check" size={15} />}
     </button>
   );
@@ -9846,6 +10003,80 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
   // own protagonist (the config snapshot keeps the book intact).
   const sourceAvatar = avatars.find((item) => item.id === sourceStory.config?.avatarId) || null;
   const partnerAvatar = avatars.find((item) => item.id === partnerStory.config?.avatarId) || null;
+  // 合流权限 (REQ-49): lines entered from someone else's published
+  // book fuse under THAT author's account setting. The server answers
+  // per publication (setting + my durable grant + my pending
+  // application); until it answers — or when it cannot be reached —
+  // gates stay open and the publish-time check remains the backstop.
+  const fusionPublicationIds = useMemo(
+    () => [...new Set(originals.map((story) => story.config?.sourcePublicationId).filter(Boolean))],
+    [originals],
+  );
+  const [fusionStatus, setFusionStatus] = useState({});
+  const fusionStatusKey = fusionPublicationIds.join("|");
+  useEffect(() => {
+    if (!fusionStatusKey) return undefined;
+    let live = true;
+    fetchFusionStatus({
+      publicationIds: fusionStatusKey.split("|"),
+      getAccessToken: () => authClient.getAccessToken(),
+    })
+      .then((statuses) => { if (live) setFusionStatus(statuses || {}); })
+      .catch(() => { /* offline posture: no gate without the server's word */ });
+    return () => { live = false; };
+  }, [fusionStatusKey]);
+  const gateForStory = (story) => {
+    const publicationId = story?.config?.sourcePublicationId || "";
+    if (!publicationId) return fusionGateFor(null);
+    return fusionGateFor(fusionStatus[publicationId]);
+  };
+  const [fusionNote, setFusionNote] = useState("");
+  const [applyingId, setApplyingId] = useState("");
+  const applyForLine = async (book, otherStory) => {
+    const publicationId = book.config?.sourcePublicationId;
+    if (!publicationId || applyingId) return;
+    setApplyingId(book.id);
+    setError("");
+    try {
+      await applyForFusion({
+        publicationId,
+        storyTitle: otherStory && otherStory.id !== FRIEND_BOOK.id ? otherStory.title || "" : "",
+        avatarName: otherStory ? displayName(otherStory) : "",
+        getAccessToken: () => authClient.getAccessToken(),
+      });
+      setFusionStatus((current) => ({
+        ...current,
+        [publicationId]: { ...(current[publicationId] || {}), pending: true },
+      }));
+      setFusionNote(`已向《${book.title}》的作者提交合流申请，对方同意后就能选它合流。`);
+    } catch (failure) {
+      if (failure?.code === "auth-required") onAuthRequired?.();
+      else if (failure?.code === "conflict") {
+        setFusionStatus((current) => ({
+          ...current,
+          [publicationId]: { ...(current[publicationId] || {}), pending: true },
+        }));
+        setFusionNote(failure.message);
+      } else setError(failure?.message || "申请没能提交，请稍后再试。");
+    } finally { setApplyingId(""); }
+  };
+  const pickLine = (book, side) => {
+    const gate = gateForStory(book);
+    if (gate.state === "apply") {
+      void applyForLine(book, side === "source" ? partnerStory : sourceStory);
+      return;
+    }
+    if (!gate.canFuse) {
+      setError(gate.state === "pending"
+        ? `《${book.title}》的合流申请还在等对方同意，同意后就能选它合流。`
+        : `《${book.title}》的作者未开放合流，这条线不能用来合流。`);
+      return;
+    }
+    if (side === "source") {
+      setSourceId(book.id);
+      if (book.id === partnerId) setPartnerId(FRIEND_BOOK.id);
+    } else setPartnerId(book.id);
+  };
   const [rules, setRules] = useState("bridge");
   const [lead, setLead] = useState("a");
   const [bond, setBond] = useState("allies");
@@ -9869,6 +10100,20 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
   const friendGenre = genreOf(partnerStory);
   const runMerge = async () => {
     if (operation.current) return;
+    // 合流权限 (REQ-49): neither side may be a line whose author has
+    // not consented — the pickers refuse the selection already, and
+    // this is the same check at the moment of fusion itself.
+    const blockedSide = [sourceStory, partnerStory]
+      .map((story) => ({ story, gate: gateForStory(story) }))
+      .find(({ gate }) => !gate.canFuse);
+    if (blockedSide) {
+      setError(blockedSide.gate.state === "pending"
+        ? `《${blockedSide.story.title}》的合流申请还在等对方同意，同意后才能合流。`
+        : blockedSide.gate.state === "ask"
+          ? `《${blockedSide.story.title}》需要先向作者申请合流，对方同意后才能合流。`
+          : `《${blockedSide.story.title}》的作者未开放合流，不能合流。`);
+      return;
+    }
     const controller = new AbortController();
     operation.current = controller;
     setBusy(true);
@@ -9926,10 +10171,8 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
                 book={book}
                 ambiguous={duplicateLineTitles.has(book.title)}
                 selected={sourceStory.id === book.id}
-                onSelect={() => {
-                  setSourceId(book.id);
-                  if (book.id === partnerId) setPartnerId(FRIEND_BOOK.id);
-                }}
+                gate={gateForStory(book)}
+                onSelect={() => pickLine(book, "source")}
               />
             ))}
           </div>
@@ -9943,7 +10186,8 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
                 book={book}
                 ambiguous={duplicateLineTitles.has(book.title)}
                 selected={partnerStory.id === book.id}
-                onSelect={() => setPartnerId(book.id)}
+                gate={gateForStory(book)}
+                onSelect={() => pickLine(book, "partner")}
               />
             ))}
             <MergeLineCard
@@ -10017,6 +10261,11 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
       {error && (
         <div className="sw-inline-alert" role="alert">
           {error}
+        </div>
+      )}
+      {!error && fusionNote && (
+        <div className="merge-fusion-note" role="status">
+          {fusionNote}
         </div>
       )}
       <div className="merge-controls">
