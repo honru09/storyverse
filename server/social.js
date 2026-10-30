@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { ApiError, sanitizeSettingText } from './gemini.js'
-import { avatarAppearanceText } from '../src/avatar.js'
+import { avatarAppearanceText, normalizeAvatarAbility } from '../src/avatar.js'
 import { CUSTOM_GENRE_ID } from '../src/story-engine.js'
 import { createSocialStore, pictureSourceFor, bannerSourceFor, friendshipKeyFor } from './social-store.js'
 import { emailCodeUid, normalizeEmailAddress, validEmailAddress } from './email-code.js'
@@ -731,6 +731,10 @@ export function createSocialService({
       const avatarSummaries = (collection?.avatars || []).map((item) => {
         const ready = item?.portrait?.status === 'ready'
         const name = sanitizeSettingText(clip(item.name, 40)).trim()
+        // The signature ability (REQ-57) is part of who this avatar
+        // publicly is — one line on the profile stage — so it rides
+        // the summary, scrubbed and bounded like the other fields.
+        const ability = normalizeAvatarAbility(item?.ability)
         return {
           id: item.id,
           name,
@@ -738,6 +742,13 @@ export function createSocialService({
           appearance: avatarAppearanceText(item),
           isMain: Boolean(mainAvatarId) && item.id === mainAvatarId,
           hasPortrait: ready,
+          ...(ability ? {
+            ability: {
+              id: ability.id,
+              name: sanitizeSettingText(clip(ability.name, 40)).trim(),
+              desc: sanitizeSettingText(clip(ability.desc, 120)).trim(),
+            },
+          } : {}),
           ...(ready ? { portraitUrl: `/api/users/${encodeURIComponent(target)}/portrait?avatar=${encodeURIComponent(item.id)}&v=${item.portrait?.version || 1}` } : {}),
           ...(worldByAvatarName.get(name) ? { currentWorld: worldByAvatarName.get(name) } : {}),
         }

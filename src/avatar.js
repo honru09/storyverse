@@ -23,6 +23,41 @@
 export const AVATAR_NAME_MAX = 20
 export const AVATAR_DESCRIPTION_MAX = 300
 export const AVATAR_APPEARANCE_TEXT_MAX = 300
+// The avatar's signature ability (REQ-57, owner ruling 2026-10-30):
+// one ability the reader presets on the avatar itself and carries into
+// every world, the same way the written description already carries
+// its character. The shape is exactly the story engine's ability shape
+// ({ id, name, desc } — the forge's ability step consumes those), and
+// the bounds mirror the ability step's own editors (custom name input
+// caps at 40 there). An avatar saved before this field existed simply
+// has no ability — every consumer treats that as "not set", never an
+// error.
+export const AVATAR_ABILITY_NAME_MAX = 40
+export const AVATAR_ABILITY_DESC_MAX = 120
+export const AVATAR_ABILITY_ID_MAX = 64
+
+/**
+ * Normalise a signature-ability value (an { id, name, desc } object, or
+ * a bare name string) into the stored shape, or null when there is no
+ * usable ability. The id is carried for library matching at the entry
+ * points; it is never trusted on its own — consumers match by id, then
+ * by name, then fall back to treating the entry as a custom ability,
+ * exactly like a restored forge draft does.
+ */
+export function normalizeAvatarAbility(input) {
+  const raw = typeof input === 'string' ? { name: input } : input
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const name = typeof raw.name === 'string' ? raw.name.replace(/\s+/g, ' ').trim().slice(0, AVATAR_ABILITY_NAME_MAX) : ''
+  if (!name) return null
+  const desc = typeof raw.desc === 'string' ? raw.desc.replace(/\s+/g, ' ').trim().slice(0, AVATAR_ABILITY_DESC_MAX) : ''
+  const id = typeof raw.id === 'string' ? raw.id.trim().slice(0, AVATAR_ABILITY_ID_MAX) : ''
+  return { id, name, desc }
+}
+
+/** The avatar's preset signature ability, normalised, or null. */
+export function avatarAbilityOf(avatar) {
+  return normalizeAvatarAbility(avatar?.ability)
+}
 // One account may keep a small drawer of avatars (PERSONA-QA F-27): the
 // main avatar is the identity every public surface resolves, the rest are
 // companions the reader can bring into a book instead. The cap is shared
@@ -66,11 +101,17 @@ export function avatarAppearanceText(avatar) {
 export function avatarDraftPatch(avatar) {
   if (!avatar || typeof avatar !== 'object') return null
   const description = typeof avatar.description === 'string' ? avatar.description.trim() : ''
+  const ability = avatarAbilityOf(avatar)
   return {
     name: typeof avatar.name === 'string' ? avatar.name : '',
     avatarId: typeof avatar.id === 'string' ? avatar.id : '',
     avatarAppearance: avatarAppearanceText(avatar),
     ...(description ? { persona: description } : {}),
+    // The signature ability rides along as information only (REQ-57):
+    // the forge's ability step reads it to offer 「带专属能力进入」 as
+    // the default, but the pick still lands as the book's own ability —
+    // choosing another ability there never writes back to this profile.
+    ...(ability ? { avatarAbility: ability } : {}),
   }
 }
 
@@ -90,11 +131,20 @@ export function validateAvatarProfile(input) {
   // `appearance` a stale client still sends is ignored here and never
   // stored from the payload — the stored record's own legacy field, if
   // one exists, is carried by the server untouched (see server/avatar.js).
+  // The signature ability (REQ-57) is the one addition, with
+  // tri-state semantics on the key itself: ABSENT means the payload
+  // says nothing about it (a stale client saving name/description —
+  // the server keeps the stored ability); PRESENT carries the
+  // normalised ability, or null when the reader has none set / cleared
+  // it in the editor (the server then stores none).
+  const abilityProvided = Object.prototype.hasOwnProperty.call(input, 'ability')
+  const ability = normalizeAvatarAbility(input.ability)
   return {
     profile: {
       ...(typeof input.id === 'string' && input.id ? { id: input.id.slice(0, 64) } : {}),
       name,
       description,
+      ...(abilityProvided ? { ability } : {}),
     },
   }
 }
@@ -120,16 +170,19 @@ export const AVATAR_PRESETS = [
     id: 'preset-lin-wanzhou',
     name: '林晚舟',
     description: '清冷安静的剑客，乌黑长发，一袭浅色长袍，眼下一点泪痣，话不多，站在人群里也像站在风里。',
+    ability: { id: 'gen-mindglimpse', name: '读心余光', desc: '与人对视时，能瞥见对方没说出口的半句话' },
   },
   {
     id: 'preset-a-can',
     name: '阿灿',
     description: '笑起来很亮的街头少年，银灰短发，鼻尖几点雀斑，穿街头夹克和运动鞋，好奇心比胆子大，口袋里总有糖。',
+    ability: { id: 'gen-luck', name: '逢凶化吉', desc: '坏事落到你身上时，总差最后临门一脚' },
   },
   {
     id: 'preset-bai-yu',
     name: '白榆',
     description: '温润耐心的年轻学者，茶棕长发，戴细框眼镜，穿文人长衫，喜欢把袖口挽起来，慢慢把事情讲清楚。',
+    ability: { id: 'gen-verse', name: '言出法随', desc: '说出口的小事，总会以某种方式成真' },
   },
 ]
 

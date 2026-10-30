@@ -4,6 +4,8 @@ import { dayKeyFor } from './usage.js'
 import { createAvatarStore, collectionFromRecord, imageSlotFor } from './avatar-store.js'
 import { transcodePortraitImage, normalizedStoredImage } from './portrait-image.js'
 import {
+  AVATAR_ABILITY_DESC_MAX,
+  AVATAR_ABILITY_NAME_MAX,
   AVATAR_DESCRIPTION_MAX,
   AVATAR_LIMIT,
   AVATAR_NAME_MAX,
@@ -113,11 +115,22 @@ export function buildAvatarPrompt(profile, { hasReference = false } = {}) {
 }
 
 function scrubProfile(profile) {
-  return {
+  const scrubbed = {
     ...profile,
     name: safeText(profile.name, AVATAR_NAME_MAX),
     description: safeText(profile.description, AVATAR_DESCRIPTION_MAX),
   }
+  // The signature ability (REQ-57) is reader-authored text that travels
+  // into story prompts exactly like the description does, so its name
+  // and effect pass the same scrub before they can be stored.
+  if (profile.ability && typeof profile.ability === 'object') {
+    scrubbed.ability = {
+      ...profile.ability,
+      name: safeText(profile.ability.name, AVATAR_ABILITY_NAME_MAX),
+      desc: safeText(profile.ability.desc, AVATAR_ABILITY_DESC_MAX),
+    }
+  }
+  return scrubbed
 }
 
 function validatedProfile(body, existing) {
@@ -128,10 +141,16 @@ function validatedProfile(body, existing) {
   const scrubbed = scrubProfile(profile)
   if (!scrubbed.name) throw new ApiError(400, '先给化身取个名字。')
   const now = new Date().toISOString()
+  // REQ-57: the signature ability follows validateAvatarProfile's
+  // tri-state — a payload carrying the key (an ability, or null for
+  // "none set / cleared") wins; a payload without the key (a stale
+  // client) keeps the stored ability rather than clearing it.
+  const ability = 'ability' in scrubbed ? scrubbed.ability : existing?.ability
   return {
     id: existing?.id || profile.id || `avatar-${randomUUID().slice(0, 12)}`,
     name: scrubbed.name,
     description: scrubbed.description,
+    ...(ability ? { ability } : {}),
     // AVATAR-TRIM: a stored legacy `appearance` object is inert data —
     // carried through untouched (never read, never re-submitted, no
     // migration), and never taken from the request payload.

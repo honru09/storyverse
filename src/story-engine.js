@@ -216,6 +216,14 @@ export const START_POINT_HOOK_MAX = 120
 // under the reader's account; editing it never rewrites a book's copy.
 export const AVATAR_ID_MAX = 64
 export const AVATAR_APPEARANCE_MAX = 300
+// The one-line effect of the ability this book was opened with (REQ-57):
+// the ability NAME alone used to be all the config carried, so a picked
+// power's effect — and above all a hand-written or avatar-signature
+// power's effect — never reached the telling. The desc now rides beside
+// the name for every path (library pick, custom, avatar signature) and
+// the chapter brief states it next to the name. Books opened before
+// this field existed simply have no desc; their brief is unchanged.
+export const ABILITY_DESC_MAX = 120
 // The protagonist persona text (typed, or composed from an imported
 // character card): who this person is, in free words, riding the config
 // into every generation brief.
@@ -1018,6 +1026,7 @@ const normalizeDraft = (draft = {}) => {
     trait: cleanText(input.trait, DEFAULT_DRAFT.trait),
     origin: cleanText(input.origin, DEFAULT_DRAFT.origin),
     ability: cleanText(input.ability, DEFAULT_DRAFT.ability),
+    abilityDesc: cleanBounded(input.abilityDesc, ABILITY_DESC_MAX),
     tone: cleanText(input.tone, DEFAULT_DRAFT.tone),
     immersive,
     hometown: lifeDetail('hometown'),
@@ -2432,7 +2441,11 @@ export function storyBeatPlan(story, index) {
     // refer back to who the protagonist IS in this world, even though the
     // spawn point itself only ever grounds chapter one.
     ...(originBeatLine(genre, config) ? [originBeatLine(genre, config)] : []),
-    `能力：${ability}`,
+    // The effect line rides when the book carries one (REQ-57): a
+    // signature or hand-written power is only defined by its effect,
+    // and a library pick means its printed effect too. The bible's
+    // generic cost rule still governs every path alike.
+    config.abilityDesc ? `能力：${ability}（${cleanText(config.abilityDesc, '')}）` : `能力：${ability}`,
     structureLine,
   ]
   if (lived && !merged) prerequisites.push(`现实背景：${lived}`)
