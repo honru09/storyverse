@@ -212,10 +212,16 @@ import {
   BOOK_TITLE_MAX,
   CHAPTER_TITLE_MAX,
   SYNOPSIS_MAX,
+  INTRO_BACKGROUND_MAX,
+  INTRO_RULE_MAX,
+  INTRO_RULES_MAX,
+  INTRO_THREAD_MAX,
   bookTitleSuggestionFor,
+  effectiveIntroFor,
   renameBookTitle,
   renameChapterTitle,
   synopsisOf,
+  updateIntro,
   updateSynopsis,
   createMergedStory,
   createStory,
@@ -4054,7 +4060,7 @@ function ProseEditor({ chapter, onClose, onSave }) {
 // generated after the edit; chapters that already exist never change.
 // The lorebook shown here is the owner's private material (imported or
 // hand-written): it appears in no public snapshot, ever.
-function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPage, onClose, onSave, onFuse, onDelete, onSaveSynopsis, onSaveBookTitle, onSaveChapterTitles }) {
+function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPage, onClose, onSave, onFuse, onDelete, onSaveSynopsis, onSaveBookTitle, onSaveChapterTitles, onSaveIntro }) {
   // 自己写 (WRITE-MODE §50): a hand-written book has no world bible to
   // steer, no lorebook to inject and no style preset to dial — those
   // sections would be dead controls. Its settings book keeps only what
@@ -4099,6 +4105,34 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
     }
     setSynopsisError("");
     setSynopsisSaved(true);
+  };
+  // 世界设定（发布版）(REQ-56): the three public paragraphs the detail
+  // page prints. The editor opens on the EFFECTIVE intro — the
+  // generated draft when the book carries one, otherwise the factual
+  // fallback the surfaces show — so what the owner sees here is what
+  // readers see, and the first save makes it the book's own words.
+  // Rules are edited one per line.
+  const effectiveIntro = effectiveIntroFor(story);
+  const [introBackground, setIntroBackground] = useState(() => effectiveIntro?.background || "");
+  const [introRulesText, setIntroRulesText] = useState(() => (effectiveIntro?.rules || []).join("\n"));
+  const [introThread, setIntroThread] = useState(() => effectiveIntro?.thread || "");
+  const [introError, setIntroError] = useState("");
+  const [introSaved, setIntroSaved] = useState(false);
+  const saveIntro = () => {
+    const error = onSaveIntro
+      ? onSaveIntro({
+          background: introBackground,
+          rules: introRulesText.split("\n").map((line) => line.trim()).filter(Boolean),
+          thread: introThread,
+        })
+      : "世界设定没能保存，请再试一次。";
+    if (error) {
+      setIntroError(error);
+      setIntroSaved(false);
+      return;
+    }
+    setIntroError("");
+    setIntroSaved(true);
   };
   const beginTocEdit = () => {
     setTocTitles(tocChapters.map((chapter) => chapter.title));
@@ -4236,6 +4270,58 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
           {synopsisSaved && !synopsisError && <span role="status">已保存。</span>}
         </div>
       </div>
+      {!manual && (
+      <div className="settings-section">
+        <h3>世界设定（发布版）</h3>
+        <p className="field-hint">
+          这三段就是书城和详情页里介绍这本书的文字，开书时已经替你写好了一版，你可以照自己的想法改。改动先落在你自己的书上；已经发布的，重新发布一次才会同步。
+        </p>
+        <label className="field-label">
+          世界背景
+          <textarea
+            rows={4}
+            maxLength={INTRO_BACKGROUND_MAX}
+            value={introBackground}
+            aria-label="世界背景（发布版）"
+            placeholder="这个世界是什么样子，主角身处其中的什么位置。"
+            onChange={(event) => { setIntroBackground(event.target.value); setIntroSaved(false); }}
+          />
+        </label>
+        <label className="field-label">
+          核心规则（一行一条，最多三条）
+          <textarea
+            rows={3}
+            maxLength={INTRO_RULES_MAX * (INTRO_RULE_MAX + 1)}
+            value={introRulesText}
+            aria-label="核心规则（发布版）"
+            placeholder="这本书自己的规矩：能力怎么用、代价是什么。"
+            onChange={(event) => { setIntroRulesText(event.target.value); setIntroSaved(false); }}
+          />
+        </label>
+        <label className="field-label">
+          主角与主线
+          <textarea
+            rows={4}
+            maxLength={INTRO_THREAD_MAX}
+            value={introThread}
+            aria-label="主角与主线（发布版）"
+            placeholder="主角的处境、目标、对手与代价，这条线具体怎么走。"
+            onChange={(event) => { setIntroThread(event.target.value); setIntroSaved(false); }}
+          />
+        </label>
+        {introError && (
+          <p className="intervention-error" role="alert">
+            {introError}
+          </p>
+        )}
+        <div className="settings-inline-actions">
+          <Button variant="secondary" onClick={saveIntro}>
+            保存世界设定
+          </Button>
+          {introSaved && !introError && <span role="status">已保存。</span>}
+        </div>
+      </div>
+      )}
       {!manual && story.kind === "merged" ? (
         <div className="settings-section settings-fusion">
           <h3>这本书的来历</h3>
@@ -4789,6 +4875,18 @@ function Reader({
       return null;
     } catch (failure) {
       return failure.message || "简介没能保存，请再试一次。";
+    }
+  };
+  // 世界设定（发布版）(REQ-56): the public intro's three parts land
+  // through the same story update as the synopsis — local book at
+  // once, plaza publication on the next re-publish.
+  const saveIntro = (intro) => {
+    try {
+      const next = updateIntro(story, intro);
+      if (next !== story) update(next);
+      return null;
+    } catch (failure) {
+      return failure.message || "世界设定没能保存，请再试一次。";
     }
   };
   // 改书名 (TITLE-FLOW): the title is metadata like the synopsis, so it
@@ -5579,6 +5677,7 @@ function Reader({
           onClose={() => setSettingsOpen(false)}
           onSave={saveSettings}
           onSaveSynopsis={saveSynopsis}
+          onSaveIntro={saveIntro}
           onSaveBookTitle={saveBookTitle}
           onSaveChapterTitles={saveChapterTitles}
           onFuse={() => { setSettingsOpen(false); onNavigate("merge", { storyId: story.id }); }}

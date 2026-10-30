@@ -158,7 +158,7 @@ const walkLocal = (story, count) => {
   return current
 }
 
-test('plazaSnapshot carries the synopsis only when the owner wrote one', () => {
+test('plazaSnapshot carries the synopsis the book has — draft at birth, owner text after an edit (REQ-56)', () => {
   const base = walkLocal(createStory({
     genreId: 'cultivation',
     genreTemplateId: 'xianxia',
@@ -169,8 +169,18 @@ test('plazaSnapshot carries the synopsis only when the owner wrote one', () => {
     avatarId: 'avatar-edit-1',
     ability: '借火一瞬',
   }), 24)
+  // REQ-56 supersedes the EDIT-BOOK-era premise of this test: a book
+  // is no longer born without a synopsis — the forge writes a draft
+  // at creation (the generator's own draft replaces it at the online
+  // opening), and the snapshot carries whatever the book currently
+  // has. Only a book whose field is genuinely absent (a legacy
+  // shape) snapshots without one.
+  assert.ok(base.synopsis, 'a forged book is born with its draft synopsis')
   const plain = plazaSnapshot(base, { avatarName: '沈砚' })
-  assert.equal('synopsis' in plain, false, 'no stored synopsis, no snapshot field — the detail falls back to the premise')
+  assert.equal(plain.synopsis, base.synopsis, 'the snapshot carries the current synopsis verbatim')
+  const legacy = { ...base }
+  delete legacy.synopsis
+  assert.equal('synopsis' in plazaSnapshot(legacy, { avatarName: '沈砚' }), false, 'no stored synopsis, no snapshot field — the detail falls back')
   const edited = updateSynopsis(base, '少年在破庙里借到一瞬火，从此每一步都要还。')
   const snapshot = plazaSnapshot(edited, { avatarName: '沈砚' })
   assert.equal(snapshot.synopsis, '少年在破庙里借到一瞬火，从此每一步都要还。', 'a re-publish carries the current synopsis')

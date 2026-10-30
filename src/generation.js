@@ -1,4 +1,4 @@
-import { acceptChapter, chapterKey, outlineLengthFor, replaceChapter, replaceFrontierChapter, storyLedgerFor, totalChaptersFor } from './story-engine.js'
+import { acceptChapter, chapterKey, outlineLengthFor, replaceChapter, replaceFrontierChapter, sanitizeIntro, storyLedgerFor, SYNOPSIS_MAX, totalChaptersFor } from './story-engine.js'
 import { readerIndexFor } from './reading-flow.js'
 import { emptyLibrary, validateLibrary } from './persistence.js'
 
@@ -68,6 +68,17 @@ export function acceptGeneratedChapter(story, result) {
   if (next === story) return story
   next = withDerivedProtagonistName(next, result)
   if (index === 0 && result.worldBible) next = { ...next, worldBible: result.worldBible }
+  // 简介生成制 (REQ-56): the opening call wrote the book's public
+  // words in the same call as the bible. They land together here,
+  // overwriting the factual local draft the forge was born with;
+  // later chapters carry neither field, so owner edits made after
+  // the opening are never overwritten by generation.
+  if (index === 0 && typeof result.synopsis === 'string' && result.synopsis.trim()) {
+    next = { ...next, synopsis: result.synopsis.trim().slice(0, SYNOPSIS_MAX) }
+  }
+  if (index === 0 && sanitizeIntro(result.intro)) {
+    next = { ...next, intro: sanitizeIntro(result.intro) }
+  }
   // Remember which genre template the server resolved for this story so later
   // chapter requests can pin the same template instead of re-mapping.
   if (typeof result.genreTemplateId === 'string' && result.genreTemplateId) next = { ...next, genreTemplateId: result.genreTemplateId }
@@ -179,6 +190,15 @@ export function acceptRerolledChapter(story, result) {
   // Re-rolling the opening chapter is a fresh opening: the world bible
   // the server derived for it replaces the old one, as on first accept.
   if (index === 0 && result.worldBible) next = { ...next, worldBible: result.worldBible }
+  // The public words follow the bible (REQ-56): a re-rolled opening
+  // is a new opening, so its generated synopsis and intro replace
+  // the previous draft the same way.
+  if (index === 0 && typeof result.synopsis === 'string' && result.synopsis.trim()) {
+    next = { ...next, synopsis: result.synopsis.trim().slice(0, SYNOPSIS_MAX) }
+  }
+  if (index === 0 && sanitizeIntro(result.intro)) {
+    next = { ...next, intro: sanitizeIntro(result.intro) }
+  }
   const checked = validateLibrary({ ...emptyLibrary(), stories: [next], activeStoryId: next.id })
   if (checked.length) throw new Error('章节格式不完整，请重试。')
   return next

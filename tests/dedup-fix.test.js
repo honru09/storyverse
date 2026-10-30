@@ -165,15 +165,25 @@ test('④ the intro never leaks the unpublished future', () => {
   assert.ok(!whole.includes('烧掉整本账簿'), 'endingAnchor stays private')
   assert.ok(!whole.includes('未公开大纲'), 'outline stays private')
   assert.ok(intro.thread.includes('王兴润'))
-  assert.ok(intro.thread.includes('「夜市开锣」'))
-  assert.ok(intro.thread.includes('「账清」'))
-  assert.ok(intro.thread.includes('已经完结') || intro.thread.includes('已完结') || intro.thread.includes('全 24 章'))
+  // REQ-56 supersedes this test's FINAL-FIX-era thread expectations:
+  // chapter titles are no longer chained into the thread and the
+  // chapter count is no longer broadcast — both were noise, not
+  // introduction. This fixture's beats carry no summaries, so the
+  // fallback thread is the protagonist line alone.
+  assert.ok(!intro.thread.includes('「夜市开锣」'), 'first-chapter title no longer chained in')
+  assert.ok(!intro.thread.includes('「账清」'), 'last-chapter title no longer chained in')
+  assert.ok(!intro.thread.includes('全 24 章'), 'no chapter-count broadcast')
+  assert.equal(intro.thread, '王兴润是这个世界的主角。')
 })
 
-test('④ a serialising line reports live progress; the author synopsis leads when present', () => {
+test('④ the thread carries no progress broadcast; the author synopsis leads when present (REQ-56)', () => {
+  // The serialising line's live progress still exists as a surface
+  // label (plazaLineStatusFor / plazaLengthLabel: 连载中 · 已更 N 章)
+  // — REQ-56 only removes it from the intro thread, where it read as
+  // filler next to the book's actual content.
   const live = plazaWorldIntroFor({ ...geminiStyleDetail, lineStatus: 'serializing', chapterCount: 7 }, '都市')
-  assert.ok(live.thread.includes('连载'))
-  assert.ok(live.thread.includes('第 7 章'))
+  assert.ok(!live.thread.includes('连载'), 'no serialising broadcast in the thread')
+  assert.ok(!live.thread.includes('第 7 章'), 'no chapter-count broadcast in the thread')
   const withSynopsis = plazaWorldIntroFor({ ...geminiStyleDetail, synopsis: '作者亲笔：这是一个关于讨债的故事。' }, '都市')
   assert.equal(withSynopsis.thread, '作者亲笔：这是一个关于讨债的故事。')
 })
@@ -208,7 +218,12 @@ test('④ (FINAL-FIX N7) a fully-filtered premise falls back to the world descri
   const intro = plazaWorldIntroFor(officialShape, '玄幻')
   assert.ok(intro.background.includes('镇上的潮汐钟会改写记忆'), intro.background)
   assert.ok(intro.background.length > '「沉潮港」——玄幻题材的世界。'.length, 'more than the bare template sentence')
-  assert.equal(intro.thread, '沈知遥是这个世界的主角。故事从「守夜日志与逆流的潮声」开始，一路走到「终局的锁芯与倒流之潮」。这条线已经完结，全 24 章。')
+  // REQ-56 supersedes the FINAL-FIX-era expectation below: the thread
+  // no longer chains the first and last chapter titles or broadcasts
+  // the chapter count — that was noise, not introduction. This
+  // fixture's beats carry no summaries, so the fallback thread is the
+  // protagonist line alone.
+  assert.equal(intro.thread, '沈知遥是这个世界的主角。')
 })
 
 test('④ the refresh script composes from the stored record alone', () => {

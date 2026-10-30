@@ -26,16 +26,18 @@
 
 import {
   buildChapter,
-  chapterTitleTextFor,
   CUSTOM_GENRE_ID,
   GENRES,
   genreFor,
   genreTemplateById,
+  INTRO_ENGINE_TERMS,
+  introViolationFor,
   isManuallyFinished,
   isManualStory,
   isStoryComplete,
   manualChapterHasProse,
   manualTagsOf,
+  sanitizeIntro,
   storyLengthModeOf,
   totalChaptersFor,
   worldBibleFor,
@@ -311,12 +313,27 @@ export function plazaPublicPremise(detail, templateName = '') {
  *    describe where the story has not gone yet, and printing them
  *    would leak the unpublished future.
  *
+ * REQ-56 (owner order 2026-10-30) reorders the sources: a book now
+ * carries its own generated intro (detail.intro — written by the
+ * opening generation call, editable by the owner), and each part
+ * PREFERS that text whenever it passes the ban check
+ * (worldIntroViolationFor: no chapter-title chaining, no chapter-
+ * count broadcasts, no engine jargon, no template filler, no retired
+ * redaction placeholders). The composed assembly below is only the
+ * fallback for books that predate the field, and its own thread
+ * fallback obeys the same bans — the protagonist plus the first
+ * published beat's summary sentence, never a title chain.
+ *
  * Pure and total: any detail-shaped object yields a printable
  * outline, so the one-time refresh script can bake the same text
  * into stored publications.
  */
-export const WORLD_INTRO_VERSION = 3
-const WORLD_INTRO_ENGINE_TERMS = ['资产与负债', '因果账目', '制约', '稳定度', '数值', '参数', '提示词', '回合制', '账目制', '世界线扰动值']
+// Version 4 (REQ-56): the composer now prefers the book's own
+// generated intro and its fallback thread no longer chains chapter
+// titles or broadcasts chapter counts — stored bakes at version 3
+// are stale by definition and re-bake on refresh / re-publish.
+export const WORLD_INTRO_VERSION = 4
+const WORLD_INTRO_ENGINE_TERMS = INTRO_ENGINE_TERMS
 // Placeholder words the retired replacement-redaction used to bake
 // into published text (BOOK-FACE-FIX). New snapshots never contain
 // them; stored records baked before the abolition still can, and a
@@ -329,10 +346,29 @@ const SNAPSHOT_ALIAS_MARKERS = [...REDACTION_PLACEHOLDERS, '匿名火种', '匿�
 // rules that are this book's own.
 const WORLD_INTRO_GENERIC_RULE_MARKERS = ['的秘密只能通过具体行动', '已经发生的事会留下可追踪的']
 const hasAliasMarker = (text) => SNAPSHOT_ALIAS_MARKERS.some((marker) => text.includes(marker))
+
+/**
+ * The REQ-56 ban check for one piece of public intro copy: the shared
+ * bans (chapter-title chaining, chapter-count broadcasts, engine
+ * jargon, template filler — story-engine's introViolationFor) plus
+ * this module's retired-redaction alias markers. Returns the matched
+ * marker for diagnostics, or null when the text may be printed.
+ */
+export function worldIntroViolationFor(value) {
+  const text = typeof value === 'string' ? value : ''
+  if (!text) return null
+  const violation = introViolationFor(text)
+  if (violation) return violation
+  return SNAPSHOT_ALIAS_MARKERS.find((marker) => text.includes(marker)) || null
+}
 export function plazaWorldIntroFor(detail, templateName = '') {
   const world = detail?.worldName || '这个世界'
   const avatarName = detail?.avatar?.name || '主角'
   const title = typeof detail?.title === 'string' ? detail.title.trim() : ''
+  // The book's own generated intro (REQ-56), shape-cleaned. Each part
+  // is adopted below only if it also passes the ban check; a part
+  // that fails falls back on its own — the clean parts still stand.
+  const generated = sanitizeIntro(detail?.intro)
   const rawPremise = typeof detail?.worldBible?.premise === 'string' ? detail.worldBible.premise.trim() : ''
   const sentences = rawPremise
     .split(/(?<=[。；;])/)
@@ -358,41 +394,54 @@ export function plazaWorldIntroFor(detail, templateName = '') {
   const worldDescription = !backgroundBody && ownGenre && ownGenre.id === detail.genreId
     ? (ownGenre.description || '').trim()
     : ''
-  const background = `「${world}」——${templateName ? `${templateName}题材的世界` : '一个自成一体的世界'}。`
+  const assembledBackground = `「${world}」——${templateName ? `${templateName}题材的世界` : '一个自成一体的世界'}。`
     + (backgroundBody && !backgroundBody.startsWith(`「${world}」`) ? backgroundBody : '')
     + (worldDescription && !worldDescription.startsWith(`「${world}」`) ? worldDescription : '')
+  const background = generated?.background && !worldIntroViolationFor(generated.background)
+    ? generated.background
+    : assembledBackground
 
-  const rules = (Array.isArray(detail?.worldBible?.rules) ? detail.worldBible.rules : [])
+  const assembledRules = (Array.isArray(detail?.worldBible?.rules) ? detail.worldBible.rules : [])
     .filter((rule) => typeof rule === 'string' && rule.trim())
     .map((rule) => rule.trim())
     .filter((rule) => !hasAliasMarker(rule))
     .filter((rule) => !WORLD_INTRO_ENGINE_TERMS.some((term) => rule.includes(term)))
     .filter((rule) => !WORLD_INTRO_GENERIC_RULE_MARKERS.some((marker) => rule.includes(marker)))
     .slice(0, 3)
+  const generatedRules = (generated?.rules || [])
+    .filter((rule) => !worldIntroViolationFor(rule))
+    .slice(0, 3)
+  const rules = generatedRules.length ? generatedRules : assembledRules
 
   const synopsis = typeof detail?.synopsis === 'string' ? detail.synopsis.trim() : ''
-  // Bare-number beat titles (an early generation artifact) are not
-  // titles at all — the composed thread must never say 故事从「3」开始.
-  const beats = Array.isArray(detail?.beats) ? detail.beats.filter((beat) => beat && chapterTitleTextFor(beat.title)) : []
-  const status = plazaLineStatusFor(detail)
-  const count = Number(detail?.chapterCount) || beats.length
+  const beats = Array.isArray(detail?.beats) ? detail.beats : []
+  // REQ-56 thread order: the generated draft first, then the owner's
+  // synopsis, then a factual minimum. The old assembly — first and
+  // last chapter titles chained together plus a chapter-count
+  // broadcast — is abolished outright: it said nothing about what
+  // the book is about. The minimum names the protagonist and adds
+  // the first published beat's own summary sentence (published
+  // content, specific to this book) when one survives the ban check.
+  // The avatar's appearance string never joins this sentence
+  // (FINAL-FIX N7): the look lives on the detail page's avatar
+  // panel; the thread names the person.
   let thread
-  if (synopsis) {
+  if (generated?.thread && !worldIntroViolationFor(generated.thread)) {
+    thread = generated.thread
+  } else if (synopsis) {
     thread = synopsis
   } else {
-    const journey = beats.length
-      ? `故事从「${beats[0].title}」开始${beats.length > 1 ? `，一路走到「${beats[beats.length - 1].title}」` : ''}。`
-      : ''
-    const progress = status === 'serializing'
-      ? `这条线还在连载，已更新到第 ${count} 章。`
-      : `这条线已经完结，全 ${count} 章。`
-    // The avatar's appearance string never joins this sentence
-    // (FINAL-FIX N7): 「沈知遥——乌黑，长直发，长风衣…，是这个世界的主角」
-    // welded a spec sheet into the introduction. The look lives on
-    // the detail page's avatar panel; the thread names the person.
-    thread = `${avatarName}是这个世界的主角。${journey}${progress}`
+    const firstBeat = beats.find((beat) => beat && typeof beat.summary === 'string' && beat.summary.trim())
+    const firstEvent = firstBeat ? introFirstSentence(firstBeat.summary) : ''
+    thread = `${avatarName}是这个世界的主角。${firstEvent && !worldIntroViolationFor(firstEvent) ? firstEvent : ''}`
   }
   return { background, rules, thread }
+}
+
+const introFirstSentence = (text) => {
+  const value = typeof text === 'string' ? text.trim() : ''
+  const cut = value.search(/[。！？]/)
+  return cut >= 0 ? value.slice(0, cut + 1) : value
 }
 
 /**
@@ -413,9 +462,10 @@ export function plazaCardIntroFor(detail) {
     ...detail,
     avatar: { name: typeof detail?.avatar?.name === 'string' ? detail.avatar.name : '' },
   })
-  return intro.thread
-    .replace(/这条线(还在连载，已更新到第 \d+ 章|已经完结，全 \d+ 章)。$/, '')
-    .trim()
+  // REQ-56: the thread no longer carries a progress tail at all (the
+  // card's meta row still carries status and chapter count), so the
+  // card line is the thread itself.
+  return intro.thread.trim()
 }
 
 /* ————————————————————————————————————————————————————————————————
