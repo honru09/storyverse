@@ -1587,7 +1587,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
           )}
           {selected && (
             <p className="avatar-repaint-note">
-              立绘照着名字和描述整张生成，没有单项换装：想换样子，改上面的描述，再点「按描述重画立绘」，整张图重新生成。每次重画用掉今天 1 次立绘额度{quotaLine ? `（${quotaLine}）` : ""}。海报式立绘，机位与氛围都画进图里。
+              改描述后点「按描述重画立绘」，整张图重新生成。每次重画用掉今天 1 次立绘额度{quotaLine ? `（${quotaLine}）` : ""}。
             </p>
           )}
           <div className="avatar-actions">
