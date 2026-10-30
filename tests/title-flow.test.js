@@ -114,19 +114,19 @@ test('the library validator type-checks the typed title and a round-trip keeps i
   assert.equal(loaded.library.stories[0].config.bookTitle, '潮声之外')
 })
 
-test('redactedTitleFor scrubs private literals from a new title — and never the title itself', () => {
-  // The plaza-server marker shape: private life literals must not leak
-  // through a rename that quotes them.
+test('redactedTitleFor returns the title verbatim — replacement redaction is abolished (BOOK-FACE-FIX)', () => {
+  // Owner order 2026-10-30: published text is the original text. A
+  // rename that quotes the author's own words mirrors onto the
+  // publication byte for byte; no literal is swapped for a placeholder.
   const story = {
     title: '回到雾港镇的信',
     config: { name: '沈砚', hometown: '雾港镇', bookTitle: '回到雾港镇的信' },
   }
   const safeConfig = { name: '沈砚', hometown: '', bookTitle: '' }
-  assert.equal(redactedTitleFor(story, safeConfig), '回到某地的信')
-  // The config's bookTitle copy must not pair the title with an alias:
-  // a title quoting nothing private survives whole.
+  assert.equal(redactedTitleFor(story, safeConfig), '回到雾港镇的信')
   const clean = { title: '潮声之外', config: { name: '沈砚', bookTitle: '潮声之外' } }
   assert.equal(redactedTitleFor(clean, { name: '沈砚', bookTitle: '' }), '潮声之外')
+  assert.equal(redactedTitleFor({}, safeConfig), '')
 })
 
 function tinyPng() {

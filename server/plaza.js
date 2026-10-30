@@ -651,6 +651,10 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           // records published before it existed.
           worldIntro: plazaWorldIntroFor({
             title: snapshot.title,
+            // BOOK-FACE-FIX: genreId must ride along — without it the
+            // composer's world-description fallback resolved to the
+            // mist world and printed 沉潮港's text under other books.
+            genreId: snapshot.genreId,
             worldName: snapshot.worldName,
             avatar: { name: profile.name, appearance: avatarAppearanceText(profile) },
             worldBible: snapshot.worldBible,
@@ -779,6 +783,7 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
             snapshot,
             worldIntro: plazaWorldIntroFor({
               title: nextTitle,
+              genreId: record.genreId,
               worldName: record.worldName,
               avatar: record.avatar,
               worldBible: record.snapshot.worldBible,
