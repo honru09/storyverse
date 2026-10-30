@@ -183,6 +183,9 @@ export function createAuthService({ env = process.env, verifyIdToken, usageServi
       return email.verify(address, body.code)
     },
     emailSignOut: (authorization) => email.revokeSession(bearerToken(authorization)),
+    usernameSignOut: (authorization) => (typeof username.signOut === 'function'
+      ? username.signOut(bearerToken(authorization))
+      : { ok: true }),
     usernameRegister: (body, clientKey) => {
       const credentials = bodyCredentials(body)
       return username.register(credentials.username, credentials.password, clientKey, bodyOptionalEmail(body, 'recoveryEmail'))

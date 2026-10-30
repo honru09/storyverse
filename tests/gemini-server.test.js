@@ -78,8 +78,10 @@ test('status without credentials is readable without making any provider request
   assert.match(response.headers.get('content-type'), /application\/json/)
   const status = await response.json()
   assert.equal(status.configured, false)
-  assert.equal(status.provider, 'gemini')
-  assert.equal(typeof status.model, 'string')
+  // REQ-69: anonymous status is availability only — provider and
+  // model names no longer ride the public response.
+  assert.equal('provider' in status, false)
+  assert.equal('model' in status, false)
   assert.equal('apiKey' in status, false)
 })
 

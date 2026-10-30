@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
+import { randomBytes, scryptSync } from 'node:crypto'
 import { createServer } from '../server/index.js'
 import { createAuthService } from '../server/auth.js'
 import { createUsernameAuthService } from '../server/username-auth.js'
@@ -22,8 +23,23 @@ import { createMemoryCoverStore } from '../server/cover-store.js'
 const ORIGIN = { Origin: 'http://localhost:5173' }
 const authed = (token) => ({ ...ORIGIN, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' })
 
+/**
+ * REQ-69: reserved names can no longer be registered over HTTP, so
+ * the official account is provisioned directly in the identity
+ * store (as in production, where it predates the block) and the
+ * fixture signs in through the normal login route.
+ */
+async function seedOfficialUser(identityStore) {
+  const salt = randomBytes(16).toString('hex')
+  const passwordHash = scryptSync('notify-pass-123', Buffer.from(salt, 'hex'), 64, { N: 16384, r: 8, p: 1 }).toString('hex')
+  await identityStore.putUser('storyweave', {
+    username: 'storyweave', uid: 'username:storyweave', salt, passwordHash, recoveryEmail: null, createdAt: Date.now(),
+  })
+}
+
 async function startNotifyServer(t) {
   const identityStore = createMemoryIdentityStore()
+  await seedOfficialUser(identityStore)
   const sent = []
   const mailer = {
     configured: true,
@@ -76,6 +92,19 @@ async function register(base, username, extra = {}) {
     body: JSON.stringify({ username, password: 'notify-pass-123', ...extra }),
   })
   assert.equal(response.status, 200, `register ${username}`)
+  const { token } = await response.json()
+  const account = await (await fetch(`${base}/api/account`, { headers: { Authorization: `Bearer ${token}` } })).json()
+  return { token, uid: account.user.uid }
+}
+
+/** The seeded official account (see seedOfficialUser), signed in via the login route. */
+async function loginOfficial(base) {
+  const response = await fetch(`${base}/api/auth/username/login`, {
+    method: 'POST',
+    headers: { ...ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'storyweave', password: 'notify-pass-123' }),
+  })
+  assert.equal(response.status, 200, 'official login')
   const { token } = await response.json()
   const account = await (await fetch(`${base}/api/account`, { headers: { Authorization: `Bearer ${token}` } })).json()
   return { token, uid: account.user.uid }
@@ -136,7 +165,7 @@ test('read watermarks are per category: reading one never touches the others', a
   const { base, advance } = await startNotifyServer(t)
   const author = await register(base, 'mark_author')
   const fan = await register(base, 'mark_fan')
-  const official = await register(base, 'storyweave')
+  const official = await loginOfficial(base)
   await post(base, `/api/users/${encodeURIComponent(author.uid)}/follow`, fan.token)
 
   advance(1000)
@@ -190,7 +219,7 @@ test('a legacy follow edge without a timestamp is listed but never counts as unr
 test('announcements: official-only publishing, public reading, honest validation', async (t) => {
   const { base } = await startNotifyServer(t)
   const reader = await register(base, 'ann_reader')
-  const official = await register(base, 'storyweave')
+  const official = await loginOfficial(base)
 
   const before = await (await fetch(`${base}/api/announcements`)).json()
   assert.deepEqual(before, { announcements: [] }, 'no seeded announcements')

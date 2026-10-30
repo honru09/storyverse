@@ -22,10 +22,73 @@ import { createFusionService } from './fusion.js'
 import { createLibraryService } from './library.js'
 import { COIN, coinCostForText, createBillingService, pregeneratedFor, textCostCny, textSceneFor } from './billing.js'
 import { createStripeService } from './stripe.js'
+import { createDeliveryStore } from './delivery-store.js'
 
 const DEFAULT_DIST = fileURLToPath(new URL('../dist/', import.meta.url))
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2' }
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]'])
+// Every state-changing method rides the write Origin discipline
+// (REQ-69): previously only POST counted as a write, so a PUT or
+// DELETE with no Origin at all slipped the check the audit flagged.
+const WRITE_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH'])
+
+const sha256Hex = (value) => createHash('sha256').update(value).digest('hex')
+
+/** Deterministic JSON for fingerprinting: object keys sorted at every depth, array order preserved. */
+function stableStringify(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
+  if (Array.isArray(value)) return `[${value.map((entry) => stableStringify(entry)).join(',')}]`
+  const keys = Object.keys(value).filter((key) => value[key] !== undefined).sort()
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`
+}
+
+/**
+ * The delivery-registry key and request fingerprint (REQ-69 task 3).
+ * The fingerprint digests exactly the request elements that decide
+ * the generation result: the story's setup (config + world bible +
+ * queued interventions + line kind/sources), the sequence of
+ * existing chapter ids, and this request's own fields (index, mode).
+ * Replaying the same chapter with the same intent reproduces the
+ * key; editing the setup, the interventions or any earlier chapter
+ * (a new id sequence) mints a new one. Volatile reader state
+ * (updatedAt, bookmarks, reading position) is deliberately excluded —
+ * it does not change what the chapter would say.
+ */
+function deliveryKeyFor(uid, body) {
+  const story = body?.story && typeof body.story === 'object' ? body.story : {}
+  const storyId = typeof story.id === 'string' ? story.id : ''
+  const fingerprint = sha256Hex(stableStringify({
+    v: 1,
+    storyId,
+    index: body?.index ?? null,
+    mode: typeof body?.mode === 'string' ? body.mode : null,
+    setupDigest: sha256Hex(stableStringify({
+      config: story.config ?? null,
+      worldBible: story.worldBible ?? null,
+      interventions: Array.isArray(story.interventions) ? story.interventions : [],
+      genreId: story.genreId ?? null,
+      genreTemplateId: story.genreTemplateId ?? null,
+      kind: story.kind ?? null,
+      sourceIds: Array.isArray(story.sourceIds) ? story.sourceIds : [],
+      revision: Number.isInteger(story.revision) ? story.revision : 0,
+    })),
+    chapterIds: Array.isArray(story.chapters)
+      ? story.chapters.map((chapter) => (typeof chapter?.id === 'string' ? chapter.id : null))
+      : [],
+  }))
+  return {
+    key: sha256Hex(`${uid}\n${storyId}\n${body?.index}\n${fingerprint}`),
+    storyId,
+    fingerprint,
+  }
+}
+
+/** Fail-closed alarms (REQ-69 task 2): configuration drift must be loud, never a silent free tier. */
+function alertLog(reason, detail = {}) {
+  try {
+    process.stderr.write(`${JSON.stringify({ type: 'generation-gate-alert', level: 'ALERT', reason, ...detail })}\n`)
+  } catch { /* the refusal itself is the protection; logging is best-effort */ }
+}
 const GENERATION_PAUSED = {
   configured: false,
   reason: 'generation-disabled',
@@ -250,7 +313,12 @@ async function serveStatic(request, response, pathname, distDir) {
   response.end(request.method === 'HEAD' ? undefined : bytes)
 }
 
-export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth, cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza, plazaFeed, ratings, social, fusion, library = createLibraryService({ env }), billing = createBillingService({ env }), stripe, distDir = DEFAULT_DIST } = {}) {
+export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth, cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza, plazaFeed, ratings, social, fusion, library = createLibraryService({ env }), billing = createBillingService({ env }), stripe, deliveryStore, distDir = DEFAULT_DIST } = {}) {
+  // The delivery registry (REQ-69 task 3): durable when a data store
+  // is configured, absent (feature off) when none is — exactly the
+  // identity-store family posture. Tests inject one shared instance
+  // to stand in for a restart-surviving registry.
+  const deliveries = deliveryStore === undefined ? createDeliveryStore({ env }) : deliveryStore
   // Billing rides the same durable store family as usage; the Stripe
   // facade is env-gated code only (BILLING.md) and fulfils through
   // the billing service's one grant path.
@@ -306,6 +374,58 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
       }
     } catch { /* the event is a record of the action, never a gate on it */ }
   }
+  /**
+   * Whether a generation line is a merged (fusion) line, derived
+   * from the SERVER's stored copy — never from the request body
+   * alone (REQ-69 task 4). The library shelf index carries the
+   * stored head's kind, and a stored `merged` kind by construction
+   * means ≥2 sources (fusion creation refuses fewer), so the head
+   * alone settles it. Fallback when the line was never synced (no
+   * stored head to consult): the client's claim stands — a claimed
+   * merge pays the fusion rate (over-collect, never under) and a
+   * claimed solo pays solo, with the cost ledger told the basis was
+   * 'client-unverified' either way.
+   */
+  const deriveMerged = async (identity, body) => {
+    const claimed = body?.story?.kind === 'merged'
+    const storyId = typeof body?.story?.id === 'string' ? body.story.id : ''
+    if (identity && storyId && library && typeof library.list === 'function') {
+      try {
+        const shelf = await library.list(identity)
+        const entries = Array.isArray(shelf) ? shelf : shelf?.stories
+        const stored = Array.isArray(entries) ? entries.find((entry) => entry?.id === storyId) : null
+        if (stored) return { merged: stored.kind === 'merged', basis: 'stored' }
+      } catch { /* an unreadable shelf falls through to the claim, priced by the fallback below */ }
+    }
+    return { merged: claimed, basis: 'client-unverified' }
+  }
+
+  /**
+   * Paid-image settlement with the return values CHECKED (REQ-69
+   * task 1.3): a credit consume that reports failure falls back to
+   * the flat coin price, and a coin spend that lands short refuses
+   * delivery — a picture is never handed over unpaid because a
+   * consume raced. Returns the honest { creditUsed, coinsSpent }
+   * for the cost ledger.
+   */
+  const settleImageCharge = async (uid, { credit = false, coins = false } = {}) => {
+    if (!billing.available) return { creditUsed: false, coinsSpent: 0 }
+    if (credit) {
+      if (await billing.consumeImageCredit(uid)) return { creditUsed: true, coinsSpent: 0 }
+      if (await billing.hasCoins(uid, COIN.imageCoinCost)) {
+        const spent = await billing.spendCoins(uid, COIN.imageCoinCost)
+        if (spent >= COIN.imageCoinCost) return { creditUsed: false, coinsSpent: spent }
+      }
+      throw new ApiError(402, '织币不足以结算这张图，请稍后再试。', 'coins-exhausted')
+    }
+    if (coins) {
+      const spent = await billing.spendCoins(uid, COIN.imageCoinCost)
+      if (spent < COIN.imageCoinCost) throw new ApiError(402, '织币不足以结算这张图，请稍后再试。', 'coins-exhausted')
+      return { creditUsed: false, coinsSpent: spent }
+    }
+    return { creditUsed: false, coinsSpent: 0 }
+  }
+
   // Explicit opt-out preserves existing deployments until the release owner sets it.
   const generationEnabled = env.GENERATION_ENABLED !== 'false'
   // The model id is static configuration; remember it the first time status
@@ -336,14 +456,24 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
       // Origin and from outside the app: its HMAC signature is the
       // authentication, so the origin discipline does not apply.
       if (pathname !== '/api/billing/stripe/webhook') {
-        allowedRequest(request, server, env, request.method === 'POST')
+        allowedRequest(request, server, env, WRITE_METHODS.has(request.method))
       }
       if ((pathname === '/api/health' || pathname === '/healthz') && request.method === 'GET') return sendJson(response, 200, { ok: true })
       if (pathname === '/api/status' && request.method === 'GET') {
         if (!generationEnabled) return sendJson(response, 200, GENERATION_PAUSED)
         const status = generator.status()
         ledgerModel = status.model
-        return sendJson(response, 200, status)
+        // Unauthenticated callers get availability only (REQ-69 task
+        // 7.2): provider and model names are operator information and
+        // never ride a public response. A valid identity keeps the
+        // full status; the ledger above always reads the full one.
+        let viewer = null
+        if (request.headers.authorization) {
+          try { viewer = await auth.identity(request.headers.authorization) } catch { viewer = null }
+        }
+        if (viewer) return sendJson(response, 200, status)
+        const { model: _model, provider: _provider, location: _location, ...publicStatus } = status ?? {}
+        return sendJson(response, 200, publicStatus)
       }
       if (pathname === '/api/auth/config' && request.method === 'GET') return sendJson(response, 200, auth.config())
       if (pathname === '/api/account' && request.method === 'GET') return sendJson(response, 200, await auth.account(request.headers.authorization))
@@ -358,6 +488,10 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
       if (pathname === '/api/auth/email/signout' && request.method === 'POST') {
         if (typeof auth.emailSignOut !== 'function') throw new ApiError(503, '邮箱验证码服务尚未配置，请使用其他方式登录。')
         return sendJson(response, 200, await auth.emailSignOut(request.headers.authorization))
+      }
+      if (pathname === '/api/auth/username/signout' && request.method === 'POST') {
+        if (typeof auth.usernameSignOut !== 'function') throw new ApiError(503, '用户名登录尚未配置，请使用其他方式登录。')
+        return sendJson(response, 200, await auth.usernameSignOut(request.headers.authorization))
       }
       if (pathname === '/api/auth/username/register' && request.method === 'POST') {
         if (typeof auth.usernameRegister !== 'function') throw new ApiError(503, '用户名登录尚未配置，请使用其他方式登录。')
@@ -435,9 +569,7 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         if (!generationEnabled) throw new ApiError(503, GENERATION_PAUSED.message)
         // Once auth is switched on, paid generation is no longer public: a
         // valid identity from either channel is required, with a per-user
-        // daily token cap checked before the provider is called. Usage
-        // storage outages fail open (see server/usage.js) so bookkeeping
-        // problems can never take generation down with them.
+        // daily token cap checked before the provider is called.
         let identity = null
         // BILLING: past the daily token ceiling, a generation may
         // still run on a chapter credit from a quota pack — the flag
@@ -445,20 +577,61 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         // chapter actually lands (below), so a failed generation
         // never eats a credit.
         let spendChapterCredit = false
-        if (typeof auth.requiresIdentity === 'function' && auth.requiresIdentity()) {
+        // REQ-69 fail-closed (task 2): in identity-required mode the
+        // billing gate must never silently dissolve. "Billing
+        // expected" means billing is live OR the deployment configured
+        // a durable store (DATA_STORE / Cloud Run): with a store
+        // configured, an unavailable billing service is configuration
+        // drift, and a daily-usage read that cannot answer (null) is
+        // a store outage — both refuse generation with an ALERT
+        // instead of degrading to anonymous-style free generation. A
+        // deployment with NO store configured never had billing
+        // (local / test mode) and keeps the legacy pass-through.
+        let usedToday = null
+        const identityRequired = typeof auth.requiresIdentity === 'function' && auth.requiresIdentity()
+        if (identityRequired) {
           try {
             identity = await auth.identity(request.headers.authorization)
           } catch (error) {
             if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再继续在线创作。', 'auth-required')
             throw error
           }
+          const durableStoreConfigured = Boolean(String(env.DATA_STORE ?? '').trim() || env.K_SERVICE)
+          if (!billing.available && durableStoreConfigured) {
+            alertLog('billing-unavailable', { uid: identity.uid })
+            throw new ApiError(503, '计费服务暂时不可用，在线创作已暂停，请稍后再试。')
+          }
+          usedToday = await auth.usageDailyTotal(identity.uid)
+          if ((billing.available || durableStoreConfigured) && usedToday === null) {
+            alertLog('usage-read-failed', { uid: identity.uid })
+            throw new ApiError(503, '用量服务暂时不可用，在线创作已暂停，请稍后再试。')
+          }
+        }
+        const body = await readJson(request)
+        // REQ-69 delivery registry (task 3): a replay of an already
+        // settled delivery is answered from the registry — before any
+        // freeze, cap or provider call — so a retry after a timeout
+        // can never generate (or charge) the same chapter twice.
+        const delivery = identity && deliveries ? deliveryKeyFor(identity.uid, body) : null
+        if (delivery) {
+          try {
+            const prior = await deliveries.getDelivery(delivery.key)
+            if (prior?.result) return sendJson(response, 200, { ...prior.result, cached: true })
+          } catch { /* a registry read failure must not block a fresh generation */ }
+        }
+        // Scene label and fusion rate share ONE source of truth
+        // (task 4): the merged verdict derived from the stored line,
+        // applied by rewriting the body's kind before classification.
+        let merged = false
+        let mergedBasis = 'client-unverified'
+        let scene = textSceneFor(body)
+        if (identityRequired) {
           // REQ-68: the day's free coins land at the gate; the coin
           // balance is then the everyday payment source. The daily
           // token ceiling stays as an anti-abuse bound that coin
           // balances do NOT bypass — only the legacy chapter credits
           // carry a reader past it, as they always have.
           if (billing.available) await billing.applyDailyCoinTopUp(identity.uid)
-          const usedToday = await auth.usageDailyTotal(identity.uid)
           const cap = billing.available
             ? await billing.dailyTokenCapFor(identity.uid, auth.dailyTokenCap())
             : auth.dailyTokenCap()
@@ -468,13 +641,39 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             } else {
               throw new ApiError(429, '今天的生成额度已用完，请明天再继续创作。', 'quota-exceeded')
             }
-          } else if (billing.available
-            && !(await billing.hasCoins(identity.uid, 1))) {
-            // Coins are the everyday source; a legacy chapter credit is
-            // the fallback INSIDE the ceiling too. The settlement below
-            // must be told, or the chapter would ride free on the mere
-            // presence of a credit and the credit would never burn
-            // (integration review, REQ-68 cross-check).
+          }
+          const derived = await deriveMerged(identity, body)
+          merged = derived.merged
+          mergedBasis = derived.basis
+          scene = textSceneFor({ ...body, story: { ...(body.story ?? {}), kind: merged ? 'merged' : 'solo' } })
+        }
+        // REQ-69 pre-authorisation freeze (task 1): before the
+        // provider is called, hold the scene's freeze amount against
+        // the AVAILABLE balance (balance − other freezes), so two
+        // concurrent generations can no longer share one balance and
+        // a 1-coin account can no longer ride a whole chapter. The
+        // legacy chapter-credit path never freezes coins; its
+        // settlement is verified at delivery time instead (below).
+        const reservationApi = Boolean(billing.available)
+          && ['reserveCoins', 'settleReservation', 'releaseReservation', 'coinFreezeForText']
+            .every((name) => typeof billing[name] === 'function')
+        let reservation = null
+        if (identity && billing.available && !spendChapterCredit) {
+          if (reservationApi) {
+            reservation = await billing.reserveCoins(identity.uid, billing.coinFreezeForText({ scene, merged }))
+            if (!reservation) {
+              // Coins cannot hold the freeze; a legacy chapter credit
+              // is the fallback, exactly as inside the old gate.
+              if (await billing.hasChapterCredit(identity.uid)) {
+                spendChapterCredit = true
+              } else {
+                throw new ApiError(429, '织币不足了。每天的免费织币会自动补足，开通会员或购买额度包可以继续创作。', 'coins-exhausted')
+              }
+            }
+          } else if (!(await billing.hasCoins(identity.uid, 1))) {
+            // A billing service without the reservation API keeps
+            // the old gate shape until the billing batch's service
+            // lands; settlement below still checks every return.
             if (await billing.hasChapterCredit(identity.uid)) {
               spendChapterCredit = true
             } else {
@@ -482,8 +681,24 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             }
           }
         }
-        const body = await readJson(request)
-        const result = await generator.generate(body)
+        let result
+        try {
+          result = await generator.generate(body)
+        } catch (error) {
+          if (reservation) {
+            try { await billing.releaseReservation(identity.uid, reservation.id) } catch { /* release is best-effort */ }
+          }
+          throw error
+        }
+        // Metering (task 5): when the provider returns no usage, the
+        // chapter is billed on the billing service's ESTIMATE and the
+        // estimate is flagged in the log and the cost ledger — never
+        // silently zero.
+        const metered = identity && billing.available && !result?.cached
+          ? (typeof billing.meteredTextCost === 'function'
+            ? billing.meteredTextCost(modelForLedger(), result?.usage ?? 'unknown')
+            : { ...textCostCny(modelForLedger(), result?.usage ?? 'unknown'), estimated: !(result?.usage && typeof result.usage === 'object') })
+          : null
         // Usage ledger: identity, model, story/chapter ids and token counts
         // only — never prose. Best effort: a logging failure must not fail
         // the chapter. A cache hit returns a generation that was already
@@ -500,45 +715,93 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             chapter: body.index + 1,
             genreTemplateId: result?.genreTemplateId ?? null,
             usage: result?.usage ?? 'unknown',
+            usageEstimated: Boolean(metered?.estimated),
             cached: Boolean(result?.cached),
             degraded: Boolean(result?.degraded),
           })}\n`)
         } catch { /* ledger is best-effort */ }
+        if (identity && result?.cached && reservation) {
+          // A generator cache hit was already metered when produced:
+          // the freeze is released and nothing settles again.
+          try { await billing.releaseReservation(identity.uid, reservation.id) } catch { /* best-effort */ }
+          reservation = null
+        }
         if (identity && !result?.cached) await auth.recordUsage(identity.uid, result?.usage ?? 'unknown')
-        // BILLING cost ledger: every real generation is metered with
-        // its scene and whether it was prepared ahead of the reader,
-        // so chapter cost and pre-generation waste stay measurable.
-        // A pending chapter credit is spent now that the chapter
-        // exists. All of it is best-effort and never fails the chapter.
+        // BILLING settlement (REQ-69 task 1): every consumption
+        // return value is CHECKED. A chapter credit that fails to
+        // consume falls back to coin settlement; a coin settlement
+        // that does not cover the chapter's measured price refuses
+        // delivery — the chapter exists, but it is not handed over
+        // unpaid, and it is not registered as delivered either.
+        let coinsSpent = 0
+        let creditUsed = false
         if (identity && !result?.cached && billing.available) {
-          let coinsSpent = 0
+          const member = await billing.memberActive(identity.uid)
+          const actualCoins = coinCostForText({
+            scene, totalTokens: metered?.totalTokens ?? 0, member, merged,
+          })
+          const settleCoins = async () => {
+            if (reservationApi) {
+              let hold = reservation
+              if (!hold) {
+                hold = await billing.reserveCoins(identity.uid, actualCoins)
+                if (!hold) return { spent: 0, covered: false }
+              }
+              return billing.settleReservation(identity.uid, hold.id, actualCoins)
+            }
+            const spent = await billing.spendCoins(identity.uid, actualCoins)
+            return { spent, covered: spent >= actualCoins }
+          }
           if (spendChapterCredit) {
-            await billing.consumeChapterCredit(identity.uid)
+            creditUsed = await billing.consumeChapterCredit(identity.uid)
+            if (!creditUsed) {
+              const settled = await settleCoins()
+              if (!settled?.covered) {
+                throw new ApiError(402, '织币不足以结算这一章，请充值或开通会员后再试。', 'coins-exhausted')
+              }
+              coinsSpent = settled.spent
+            }
           } else {
-            // REQ-68 settlement: the chapter settles in coins by its
-            // measured size (fusion chapters at the fusion rate),
-            // clamped at the balance — the gate already made sure a
-            // payment source exists, so a shortfall just empties it.
-            const scene = textSceneFor(body)
-            const metered = textCostCny(modelForLedger(), result?.usage ?? 'unknown')
-            const member = await billing.memberActive(identity.uid)
-            coinsSpent = await billing.spendCoins(identity.uid, coinCostForText({
-              scene, totalTokens: metered.totalTokens, member,
-              merged: body?.story?.kind === 'merged',
-            }))
+            const settled = await settleCoins()
+            if (!settled?.covered) {
+              throw new ApiError(402, '织币不足以结算这一章，请充值或开通会员后再试。', 'coins-exhausted')
+            }
+            coinsSpent = settled.spent
           }
           await billing.recordTextCost({
             uid: identity.uid,
-            scene: textSceneFor(body),
+            scene,
             pregenerated: pregeneratedFor(body),
             model: modelForLedger(),
             usage: result?.usage ?? 'unknown',
             storyId: typeof body.story?.id === 'string' ? body.story.id : null,
             chapterIndex: body.index,
             chapterId: typeof result?.chapter?.id === 'string' ? result.chapter.id : null,
-            creditUsed: spendChapterCredit,
+            creditUsed,
             coinsSpent,
+            estimated: Boolean(metered?.estimated),
+            mergedBasis,
           })
+        }
+        // Registry write (task 3): only settled deliveries are
+        // registered. A write failure logs and never blocks the
+        // chapter the reader already paid for — the degradation is
+        // a lost replay shortcut, not a lost chapter.
+        if (delivery && identity && !result?.cached) {
+          try {
+            await deliveries.putDelivery(delivery.key, {
+              result,
+              uid: identity.uid,
+              storyId: delivery.storyId,
+              chapterIndex: body.index,
+              settledCoins: coinsSpent,
+              at: new Date().toISOString(),
+            })
+          } catch {
+            try {
+              process.stderr.write(`${JSON.stringify({ type: 'delivery-registry-write-failed', storyId: delivery.storyId, chapterIndex: body.index })}\n`)
+            } catch { /* logging is best-effort */ }
+          }
         }
         return sendJson(response, 200, result)
       }
@@ -573,9 +836,11 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           } else throw error
         }
         if (billing.available) {
-          if (coverCredit) await billing.consumeImageCredit(identity.uid)
-          const coinsSpent = coverCoins ? await billing.spendCoins(identity.uid, COIN.imageCoinCost) : 0
-          await billing.recordImageCost({ uid: identity.uid, scene: 'cover', model: cover.model, creditUsed: coverCredit, coinsSpent })
+          // Consumption returns are checked (task 1.3): a failed
+          // consume falls back to coins, a short spend refuses the
+          // picture — settleImageCharge throws before any delivery.
+          const settled = await settleImageCharge(identity.uid, { credit: coverCredit, coins: coverCoins })
+          await billing.recordImageCost({ uid: identity.uid, scene: 'cover', model: cover.model, creditUsed: settled.creditUsed, coinsSpent: settled.coinsSpent })
         }
         // Cover ledger: identity, story id, model and provider usage only —
         // never the prompt and never image bytes.
@@ -665,9 +930,9 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           } else throw error
         }
         if (billing.available) {
-          if (avatarCredit) await billing.consumeImageCredit(identity.uid)
-          const coinsSpent = avatarCoins ? await billing.spendCoins(identity.uid, COIN.imageCoinCost) : 0
-          await billing.recordImageCost({ uid: identity.uid, scene: 'avatar', model: avatar.model, creditUsed: avatarCredit, coinsSpent })
+          // Same checked settlement as covers (task 1.3).
+          const settled = await settleImageCharge(identity.uid, { credit: avatarCredit, coins: avatarCoins })
+          await billing.recordImageCost({ uid: identity.uid, scene: 'avatar', model: avatar.model, creditUsed: settled.creditUsed, coinsSpent: settled.coinsSpent })
         }
         // Avatar ledger: identity, model, anchor kind and provider usage
         // only — never the description and never image bytes.
