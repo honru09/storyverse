@@ -288,9 +288,12 @@ export function plazaPublicPremise(detail, templateName = '') {
  *  - background: the world name + craft, plus the premise's own
  *    world-describing sentences once title-subject stuffing and
  *    engine-term sentences are cut;
- *  - rules: the snapshot's rules with engine-vocabulary entries
- *    filtered out (the redaction boundary does not move — these were
- *    already the desensitised snapshot's rules);
+ *  - rules: the snapshot's own rules with engine-vocabulary entries,
+ *    template filler and any sentence carrying a retired redaction
+ *    placeholder filtered out (BOOK-FACE-FIX: dropped whole, never
+ *    rewritten — and since the same batch the snapshot text itself is
+ *    the book's original text, so what survives is this book's own
+ *    concrete rules);
  *  - thread: the protagonist and the PUBLISHED beats only. The
  *    bible's endingAnchor and outline are never read here: both
  *    describe where the story has not gone yet, and printing them
@@ -300,8 +303,20 @@ export function plazaPublicPremise(detail, templateName = '') {
  * outline, so the one-time refresh script can bake the same text
  * into stored publications.
  */
-export const WORLD_INTRO_VERSION = 2
+export const WORLD_INTRO_VERSION = 3
 const WORLD_INTRO_ENGINE_TERMS = ['资产与负债', '因果账目', '制约', '稳定度', '数值', '参数', '提示词', '回合制', '账目制', '世界线扰动值']
+// Placeholder words the retired replacement-redaction used to bake
+// into published text (BOOK-FACE-FIX). New snapshots never contain
+// them; stored records baked before the abolition still can, and a
+// sentence or rule carrying one is dropped WHOLE — a placeholder is
+// never printed, and the sentence is never "repaired" by guessing.
+const SNAPSHOT_ALIAS_MARKERS = [...REDACTION_PLACEHOLDERS, '匿名火种', '匿名探索者', '匿名借火', '未命名火种', '未知来处', '未知世界']
+// The local template bible's filler rules (worldBibleFor stamps the
+// same two sentences into every book): they describe no book in
+// particular, so the public outline leaves them out and keeps only
+// rules that are this book's own.
+const WORLD_INTRO_GENERIC_RULE_MARKERS = ['的秘密只能通过具体行动', '已经发生的事会留下可追踪的']
+const hasAliasMarker = (text) => SNAPSHOT_ALIAS_MARKERS.some((marker) => text.includes(marker))
 export function plazaWorldIntroFor(detail, templateName = '') {
   const world = detail?.worldName || '这个世界'
   const avatarName = detail?.avatar?.name || '主角'
@@ -312,7 +327,7 @@ export function plazaWorldIntroFor(detail, templateName = '') {
     .map((part) => part.trim())
     .filter(Boolean)
     .filter((sentence) => !(title && sentence.startsWith(title)))
-    .filter((sentence) => !REDACTION_PLACEHOLDERS.some((marker) => sentence.includes(marker)))
+    .filter((sentence) => !hasAliasMarker(sentence))
     .filter((sentence) => !WORLD_INTRO_ENGINE_TERMS.some((term) => sentence.includes(term)))
   const backgroundBody = sentences.slice(0, 2).join('')
   // When every premise sentence was filtered out (title-subject
@@ -321,8 +336,15 @@ export function plazaWorldIntroFor(detail, templateName = '') {
   // (FINAL-FIX N7, the official book's own page). The world's own
   // catalogue description is the honest fallback: it is what the
   // forge shows when the reader picks this world.
-  const worldDescription = !backgroundBody
-    ? (genreFor(detail?.genreId)?.description || '').trim()
+  // BOOK-FACE-FIX: the fallback must be THIS book's world. Callers
+  // that forget genreId (the publish path did) used to land on
+  // genreFor's mist default and print 沉潮港's description under a
+  // 青岚宗 book — so the description is only borrowed when the
+  // resolved genre IS the book's stated genre; otherwise no
+  // description is borrowed at all.
+  const ownGenre = typeof detail?.genreId === 'string' && detail.genreId ? genreFor(detail.genreId) : null
+  const worldDescription = !backgroundBody && ownGenre && ownGenre.id === detail.genreId
+    ? (ownGenre.description || '').trim()
     : ''
   const background = `「${world}」——${templateName ? `${templateName}题材的世界` : '一个自成一体的世界'}。`
     + (backgroundBody && !backgroundBody.startsWith(`「${world}」`) ? backgroundBody : '')
@@ -331,8 +353,9 @@ export function plazaWorldIntroFor(detail, templateName = '') {
   const rules = (Array.isArray(detail?.worldBible?.rules) ? detail.worldBible.rules : [])
     .filter((rule) => typeof rule === 'string' && rule.trim())
     .map((rule) => rule.trim())
-    .filter((rule) => !REDACTION_PLACEHOLDERS.some((marker) => rule.includes(marker)))
+    .filter((rule) => !hasAliasMarker(rule))
     .filter((rule) => !WORLD_INTRO_ENGINE_TERMS.some((term) => rule.includes(term)))
+    .filter((rule) => !WORLD_INTRO_GENERIC_RULE_MARKERS.some((marker) => rule.includes(marker)))
     .slice(0, 3)
 
   const synopsis = typeof detail?.synopsis === 'string' ? detail.synopsis.trim() : ''
@@ -547,7 +570,7 @@ export function enterDraftFor(detail, { avatar, identityId = '', startPointName 
 
 /**
  * The read-only story the reader opens for 读原作线： the publication's
- * sanitized snapshot, shaped exactly like a local story. The author's
+ * snapshot, shaped exactly like a local story. The author's
  * choices ride along in `choices`, so the reader sees the path that was
  * actually taken; nothing here can generate or be edited.
  */
@@ -568,6 +591,14 @@ export function plazaReaderStory(detail) {
     // label; the ids themselves never leave the server.
     kind: detail.merged ? 'merged' : 'solo',
     ...(detail.merged && Array.isArray(detail.sourceTitles) ? { sourceTitles: detail.sourceTitles } : {}),
+    // The publication's OWN cover rides the reader copy (BOOK-FACE-FIX):
+    // the snapshot carries no cover state (covers live in the cover
+    // store, keyed by the author's story), so without this the reader's
+    // cover page fell back to the shared WORLD art while the detail
+    // page showed the book's real cover — the reader met a different
+    // picture than the one on the shelf. detail.coverUrl is the public
+    // /api/plaza/<id>/cover path the service resolves for exactly this.
+    coverUrl: typeof detail.coverUrl === 'string' ? detail.coverUrl : '',
     config: snapshot.config || {},
     worldBible: snapshot.worldBible || { premise: '', rules: [], endingAnchor: '', outline: [] },
     chapters: snapshot.chapters,

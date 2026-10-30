@@ -32,6 +32,33 @@ export default function StoryCover({ story, genreId = "mist", sources, eager = f
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, version, storyId, authSignal]);
 
+  // A reader copy of a PUBLISHED book carries the publication's public
+  // cover path (plazaReaderStory → detail.coverUrl): that picture is
+  // the book's own cover — the same one the detail page shows — and it
+  // outranks every fallback below (BOOK-FACE-FIX: the reader's cover
+  // page used to land on the shared world art instead, because the
+  // snapshot carries no cover state of its own). A failed load falls
+  // through to the ordinary chain rather than a blank page.
+  const publicCoverUrl = typeof story?.coverUrl === "string" ? story.coverUrl : "";
+  const [publicCoverFailed, setPublicCoverFailed] = useState(false);
+  useEffect(() => { setPublicCoverFailed(false); }, [publicCoverUrl]);
+  if (publicCoverUrl && !publicCoverFailed) {
+    return (
+      <span className={`world-art story-cover ${className}`} aria-hidden="true">
+        <img
+          src={publicCoverUrl}
+          alt=""
+          width="768"
+          height="1024"
+          loading={eager ? "eager" : "lazy"}
+          fetchPriority={eager ? "high" : "auto"}
+          decoding="async"
+          onError={() => setPublicCoverFailed(true)}
+        />
+      </span>
+    );
+  }
+
   if (url) {
     return (
       <span className={`world-art story-cover ${className}`} aria-hidden="true">

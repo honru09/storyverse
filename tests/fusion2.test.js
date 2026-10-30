@@ -252,7 +252,7 @@ test('a serializing fused line publishes to the plaza as a live line', () => {
   assert.match(shortGate.reason, /合流/)
 })
 
-test('plaza snapshot of a fused endless line keeps provenance and drops private fields', () => {
+test('plaza snapshot of a fused endless line keeps provenance, carries protagonist text verbatim, and keeps ids home', () => {
   const lead = serializing({
     name: '阿澜',
     ability: '听潮',
@@ -270,14 +270,18 @@ test('plaza snapshot of a fused endless line keeps provenance and drops private 
   assert.deepEqual(snapshot.sourceTitles, [lead.title, partner.title])
   assert.deepEqual(snapshot.config.merge.sourceTitles, [lead.title, partner.title])
   assert.deepEqual(snapshot.config.protagonists.map((person) => person.name), ['阿澜', '沈砚'])
-  // The share-snapshot rule: avatar ids and appearances stay home, and
-  // the entrant inherits the endless mode from the template.
+  // Structural rule (unchanged): avatar ids and appearances are not
+  // fields of the snapshot's protagonists, and the entrant inherits
+  // the endless mode from the template.
   assert.ok(snapshot.config.protagonists.every((person) => !('avatarId' in person) && !('appearance' in person)))
   assert.equal(snapshot.enterTemplate.config.storyLengthMode, 'endless')
   assert.equal(snapshot.enterTemplate.config.targetChapters, null)
+  // BOOK-FACE-FIX (owner order 2026-10-30): replacement redaction is
+  // abolished — the protagonists' own trait/ability text publishes
+  // verbatim instead of being swapped for 「匿名探索者」/「匿名火种」.
+  assert.equal(snapshot.config.protagonists[0].trait, 'secret-trait-a')
+  assert.equal(snapshot.config.protagonists[0].ability, '听潮')
   const serialized = JSON.stringify(snapshot)
-  assert.ok(!serialized.includes('secret-trait-a'))
-  assert.ok(!serialized.includes('听潮'))
   assert.ok(!serialized.includes('avatar-a'))
   assert.ok(!serialized.includes('"derivedFrom"'))
   assert.ok(!serialized.includes(lead.id))

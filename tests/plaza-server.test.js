@@ -135,11 +135,11 @@ const publish = (base, token, story) => fetch(`${base}/api/plaza/publish`, {
   body: JSON.stringify({ story }),
 })
 
-test('publish → feed → detail round-trip, with the private marker scrubbed everywhere', async (t) => {
+test('publish → feed → detail round-trip: the book’s own text verbatim, structural fields home', async (t) => {
   const { base, plazaStore } = await startPlazaServer(t)
   const token = await register(base, 'plaza_author_a')
   const avatar = await makeAvatar(base, token)
-  const MARKER = '私密标记-桥洞暗号-77'
+  const MARKER = '标记-桥洞暗号-77'
   const story = completedLine(avatar.id, { marker: MARKER })
 
   const response = await publish(base, token, story)
@@ -152,14 +152,20 @@ test('publish → feed → detail round-trip, with the private marker scrubbed e
   assert.equal('authorUid' in publication, false)
   assert.equal('reporters' in publication, false)
 
+  // BOOK-FACE-FIX (owner order 2026-10-30): replacement redaction is
+  // abolished. The marker lives in the book's OWN world-bible premise
+  // (the author's introduction text), so it now publishes verbatim —
+  // what still stays home is structural: the snapshot config carries
+  // no hometown field value and no avatar id (asserted below).
   const stored = await plazaStore.listPublications()
   assert.equal(stored.length, 1)
-  assert.equal(JSON.stringify(stored[0]).includes(MARKER), false, 'stored record carries no private marker')
+  assert.equal(stored[0].snapshot.worldBible.premise, story.worldBible.premise, 'stored premise is the book’s own text, byte for byte')
+  assert.ok(JSON.stringify(stored[0]).includes(MARKER), 'the book’s own premise text rides verbatim')
 
   const feedResponse = await fetch(`${base}/api/store`)
   assert.equal(feedResponse.status, 200)
   const feedText = await feedResponse.text()
-  assert.equal(feedText.includes(MARKER), false, 'feed carries no private marker')
+  assert.ok(feedText.includes(MARKER), 'feed shows the book’s own premise, verbatim')
   const feed = JSON.parse(feedText).books
   assert.equal(feed.length, 1)
   assert.equal(feed[0].id, publication.id)
@@ -167,7 +173,7 @@ test('publish → feed → detail round-trip, with the private marker scrubbed e
   const detailResponse = await fetch(`${base}/api/plaza/${publication.id}`)
   assert.equal(detailResponse.status, 200)
   const detailText = await detailResponse.text()
-  assert.equal(detailText.includes(MARKER), false, 'detail carries no private marker')
+  assert.ok(detailText.includes(MARKER), 'detail shows the book’s own premise, verbatim')
   const detail = JSON.parse(detailText).publication
   assert.equal(detail.snapshot.chapters.length, 24)
   assert.equal(detail.snapshot.config.hometown, '')

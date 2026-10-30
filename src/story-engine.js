@@ -3323,37 +3323,37 @@ export function publicSnapshot(story) {
 }
 
 /*
- * 广场 (plaza) snapshot: the sanitized public copy of a finished avatar
- * line. It reuses the merge-share redaction machinery — the sanitized
- * config (private free-form fields replaced) and the literal-value
- * redactor that scrubs those private values out of any prose that quoted
- * them — with two deliberate differences from publicSnapshot:
+ * 广场 (plaza) snapshot: the public copy of a finished avatar line.
  *
- *   1. The line is NOT anonymous. The plaza is a showcase of avatars: the
- *      author's avatar keeps its real name, and prose mentions of the
- *      protagonist are re-pointed at that name instead of 匿名旅者. What
- *      stays stripped is everything private: immersive life details
- *      (hometown / school / company / role), the friend and destination
- *      free text, the free-form spawn point, and the avatar id itself.
- *   2. The payload carries what the plaza's two consumptions need: the
- *      full original line (chapters + the choices the author actually
- *      took), a beat skeleton (per-chapter ledger events) for the detail
- *      page, and an enterable world template — the world config and the
- *      sanitized bible, minus everything an entrant must choose for
- *      themselves (their avatar, identity, spawn point, ability).
+ * BOOK-FACE-FIX (owner order 2026-10-30, 「不准搞这种脱敏」): the text
+ * of this copy is the author's ORIGINAL text — title, synopsis, world
+ * bible and chapter prose are carried verbatim, with no literal-value
+ * replacement pass. Replacement redaction used to rewrite prose that
+ * quoted the author's own config values into 「已隐去的设定」/「匿名
+ * 火种」 placeholders and mangled published sentences; that machinery
+ * is off this path entirely (it survives only in publicSnapshot, the
+ * LOCAL share copy above, whose anonymity is that surface's design).
+ * What the snapshot still withholds is structural, never textual:
+ * internal identifiers (the source story's id, avatar ids) have no
+ * field here, and the snapshot CONFIG is the entrant template shape
+ * (redactedSnapshotConfig) — the fields an entrant must choose for
+ * themselves (their avatar, identity, spawn point, ability) start
+ * blank rather than inheriting the author's.
+ *
+ * The payload carries what the plaza's two consumptions need: the
+ * full original line (chapters + the choices the author actually
+ * took), a beat skeleton (per-chapter ledger events) for the detail
+ * page, and an enterable world template.
  */
 /**
- * The public form of a story's CURRENT title against an existing
- * snapshot's safe config (TITLE-FLOW): the same redaction plazaSnapshot
- * applies at publish time, recomputed for a rename. The plaza service
- * uses it to mirror a rename onto the stored publication without
- * rebuilding the whole snapshot — private literals quoted in the new
- * title are scrubbed by the same replacement table the original
- * snapshot was built with.
+ * The public form of a story's CURRENT title (TITLE-FLOW): since
+ * BOOK-FACE-FIX the published title is the title itself, verbatim —
+ * the plaza service mirrors a rename onto the stored publication with
+ * this, and no replacement table is consulted. (The export keeps its
+ * historical name and signature so existing callers do not move.)
  */
 export function redactedTitleFor(story, safeConfig) {
-  const redact = snapshotRedactor(story?.config || {}, safeConfig || {})
-  return redact(typeof story?.title === 'string' ? story.title : '')
+  return typeof story?.title === 'string' ? story.title : ''
 }
 
 export function plazaSnapshot(story, { avatarName = '' } = {}) {
@@ -3380,18 +3380,19 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
   const safeConfig = { ...redactedSnapshotConfig(story.config, displayName), name: displayName }
   if (mergedLine) {
     // The fused line is NOT anonymous either: both leads keep their real
-    // names (the plaza is a showcase of avatars), while everything
-    // private follows the share-snapshot rule — traits, origins and
-    // abilities are replaced, avatar ids and appearances stay home. The
-    // source titles ride along (redacted below) so the detail page can
-    // label the line 「由《A》×《B》融合而来」.
+    // names, traits, origins and abilities (BOOK-FACE-FIX: replacement
+    // redaction on the publish path is abolished — published text is the
+    // original text). Only structural identifiers stay home: avatar ids
+    // and appearances are not fields of this record at all. The source
+    // titles ride along (verbatim) so the detail page can label the
+    // line 「由《A》×《B》融合而来」.
     const protagonists = [0, 1].map((index) => {
       const person = story.config.protagonists?.[index] || {}
       return {
         name: cleanText(person.name, index === 0 ? '旅者甲' : '旅者乙'),
-        trait: '匿名探索者',
-        origin: '未知来处',
-        ability: '匿名火种',
+        trait: typeof person.trait === 'string' ? person.trait : '',
+        origin: typeof person.origin === 'string' ? person.origin : '',
+        ability: typeof person.ability === 'string' ? person.ability : '',
         genreId: genreFor(person.genreId || story.genreId).id,
       }
     })
@@ -3407,23 +3408,30 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
   const genreTemplateId = genreTemplateById(story.genreTemplateId)?.id
     || genreTemplateById(story.config?.genreTemplateId)?.id
     || ''
-  const redact = snapshotRedactor(story.config, safeConfig)
   const bibleSource = story.worldBible && typeof story.worldBible === 'object'
     ? story.worldBible
     : worldBibleFor(genre, safeConfig)
-  const redactLine = (value) => redact(typeof value === 'string' ? value : '')
-  // The fused line's public provenance: the two source titles, redacted
+  // BOOK-FACE-FIX (owner order 2026-10-30): replacement redaction is
+  // abolished on the publish path. Snapshot prose — title, synopsis,
+  // bible, chapter text — is the author's original text, byte for byte;
+  // nothing is rewritten into 「已隐去」/「匿名」 placeholders (that
+  // machinery survives only in publicSnapshot, the LOCAL share copy,
+  // which is a different surface with its own anonymity design). What
+  // still stays home is structural, not textual: internal ids, the
+  // source story id and avatar ids simply have no field here.
+  const verbatim = (value) => (typeof value === 'string' ? value : '')
+  // The fused line's public provenance: the two source titles, verbatim
   // like every other string in the snapshot (a source title quoting a
   // private literal is scrubbed the same way).
   const sourceTitles = mergedLine
-    ? (Array.isArray(story.sourceTitles) ? story.sourceTitles : []).map((title) => redactLine(title)).filter(Boolean)
+    ? (Array.isArray(story.sourceTitles) ? story.sourceTitles : []).map((title) => verbatim(title)).filter(Boolean)
     : []
   if (mergedLine && safeConfig.merge) safeConfig.merge.sourceTitles = sourceTitles
   const worldBible = {
-    premise: redactLine(bibleSource.premise),
-    rules: (Array.isArray(bibleSource.rules) ? bibleSource.rules : []).map(redactLine),
-    endingAnchor: redactLine(bibleSource.endingAnchor),
-    outline: (Array.isArray(bibleSource.outline) ? bibleSource.outline : []).map(redactLine),
+    premise: verbatim(bibleSource.premise),
+    rules: (Array.isArray(bibleSource.rules) ? bibleSource.rules : []).map(verbatim),
+    endingAnchor: verbatim(bibleSource.endingAnchor),
+    outline: (Array.isArray(bibleSource.outline) ? bibleSource.outline : []).map(verbatim),
   }
   const safeShell = {
     id: `plaza-${hash(story.id)}`,
@@ -3446,12 +3454,12 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
     chapters = story.chapters.map((chapter, index) => ({
       id: `${safeShell.id}:chapter:${index}:r${safeShell.revision}`,
       index,
-      title: redactLine(chapter.title),
-      paragraphs: (Array.isArray(chapter.paragraphs) ? chapter.paragraphs : []).map(redactLine),
-      summary: redactLine(chapter.summary),
-      choice: snapshotChoice(story, safeShell, index, redact),
-      events: (Array.isArray(chapter.events) ? chapter.events : []).map(redactLine),
-      foreshadowing: (Array.isArray(chapter.foreshadowing) ? chapter.foreshadowing : []).map(redactLine),
+      title: verbatim(chapter.title),
+      paragraphs: (Array.isArray(chapter.paragraphs) ? chapter.paragraphs : []).map(verbatim),
+      summary: verbatim(chapter.summary),
+      choice: snapshotChoice(story, safeShell, index, verbatim),
+      events: (Array.isArray(chapter.events) ? chapter.events : []).map(verbatim),
+      foreshadowing: (Array.isArray(chapter.foreshadowing) ? chapter.foreshadowing : []).map(verbatim),
     }))
   } else {
     chapters = story.chapters.map((chapter) => buildChapter(safeShell, chapter.index))
@@ -3460,7 +3468,7 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
   const eventsByChapter = new Map()
   for (const event of ledger.events) {
     const list = eventsByChapter.get(event.chapter) || []
-    list.push(redactLine(event.text))
+    list.push(verbatim(event.text))
     eventsByChapter.set(event.chapter, list)
   }
   const beats = chapters.map((chapter, index) => ({
@@ -3470,12 +3478,12 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
     events: eventsByChapter.get(index + 1) || [],
   }))
   return {
-    title: redactLine(story.title),
-    // The owner's blurb rides the snapshot (redacted like every other
+    title: verbatim(story.title),
+    // The owner's blurb rides the snapshot (verbatim like every other
     // string) so a re-publish can refresh the plaza detail's 简介；
     // absent when the owner never wrote one — the detail then falls
     // back to the premise, as it did before the field existed.
-    ...(typeof story.synopsis === 'string' && story.synopsis.trim() ? { synopsis: redactLine(story.synopsis) } : {}),
+    ...(typeof story.synopsis === 'string' && story.synopsis.trim() ? { synopsis: verbatim(story.synopsis) } : {}),
     genreId: genre.id,
     genreTemplateId,
     worldName: worldNameOf(genre, safeConfig),
