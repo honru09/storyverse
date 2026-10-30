@@ -111,6 +111,23 @@ export function avatarPortraitState(avatar) {
   }
 }
 
+/**
+ * A content signature of an avatar collection: the visible facts a
+ * reader of the collection (the profile tab's avatar row) depends on —
+ * which avatars exist, their names, their portrait state, and who is
+ * main. Identity-only changes (a refresh handing back equal content in
+ * a fresh array) keep the same signature, so watchers keyed on it fire
+ * exactly when the displayed collection really changed (REQ-58).
+ */
+export function avatarCollectionSignature(avatars, mainId) {
+  const list = Array.isArray(avatars) ? avatars : []
+  const rows = list.filter((avatar) => avatar && typeof avatar.id === 'string').map((avatar) => {
+    const portrait = avatarPortraitState(avatar)
+    return `${avatar.id}:${avatar.name || ''}:${portrait.status}:${portrait.version}`
+  })
+  return `${typeof mainId === 'string' ? mainId : ''}|${rows.join('|')}`
+}
+
 // Three ready-made companions for readers who would rather start from a
 // person than a blank page. Adopting one fills the same form as a
 // hand-written avatar and paints through the same pipeline — no preset

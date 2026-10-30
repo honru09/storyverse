@@ -47,6 +47,7 @@ import {
   AVATAR_LIMIT,
   AVATAR_PRESETS,
   avatarAppearanceText,
+  avatarCollectionSignature,
   avatarDraftPatch,
   avatarJourneys,
   avatarPortraitState,
@@ -11412,6 +11413,19 @@ function App() {
     }
   }, [library.stories, runCoverRequest, account.status]);
   const avatarState = useAvatarProfile(authClient, account);
+  // REQ-58: the profile tab renders its avatar row from the public
+  // profile payload, which lives in the profile cache — and avatar
+  // mutations only refreshed the avatar hook above, so a freshly
+  // created avatar stayed invisible on the (keep-alive) profile tab
+  // until a full reload. Whenever the collection's content signature
+  // really changes, revalidate the owner's own payload: the cache
+  // notifies the mounted profile view in place. Content-equal
+  // refreshes keep the signature, so this cannot loop.
+  const ownAvatarSignature = avatarCollectionSignature(avatarState.avatars, avatarState.mainId);
+  useEffect(() => {
+    if (!viewerUid || !avatarState.loaded) return;
+    void loadProfile({ viewerUid, uid: viewerUid, getAccessToken: () => authClient.getAccessToken() });
+  }, [ownAvatarSignature, viewerUid, avatarState.loaded, authClient]);
   const generate = async (payload, { engine, signal }) => {
       const settingViolation = findSettingViolation(payload.customWorldSetting);
       if (settingViolation) throw new Error(settingViolation);
