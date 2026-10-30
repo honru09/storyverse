@@ -5850,7 +5850,17 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
           <Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>再试一次</Button>
         </div>
       )}
-      {data === null && !error && <p className="plaza-loading" role="status">正在打开书城…</p>}
+      {data === null && !error && (
+        <div className="store-grid" role="status" aria-label="正在打开书城…">
+          {[[76, 48], [64, 52], [70, 44], [80, 50]].map(([titleWidth, authorWidth], index) => (
+            <div className="da-skel-book" key={index} aria-hidden="true">
+              <span className="da-skel da-skel--cover" />
+              <span className="da-skel da-skel--line" style={{ width: `${titleWidth}%` }} />
+              <span className="da-skel da-skel--line" style={{ width: `${authorWidth}%` }} />
+            </div>
+          ))}
+        </div>
+      )}
       {data !== null && !error && books.length === 0 && (
         <div className="store-empty" role="status">
           <img className="empty-art" src={searching ? "/art/empty-search-512.webp" : "/art/empty-store-512.webp"} alt="" loading="lazy" />
