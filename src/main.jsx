@@ -1394,7 +1394,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
   if (!form) {
     return (
       <div className="page page-avatar page-enter">
-        <div className="merge-heading"><div><h1>我的化身</h1><p>正在打开…</p></div></div>
+        <div className="merge-heading"><div><h1>我的化身</h1><p className="da-load-row"><span className="da-spinner da-spinner--sm" aria-hidden="true" />正在打开…</p></div></div>
       </div>
     );
   }
@@ -1816,7 +1816,7 @@ function PreviewPanel({ world, template, draft, ability, spawn, onJump }) {
           <strong>{world.name}</strong>
         </div>
       </div>
-      <dl className="preview-facts">
+      <dl className="preview-facts da-kv-list">
         {factRow("题材", template ? twoSegmentTemplateName(template) : "完全自由", isCustom ? 2 : 1, "修改题材")}
         {factRow("世界", world.name, 2, "修改世界")}
         <div><dt>篇幅</dt><dd>{lengthLabelFor({ config: draft })}</dd></div>
@@ -2667,7 +2667,10 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                       placeholder="给你的世界起个名字"
                     />
                   </label>
-                  <p className="field-hint">留空也行：故事会先以「未命名世界」开始，回到这一步随时能改名。</p>
+                  <div className="god-setting-meta">
+                    <span className="field-hint">留空也行：故事会先以「未命名世界」开始，回到这一步随时能改名。</span>
+                    <span className="da-count">{(draft.customWorldName || "").length} / {CUSTOM_WORLD_NAME_MAX}</span>
+                  </div>
                   <label className="field-label">
                     背景设定
                     <textarea
@@ -3640,7 +3643,17 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
           <button type="button" className="small-link" onClick={() => setRetry((value) => value + 1)}>再试一次</button>
         </div>
       ) : !data ? (
-        <p className="notify-empty" role="status">正在打开消息…</p>
+        <div role="status" aria-label="正在打开消息">
+          {[0, 1, 2].map((i) => (
+            <div className="da-skel-row" key={i} aria-hidden="true">
+              <span className="da-skel da-skel--circle" style={{ width: 40, height: 40 }} />
+              <span className="da-skel-colline">
+                <span className="da-skel da-skel--line" style={{ width: "62%" }} />
+                <span className="da-skel da-skel--line" style={{ width: "38%" }} />
+              </span>
+            </div>
+          ))}
+        </div>
       ) : items.length === 0 ? (
         <div className="notify-empty">
           <img className="empty-art" src="/art/empty-messages-512.webp" alt="" loading="lazy" />
@@ -6005,7 +6018,13 @@ function PlazaCommentThread({ post, account, authClient, onOpenAccount, onCountC
 
   return (
     <div className="plaza-thread">
-      {comments === null && <p className="plaza-note" role="status">正在打开评论…</p>}
+      {comments === null && (
+        <div className="da-skel-lines" role="status" aria-label="正在打开评论">
+          <span className="da-skel da-skel--line" style={{ width: "88%" }} aria-hidden="true" />
+          <span className="da-skel da-skel--line" style={{ width: "64%" }} aria-hidden="true" />
+          <span className="da-skel da-skel--line" style={{ width: "79%" }} aria-hidden="true" />
+        </div>
+      )}
       {comments !== null && comments.length === 0 && (
         <p className="plaza-thread-empty"><img className="empty-row-art" src="/art/empty-comments-512.webp" alt="" loading="lazy" />暂无评论，来发表第一条看法吧。</p>
       )}
@@ -6416,7 +6435,7 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
           <div className="plaza-feed-heading">
             <h2>关注动态</h2>
           </div>
-          <div className="plaza-following-row">
+          <div className="plaza-following-row da-fade-x">
             {followedPosts.map((post) => (
               <button
                 type="button"
@@ -6486,7 +6505,27 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
           <Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>再试一次</Button>
         </div>
       )}
-      {posts === null && !error && <p className="plaza-loading" role="status">正在打开广场…</p>}
+      {posts === null && !error && (
+        <div className="da-skel-feed" role="status" aria-label="正在打开广场">
+          <div className="da-skel-post" aria-hidden="true">
+            <div className="da-skel-rowline">
+              <span className="da-skel da-skel--circle" style={{ width: 38, height: 38 }} />
+              <span className="da-skel da-skel--line" style={{ width: "36%" }} />
+            </div>
+            <span className="da-skel da-skel--line" style={{ width: "94%" }} />
+            <span className="da-skel da-skel--line" style={{ width: "71%" }} />
+            <span className="da-skel da-skel--media" style={{ height: 118 }} />
+          </div>
+          <div className="da-skel-post" aria-hidden="true">
+            <div className="da-skel-rowline">
+              <span className="da-skel da-skel--circle" style={{ width: 38, height: 38 }} />
+              <span className="da-skel da-skel--line" style={{ width: "28%" }} />
+            </div>
+            <span className="da-skel da-skel--line" style={{ width: "88%" }} />
+            <span className="da-skel da-skel--line" style={{ width: "57%" }} />
+          </div>
+        </div>
+      )}
       {focusPost && (
         <PlazaPostCard
           key={`focus-${focusPost.id}`}
@@ -6684,7 +6723,13 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
         <h2>读者评价</h2>
         {data && data.ratingCount > 0 && <span className="book-ratings-count">{data.ratingCount} 条评价</span>}
       </div>
-      {!data && !error && <p className="plaza-note" role="status">正在打开评价…</p>}
+      {!data && !error && (
+        <div className="da-skel-lines" role="status" aria-label="正在打开评价">
+          <span className="da-skel da-skel--line" style={{ width: "42%" }} aria-hidden="true" />
+          <span className="da-skel da-skel--line" style={{ width: "91%" }} aria-hidden="true" />
+          <span className="da-skel da-skel--line" style={{ width: "68%" }} aria-hidden="true" />
+        </div>
+      )}
       {error && <p className="plaza-thread-error" role="alert">{error}</p>}
       {data && (
         <>
@@ -7454,7 +7499,7 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
 
   return (
     <div className="profile-edit-overlay" role="dialog" aria-modal="true" aria-label="编辑资料">
-      <div className="profile-edit-sheet">
+      <div className="profile-edit-sheet da-sheet-frame">
         <span className="ryan-sheet-handle" aria-hidden="true" />
         <div className="profile-edit-heading">
           <h2>{crop ? "裁剪头像" : bannerCrop ? "裁剪头图" : "编辑资料"}</h2>
@@ -7586,9 +7631,11 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
         )}
 
         {error && <p className="profile-edit-error" role="alert">{error}</p>}
-        <button type="button" className="profile-edit-save" disabled={busy || bioOverLimit} onClick={() => void save()}>
-          {busy ? "保存中…" : "保存"}
-        </button>
+        <div className="da-sheet-actions">
+          <button type="button" className="profile-edit-save" disabled={busy || bioOverLimit} onClick={() => void save()}>
+            {busy ? "保存中…" : "保存"}
+          </button>
+        </div>
         </>
         )}
       </div>
@@ -7812,7 +7859,17 @@ function FriendsPanel({ authClient, onOpenProfile }) {
       {loadError ? (
         <p className="profile-line-empty" role="alert">{loadError}</p>
       ) : !data ? (
-        <p className="profile-line-empty" role="status">正在打开好友…</p>
+        <div role="status" aria-label="正在打开好友">
+          {[0, 1].map((i) => (
+            <div className="da-skel-row" key={i} aria-hidden="true">
+              <span className="da-skel da-skel--circle" style={{ width: 40, height: 40 }} />
+              <span className="da-skel-colline">
+                <span className="da-skel da-skel--line" style={{ width: "48%" }} />
+                <span className="da-skel da-skel--line" style={{ width: "30%" }} />
+              </span>
+            </div>
+          ))}
+        </div>
       ) : tab === "friends" ? (
         data.friends.length === 0 ? (
           <div>
@@ -7901,7 +7958,7 @@ function FriendsPanel({ authClient, onOpenProfile }) {
           {searchError ? (
             <p className="profile-line-empty" role="alert">{searchError}</p>
           ) : searching ? (
-            <p className="profile-line-empty" role="status">正在找…</p>
+            <p className="profile-line-empty" role="status"><span className="da-load-row"><span className="da-spinner da-spinner--sm" aria-hidden="true" />正在找…</span></p>
           ) : searchResult ? (
             searchResult.people.length === 0 ? (
               <div>
@@ -8598,7 +8655,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           onPointerUp={onGrabPointerEnd}
           onPointerCancel={onGrabPointerEnd}
         >
-          <span className="profile-window-grabber" />
+          <span className="profile-window-grabber da-sheet-grab" />
         </div>
       )}
       <header className="profile-hero">
@@ -8766,13 +8823,23 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
             </button>
             <div>
               <h2>{connectionsKind === "followers" ? "粉丝" : "关注"}</h2>
-              <p>{connections ? `${connections.total} 人` : "正在打开…"}</p>
+              <p>{connections ? `${connections.total} 人` : <span className="da-load-row"><span className="da-spinner da-spinner--sm" aria-hidden="true" />正在打开…</span>}</p>
             </div>
           </div>
           {connectionsError ? (
             <p className="profile-line-empty" role="alert">{connectionsError}</p>
           ) : !connections ? (
-            <p className="profile-line-empty" role="status">正在打开名单…</p>
+            <div role="status" aria-label="正在打开名单">
+              {[0, 1, 2].map((i) => (
+                <div className="da-skel-row" key={i} aria-hidden="true">
+                  <span className="da-skel da-skel--circle" style={{ width: 40, height: 40 }} />
+                  <span className="da-skel-colline">
+                    <span className="da-skel da-skel--line" style={{ width: "52%" }} />
+                    <span className="da-skel da-skel--line" style={{ width: "33%" }} />
+                  </span>
+                </div>
+              ))}
+            </div>
           ) : connections.people.length === 0 ? (
             <div>
               <img className="empty-inline-art" src="/art/empty-follows-512.webp" alt="" loading="lazy" />
@@ -11512,6 +11579,7 @@ function App() {
             <button onClick={() => setLibraryOpen(true)}>备份与恢复</button>
           </div>
         )}
+        {!isReaderTop && <div className="da-fade-blur da-fade-blur--nav" aria-hidden="true" />}
         {!isReaderTop && <MobileBottomNav view={profileRoute ? "profile" : navView} onNavigate={navigate} onOpenProfile={openOwnProfile} />}
         {/* Keep-alive slots (J): every visited main view stays mounted
             in its own slot, hidden while inactive. The reader (K) is
@@ -11528,7 +11596,7 @@ function App() {
       {profileRoute && (
         <div className={`profile-window ${profileClosing ? "is-closing" : ""}`} role="dialog" aria-modal="true" aria-label="个人主页">
           <button type="button" className="profile-window-backdrop" aria-label="关闭主页" onClick={requestCloseProfile} />
-          <div className="profile-window-sheet">
+          <div className="profile-window-sheet da-sheet-frame">
             <ProfilePage
               uid={profileRoute.id}
               account={account}
@@ -11540,6 +11608,7 @@ function App() {
               onOpenProfile={openProfile}
               onClose={requestCloseProfile}
             />
+            <span className="da-fade-blur da-fade-blur--sheet da-fade-blur--over" aria-hidden="true" />
           </div>
         </div>
       )}

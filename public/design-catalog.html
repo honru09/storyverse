@@ -134,7 +134,7 @@ body{
 <header class="cat-top">
   <div class="cat-top-in">
     <div class="cat-title">织界 · 专属设计素材库</div>
-    <div class="cat-sub">REQ-34 第一批 · 41 件 —— 母题：织线 / 星点 / 书页。全部挂主题 token，切换主题整页换貌；骨架与数值守 §51/§53 纪律（blur 22/14/12 档、圆角阶梯、发丝线 alpha）。</div>
+    <div class="cat-sub">REQ-34 第一批 · 41 件 + 第二批 · 15 件 —— 母题：织线 / 星点 / 书页。全部挂主题 token，切换主题整页换貌；骨架与数值守 §51/§53 纪律（blur 22/14/12 档、圆角阶梯、发丝线 alpha）。第二批硬规：视觉语言一律以 §53 毛玻璃为骨，渐进模糊按定版参数立件。</div>
     <div class="cat-themes" role="group" aria-label="主题切换">
       <button class="cat-theme-btn" data-set-theme="black" aria-pressed="true">黑</button>
       <button class="cat-theme-btn" data-set-theme="white" aria-pressed="false">白</button>
@@ -572,6 +572,183 @@ body{
         <span class="da-empty-glyph"><svg class="star-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z"/></svg></span>
         <span class="da-empty-text">书架还空着</span>
       </div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ================= 第二批（ASSET-LIB2） ================= -->
+<section class="cat-sec" id="sec-batch2">
+  <div class="cat-sec-head"><span class="cat-sec-title">第二批 · 渐进模糊 / 骨架 / 壳层弹窗 / 细节</span><span class="cat-sec-note">FX2 · SKL2 · FRM2 · DTL2 — 15 件</span></div>
+  <p class="cat-note">硬规（用户 2026-10-30 16:49）：视觉语言一律以 §53 毛玻璃为骨——真 backdrop blur + 半透染色 + 发丝边线，不出实面哑光平行件；渐进模糊按定版参数（blur + mask 线性渐变、视觉 0→16、自悬浮元素上方约 120pt 起、背景半透明、只用小区域）。接入落点见 ASSET-LIB2.md。</p>
+
+  <div class="cat-item" id="FX2-01">
+    <div class="cat-item-head"><span class="cat-code">FX2-01</span><span class="cat-name">渐进模糊 · 底带</span></div>
+    <p class="cat-note">两层 backdrop blur 阶梯（14px → 5px）+ 半透染色，mask 线性渐变收尾：内容滑到带下先化开再消失，悬浮胶囊保持在本带之上、字迹清晰。已接入：全局底栏上方（--nav）、他人主页窗内底（--sheet）。</p>
+    <div class="stage" style="height:300px; padding:0">
+      <div class="stage-bg"><img src="./art/banner-store-1600.webp" alt="" /></div>
+      <div class="stage-in" style="padding:20px">
+        <p class="txt">雾港的钟在午夜自己响起来，没有人敲它。摆渡人把手记摊在膝上，一页一页往后翻——翻到第十三页的时候，钟声停了。</p>
+        <p class="txt" style="margin-top:10px">帖子正文从渐进模糊带上方流过，越接近底部越化进背景里；最下面两行正被模糊带盖着，只能看个大概轮廓。</p>
+        <p class="txt" style="margin-top:10px">这一行已经完全沉进带里，看不见了。</p>
+      </div>
+      <span class="da-fade-blur" aria-hidden="true"></span>
+      <span class="da-fab" style="position:absolute; left:50%; bottom:14px; transform:translateX(-50%); z-index:3; white-space:nowrap"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>悬浮胶囊（清晰）</span>
+    </div>
+  </div>
+
+  <div class="cat-item" id="FX2-02">
+    <div class="cat-item-head"><span class="cat-code">FX2-02</span><span class="cat-name">渐进模糊 · 顶带</span></div>
+    <p class="cat-note">底带的方向翻转：自顶边向下 16→0，供浮在内容上方的顶部元素下方收尾。图鉴演示其形；生产落点待集成（主页窗抓手在页面层叠上下文内，见 ASSET-LIB2.md）。</p>
+    <div class="stage" style="height:250px; padding:0">
+      <div class="stage-in" style="padding:20px">
+        <p class="txt">顶部这一行正被顶带盖着，只能看个大概轮廓。</p>
+        <p class="txt" style="margin-top:10px">越往下越清楚，模糊一点点退掉。</p>
+        <p class="txt" style="margin-top:10px">到这一行已经完全脱离模糊带，正文恢复锐利。</p>
+      </div>
+      <span class="da-fade-blur da-fade-blur--top" aria-hidden="true"></span>
+      <span style="position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:3" class="da-sheet-grab"></span>
+    </div>
+  </div>
+
+  <div class="cat-item" id="FX2-03">
+    <div class="cat-item-head"><span class="cat-code">FX2-03</span><span class="cat-name">渐进模糊 · 横向边</span></div>
+    <p class="cat-note">横向滚动行右缘渐隐（mask 尾 28px）：收尾不硬切，也提示「还能往右滑」。已接入：广场关注行。</p>
+    <div class="stage"><div class="stage-in">
+      <div class="row da-fade-x" style="flex-wrap:nowrap; overflow:hidden">
+        <span class="da-chip" aria-pressed="true">全部</span><span class="da-chip">玄幻修真</span><span class="da-chip">都市现实</span><span class="da-chip">恐怖诡异</span><span class="da-chip">言情</span><span class="da-chip">科幻</span><span class="da-chip">历史</span><span class="da-chip">武侠</span>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="SKL2-01">
+    <div class="cat-item-head"><span class="cat-code">SKL2-01</span><span class="cat-name">骨架块</span></div>
+    <p class="cat-note">骨架原子件：半透玻璃 tint + 发丝边 + 微光扫过（复用 FX-05 关键帧），不做实面哑光块。三形：行 / 圆 / 媒体。</p>
+    <div class="stage"><div class="stage-in col">
+      <span class="da-skel da-skel--line" style="width:62%"></span>
+      <div class="da-skel-rowline"><span class="da-skel da-skel--circle" style="width:44px; height:44px"></span><span class="da-skel da-skel--line" style="width:34%"></span></div>
+      <span class="da-skel da-skel--media" style="height:96px"></span>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="SKL2-02">
+    <div class="cat-item-head"><span class="cat-code">SKL2-02</span><span class="cat-name">帖卡骨架</span></div>
+    <p class="cat-note">广场帖卡的玻璃骨替身（面走 §53 玻璃回退链）。已接入：广场信息流加载态，替原裸文字「正在打开广场…」。</p>
+    <div class="stage"><div class="stage-in">
+      <div class="da-skel-post">
+        <div class="da-skel-rowline"><span class="da-skel da-skel--circle" style="width:38px; height:38px"></span><span class="da-skel da-skel--line" style="width:36%"></span></div>
+        <span class="da-skel da-skel--line" style="width:94%"></span>
+        <span class="da-skel da-skel--line" style="width:71%"></span>
+        <span class="da-skel da-skel--media" style="height:110px"></span>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="SKL2-03">
+    <div class="cat-item-head"><span class="cat-code">SKL2-03</span><span class="cat-name">行骨架</span></div>
+    <p class="cat-note">名单 / 消息类列表行：圆头像 + 双行 + 尾列槽。已接入：消息中心、好友、关注/粉丝名单的加载态。</p>
+    <div class="stage"><div class="stage-in">
+      <div class="da-skel-row"><span class="da-skel da-skel--circle" style="width:40px; height:40px"></span><span class="da-skel-colline"><span class="da-skel da-skel--line" style="width:58%"></span><span class="da-skel da-skel--line" style="width:36%"></span></span></div>
+      <div class="da-skel-row"><span class="da-skel da-skel--circle" style="width:40px; height:40px"></span><span class="da-skel-colline"><span class="da-skel da-skel--line" style="width:44%"></span><span class="da-skel da-skel--line" style="width:29%"></span></span></div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="SKL2-04">
+    <div class="cat-item-head"><span class="cat-code">SKL2-04</span><span class="cat-name">文行骨架</span></div>
+    <p class="cat-note">纯文本面的行组骨架。已接入：评论区、读者评价面板的加载态。</p>
+    <div class="stage"><div class="stage-in">
+      <div class="da-skel-lines">
+        <span class="da-skel da-skel--line" style="width:88%"></span>
+        <span class="da-skel da-skel--line" style="width:64%"></span>
+        <span class="da-skel da-skel--line" style="width:79%"></span>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="SKL2-05">
+    <div class="cat-item-head"><span class="cat-code">SKL2-05</span><span class="cat-name">书卡骨架</span></div>
+    <p class="cat-note">书城格的卡骨架（方封面 + 书名行 + 作者行，与 v3 卡同槽位）。本批只产：书城卡本体属 store-design 批，待其集成后替换书城加载行。</p>
+    <div class="stage"><div class="stage-in">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px">
+        <div class="da-skel-book"><span class="da-skel da-skel--cover"></span><span class="da-skel da-skel--line" style="width:76%"></span><span class="da-skel da-skel--line" style="width:48%"></span></div>
+        <div class="da-skel-book"><span class="da-skel da-skel--cover"></span><span class="da-skel da-skel--line" style="width:64%"></span><span class="da-skel da-skel--line" style="width:52%"></span></div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="FRM2-01">
+    <div class="cat-item-head"><span class="cat-code">FRM2-01</span><span class="cat-name">壳层弹窗框</span></div>
+    <p class="cat-note">织线顶饰 + 四角线角 + 玻璃高光线，全走窗体自身 background 层实现——不占伪元素、不随窗内滚动漂移。专供壳层自有窗（已接入：编辑资料窗、他人主页窗）；与阅读器共壳的 ReadingDialog 不套，阅读面零触碰。</p>
+    <div class="stage"><div class="stage-in">
+      <div class="da-sheet-frame" style="background-color:var(--surface-solid); border-radius:26px 26px 0 0; padding:30px 22px 22px">
+        <p class="txt" style="font-weight:700">编辑资料</p>
+        <p class="txt-dim" style="margin-top:6px">窗框的顶饰织线与四角线角都长在窗体自己的背景层上，内容滚到哪里，框就在哪里。</p>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="FRM2-02">
+    <div class="cat-item-head"><span class="cat-code">FRM2-02</span><span class="cat-name">弹窗抓手 · 织线</span></div>
+    <p class="cat-note">抓手本体走织线渐变，替代素色小条。已接入：他人主页窗抓手。</p>
+    <div class="stage"><div class="stage-in center">
+      <span class="da-sheet-grab"></span>
+      <span class="st">44 × 5 · 织线渐变</span>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="FRM2-03">
+    <div class="cat-item-head"><span class="cat-code">FRM2-03</span><span class="cat-name">弹层底部动作条</span></div>
+    <p class="cat-note">sticky 玻璃动作条（blur 14 + 顶部发丝线），条上方自带一截渐进模糊带——内容滑到条下先化开。已接入：编辑资料窗保存行（往下滚演示框，保存条始终贴底）。</p>
+    <div class="stage" style="height:230px; overflow-y:auto; padding:0">
+      <div style="padding:20px">
+        <p class="txt">窗内内容一行一行往下排，排到演示框底部的时候，保存条不会跟着滚走。</p>
+        <p class="txt" style="margin-top:12px">它吸在窗体底部，是一条毛玻璃：透过它能看见内容化开的边缘，但看不清字。</p>
+        <p class="txt" style="margin-top:12px">这正是盐系对悬浮层的规矩——玻璃负责氛围，文字归文字，谁也不许透谁。</p>
+        <p class="txt" style="margin-top:12px">再往下还有一行，是为了让滚动距离足够把动作条顶到吸底位置。</p>
+        <div class="da-sheet-actions"><button class="da-btn da-btn--weave" type="button">保存</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cat-item" id="DTL2-01">
+    <div class="cat-item-head"><span class="cat-code">DTL2-01</span><span class="cat-name">字数计数</span></div>
+    <p class="cat-note">等宽数字计数，三态：常态灰 / 近限提醒 / 超限危险。已接入：创世神世界名（与背景设定计数同式，补齐此前缺计数的字段）。</p>
+    <div class="stage"><div class="stage-in row">
+      <span class="da-count">6 / 12</span><span class="st">常态</span>
+      <span class="da-count is-near">780 / 800</span><span class="st">近限</span>
+      <span class="da-count is-over">812 / 800</span><span class="st">超限</span>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL2-02">
+    <div class="cat-item-head"><span class="cat-code">DTL2-02</span><span class="cat-name">加载行</span></div>
+    <p class="cat-note">行内加载：小织线 spinner（DTL-12 的小号变体）+ 文案，替「正在打开…」类裸文字行。已接入：化身页标题下、名单人数行、好友搜索中。</p>
+    <div class="stage"><div class="stage-in row">
+      <span class="da-load-row"><span class="da-spinner da-spinner--sm" aria-hidden="true"></span>正在打开…</span>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL2-03">
+    <div class="cat-item-head"><span class="cat-code">DTL2-03</span><span class="cat-name">数据行</span></div>
+    <p class="cat-note">玻璃数据行：数值 + caps 标签、发丝分隔，整行走 §53 玻璃回退链。本批只产：落点 = 书籍详情数据区（阅读/评分/分享/篇幅），待 readcount 阅读量集成落定后接入。</p>
+    <div class="stage"><div class="stage-in">
+      <div class="da-data-row">
+        <span class="da-data-cell"><span class="da-data-num">1.2万</span><span class="da-data-label">阅读</span></span>
+        <span class="da-data-cell"><span class="da-data-num">★ 5.0</span><span class="da-data-label">评分</span></span>
+        <span class="da-data-cell"><span class="da-data-num">3</span><span class="da-data-label">被分享</span></span>
+        <span class="da-data-cell"><span class="da-data-num">24 章</span><span class="da-data-label">篇幅</span></span>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL2-04">
+    <div class="cat-item-head"><span class="cat-code">DTL2-04</span><span class="cat-name">键值行组</span></div>
+    <p class="cat-note">定义列表的行分隔：发丝线 + 行距呼吸，只加分隔不动排版。已接入：造世总览「当前设定」事实表。</p>
+    <div class="stage"><div class="stage-in">
+      <dl class="da-kv-list" style="margin:0">
+        <div style="display:grid; grid-template-columns:52px 1fr; gap:12px"><dt style="color:var(--dim)">题材</dt><dd style="margin:0">玄幻修真 · 逆袭</dd></div>
+        <div style="display:grid; grid-template-columns:52px 1fr; gap:12px"><dt style="color:var(--dim)">世界</dt><dd style="margin:0">青岚宗</dd></div>
+        <div style="display:grid; grid-template-columns:52px 1fr; gap:12px"><dt style="color:var(--dim)">篇幅</dt><dd style="margin:0">第一季 · 全 24 章</dd></div>
+      </dl>
     </div></div>
   </div>
 </section>

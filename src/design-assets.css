@@ -638,3 +638,239 @@
   .da-btn, .da-chip, .da-icon-btn, .da-fab,
   .da-switch-ui::after, .da-progress-fill{transition:none}
 }
+
+/* =====================================================================
+   第二批（ASSET-LIB2）—— 硬规：视觉语言一律以 §53 毛玻璃为骨
+   （真 backdrop blur + 半透染色 + 发丝边线），不出实面哑光平行件；
+   渐进模糊按定版参数立件（blur + mask 线性渐变、视觉 0→16、
+   自悬浮元素上方约 120pt 起、背景半透明、只用小区域）。
+   编号续编：FX2 渐进模糊 / SKL2 骨架屏 / FRM2 壳层弹窗 /
+   DTL2 表单与数据细节。缺口与接入记录见 ASSET-LIB2.md。
+   ===================================================================== */
+
+/* ===================== FX2 渐进模糊 ===================== */
+
+/* FX2-01 渐进模糊·底带（两层 backdrop blur 阶梯 14px→5px + 半透
+   染色，mask 线性渐变收尾，视觉模糊自下而上 16→0；带高 120px，
+   自悬浮元素上方约 120pt 起。悬浮元素须在本带之上另行渲染。） */
+.da-fade-blur{
+  position:absolute; left:0; right:0; bottom:0; height:120px;
+  pointer-events:none;
+  background:linear-gradient(to top,
+    color-mix(in srgb, var(--bg) 46%, transparent), transparent 78%);
+}
+.da-fade-blur::before{
+  content:""; position:absolute; inset:0;
+  backdrop-filter:blur(14px) saturate(1.4); -webkit-backdrop-filter:blur(14px) saturate(1.4);
+  -webkit-mask-image:linear-gradient(to top, #000 0%, #000 26%, transparent 58%);
+  mask-image:linear-gradient(to top, #000 0%, #000 26%, transparent 58%);
+}
+.da-fade-blur::after{
+  content:""; position:absolute; inset:0;
+  backdrop-filter:blur(5px) saturate(1.3); -webkit-backdrop-filter:blur(5px) saturate(1.3);
+  -webkit-mask-image:linear-gradient(to top, transparent 30%, #000 60%, transparent 96%);
+  mask-image:linear-gradient(to top, transparent 30%, #000 60%, transparent 96%);
+}
+/* --nav：全局固定带，骑在页面流之上、悬浮底栏之下（底栏 z 30） */
+.da-fade-blur--nav{position:fixed; height:148px; z-index:29}
+/* --sheet：贴窗带，锚在底部 sheet 内底 */
+.da-fade-blur--sheet{height:104px}
+/* --over：窗内页面自成层叠上下文（如主页窗 page z 35）时，
+   贴窗带须以窗内顶层渲染（z 40 仍在 sheet 局部上下文内） */
+.da-fade-blur--over{z-index:40}
+
+/* FX2-02 渐进模糊·顶带（底带的方向翻转：自顶边向下 16→0，
+   供浮在内容上方的顶部元素（窗抓手区）下方收尾） */
+.da-fade-blur--top{bottom:auto; top:0;
+  background:linear-gradient(to bottom,
+    color-mix(in srgb, var(--bg) 46%, transparent), transparent 78%);
+}
+.da-fade-blur--top::before{
+  -webkit-mask-image:linear-gradient(to bottom, #000 0%, #000 26%, transparent 58%);
+  mask-image:linear-gradient(to bottom, #000 0%, #000 26%, transparent 58%);
+}
+.da-fade-blur--top::after{
+  -webkit-mask-image:linear-gradient(to bottom, transparent 30%, #000 60%, transparent 96%);
+  mask-image:linear-gradient(to bottom, transparent 30%, #000 60%, transparent 96%);
+}
+
+/* FX2-03 渐进模糊·横向边（横向滚动行右缘渐隐：mask 让尾部
+   28px 内容渐隐入背景，提示「还能往右滑」且收尾不硬切） */
+.da-fade-x{
+  -webkit-mask-image:linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent 100%);
+  mask-image:linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent 100%);
+}
+
+/* lite-GPU 回落：去 blur、染色加深到近实色收尾（与站内回落同口径） */
+html.is-lite-gpu .da-fade-blur::before,
+html.is-lite-gpu .da-fade-blur::after{backdrop-filter:none; -webkit-backdrop-filter:none}
+html.is-lite-gpu .da-fade-blur{
+  background:linear-gradient(to top,
+    color-mix(in srgb, var(--bg) 84%, transparent), transparent 88%);
+}
+html.is-lite-gpu .da-fade-blur--top{
+  background:linear-gradient(to bottom,
+    color-mix(in srgb, var(--bg) 84%, transparent), transparent 88%);
+}
+
+/* ===================== SKL2 骨架屏（玻璃骨） =====================
+   骨架块 = 半透玻璃 tint（--glass-2）+ 发丝边 + 微光扫过（复用
+   FX-05 的 da-shimmer-sweep 关键帧），不做实面哑光块。 */
+
+/* SKL2-01 骨架块（原子件：行 / 圆 / 媒体三种形） */
+.da-skel{
+  position:relative; overflow:hidden; flex:none;
+  background:var(--glass-2); border:1px solid var(--line);
+  border-radius:var(--radius-media, 8px);
+}
+.da-skel::after{
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--ink) 9%, transparent) 50%, transparent 80%);
+  transform:translateX(-100%);
+  animation:da-shimmer-sweep var(--dur-shimmer, 1600ms) var(--da-ease-out) infinite;
+}
+.da-skel--line{height:12px; border:0; border-radius:999px}
+.da-skel--circle{border-radius:50%}
+.da-skel--media{border-radius:var(--radius-card, 16px)}
+.da-skel-rowline{display:flex; align-items:center; gap:10px; min-width:0}
+.da-skel-colline{display:flex; flex-direction:column; gap:8px; flex:1; min-width:0}
+
+/* SKL2-02 帖卡骨架（广场帖卡的玻璃骨替身：面走 §53 玻璃回退链） */
+.da-skel-post{
+  display:flex; flex-direction:column; gap:12px; padding:16px;
+  border-radius:var(--da-glass-radius);
+  background:var(--da-glass-bg); border:1px solid var(--da-glass-line);
+}
+.da-skel-feed{display:flex; flex-direction:column; gap:14px}
+
+/* SKL2-03 行骨架（名单/消息类列表行：圆头像 + 双行 + 尾块） */
+.da-skel-row{
+  display:flex; align-items:center; gap:11px; padding:10px;
+}
+
+/* SKL2-04 文行骨架（纯文本面：评论 / 评价 / 面板正文） */
+.da-skel-lines{display:flex; flex-direction:column; gap:10px; padding:6px 0}
+
+/* SKL2-05 书卡骨架（书城格：方封面块 + 书名行 + 作者行；
+   本批只产，落点待 store-design 批集成，见 ASSET-LIB2.md） */
+.da-skel-book{display:flex; flex-direction:column; gap:8px}
+.da-skel-book .da-skel--cover{aspect-ratio:1/1.12; border-radius:var(--radius-card, 16px)}
+
+/* ===================== FRM2 壳层弹窗（玻璃骨） ===================== */
+
+/* FRM2-01 壳层弹窗框（织线顶饰 + 四角线角 + 玻璃高光线。
+   全部走 sheet 自身的 background 层 + inset 阴影实现：不占
+   ::before/::after、不随窗内滚动漂移；专供壳层自有 sheet
+   （编辑资料窗 / 他人主页窗），与阅读器共壳的 ReadingDialog
+   不套——阅读面零触碰。） */
+.da-sheet-frame{
+  background-image:
+    linear-gradient(90deg, transparent, var(--cyan) 22%, var(--violet) 55%, var(--pink) 82%, transparent),
+    linear-gradient(var(--da-corner), var(--da-corner)),
+    linear-gradient(var(--da-corner), var(--da-corner)),
+    linear-gradient(var(--da-corner), var(--da-corner)),
+    linear-gradient(var(--da-corner), var(--da-corner)),
+    linear-gradient(var(--da-corner), var(--da-corner)),
+    linear-gradient(var(--da-corner), var(--da-corner)),
+    linear-gradient(var(--da-corner), var(--da-corner)),
+    linear-gradient(var(--da-corner), var(--da-corner));
+  background-size:
+    132px 2px,
+    16px 2px, 2px 16px, 16px 2px, 2px 16px,
+    16px 2px, 2px 16px, 16px 2px, 2px 16px;
+  background-position:
+    center top,
+    14px 14px, 14px 14px, right 14px top 14px, right 14px top 14px,
+    14px bottom 14px, 14px bottom 14px, right 14px bottom 14px, right 14px bottom 14px;
+  background-repeat:no-repeat;
+  box-shadow:
+    inset 0 1px 0 var(--card-top-hi, color-mix(in srgb, var(--ink) 14%, transparent)),
+    var(--shadow-raised);
+}
+
+/* FRM2-02 弹窗抓手·织线（抓手本体走织线渐变，替代素色小条） */
+.da-sheet-grab{
+  width:44px; height:5px; border-radius:999px;
+  background:linear-gradient(90deg, var(--cyan), var(--violet), var(--pink));
+  opacity:.85;
+}
+
+/* FRM2-03 弹层底部动作条（sticky 玻璃条：半透染色 + blur 14 +
+   顶部发丝线；条上方自带一截渐进模糊带，内容滑到条下先化开
+   ——渐进模糊落点④「弹层底部按钮区」的成套实现） */
+.da-sheet-actions{
+  position:sticky; bottom:0; z-index:4;
+  display:flex; align-items:center; gap:10px;
+  margin-top:18px; padding:12px 0 2px;
+  background:color-mix(in srgb, var(--sheet-bg, var(--surface-solid)) 76%, transparent);
+  backdrop-filter:blur(14px) saturate(1.4); -webkit-backdrop-filter:blur(14px) saturate(1.4);
+  border-top:1px solid var(--line);
+}
+.da-sheet-actions::before{
+  content:""; position:absolute; left:0; right:0; bottom:100%; height:40px;
+  pointer-events:none;
+  background:linear-gradient(to top,
+    color-mix(in srgb, var(--sheet-bg, var(--surface-solid)) 30%, transparent), transparent);
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+  -webkit-mask-image:linear-gradient(to top, #000, transparent);
+  mask-image:linear-gradient(to top, #000, transparent);
+}
+.da-sheet-actions > :only-child{flex:1}
+html.is-lite-gpu .da-sheet-actions{backdrop-filter:none; -webkit-backdrop-filter:none;
+  background:var(--sheet-bg, var(--surface-solid))}
+html.is-lite-gpu .da-sheet-actions::before{backdrop-filter:none; -webkit-backdrop-filter:none}
+
+/* ===================== DTL2 表单与数据细节 ===================== */
+
+/* DTL2-01 字数计数（等宽数字；近限提醒 / 超限危险两态） */
+.da-count{
+  font-family:var(--da-font); font-size:12px; line-height:1.5;
+  color:var(--dim-2); font-variant-numeric:tabular-nums; white-space:nowrap;
+}
+.da-count.is-near{color:color-mix(in srgb, var(--danger) 62%, var(--ink))}
+.da-count.is-over{color:var(--danger); font-weight:650}
+
+/* DTL2-02 加载行（行内加载：小织线 spinner + 文案，
+   替「正在打开…」类裸文字行；spinner 本体复用 DTL-12） */
+.da-load-row{
+  display:inline-flex; align-items:center; gap:8px;
+  font-family:var(--da-font); font-size:13px; color:var(--dim);
+}
+.da-spinner--sm{width:16px; height:16px}
+.da-spinner--sm::before{border-width:1.5px}
+.da-spinner--sm::after{width:7px; height:7px}
+
+/* DTL2-03 数据行（玻璃行：数值 + caps 标签，发丝分隔。
+   本批只产，落点 = 书籍详情数据区，待 readcount 阅读量
+   集成落定后接入，见 ASSET-LIB2.md） */
+.da-data-row{
+  display:flex; align-items:stretch;
+  border-radius:var(--radius-surface, 20px); padding:4px;
+  background:var(--da-glass-bg); border:1px solid var(--da-glass-line);
+  backdrop-filter:var(--da-glass-blur); -webkit-backdrop-filter:var(--da-glass-blur);
+  box-shadow:var(--shadow-glass-top);
+}
+.da-data-cell{
+  flex:1; min-width:0; padding:10px 4px;
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+}
+.da-data-cell + .da-data-cell{border-left:1px solid var(--line)}
+.da-data-num{
+  font-family:var(--da-font); font-size:17px; font-weight:750; line-height:1.2;
+  color:var(--ink); font-variant-numeric:tabular-nums;
+}
+.da-data-label{
+  font-size:11px; letter-spacing:.14em; color:var(--dim-2);
+  font-family:var(--da-font); white-space:nowrap;
+}
+
+/* DTL2-04 键值行组（定义列表的行分隔：发丝线 + 行距，
+   套在既有 dl 上只加分隔与呼吸，不动其网格排版） */
+.da-kv-list > div{padding-top:9px; padding-bottom:9px; border-top:1px solid var(--line)}
+.da-kv-list > div:first-child{border-top:0; padding-top:2px}
+.da-kv-list > div:last-child{padding-bottom:2px}
+
+/* —— 第二批动效口径：骨架扫光同受减少动态约束 —— */
+@media (prefers-reduced-motion: reduce){
+  .da-skel::after{animation:none; transform:none; opacity:0}
+}
