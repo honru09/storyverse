@@ -3052,22 +3052,30 @@ export function storyBeatPlan(story, index) {
           : `结构：短季 6 章，本章为第 ${index + 1} 章${structure.isFinale ? '，本卷在此收束并结算代价' : ''}`
 
   const prerequisites = [
-    isCustom
-      ? (spawn ? `世界：${worldDisplay}（由创世者亲手写定的世界；出生点：${spawn.name}）` : `世界：${worldDisplay}（由创世者亲手写定的世界）`)
-      : `世界：${worldDisplay}（出生点：${spawnName}）`,
+    // A fused line's world is the confluence itself (REQ-61): naming
+    // the lead source's world here would seat every merged chapter in
+    // one source's home, so merged plans ground on the fusion line
+    // and let sourceWorlds carry each home world's facts.
+    merged
+      ? `世界：${(config.protagonists || []).length || 2} 个源世界并联融合出的新世界（不以任何一部原作的世界为宿主）`
+      : isCustom
+        ? (spawn ? `世界：${worldDisplay}（由创世者亲手写定的世界；出生点：${spawn.name}）` : `世界：${worldDisplay}（由创世者亲手写定的世界）`)
+        : `世界：${worldDisplay}（出生点：${spawnName}）`,
     ...(isCustom && customSetting ? [`创世设定：${customSetting}`] : []),
     // REQ-59: a preset world's final setting text (the creator's edited
     // draft, or the preset description as its seed) grounds every
     // chapter's brief the same way the god-mode setting does — the
     // telling writes the world from THIS text, not from a fixed canon.
-    ...(!isCustom && worldSettingOf(genre, config) ? [`世界设定：${worldSettingOf(genre, config)}`] : []),
+    // (Merged lines skip it for the same reason as the world line.)
+    ...(!merged && !isCustom && worldSettingOf(genre, config) ? [`世界设定：${worldSettingOf(genre, config)}`] : []),
     merged
-      ? `双主角合流：${name}（规则：${config.merge?.rules === 'separate' ? '各自独立' : '互相融合'}，关系：${config.merge?.bond === 'rivals' ? '竞争' : '合作'}）`
+      ? `主角合流：${name}（规则：${config.merge?.rules === 'separate' ? '各自独立' : '互相融合'}，关系：${config.merge?.bond === 'rivals' ? '竞争' : '合作'}）`
       : `主角：${name}，身份“${identity}”，性格“${cleanText(config.trait, '') || '冷静观察者'}”`,
     // The origin identity is a long-lived background fact: later chapters may
     // refer back to who the protagonist IS in this world, even though the
-    // spawn point itself only ever grounds chapter one.
-    ...(originBeatLine(genre, config) ? [originBeatLine(genre, config)] : []),
+    // spawn point itself only ever grounds chapter one. (A fused cast's
+    // origins are per-source facts and travel with sourceWorlds.)
+    ...(!merged && originBeatLine(genre, config) ? [originBeatLine(genre, config)] : []),
     // The effect line rides when the book carries one (REQ-57): a
     // signature or hand-written power is only defined by its effect,
     // and a library pick means its printed effect too. The bible's
@@ -3107,9 +3115,11 @@ export function storyBeatPlan(story, index) {
   ]
   const mustGroundByPosition = [
     [
-      isCustom
-        ? (spawn ? `交代${name}在${spawn.name}醒来的处境与能力“${ability}”` : `交代${name}在${worldDisplay}的处境与能力“${ability}”`)
-        : `交代${name}在${spawnName}的处境与能力“${ability}”${spawn?.hook ? `；开局处境：${spawn.hook}` : ''}`,
+      merged
+        ? `交代${name}在${destination}交汇处醒来的处境与各自的能力`
+        : isCustom
+          ? (spawn ? `交代${name}在${spawn.name}醒来的处境与能力“${ability}”` : `交代${name}在${worldDisplay}的处境与能力“${ability}”`)
+          : `交代${name}在${spawnName}的处境与能力“${ability}”${spawn?.hook ? `；开局处境：${spawn.hook}` : ''}`,
       `引出主线事件与世界基本规则`,
     ],
     [
@@ -3119,7 +3129,7 @@ export function storyBeatPlan(story, index) {
     [
       `承接此前剧情变化（包括历次介入留下的影响）`,
       merged
-        ? `展现双主角在合流点的配合与新冲突`
+        ? `展现主角们在合流点的配合与新冲突`
         : `在${destination}推进与${friend}相关的线索`,
     ],
     [
@@ -3774,6 +3784,11 @@ export function createMergedStory(a, b, options = {}) {
     // spawn-point tests.)
     customWorldName: '',
     customWorldSetting: '',
+    // The story-level ability description is the SOLO protagonist's
+    // slot (REQ-57): a fused cast's abilities travel per person via
+    // protagonists + sourceWorlds, so the lead's own description must
+    // not ride along as if it described the whole cast (REQ-61).
+    abilityDesc: '',
     destination: sourceGenres.map((genre) => genre.location).join(' ↔ '),
     step: 1,
     protagonists: sourceConfigs.map((config) => ({

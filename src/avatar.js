@@ -173,7 +173,12 @@ export function avatarCollectionSignature(avatars, mainId) {
   const list = Array.isArray(avatars) ? avatars : []
   const rows = list.filter((avatar) => avatar && typeof avatar.id === 'string').map((avatar) => {
     const portrait = avatarPortraitState(avatar)
-    return `${avatar.id}:${avatar.name || ''}:${portrait.status}:${portrait.version}`
+    // The signature ability rides the row (REQ-57 × REQ-58 integration):
+    // an ability-only edit changes nothing else here, and the profile
+    // stage prints the ability from the server payload — without it in
+    // the signature that line would go stale until a cold start.
+    const ability = avatarAbilityOf(avatar)
+    return `${avatar.id}:${avatar.name || ''}:${portrait.status}:${portrait.version}:${ability ? `${ability.name}:${ability.desc}` : ''}`
   })
   return `${typeof mainId === 'string' ? mainId : ''}|${rows.join('|')}`
 }

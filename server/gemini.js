@@ -331,7 +331,7 @@ export function sanitizeSettingText(value) {
   return text
 }
 
-function compactConfig(config) {
+function compactConfig(config, storyKind = '') {
   const result = Object.fromEntries(['genreId', 'name', 'trait', 'origin', 'ability', 'tone', 'destination'].map((field) => [field, clip(config[field], 240)]))
   // God-mode worlds: the creator's own name and setting travel with the
   // request, bounded to the same limits the client enforces (40 / 600), and
@@ -345,7 +345,11 @@ function compactConfig(config) {
   // seed is presented to the model as story material, never as canon it
   // must recite. The world bible is written FROM this text.
   const worldGenre = genreFor(clip(config.genreId, 60))
-  if (worldGenre.id !== CUSTOM_GENRE_ID) {
+  // A fused line has no preset world of its own (REQ-61): resolving
+  // the lead's genre + drafts here would present the lead's world
+  // name and setting as the fused world's identity. Each source's
+  // world reaches a merged brief through sourceWorlds instead.
+  if (storyKind !== 'merged' && worldGenre.id !== CUSTOM_GENRE_ID) {
     result.worldName = worldNameOf(worldGenre, config)
     result.worldSetting = sanitizeSettingText(clip(worldSettingOf(worldGenre, config), 600))
   }
@@ -684,7 +688,7 @@ function contextFor({ story, index, skeleton }, resolvedTemplates = null, qualit
     // A running endless line has no chapter total; null says so honestly.
     chapterCount: Number.isFinite(total) ? total : null,
     kind: story.kind || 'solo',
-    config: compactConfig(story.config),
+    config: compactConfig(story.config, story.kind),
     worldBible: {
       premise: clip(bible.premise, 1000),
       rules: clippedList(bible.rules, 8, 400),
@@ -818,7 +822,11 @@ function contextFor({ story, index, skeleton }, resolvedTemplates = null, qualit
   const rawSetting = clip(story.config?.customWorldSetting, 600)
   const safeSetting = sanitizeSettingText(rawSetting)
   const worldGenre = genreFor(story.genreId || story.config?.genreId)
-  const rawWorldSetting = worldGenre.id !== CUSTOM_GENRE_ID
+  // A fused line takes NO source's world as its host (REQ-61): the
+  // preset-draft block must never ride a merged telling, even though
+  // the fused config inherits the lead's genre and world drafts. Each
+  // source's world reaches a merged chapter through sourceWorlds.
+  const rawWorldSetting = story.kind !== 'merged' && worldGenre.id !== CUSTOM_GENRE_ID
     ? clip(worldSettingOf(worldGenre, story.config), 600)
     : ''
   const safeWorldSetting = sanitizeSettingText(rawWorldSetting)

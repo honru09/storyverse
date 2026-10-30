@@ -904,7 +904,7 @@ function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, dr
           <p>
             {activeStory ? (
               <>
-                <span>{genre.label} · {activeStory.kind === "merged" ? "双主角" : displayName(activeStory)}</span>
+                <span>{genre.label} · {activeStory.kind === "merged" ? `${activeStory.config?.protagonists?.length || 2} 位主角` : displayName(activeStory)}</span>
                 <span className="resume-position">{activeSerializing ? `连载中 · 第 ${currentChapter} 章` : `第 ${currentChapter} / ${activeTotal} 章`}</span>
               </>
             ) : (

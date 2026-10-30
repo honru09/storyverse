@@ -437,8 +437,10 @@ test('storyBeatPlan models prerequisites, concept grounding, tone shape, and bra
 
   const merged = createMergedStory(story, createStory(draft({ name: '烬野', genreId: 'cultivation' })))
   const mergedBeat = storyBeatPlan(merged, 2)
-  assert.ok(mergedBeat.prerequisites.some((item) => item.includes('双主角合流')))
-  assert.ok(mergedBeat.mustGround.some((item) => item.includes('双主角在合流点的配合与新冲突')))
+  // Superseded wording (merge wave, 2026-10-31): REQ-53 casts run
+  // 2–10 leads, so the beat plan's cast lines are count-neutral now.
+  assert.ok(mergedBeat.prerequisites.some((item) => item.includes('主角合流')))
+  assert.ok(mergedBeat.mustGround.some((item) => item.includes('主角们在合流点的配合与新冲突')))
 })
 
 test('storyNarrativeDossier builds a spoiler-free narrative dossier bounded by maxChapterIndex', () => {
