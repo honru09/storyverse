@@ -24,15 +24,19 @@ const ruleBody = (selector) => {
 /* ——— G1 (REQ-35): the stage itself was never the cropper ———————— */
 
 test('REQ-35: the stage still shows the whole figure (contain), in every theme', () => {
-  assert.match(ruleBody('.profile-stage-img{'), /object-fit:contain/)
-  // No theme-scoped rule may narrow the stage back to cover.
-  assert.ok(!css.includes("[data-shell-theme='aurora'] .profile-stage"), 'no aurora stage override')
-  assert.ok(!css.includes("[data-shell-theme='black'] .profile-stage img"), 'no black stage img override')
+  /* REQ-64 supersedes the container: .profile-stage is deleted and
+   * the figure now lives in .profile-showcase-img — the REQ-35
+   * verdict (contain, never theme-narrowed back to cover) carries
+   * over to the new box verbatim. */
+  assert.match(ruleBody('.profile-showcase-img{'), /object-fit:contain/)
+  // No theme-scoped rule may narrow the showcase back to cover.
+  assert.ok(!css.includes("[data-shell-theme='aurora'] .profile-showcase"), 'no aurora showcase override')
+  assert.ok(!css.includes("[data-shell-theme='black'] .profile-showcase img"), 'no black showcase img override')
 })
 
 test('REQ-35: scroll landings park the profile sections below the sticky topbar', () => {
   assert.match(ruleBody('.profile-sec{'), /scroll-margin-top:calc\(84px \+ env\(safe-area-inset-top\)\)/)
-  assert.match(ruleBody('.profile-stage{'), /scroll-margin-top:calc\(84px \+ env\(safe-area-inset-top\)\)/)
+  assert.match(ruleBody('.profile-showcase{'), /scroll-margin-top:calc\(84px \+ env\(safe-area-inset-top\)\)/)
 })
 
 test('REQ-35: the service worker version moved, so installed clients retire v1 caches', () => {

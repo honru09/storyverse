@@ -142,7 +142,6 @@ import {
   rememberProfileViewState,
   subscribeProfile,
 } from "./profile-cache.js";
-import { armRestoredStageGuard, armStageSettleGuard } from "./profile-stage-guard.js";
 import {
   FUSION_PERMISSION_OPTIONS,
   applyForFusion,
@@ -9458,13 +9457,13 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   const { animate } = useMotionPolicy("profile");
   const pageRef = useRef(null);
   const enteredUidRef = useRef("");
-  const restoredScrollForRef = useRef("");
   const dragRef = useRef(null);
   // Data (PROFILE-FEEL A5): profiles load through the per-(viewer, uid)
   // cache — a cached payload renders on the first frame and revalidates
   // in the background, so the skeleton is a once-per-person sight, not
-  // an every-visit ritual. View state (scroll position, staged avatar)
-  // restores from the session memory instead of resetting per visit.
+  // an every-visit ritual. The staged avatar restores from the session
+  // memory instead of resetting per visit; scroll position never does
+  // (REQ-64: profile surfaces carry no scroll bookkeeping at all).
   useEffect(() => {
     let live = true;
     const cached = peekProfile({ viewerUid, uid });
@@ -9481,7 +9480,6 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
     setConnectionsError("");
     const remembered = profileViewState(uid);
     setStageAvatarId(remembered?.avatarId || "");
-    restoredScrollForRef.current = "";
     loadProfile({ viewerUid, uid, getAccessToken: getToken })
       .then((next) => { if (live && next) setProfile(next); })
       .catch((failure) => {
@@ -9492,67 +9490,15 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
     const unsubscribe = subscribeProfile({ viewerUid, uid }, (next) => { if (live) setProfile(next); });
     return () => { live = false; unsubscribe(); };
   }, [uid, getToken, viewerUid]);
-  // Persist the visit's view state as it changes (B4): the scroll
-  // position (below) and which avatar stands on the stage.
+  // Persist the visit's view state as it changes (B4): which avatar
+  // stands on the showcase. Scroll position is deliberately NOT part
+  // of it — REQ-64 deleted the scroll memory, its verbatim restore
+  // and both stage guards (REQ-48/REQ-62) wholesale: the profile
+  // surface never records, restores, parks or otherwise moves the
+  // scroll position. Scrolling here is 100% native.
   useEffect(() => {
     rememberProfileViewState(uid, { avatarId: stageAvatarId });
   }, [uid, stageAvatarId]);
-  // Scroll memory: the window form scrolls its sheet column, the page
-  // form scrolls the window; both restore where the visit left off.
-  useEffect(() => {
-    if (!profile || profile.uid !== uid || restoredScrollForRef.current === uid) return undefined;
-    restoredScrollForRef.current = uid;
-    const saved = profileViewState(uid)?.scroll || 0;
-    if (!saved) return undefined;
-    const raf = requestAnimationFrame(() => {
-      if (windowForm) { if (pageRef.current) pageRef.current.scrollTop = saved; }
-      else window.scrollTo(0, saved);
-    });
-    // REQ-48 stage guard: the verbatim restore above can park the
-    // avatar stage straddling the shell topbar (page form) or the
-    // sheet's top edge (window form) — the remembered stop was
-    // recorded mid-scroll, and the portrait's head band then sits
-    // behind the bar on every return visit ("opens headless"). The
-    // anchor path was already protected by scroll-margin-top; the
-    // restore now gets the same protection via the shared guard,
-    // which parks a straddling stage on the safe line and stands
-    // down the moment the reader scrolls on their own.
-    const disarm = armRestoredStageGuard({ windowForm, root: pageRef.current, saved });
-    return () => { cancelAnimationFrame(raf); disarm(); };
-  }, [profile, uid, windowForm]);
-  // REQ-62 settle guard: the restore guard above only covers stops
-  // the app itself restores. Both scroll memories are session-only
-  // and native browser scroll restoration stays on, so a reload, a
-  // Safari tab restore, a web-app relaunch or a bfcache thaw can set
-  // the resting scroll without any app restore running — and the
-  // stage then rests sliced behind the topbar indefinitely (the
-  // owner's 2026-10-31 screenshot, REQ-48's fix in place). This
-  // guard is armed by the surface's lifecycle, not by restore
-  // bookkeeping, and re-checks the resting state on mount, on
-  // scroll settle, after the portrait loads, on bfcache thaw and on
-  // resize. Its deps deliberately exclude the profile object itself:
-  // SWR revalidation replaces that identity right after mount, and
-  // an effect keyed on it would disarm this guard in its own
-  // cleanup — the same race the restore guard above is exposed to.
-  useEffect(() => {
-    if (!profile) return undefined;
-    return armStageSettleGuard({ windowForm, root: pageRef.current });
-  }, [Boolean(profile), uid, windowForm]);
-  useEffect(() => {
-    const target = windowForm ? pageRef.current : window;
-    if (!target || !profile) return undefined;
-    let ticking = false;
-    const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(() => {
-        ticking = false;
-        rememberProfileViewState(uid, { scroll: windowForm ? pageRef.current?.scrollTop || 0 : window.scrollY });
-      });
-    };
-    target.addEventListener("scroll", onScroll, { passive: true });
-    return () => target.removeEventListener("scroll", onScroll);
-  }, [uid, windowForm, Boolean(profile)]);
   // One orchestrated entrance (frontend-design playbook): the SHELF
   // rises in a single staggered sequence — window form only, and only
   // the first time this session meets this person (PROFILE-FEEL B4).
@@ -10098,40 +10044,51 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           </div>
           {stageAvatar ? (
             <>
-              <div className="profile-stage">
-                {stageAvatar.hasPortrait && stageAvatar.portraitUrl && stageFailedFor !== stageAvatar.id ? (
-                  <>
-                    {/* DEVICE-FIX2 (REQ-28): the painting itself, blurred
-                        and cover-fit, fills the frame behind the figure —
-                        the foreground copy is contain-fit, so the whole
-                        figure (head to shoes) is always in frame. */}
-                    <span
-                      className="profile-stage-backdrop"
-                      style={{ backgroundImage: `url("${stageAvatar.portraitUrl}")` }}
-                      aria-hidden="true"
-                    />
-                    <img
-                      className="profile-stage-img"
-                      src={stageAvatar.portraitUrl}
-                      alt=""
-                      loading="lazy"
-                      onError={() => setStageFailedFor(stageAvatar.id)}
-                    />
-                    <ParticleField density="dust" className="profile-stage-motes" />
-                  </>
-                ) : (
-                  <span className="profile-stage-noface" aria-hidden="true">{[...(stageAvatar.name || "化")][0]}</span>
-                )}
-                <div className="profile-stage-plate">
-                  <div className="profile-stage-main">
-                    <p className="profile-stage-name">
+              {/* REQ-64 showcase: the rebuilt avatar container. The
+                  figure lives in its own 4:3 box (contain-fit, so the
+                  head and shoes are inside the box by construction)
+                  and the name plate flows BELOW it in normal layout —
+                  nothing overlays the painting, and no scroll guard,
+                  restore or parking logic exists on this surface any
+                  more. The whole card is short enough to fit the
+                  visible band between the topbar and the bottom nav
+                  whole, so no resting scroll position can slice it. */}
+              <div className="profile-showcase">
+                <div className="profile-showcase-figure">
+                  {stageAvatar.hasPortrait && stageAvatar.portraitUrl && stageFailedFor !== stageAvatar.id ? (
+                    <>
+                      {/* The painting itself, blurred and cover-fit,
+                          fills the figure box behind the figure — the
+                          foreground copy is contain-fit, so the whole
+                          figure (head to shoes) is always in frame. */}
+                      <span
+                        className="profile-showcase-backdrop"
+                        style={{ backgroundImage: `url("${stageAvatar.portraitUrl}")` }}
+                        aria-hidden="true"
+                      />
+                      <img
+                        className="profile-showcase-img"
+                        src={stageAvatar.portraitUrl}
+                        alt=""
+                        loading="lazy"
+                        onError={() => setStageFailedFor(stageAvatar.id)}
+                      />
+                      <ParticleField density="dust" className="profile-showcase-motes" />
+                    </>
+                  ) : (
+                    <span className="profile-showcase-noface" aria-hidden="true">{[...(stageAvatar.name || "化")][0]}</span>
+                  )}
+                </div>
+                <div className="profile-showcase-plate">
+                  <div className="profile-showcase-main">
+                    <p className="profile-showcase-name">
                       <strong>{stageAvatar.name}</strong>
                       {stageAvatar.isMain && <span className="profile-main-badge">主化身</span>}
                     </p>
-                    {stageAvatar.appearance ? <p className="profile-stage-desc">{stageAvatar.appearance}</p> : null}
-                    {stageAvatar.ability?.name ? <p className="profile-stage-ability">专属能力 · {stageAvatar.ability.name}</p> : null}
+                    {stageAvatar.appearance ? <p className="profile-showcase-desc">{stageAvatar.appearance}</p> : null}
+                    {stageAvatar.ability?.name ? <p className="profile-showcase-ability">专属能力 · {stageAvatar.ability.name}</p> : null}
                   </div>
-                  {stageAvatar.currentWorld ? <span className="profile-stage-world">现驻 · {stageAvatar.currentWorld}</span> : null}
+                  {stageAvatar.currentWorld ? <span className="profile-showcase-world">现驻 · {stageAvatar.currentWorld}</span> : null}
                 </div>
               </div>
               <div className="profile-avatar-row">
@@ -12322,19 +12279,10 @@ function App() {
       } else {
         scrollToTop();
       }
-      // REQ-48: a keep-alive return to my own profile tab restores
-      // the remembered scroll while ProfileView itself stays
-      // mounted, so its own restore guard never re-arms. Arm the
-      // shared stage guard here too: if the remembered stop parks
-      // the avatar stage straddling the topbar, it is re-parked on
-      // the safe line instead of opening headless.
-      if (view === "profile" && typeof saved === "number" && saved > 0) {
-        return armRestoredStageGuard({
-          windowForm: false,
-          root: document.querySelector(".page-profile.is-page-form"),
-          saved,
-        });
-      }
+      // REQ-64: no stage guard is armed here any more — the guard
+      // module and every arming point were deleted with the old
+      // stage. The generic keep-alive restore above is shell
+      // infrastructure shared by all views and stays as is.
     }
   }, [view, pageRoute.id, readerStory?.title, profileRoute]);
   useEffect(() => {

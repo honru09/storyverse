@@ -244,7 +244,7 @@ test('the avatar page edits the preset and the cards show it', () => {
   assert.match(main, /专属能力（选填）/)
   assert.match(main, /从能力库换一个|从能力库选/)
   assert.match(main, /专属能力 · \{avatarAbilityOf\(item\)\.name\}/)
-  assert.match(main, /profile-stage-ability/)
+  assert.match(main, /profile-showcase-ability/)
   // The form always carries the ability key (tri-state save semantics).
   assert.match(main, /ability: avatarAbilityOf\(target\)/)
 })

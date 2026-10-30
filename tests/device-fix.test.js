@@ -94,7 +94,7 @@ test('REQ-19: client banner wiring (upload/delete/crop + hero kinds)', () => {
   const sheet = main.slice(main.indexOf('function EditProfileSheet'), main.indexOf('export default function App'))
   assert.match(sheet, /主页头图/)
   assert.match(sheet, /shape="banner"/)
-  const hero = main.slice(main.indexOf('className="profile-hero"'), main.indexOf('className="profile-stage"'))
+  const hero = main.slice(main.indexOf('className="profile-hero"'), main.indexOf('className="profile-showcase"'))
   assert.match(hero, /profile\.banner/)
   assert.match(hero, /profile-hero-bg is-clear/)
 })

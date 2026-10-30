@@ -562,7 +562,7 @@ select{appearance:auto}
 .avatar-ability-library{max-height:330px;overflow:auto;margin-top:12px}
 .avatar-ability-custom{display:grid;gap:12px;margin-top:12px}
 .avatar-card-ability{font-weight:600}
-.profile-stage-ability{margin:3px 0 0;font-size:12px;color:var(--profile-dim)}
+.profile-showcase-ability{margin:3px 0 0;font-size:12px;color:var(--profile-dim)}
 .opening-preview{display:grid;justify-items:center;text-align:center}
 .opening-art{width:min(240px,68vw);aspect-ratio:3/4;border:1px solid var(--line);border-radius:var(--radius-card);overflow:hidden;box-shadow:0 24px 50px -18px rgba(2,6,20,.8)}
 .opening-preview h3{margin:20px 0 0;font-size:24px;font-weight:800}
@@ -1852,13 +1852,13 @@ button.profile-stat{cursor:pointer}
 .profile-follow-btn:not(.is-following){background:linear-gradient(135deg,var(--violet),#5a49d6);color:#fff}
 .profile-share-btn{width:48px;height:48px;flex:0 0 auto;border-radius:999px;border:0;background:var(--profile-chip);color:var(--profile-ink-strong);display:grid;place-items:center;cursor:pointer}
 .profile-sec{margin-top:27px;scroll-margin-top:calc(84px + env(safe-area-inset-top))}
-/* DEVICE-FIX3 (REQ-35): the stage is a 481px-tall card deep in a long
-   page; any scroll-into-view or anchor landing must park it fully
-   below the sticky topbar — without this margin the bar slices the
-   figure at whatever row the scroll stops on (the owner's "headless
-   avatar" report was exactly such a slice: a hard straight cut at the
-   bar's bottom edge, no rounded card corners above it). */
-.profile-stage{scroll-margin-top:calc(84px + env(safe-area-inset-top))}
+/* REQ-64: anchor landings (scroll-into-view) park the showcase fully
+   below the sticky topbar. This margin is the ONLY positioning help
+   the card gets — there is no scroll guard, restore or parking code
+   on the profile surface any more; the card is short enough (see
+   .profile-showcase-figure) that its whole body fits the visible
+   band, so no free scroll stop can slice the figure either. */
+.profile-showcase{scroll-margin-top:calc(84px + env(safe-area-inset-top))}
 .profile-sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:13px}
 .profile-sec-title{margin:0;font-size:17px;font-weight:700;color:var(--profile-ink-strong);display:flex;align-items:baseline;gap:8px}
 .profile-sec-title small{font-size:12px;font-weight:400;color:var(--profile-faint)}
@@ -1888,53 +1888,38 @@ button.profile-stat{cursor:pointer}
 :root[data-shell-theme='white'] .profile-store-chip.is-live{color:#0d7a54}
 .profile-store-copy small{font-size:12px;color:var(--profile-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .profile-store-card>svg{flex:0 0 auto;color:var(--profile-faint)}
-/* BH-13 (2026-10-29): the stage follows the poster's own 3:4 frame
-   (capped) instead of a fixed 384px band, which cover-cropped away
-   20–30% of the painting's height and could take the head with it on
-   non-contract compositions; the 8% top anchor stays as the guard when
-   the cap bites on wide screens. */
-/* DEVICE-FIX4 (REQ-44-1): the stage div no longer carries the legacy
-   .profile-avatar-stand class — its width/margin rules (line ~1627,
-   width:min(300px,84%)) were a cascade landmine next to this rule, and
-   flex:none pins the aspect box so a flex-column ancestor can never
-   shrink it below its 3:4 height. */
-/* DEVICE-FIX2 (REQ-28): the cap moves from height to width. A
-   max-height on an aspect-ratio frame silently flattens the frame
-   toward landscape once the column runs wide (560px cap ÷ a wide
-   column), and cover then takes the head exactly as the owner kept
-   reporting; capping the WIDTH at 420px keeps the same 560px ceiling
-   (420 × 4⁄3) while the frame can never stop being 3:4. */
-.profile-stage{position:relative;flex:none;aspect-ratio:3/4;width:min(100%,420px);border-radius:24px;overflow:hidden;background:var(--profile-panel);margin:0 auto;text-align:left}
-/* Poster stage (POSTER-AVATAR): the fake light rig is retired — no
-   spot wash, no floor ellipse, no brightened glow copy of the figure.
-   Portraits are poster key visuals that carry their own backdrop,
-   light and effects inside the painting, so the stage simply lets
-   the painting fill the frame edge to edge. The crop anchors high
-   (50% 8%) because the poster contract keeps the face in the upper
-   part of the frame; older plain-background portraits crop to a
-   face-and-torso poster cut the same way. The two pseudo layers that
-   remain are legibility scrims for the name plate, not light. */
-.profile-stage::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(92% 72% at 50% 38%,transparent 36%,color-mix(in srgb,var(--bg) 76%,transparent) 100%)}
-:root[data-shell-theme='white'] .profile-stage::before{background:radial-gradient(92% 72% at 50% 38%,transparent 42%,color-mix(in srgb,var(--bg) 26%,transparent) 100%)}
-/* DEVICE-FIX2 (REQ-28): the figure is contain-fit over a blurred
-   cover copy of the same painting (.profile-stage-backdrop) — a
-   contract 3:4 poster still fills the 3:4 frame edge to edge, while
-   any other proportion (legacy portraits) letterboxes onto its own
-   blurred ambience instead of losing its head or feet to a cover
-   crop. The 8% anchor survives on the backdrop only. */
-.profile-stage-backdrop{position:absolute;inset:0;background-size:cover;background-position:50% 8%;filter:blur(26px) brightness(.55) saturate(1.1);transform:scale(1.08);z-index:0}
-:root[data-shell-theme='white'] .profile-stage-backdrop{filter:blur(26px) brightness(1.04) saturate(1.05)}
-.profile-stage-img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}
-.profile-stage::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(76% 68% at 50% 42%,transparent 58%,color-mix(in srgb,var(--bg) 55%,transparent) 100%),linear-gradient(180deg,transparent calc(100% - 112px),color-mix(in srgb,var(--bg) 48%,transparent))}
-:root[data-shell-theme='white'] .profile-stage::after{background:radial-gradient(76% 68% at 50% 42%,transparent 58%,color-mix(in srgb,var(--bg) 32%,transparent) 100%),linear-gradient(180deg,transparent calc(100% - 112px),color-mix(in srgb,var(--bg) 48%,transparent))}
-.profile-stage-noface{position:absolute;left:50%;bottom:118px;transform:translateX(-50%);font-size:120px;font-weight:700;line-height:1;color:color-mix(in srgb,var(--profile-ink) 15%,transparent);z-index:1}
-.profile-stage-plate{position:absolute;left:0;right:0;bottom:0;z-index:3;display:flex;align-items:flex-end;justify-content:space-between;gap:10px;padding:12px 16px}
-.profile-stage-main{min-width:0}
-.profile-stage-name{display:flex;align-items:center;gap:8px;margin:0}
-.profile-stage-name strong{font-size:16px;font-weight:700;color:var(--profile-ink-strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* REQ-64 showcase (replaces the deleted legacy stage wholesale):
+   the new container's rules are structural, not corrective.
+   - The card is a figure box plus an in-flow name plate — the plate
+     no longer overlays the painting, so no legibility scrims exist.
+   - The figure box is 4:3 (was: a 3:4 full-card frame). At the
+     profile column's 358px the figure is 268px tall and the whole
+     card lands at ~375px — comfortably inside the 390x844 visible
+     band (topbar bottom 71 → bottom-nav top 770 = 699px, measured),
+     so the card can be seen whole at its natural anchored stop and
+     no scroll position can leave half of it behind a bar.
+   - The portrait is contain-fit inside the figure box: the drawn
+     figure's head and shoes are inside the card by construction, at
+     every scroll position, with zero scroll intervention. */
+.profile-showcase{flex:none;width:min(100%,420px);border-radius:24px;overflow:hidden;background:var(--profile-panel);margin:0 auto;text-align:left}
+.profile-showcase-figure{position:relative;aspect-ratio:4/3;overflow:hidden}
+/* The figure is contain-fit over a blurred cover copy of the same
+   painting (.profile-showcase-backdrop): any portrait proportion
+   letterboxes onto its own blurred ambience instead of losing its
+   head or feet to a cover crop. The 8% anchor survives on the
+   backdrop only. */
+.profile-showcase-backdrop{position:absolute;inset:0;background-size:cover;background-position:50% 8%;filter:blur(26px) brightness(.55) saturate(1.1);transform:scale(1.08);z-index:0}
+:root[data-shell-theme='white'] .profile-showcase-backdrop{filter:blur(26px) brightness(1.04) saturate(1.05)}
+.profile-showcase-img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}
+.profile-showcase-motes{z-index:2}
+.profile-showcase-noface{position:absolute;inset:0;display:grid;place-items:center;font-size:96px;font-weight:700;line-height:1;color:color-mix(in srgb,var(--profile-ink) 15%,transparent);z-index:1}
+.profile-showcase-plate{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;padding:12px 16px 14px}
+.profile-showcase-main{min-width:0}
+.profile-showcase-name{display:flex;align-items:center;gap:8px;margin:0}
+.profile-showcase-name strong{font-size:16px;font-weight:700;color:var(--profile-ink-strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .profile-main-badge{flex:0 0 auto;font-size:10.5px;font-weight:700;color:#221a05;background:linear-gradient(135deg,#ffc44d,#f6a21e);padding:2.5px 8px;border-radius:999px}
-.profile-stage-desc{margin:3px 0 0;font-size:12px;color:var(--profile-dim);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.profile-stage-world{flex:0 0 auto;font-size:11.5px;color:var(--profile-faint);white-space:nowrap;padding-bottom:2px}
+.profile-showcase-desc{margin:3px 0 0;font-size:12px;color:var(--profile-dim);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.profile-showcase-world{flex:0 0 auto;font-size:11.5px;color:var(--profile-faint);white-space:nowrap;padding-bottom:2px}
 .profile-avatar-row{display:flex;gap:12px;overflow-x:auto;padding:12px 2px 8px;scrollbar-width:none}
 .profile-avatar-row::-webkit-scrollbar{display:none}
 .profile-avatar-tile,.profile-avatar-new{flex:0 0 auto;width:64px;border:0;background:none;padding:0;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;font:inherit}
@@ -1967,7 +1952,7 @@ button.profile-stat{cursor:pointer}
 .plaza-ambient-wrap,.store-ambient-wrap{position:relative}
 .plaza-ambient-wrap .particle-field,.store-ambient-wrap .particle-field{z-index:0}
 .plaza-ambient-wrap>header,.plaza-ambient-wrap>p,.store-ambient-wrap>header,.store-ambient-wrap>p{position:relative;z-index:1}
-.profile-stage-motes{z-index:2}
+
 /* Empty-state illustrations (PHONE-FIX §37, assets batch B): one
    treatment everywhere — the paintings carry a deep-navy ground, so
    they sit in every theme as a rounded illustration card with a
