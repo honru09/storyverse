@@ -688,6 +688,7 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         } catch { /* share counts alone still rank honestly */ }
         const result = await plaza.books({
           shelfId: params.get('shelf') || '',
+          kind: params.get('kind') || '',
           sort: params.get('sort') || 'latest',
           q: params.get('q') || '',
           limit: Number(params.get('limit')) || 50,

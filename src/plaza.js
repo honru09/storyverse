@@ -680,9 +680,12 @@ async function plazaJson(response) {
  * shelves, honest rankings and search. `sort` is 'latest' | 'hot' |
  * 'complete', all computed from real fields server-side.
  */
-export async function fetchStoreBooks({ shelfId = '', sort = 'latest', q = '', limit = 50, fetchImpl = globalThis.fetch } = {}) {
+export async function fetchStoreBooks({ shelfId = '', kind = '', sort = 'latest', q = '', limit = 50, fetchImpl = globalThis.fetch } = {}) {
   const params = new URLSearchParams()
   if (shelfId) params.set('shelf', shelfId)
+  // First-level division （普通 / 合流）: only sent when the caller picks
+  // one — omitting it keeps the server's historical undivided list.
+  if (kind) params.set('kind', kind)
   if (sort && sort !== 'latest') params.set('sort', sort)
   if (q) params.set('q', q)
   if (limit) params.set('limit', String(limit))

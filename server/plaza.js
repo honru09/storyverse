@@ -84,11 +84,16 @@ function summaryOf(record) {
     avatar: record.avatar,
     genreId: record.genreId,
     genreTemplateId: record.genreTemplateId,
-    // The L1 family shelf this book files under in the bookstore
+    // The family shelf this book files under in the bookstore
     // (BOOKSTORE-PLAZA): derived from the template, never stored, so
     // the taxonomy can be re-shelved without touching records. A
     // hand-written book carries the family its author picked at
-    // creation time (it has no template to derive one from).
+    // creation time (it has no template to derive one from). This is
+    // the SECOND level of the bookstore taxonomy: the first level —
+    // 普通 vs 合流 — is the record's own merged flag (below), and a
+    // fused book files under its lead template's family INSIDE the
+    // fusion division, never among ordinary books (owner ruling
+    // 2026-10-30 23:11).
     shelfId: (typeof record.manualShelfId === 'string' && record.manualShelfId)
       || shelfForTemplate(record.genreTemplateId)?.id || '',
     worldName: record.worldName,
@@ -323,7 +328,8 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
 
     /**
      * The bookstore catalogue (BOOKSTORE-PLAZA): published books only,
-     * optionally narrowed to one family shelf and/or a plain substring
+     * optionally narrowed to one top-level division （普通 / 合流）, one
+     * family shelf inside that division, and/or a plain substring
      * search over title, author and world. Rankings are honest by
      * construction — 'latest' is shelving time, 'complete' is finish
      * time over finished books only, and 'hot' is real engagement: the
@@ -331,12 +337,20 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
      * caller supplies that map from the feed service; without it the
      * share count alone ranks). Nothing is ever synthesised.
      */
-    async books({ shelfId = '', sort = 'latest', q = '', limit = 50, engagement = null } = {}) {
+    async books({ shelfId = '', kind = '', sort = 'latest', q = '', limit = 50, engagement = null } = {}) {
       if (!backend) return { books: [], total: 0 }
       const all = await backend.listPublications()
       const visible = all.filter((record) => record.status === 'published')
       const enriched = await Promise.all(visible.map(withAuthorIdentity))
       let books = enriched.map((record) => ({ ...summaryOf(record), authorUid: record.authorUid }))
+      // First-level division （普通 / 合流， owner ruling 2026-10-30
+      // 23:11): 'fusion' returns only fused books, 'normal' only
+      // ordinary ones, and the family-shelf filter applies WITHIN the
+      // chosen division. No kind (or an unrecognised one) keeps the
+      // historical undivided catalogue, so existing callers that never
+      // heard of the division see exactly what they saw before.
+      if (kind === 'fusion') books = books.filter((book) => book.merged === true)
+      else if (kind === 'normal') books = books.filter((book) => book.merged !== true)
       if (shelfId) books = books.filter((book) => book.shelfId === shelfId)
       const needle = typeof q === 'string' ? q.trim().toLowerCase() : ''
       if (needle) {

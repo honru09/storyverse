@@ -98,6 +98,54 @@ worktree 中大改（阅读器翻页/主页守卫），本批按令不动 main.j
   phase=cover-image 行；state-merge.json 的 mergeCoverDone=true）。
 - 以上均已从磁盘重读验证（章节数/state/CSV 行），非只信进程输出。
 
+## 追加：书城两级分类——普通 / 合流大分类（2026-10-30 23:11 用户纠正）
+
+用户 23:09 令「给合流加个分类」，23:11 亲正结构：合流是**更高一级
+的大分类**，不是题材行里加一个小钮。本批先试做的「fusion 独立
+shelf（summaryOf 对 merged 恒派生 shelfId='fusion'）」单分类方案
+已在提交前整体撤回，未留任何代码。定版结构为两级：
+
+- 第一级（大分类）：**普通 / 合流** 两大类，书城顶部分段切换，
+  默认落在「普通」。
+- 第二级（题材家族）：在每个大类内部再按现有 GENRE_SHELVES 家族
+  分；两边完全分开——合流书不出现在普通大类的任何题材下（包括
+  普通的「全部」），普通书同理不进合流大类。
+
+落点：
+
+- `server/plaza.js`：summaryOf 的 shelfId **保持题材派生**（合流书
+  在合流大类内部归其主导题材家族，manualShelfId 优先的旧口径不
+  变）；books() 新增 `kind` 参数：`'fusion'` 只回 merged===true、
+  `'normal'` 只回 merged!==true，shelfId 过滤在大分类之内再生效。
+  **未传 kind（或值不可识别）时回全量未分目录**——向后兼容口径：
+  现有调用方（合并预选、主页书架、广场分享选书等三处
+  fetchStoreBooks({limit}) 与 read-count 的 books({})）从未传过大
+  分类，默认行为与改前逐字一致，受影响最小；只有书城页显式传
+  kind。（备选口径「默认 normal」会让上述调用方突然看不见合流书，
+  已否决。）
+- `server/index.js`：/api/store 路由透传 `?kind=`。
+- `src/plaza.js`：fetchStoreBooks 新增 `kind` 参数，传了才拼进查询
+  串（不传时 URL 与改前一致，users-client 的 URL 断言保持）。
+- `src/main.jsx`（只动 Store 组件一处区域）：删除试做时加在题材行
+  里的「合流」小钮；改为在分类筛选行**之上**加一行分段切换「普通 /
+  合流」（复用 store-filters 同制式按钮，active 逻辑同），状态
+  `kind` 默认 'normal'；切换时把题材 shelf 重置为该大类的「全部」
+  并重新取数（fetch 调用加 kind 参数、effect 依赖加 kind）。
+  GENRE_SHELVES 未动，合流未塞进题材墙。
+- `src/styles.css`：仅新增一行 `.store-divisions{margin-top:14px}`
+  （新行与搜索框之间的间距，紧邻既有 store 规则）。
+- 测试：`tests/plaza-server.test.js` 新增用例「bookstore divisions」
+  ——同作者同家族（玄幻修真）的普通书与合流书各一本：fusion 全部
+  与 fusion+家族都只见合流书，normal 全部与 normal+家族都只见普通
+  书，两大类互不串；无 kind 时两本都在、只带 shelf 的旧式过滤行为
+  不变；且断言合流书的 shelfId 仍为其题材家族。`tests/
+  list-layout-ui.test.js` 的 Store 取数断言同步为带 kind 的新形状。
+
+测试（本批实跑）：相关 6 个测试文件（plaza-server / plaza-shared /
+fusion2 / list-layout-ui / users-client / read-count）合计 67/67；
+全量 892 条 887 过，失败仅 dedup 样本图 ENOENT ×5（既有环境类，
+与上批基线 886/891 相比 +1 新用例、零回归）。
+
 ## 待部署说明
 
 本批基于本地 main 49e0a66、分支 merged-publish-gate。部署由主助手在
@@ -108,5 +156,7 @@ coverUrl 指向专属封面）。注意线上现行版本仍是旧门，部署�
 
 ## 提交状态
 
-已提交：分支 merged-publish-gate（基于 49e0a66），本笔记随提交一并
-入库。未 push、未部署（按分工由主助手统一排队）。
+已提交：分支 merged-publish-gate（基于 49e0a66），两笔——
+3565a70（发布门+篇幅可选引擎层）与两级分类追加笔（普通/合流大
+分类），本笔记随提交一并入库。未 push、未部署（按分工由主助手
+统一排队）。
