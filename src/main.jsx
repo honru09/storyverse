@@ -4542,6 +4542,13 @@ function Reader({
   authSignal = "",
 }) {
   const [snapshotIndex, setSnapshotIndex] = useState(0);
+  // READER-PAGE (REQ-39): opening a book lands on its cover, then the
+  // contents page, then the prose. frontStage is per-entry state: it
+  // resets when a different book (or the read-only flip) mounts, and
+  // never on story revisions — a chapter landing mid-entry must not
+  // throw the cover back up.
+  const [frontStage, setFrontStage] = useState("cover");
+  const [frontLeaving, setFrontLeaving] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [coverOpen, setCoverOpen] = useState(false);
   const [directoryOpen, setDirectoryOpen] = useState(false);
@@ -4628,8 +4635,13 @@ function Reader({
   const chapter = story ? (readingChapters[index] || buildChapter(story, index)) : null;
   const coverState = coverStateOf(story);
   const locationKey = story && chapterLocationKey(story.id, index, chapter.paragraphs, readOnly);
-  const reading = useReaderExperience({ readerRef, locationKey, settings: preferences.settings,
-    blocked: preferencesOpen || toolsOpen || directoryOpen || shareOpen || interveneOpen || settingsOpen || proseOpen });
+  const { animate: readerMotionAnimate } = useMotionPolicy("reader");
+  // READER-PAGE (REQ-38): page turns animate only when the motion
+  // policy allows it and the input is not the keyboard (whose turns
+  // the appearance layer already marks motion-off).
+  const turnMotion = readerMotionAnimate && preferences.inputMethod !== "keyboard";
+  const reading = useReaderExperience({ readerRef, locationKey, settings: preferences.settings, turnMotion,
+    blocked: preferencesOpen || toolsOpen || directoryOpen || shareOpen || interveneOpen || settingsOpen || proseOpen || frontStage !== null });
   const bookContextId = `${readOnly ? 'public' : 'private'}:${story?.id}`;
   const bookmarkKeys = readingChapters.map((item, i) => chapterLocationKey(story.id, i, item?.paragraphs || [], readOnly));
   const bookmarks = useMemo(() => reading.store.bookmarks(bookContextId, bookmarkKeys), [bookContextId, story, bookmarkVersion, toolsOpen, reading.store]);
@@ -4655,6 +4667,11 @@ function Reader({
     setProseOpen(false);
     setError("");
   }, [story?.id, story?.revision, readOnly]);
+
+  useEffect(() => {
+    setFrontStage("cover");
+    setFrontLeaving(false);
+  }, [story?.id, readOnly]);
 
   // The intervention overlay is NOT reset by story revisions: showing it
   // is what causes the revision that lands the revised chapter, and its
@@ -4957,6 +4974,20 @@ function Reader({
       setError("下一章暂时没能接上，请再试一次。");
     }
   };
+  // READER-PAGE (REQ-38): a tap-turn crossing a chapter boundary
+  // slides like a page turn in paged mode with motion on — the hook
+  // captures the old chapter's screen, the advance swaps the chapter,
+  // and the layout effect below completes the slide against the new
+  // chapter. Otherwise the advance is the plain jump it always was.
+  const chapterTurn = (direction) => {
+    const advance = () => {
+      if (direction > 0) handleNext();
+      else goToChapter(index - 1);
+    };
+    if (preferences.settings.readingMode === "page") reading.beginCrossTurn(direction);
+    advance();
+  };
+  useEffect(() => { reading.completeCrossTurn(); }, [index]); // eslint-disable-line react-hooks/exhaustive-deps
   const selectLocation = (target, anchor) => {
     requestedLocation.current = { index: target, anchor };
     setToolsOpen(false);
@@ -4999,18 +5030,38 @@ function Reader({
       pointerId: event.pointerId,
       interactive: Boolean(event.target.closest("button, a, input, textarea, select, summary, label, dialog, .reader-chrome")),
     };
+    if (!tapStart.current.interactive && !frontStage) reading.dragStart(event.clientX);
   };
   const forgetTap = () => { tapStart.current = null; };
+  // READER-PAGE (REQ-38/39): horizontal drags feed the turn engine;
+  // on the cover page a leftward swipe turns to the contents page.
+  const handleReaderMove = (event) => {
+    if (frontStage === "cover") {
+      const start = tapStart.current;
+      if (start && event.clientX - start.x < -56) {
+        tapStart.current = null;
+        setFrontStage("toc");
+      }
+      return;
+    }
+    if (frontStage) return;
+    if (reading.dragMove(event.clientX)) {
+      try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* capture is a nicety, not a requirement */ }
+    }
+  };
+  const handleReaderCancel = () => { reading.dragCancel(); forgetTap(); };
   const turnScreen = (direction) => {
     setChromeOpen(false);
     const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-    if (direction > 0 && window.scrollY >= maxY - 2) { handleNext(); return; }
-    if (direction < 0 && window.scrollY <= 2) { if (index > 0) goToChapter(index - 1); return; }
+    if (direction > 0 && window.scrollY >= maxY - 2) { chapterTurn(1); return; }
+    if (direction < 0 && window.scrollY <= 2) { if (index > 0) chapterTurn(-1); return; }
     if (preferences.settings.readingMode === "page") { reading.pageBy(direction); return; }
     const step = Math.max(160, window.innerHeight - 56);
     window.scrollTo({ top: Math.min(maxY, Math.max(0, window.scrollY + direction * step)), behavior: "smooth" });
   };
   const handleReaderTap = (event) => {
+    // A drag that turned (or settled back) owns this pointerup.
+    if (reading.dragEnd()) { tapStart.current = null; return; }
     const start = tapStart.current;
     tapStart.current = null;
     if (!start || start.pointerId !== event.pointerId) return;
@@ -5021,6 +5072,14 @@ function Reader({
     if (Math.abs(event.clientX - start.x) > 12 || Math.abs(event.clientY - start.y) > 12) return;
     if (performance.now() - start.at > 800) return;
     const zone = event.clientX / Math.max(1, window.innerWidth);
+    if (frontStage) {
+      // READER-PAGE (REQ-39): front-matter taps never reach the prose
+      // zones. The cover turns to the contents page from its right
+      // side; the contents page navigates by its own rows and its
+      // primary entry, which are interactive targets handled above.
+      if (frontStage === "cover" && zone >= 1 / 3) setFrontStage("toc");
+      return;
+    }
     if (zone < 1 / 3) turnScreen(-1);
     else if (zone > 2 / 3) turnScreen(1);
     else setChromeOpen((open) => !open);
@@ -5030,9 +5089,94 @@ function Reader({
   // nothing: the header and the chapter heading fall back to the
   // ordinal alone instead of 「第 3 章 · 3」 (ENTRY-OPTIONS).
   const displayChapterTitle = chapterTitleTextFor(chapter.title);
+  // READER-PAGE (REQ-39): front matter — cover, then contents, then
+  // prose. The pages overlay the always-mounted prose and never touch
+  // chapter progress, the pre-generation window, or the
+  // opened-through watermark, which all key off the chapter index
+  // exactly as before.
+  const frontTotal = story ? mapTotalFor(totalChaptersFor(story), story.chapters?.length || 0, index) : 0;
+  const frontLast = story ? lastAccessibleIndex(story, readOnly) : -1;
+  const frontByline = readOnly && story?.authorName ? `作者 ${story.authorName}` : `主角 ${displayName(story)}`;
+  const frontProgress = !story
+    ? ""
+    : isStoryComplete(story)
+      ? `全 ${story.chapters?.length || 0} 章 · 已完结`
+      : storyLengthModeOf(story) === "endless" && !isManuallyFinished(story)
+        ? `连载中 · 已更新 ${story.chapters?.length || 0} 章`
+        : `共 ${frontTotal} 章 · 读到第 ${index + 1} 章`;
+  const frontAtStart = index === 0 && reading.progress === 0;
+  const enterProse = (target) => {
+    if (target !== null && target !== undefined && target !== index) goToChapter(target);
+    if (turnMotion) {
+      setFrontLeaving(true);
+      window.setTimeout(() => { setFrontStage(null); setFrontLeaving(false); }, 350);
+    } else setFrontStage(null);
+  };
 
   return (
-    <div ref={readerRef} className="page page-reader page-enter" data-reader-focused={focused ? 'true' : 'false'} data-chrome-lift={chromeLift || undefined} data-chrome-open={chromeOpen || undefined} onPointerDown={noteTapStart} onPointerUp={handleReaderTap} onPointerCancel={forgetTap} {...getReaderAppearance(preferences.settings, { inputMethod: preferences.inputMethod })}>
+    <div ref={readerRef} className="page page-reader page-enter" data-reader-focused={focused ? 'true' : 'false'} data-chrome-lift={chromeLift || undefined} data-chrome-open={chromeOpen || undefined} onPointerDown={noteTapStart} onPointerUp={handleReaderTap} onPointerMove={handleReaderMove} onPointerCancel={handleReaderCancel} {...getReaderAppearance(preferences.settings, { inputMethod: preferences.inputMethod })}>
+      {frontStage && story && (
+        <div className={`reader-front${frontLeaving ? " leaving" : ""}`} data-stage={frontStage} role="region" aria-label="开卷">
+          <div className="reader-front-track">
+            <section className="reader-front-page reader-front-cover">
+              <button type="button" className="reader-front-back" onClick={goBack} aria-label="返回">
+                <Icon name="chevron" size={18} className="rotate-180" />
+              </button>
+              <div className="reader-front-art">
+                <StoryCover story={story} genreId={genreOf(story).id} sources={coverSources(story)} eager getAccessToken={() => authClient.getAccessToken()} authSignal={authSignal} />
+              </div>
+              <h2 className="reader-front-title">{story.title}</h2>
+              <p className="reader-front-byline">{frontByline}</p>
+              <p className="reader-front-meta">{frontProgress}</p>
+              <button type="button" className="reader-front-enter" onClick={() => setFrontStage("toc")}>
+                翻开目录 <Icon name="chevron" size={15} />
+              </button>
+              <p className="reader-front-hint">轻点右侧或向左滑动，翻到目录</p>
+            </section>
+            <section className="reader-front-page reader-front-toc">
+              <button type="button" className="reader-front-back" onClick={goBack} aria-label="返回">
+                <Icon name="chevron" size={18} className="rotate-180" />
+              </button>
+              <h2 className="reader-front-toc-title">{story.title}</h2>
+              <p className="reader-front-meta">{frontProgress}</p>
+              <Button variant="primary" className="reader-front-cta" onClick={() => enterProse(null)}>
+                {frontAtStart ? "开始阅读" : "继续阅读"} · 第 {index + 1} 章
+              </Button>
+              <div className="chapter-directory-list reader-front-list">
+                {Array.from({ length: frontTotal }, (_, chapterIndex) => {
+                  const available = chapterIndex <= frontLast;
+                  const frontChapter = story.chapters[chapterIndex];
+                  const status =
+                    index === chapterIndex
+                      ? "正在阅读"
+                      : !available
+                        ? readOnly
+                          ? "尚未分享"
+                          : "继续阅读后开启"
+                        : frontChapter?.interventions?.length
+                          ? "介入"
+                          : "";
+                  return (
+                    <button
+                      key={chapterIndex}
+                      disabled={!available}
+                      aria-current={index === chapterIndex ? "page" : undefined}
+                      onClick={() => enterProse(chapterIndex)}
+                    >
+                      <b>{String(chapterIndex + 1).padStart(2, "0")}</b>
+                      <span>
+                        <strong>{available ? frontChapter.title : "故事待续"}</strong>
+                        {status && <small>{status}</small>}
+                      </span>
+                      <Icon name={available ? "chevron" : "lock"} size={16} />
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          </div>
+        </div>
+      )}
       <div className="reader-status-top">
         <button
           type="button"

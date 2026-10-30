@@ -18,6 +18,13 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
     for (const width of widths) {
       const context = await browser.newContext({ viewport: { width, height: width > 700 ? 960 : 844 }, locale: 'zh-CN', reducedMotion: 'reduce', isMobile: width < 700, hasTouch: width < 700 });
       const page = await context.newPage();
+      // READER-PAGE (REQ-38): paged mode is the default now; this suite's
+      // scroll-behaviour checks were written against the old scroll
+      // default, so seed the stored preference once (never overwrite an
+      // existing record — later checks persist their own settings).
+      await page.addInitScript(prefKey => {
+        try { if (!localStorage.getItem(prefKey)) localStorage.setItem(prefKey, JSON.stringify({ version: 5, readingMode: 'scroll' })); } catch { /* storage unavailable */ }
+      }, prefKey);
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
       await page.route('**/api/generate', route => route.fulfill({ status: 503, json: { error: 'Test safety guard' } }));
@@ -39,6 +46,15 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           el.dispatchEvent(new MouseEvent('click', options));
         });
       };
+      // READER-PAGE (REQ-39): entering a book lands on its cover, then
+      // the contents page; pass both before touching the prose.
+      const passFrontMatter = async () => {
+        const flip = page.getByRole('button', { name: '翻开目录', exact: true });
+        if (await flip.count() === 0) return;
+        await flip.click();
+        await page.locator('.reader-front-cta').click();
+        await page.locator('.reader-front').waitFor({ state: 'detached' });
+      };
       const openChrome = async () => {
         if (await page.locator('.reader-chrome-bottom').count() === 0) await tapReaderCenter();
         await page.locator('.reader-chrome-bottom').waitFor({ state: 'visible' });
@@ -57,6 +73,7 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
         for (let i = 0; i < 5; i++) await page.getByRole('button', { name: '继续', exact: true }).click();
         await page.getByRole('button', { name: '预设体验', exact: true }).click();
         await page.getByRole('button', { name: '进入第一章', exact: true }).click();
+        await passFrontMatter();
         await page.locator('[data-reading-paragraph]').first().waitFor();
         // A long, valid imported-style chapter is a layout stress fixture, not generated prose.
         await page.evaluate(key => {
@@ -67,6 +84,7 @@ const widths = (process.env.PW_WIDTHS || '320,390,1440').split(',').map(Number).
           localStorage.setItem(key, JSON.stringify(library));
         }, key);
         await page.reload();
+        await passFrontMatter();
         await page.locator('[data-reading-paragraph="21"]').waitFor();
         const storyBefore = await page.evaluate(key => localStorage.getItem(key), key);
         await check('immersive reader chrome is reachable, solid and unclipped', async () => {

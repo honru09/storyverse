@@ -35,7 +35,11 @@ export const DEFAULT_READING_PREFERENCES = Object.freeze({
   paragraphIndent: true,
   textAlign: "left",
   letterSpacing: 0,
-  readingMode: "scroll",
+  /* READER-PAGE (REQ-38): paged turning is the default reading mode.
+     Records written before version 5 cannot tell a frozen "scroll"
+     default from a deliberate choice, so the v5 migration below moves
+     them; a version-5 record's "scroll" is a real choice and stays. */
+  readingMode: "page",
   keepAwake: false,
 });
 
@@ -87,7 +91,7 @@ function loadPreferences(storage) {
       return { settings: DEFAULT_READING_PREFERENCES, storageWarning: null };
     }
     const parsed = JSON.parse(raw);
-    if (!isRecord(parsed) || ![1, 2, 3, 4].includes(parsed.version)) {
+    if (!isRecord(parsed) || ![1, 2, 3, 4, 5].includes(parsed.version)) {
       return { settings: DEFAULT_READING_PREFERENCES, storageWarning: INVALID_MESSAGE };
     }
     /* Stored-settings rationalization (READER-FIX3 §31, fluid pass
@@ -98,7 +102,7 @@ function loadPreferences(storage) {
        almost certainly frozen rather than chosen, so it follows the
        current default; deliberate non-default choices are never
        touched. Migration is in-memory only — the record on disk is
-       rewritten (as version 4) on the next explicit change, never on
+       rewritten (as version 5) on the next explicit change, never on
        mount. */
     const migrated = { ...parsed };
     if (parsed.version < 4) {
@@ -120,6 +124,15 @@ function loadPreferences(storage) {
       if (migrated.paragraphSpacing === 1) migrated.paragraphSpacing = DEFAULT_READING_PREFERENCES.paragraphSpacing;
       // The retired weight toggle migrates silently to the pinned 400.
       migrated.fontWeight = DEFAULT_READING_PREFERENCES.fontWeight;
+    }
+    if (parsed.version < 5) {
+      /* READER-PAGE (REQ-38): paged turning becomes the default. A
+         pre-v5 record carrying "scroll" holds the frozen old default —
+         the record predates any way to mark the choice explicit — so
+         it follows the new default like every frozen default above.
+         Only a v5 record's "scroll" is a deliberate choice; it is
+         never rewritten here. */
+      if (migrated.readingMode === "scroll") migrated.readingMode = DEFAULT_READING_PREFERENCES.readingMode;
     }
     const settings = normalizeReadingPreferences(migrated);
     // Version 1 only knew three fields. Upgrade in memory without a warning or
@@ -153,7 +166,7 @@ export function createReadingPreferencesStore({ storage = browserStorage() } = {
     let storageWarning = null;
     try {
       if (!storage?.setItem) throw new Error("Storage unavailable");
-      storage.setItem(READING_PREFERENCES_KEY, JSON.stringify({ version: 4, ...settings }));
+      storage.setItem(READING_PREFERENCES_KEY, JSON.stringify({ version: 5, ...settings }));
     } catch {
       storageWarning = UNAVAILABLE_MESSAGE;
     }

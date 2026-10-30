@@ -58,7 +58,7 @@ test("invalid values cannot inject CSS or escape supported size and spacing rang
 });
 
 test("malformed or unknown-version stored settings safely recover without writing", () => {
-  for (const raw of ["{broken", "null", "[]", "true", '"night"', '{"version":5,"theme":"night"}']) {
+  for (const raw of ["{broken", "null", "[]", "true", '"night"', '{"version":6,"theme":"night"}']) {
     const storage = memoryStorage(raw);
     const store = createReadingPreferencesStore({ storage });
     assert.deepEqual(store.getSnapshot().settings, DEFAULT_READING_PREFERENCES);
@@ -137,7 +137,7 @@ test("reader appearance uses scoped variables and records instant keyboard chang
   const appearance = getReaderAppearance(settings, { inputMethod });
   assert.equal(appearance["data-reader-theme"], "night");
   assert.equal(appearance["data-reader-motion"], "off");
-  assert.equal(appearance["data-reader-mode"], "scroll");
+  assert.equal(appearance["data-reader-mode"], "page");
   assert.equal(appearance.style["--reader-font-size"], "calc(clamp(0.9375rem, 2.56vw + 0.375rem, 1.1875rem) * 1.375)");
   assert.equal(appearance.style["--reader-line-height"], 1.8);
   assert.equal(getReaderAppearance({ theme: "invalid", fontScale: "100vw" })["data-reader-theme"], "light");
@@ -153,7 +153,7 @@ test("version 1 preferences upgrade silently and retain all existing reader choi
   assert.equal(storage.values.get(READING_PREFERENCES_KEY), raw);
   assert.deepEqual(storage.writes, []);
   store.update({ fontFamily: "serif" });
-  assert.equal(JSON.parse(storage.values.get(READING_PREFERENCES_KEY)).version, 4);
+  assert.equal(JSON.parse(storage.values.get(READING_PREFERENCES_KEY)).version, 5);
   assert.equal(createReadingPreferencesStore({ storage }).getSnapshot().storageWarning, null);
 });
 
@@ -245,4 +245,37 @@ test("normalization returns a frozen closed schema without unknown or prototype 
   assert.equal(Object.isFrozen(result), true);
   assert.deepEqual(Object.keys(result), Object.keys(DEFAULT_READING_PREFERENCES));
   assert.deepEqual(normalizeReadingPreferences(Object.create({ keepAwake: true, theme: "night" })), DEFAULT_READING_PREFERENCES);
+});
+
+test("READER-PAGE (REQ-38): paged turning is the default reading mode", () => {
+  assert.equal(DEFAULT_READING_PREFERENCES.readingMode, "page");
+  const store = createReadingPreferencesStore({ storage: memoryStorage() });
+  assert.equal(store.getSnapshot().settings.readingMode, "page");
+  assert.equal(getReaderAppearance(store.getSnapshot().settings)["data-reader-mode"], "page");
+});
+
+test("READER-PAGE (REQ-38): a pre-v5 stored 'scroll' is the frozen old default and follows the new default", () => {
+  for (const version of [2, 3, 4]) {
+    const raw = JSON.stringify({ version, ...DEFAULT_READING_PREFERENCES, readingMode: "scroll" });
+    const snapshot = createReadingPreferencesStore({ storage: memoryStorage(raw) }).getSnapshot();
+    assert.equal(snapshot.settings.readingMode, "page", `version ${version}`);
+    assert.equal(snapshot.storageWarning, null, `version ${version}`);
+  }
+});
+
+test("READER-PAGE (REQ-38): a pre-v5 stored 'page' stays paged, and writes land as version 5", () => {
+  const storage = memoryStorage(JSON.stringify({ version: 4, ...DEFAULT_READING_PREFERENCES, readingMode: "page" }));
+  const store = createReadingPreferencesStore({ storage });
+  assert.equal(store.getSnapshot().settings.readingMode, "page");
+  assert.equal(store.update({ readingMode: "scroll" }), true);
+  const written = JSON.parse(storage.values.get(READING_PREFERENCES_KEY));
+  assert.equal(written.version, 5);
+  assert.equal(written.readingMode, "scroll");
+});
+
+test("READER-PAGE (REQ-38): a version-5 'scroll' is a deliberate choice and is never migrated", () => {
+  const raw = JSON.stringify({ version: 5, ...DEFAULT_READING_PREFERENCES, readingMode: "scroll" });
+  const snapshot = createReadingPreferencesStore({ storage: memoryStorage(raw) }).getSnapshot();
+  assert.equal(snapshot.settings.readingMode, "scroll");
+  assert.equal(snapshot.storageWarning, null);
 });
