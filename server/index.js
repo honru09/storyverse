@@ -20,7 +20,7 @@ import { createSocialStore } from './social-store.js'
 import { createPlazaStore } from './plaza-store.js'
 import { createFusionService } from './fusion.js'
 import { createLibraryService } from './library.js'
-import { createBillingService, pregeneratedFor, textSceneFor } from './billing.js'
+import { COIN, coinCostForText, createBillingService, pregeneratedFor, textCostCny, textSceneFor } from './billing.js'
 import { createStripeService } from './stripe.js'
 
 const DEFAULT_DIST = fileURLToPath(new URL('../dist/', import.meta.url))
@@ -452,6 +452,12 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再继续在线创作。', 'auth-required')
             throw error
           }
+          // REQ-68: the day's free coins land at the gate; the coin
+          // balance is then the everyday payment source. The daily
+          // token ceiling stays as an anti-abuse bound that coin
+          // balances do NOT bypass — only the legacy chapter credits
+          // carry a reader past it, as they always have.
+          if (billing.available) await billing.applyDailyCoinTopUp(identity.uid)
           const usedToday = await auth.usageDailyTotal(identity.uid)
           const cap = billing.available
             ? await billing.dailyTokenCapFor(identity.uid, auth.dailyTokenCap())
@@ -462,6 +468,10 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             } else {
               throw new ApiError(429, '今天的生成额度已用完，请明天再继续创作。', 'quota-exceeded')
             }
+          } else if (billing.available
+            && !(await billing.hasCoins(identity.uid, 1))
+            && !(await billing.hasChapterCredit(identity.uid))) {
+            throw new ApiError(429, '织币不足了。每天的免费织币会自动补足，开通会员或购买额度包可以继续创作。', 'coins-exhausted')
           }
         }
         const body = await readJson(request)
@@ -493,7 +503,21 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         // A pending chapter credit is spent now that the chapter
         // exists. All of it is best-effort and never fails the chapter.
         if (identity && !result?.cached && billing.available) {
-          if (spendChapterCredit) await billing.consumeChapterCredit(identity.uid)
+          let coinsSpent = 0
+          if (spendChapterCredit) {
+            await billing.consumeChapterCredit(identity.uid)
+          } else {
+            // REQ-68 settlement: the chapter settles in coins by its
+            // measured size (fusion chapters at the fusion rate),
+            // clamped at the balance — the gate already made sure a
+            // payment source exists, so a shortfall just empties it.
+            const scene = textSceneFor(body)
+            const metered = textCostCny(modelForLedger(), result?.usage ?? 'unknown')
+            const member = await billing.memberActive(identity.uid)
+            coinsSpent = await billing.spendCoins(identity.uid, coinCostForText({
+              scene, totalTokens: metered.totalTokens, member,
+            }))
+          }
           await billing.recordTextCost({
             uid: identity.uid,
             scene: textSceneFor(body),
@@ -504,6 +528,7 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             chapterIndex: body.index,
             chapterId: typeof result?.chapter?.id === 'string' ? result.chapter.id : null,
             creditUsed: spendChapterCredit,
+            coinsSpent,
           })
         }
         return sendJson(response, 200, result)
@@ -521,20 +546,27 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         }
         const coverBody = await readCoverJson(request)
         // BILLING: past the daily painting cap, an image credit buys
-        // one more cover; the credit is spent only on success.
+        // one more cover — or, since REQ-68, the flat coin price;
+        // either is spent only on success.
         let coverCredit = false
+        let coverCoins = false
         let result
         try {
           result = await cover.request(identity, coverBody)
         } catch (error) {
-          if (!(error instanceof ApiError) || error.code !== 'cover-quota'
-            || !billing.available || !(await billing.hasImageCredit(identity.uid))) throw error
-          result = await cover.request(identity, coverBody, { credit: true })
-          coverCredit = true
+          if (!(error instanceof ApiError) || error.code !== 'cover-quota' || !billing.available) throw error
+          if (await billing.hasImageCredit(identity.uid)) {
+            result = await cover.request(identity, coverBody, { credit: true })
+            coverCredit = true
+          } else if (await billing.hasCoins(identity.uid, COIN.imageCoinCost)) {
+            result = await cover.request(identity, coverBody, { credit: true })
+            coverCoins = true
+          } else throw error
         }
         if (billing.available) {
           if (coverCredit) await billing.consumeImageCredit(identity.uid)
-          await billing.recordImageCost({ uid: identity.uid, scene: 'cover', model: cover.model, creditUsed: coverCredit })
+          const coinsSpent = coverCoins ? await billing.spendCoins(identity.uid, COIN.imageCoinCost) : 0
+          await billing.recordImageCost({ uid: identity.uid, scene: 'cover', model: cover.model, creditUsed: coverCredit, coinsSpent })
         }
         // Cover ledger: identity, story id, model and provider usage only —
         // never the prompt and never image bytes.
@@ -605,21 +637,28 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           throw error
         }
         const avatarBody = await readCoverJson(request)
-        // BILLING: same image-credit path as covers — past the daily
-        // cap, one credit buys one more portrait, spent on success.
+        // BILLING: same paid path as covers — past the daily cap, an
+        // image credit or the flat coin price buys one more portrait,
+        // spent only on success.
         let avatarCredit = false
+        let avatarCoins = false
         let result
         try {
           result = await avatar.generate(identity, avatarBody)
         } catch (error) {
-          if (!(error instanceof ApiError) || error.code !== 'avatar-quota'
-            || !billing.available || !(await billing.hasImageCredit(identity.uid))) throw error
-          result = await avatar.generate(identity, avatarBody, { credit: true })
-          avatarCredit = true
+          if (!(error instanceof ApiError) || error.code !== 'avatar-quota' || !billing.available) throw error
+          if (await billing.hasImageCredit(identity.uid)) {
+            result = await avatar.generate(identity, avatarBody, { credit: true })
+            avatarCredit = true
+          } else if (await billing.hasCoins(identity.uid, COIN.imageCoinCost)) {
+            result = await avatar.generate(identity, avatarBody, { credit: true })
+            avatarCoins = true
+          } else throw error
         }
         if (billing.available) {
           if (avatarCredit) await billing.consumeImageCredit(identity.uid)
-          await billing.recordImageCost({ uid: identity.uid, scene: 'avatar', model: avatar.model, creditUsed: avatarCredit })
+          const coinsSpent = avatarCoins ? await billing.spendCoins(identity.uid, COIN.imageCoinCost) : 0
+          await billing.recordImageCost({ uid: identity.uid, scene: 'avatar', model: avatar.model, creditUsed: avatarCredit, coinsSpent })
         }
         // Avatar ledger: identity, model, anchor kind and provider usage
         // only — never the description and never image bytes.

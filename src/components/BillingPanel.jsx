@@ -88,15 +88,23 @@ export default function BillingPanel({ getToken }) {
           )}
         </div>
         <div className="billing-state-row">
-          <span>章额度</span>
-          <span className="billing-state-value">{state.chapterCredits} 章</span>
+          <span>织币</span>
+          <span className="billing-state-value">{state.coins ?? 0} 织币</span>
         </div>
-        <div className="billing-state-row">
-          <span>图片额度</span>
-          <span className="billing-state-value">{state.imageCredits} 张</span>
-        </div>
+        {state.chapterCredits > 0 && (
+          <div className="billing-state-row">
+            <span>章额度（存量）</span>
+            <span className="billing-state-value">{state.chapterCredits} 章</span>
+          </div>
+        )}
+        {state.imageCredits > 0 && (
+          <div className="billing-state-row">
+            <span>图片额度（存量）</span>
+            <span className="billing-state-value">{state.imageCredits} 张</span>
+          </div>
+        )}
         <p className="billing-state-note">
-          阅读现成的故事永远免费；生成新章、带化身进入、合流推进会消耗生成额度。每天的免费额度用完后，会员有更高的每日额度，也可以用章额度继续。
+          阅读现成的故事永远免费；生成新章、带化身进入、合流推进按实际用量消耗织币。每天打开织界，免费织币会自动补足到当日上限，会员的上限更高。
         </p>
       </section>
 
@@ -131,7 +139,7 @@ export default function BillingPanel({ getToken }) {
             <div key={product.id} className={`billing-card${product.featured ? " is-featured" : ""}`}>
               <strong>{product.name}</strong>
               <span className="billing-card-price">¥{product.priceCny}</span>
-              <small>{product.memberDays} 天会员</small>
+              <small>{product.memberDays} 天会员 · 到账 {product.coins} 织币</small>
               {product.featured && <span className="billing-card-badge">主推</span>}
             </div>
           ))}
@@ -142,7 +150,7 @@ export default function BillingPanel({ getToken }) {
             <div key={product.id} className="billing-card">
               <strong>{product.name}</strong>
               <span className="billing-card-price">¥{product.priceCny}</span>
-              <small>{product.chapterCredits} 章额度 · {product.imageCredits} 张图片额度</small>
+              <small>{product.coins} 织币</small>
             </div>
           ))}
         </div>
@@ -164,17 +172,20 @@ export default function BillingPanel({ getToken }) {
         ) : (
           <p className="billing-channel-note">购买通道即将开通，可先用兑换码开通会员和额度。</p>
         )}
+        <p className="billing-consent">
+          订阅即代表同意<a href="/legal/member-rules.html" target="_blank" rel="noreferrer">《会员服务规则》</a>与<a href="/legal/terms.html" target="_blank" rel="noreferrer">《用户协议》</a>。
+        </p>
       </section>
 
       <details className="billing-rules">
         <summary>消耗规则</summary>
         <ul>
-          <li>读已经写好的章节不消耗任何额度，读别人的原作线也一样。</li>
-          <li>生成新的一章、换一版、介入重演、带化身进入新线、合流推进，消耗当天的生成额度。</li>
-          <li>当天的额度先用当天的：免费额度用完后，会员用更高的会员日额度；再用完，才会动章额度（每章 1 个）。</li>
-          <li>生成封面和化身立绘有每天的免费张数，用完后每张消耗 1 个图片额度。</li>
+          <li>读已经写好的章节不消耗织币，读别人的原作线也一样。</li>
+          <li>生成新的一章按这一章的实际用量折算织币（每 1000 个计量单位 1 织币）；换一版、介入重演、带化身进入新线同此结算，合流推进按 1.5 倍结算、会员按 1.2 倍。</li>
+          <li>每天的免费织币以补足方式发放：余额低于当日上限时自动补足到上限（免费 150，会员 300），高于上限不再补足，赠币不逐日累积。</li>
+          <li>生成封面和化身立绘有每天的免费张数，用完后每张 40 织币。</li>
           <li>提前备好的下一章只会为会员、或最近三天还在读的故事准备，省得白白生成没人看的章节。</li>
-          <li>会员是按天数买断的卡，不会自动续费；到期后回到免费额度，已买的额度包余额不清零。</li>
+          <li>会员到期后回到免费档，已购织币不清零；织币的使用与退款细则见《付费与虚拟币规则》。</li>
         </ul>
       </details>
     </div>

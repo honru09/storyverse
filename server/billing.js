@@ -8,13 +8,16 @@ import { isOfficialUid } from './plaza.js'
 /**
  * BILLING — cost metering, entitlements and redemption codes.
  *
- * Policy (user-set, 2026-10-28): reading is free, creating costs. The
- * only entitlement system in the product is this one: membership is a
- * future date on the account, quota is two balances (chapter credits,
- * image credits). Every sales channel — redemption codes today, the
- * Stripe checkout prepared in server/stripe.js, any future reseller —
- * grants through `grantProduct` and nothing else, so channels can
- * never drift into parallel entitlement shapes.
+ * Policy (user-set, 2026-10-28; coin layer REQ-68, 2026-10-31):
+ * reading is free, creating costs. The only entitlement system in
+ * the product is this one: membership is a future date on the
+ * account, and spending runs on one coin balance （织币） topped up
+ * free every day and settled per generation by measured usage; the
+ * older chapter/image credit balances remain as a legacy overflow.
+ * Every sales channel — redemption codes today, the Stripe checkout
+ * prepared in server/stripe.js, any future reseller — grants
+ * through `grantProduct` and nothing else, so channels can never
+ * drift into parallel entitlement shapes.
  *
  * Cost records are written for EVERY metered call (text and image),
  * member or free, credit or daily quota: the point of the ledger is
@@ -70,20 +73,61 @@ export function imageCostCny(model) {
 }
 
 // ---------------------------------------------------------------------
-// Product catalog (user-set prices, 2026-10-28 — do not re-price here).
-// Membership is sold as cards, never as auto-renewing subscriptions.
-// Quota pack sizes are priced off the measured chapter cost: a
-// production chapter averages ≈8,060 total tokens ≈ ¥0.08 at the
-// table above (CHAPTER-AB.md), so a pack chapter credit retails at
-// roughly ¥0.26–0.30 — a 3.3–3.8× margin over metered cost.
+// The coin (REQ-68, priced 2026-10-31 from the measured cost model in
+// sw-prep/req67-book/COST-MODEL.md + PRICING.md). One platform currency:
+// 织币. Text generation settles by measured usage at 1 coin per 1,000
+// provider tokens (the figure the 100-chapter experiment produced:
+// a finished chapter runs ≈13–15k tokens ≈ ¥0.07 of metered cost, so
+// one coin of text costs the platform ≈¥0.005–0.0065). Fusion chapters
+// carry a heavier context and settle at a multiplier; images settle
+// flat per picture. The free experience is a daily top-up: every day
+// the balance is raised to the free ceiling (members: the member
+// ceiling) when it sits below it, so free coins never stockpile —
+// 150 coins ≈ 11–19 chapters, a taste, never a free 100-chapter book.
+// Guardrail (PRICING.md): the cheapest coin ever sold (year card)
+// brings in ¥0.0138 per coin, ≥ 2× the worst measured per-coin text
+// cost (¥0.0065); no member benefit may push the effective figure
+// below that line, which is why the member advantage is a fusion
+// multiplier and a higher top-up ceiling, not a blanket discount.
+// ---------------------------------------------------------------------
+export const COIN = Object.freeze({
+  name: '织币',
+  tokensPerCoin: 1000,
+  imageCoinCost: 40,
+  fusionMultiplier: 1.5,
+  fusionMemberMultiplier: 1.2,
+  dailyTopUpFree: 150,
+  dailyTopUpMember: 300,
+})
+
+/** Coins a finished text generation settles for, by scene and membership. */
+export function coinCostForText({ scene, totalTokens, member = false } = {}) {
+  const metered = Number.isFinite(totalTokens) && totalTokens > 0 ? totalTokens : 0
+  const base = Math.ceil(metered / COIN.tokensPerCoin)
+  if (scene === 'fusion') {
+    return Math.ceil(base * (member ? COIN.fusionMemberMultiplier : COIN.fusionMultiplier))
+  }
+  return base
+}
+
+// ---------------------------------------------------------------------
+// Product catalog (REQ-68 re-price, 2026-10-31; CNY throughout).
+// Membership is sold as cards (and, where a channel supports it, as
+// subscriptions under the same grant); every product now grants coins
+// through `coins`, and the old per-kind credits stay in the schema at
+// zero for the new catalog — balances readers already hold keep
+// working as a legacy overflow (see the generate gate in index.js).
+// Per-coin revenue: month ¥0.0208 / quarter ¥0.0189 / year ¥0.0138;
+// packs ¥0.020 / ¥0.0188 / ¥0.017 — bigger bundles are cheaper per
+// coin, and the floor stays ≥ 2× the worst measured text cost.
 // ---------------------------------------------------------------------
 export const PRODUCTS = Object.freeze([
-  Object.freeze({ id: 'member-month', kind: 'membership', name: '月卡', priceCny: 25, memberDays: 30, chapterCredits: 0, imageCredits: 0 }),
-  Object.freeze({ id: 'member-quarter', kind: 'membership', name: '季卡', priceCny: 68, memberDays: 90, chapterCredits: 0, imageCredits: 0 }),
-  Object.freeze({ id: 'member-year', kind: 'membership', name: '年卡', priceCny: 198, memberDays: 365, chapterCredits: 0, imageCredits: 0, featured: true }),
-  Object.freeze({ id: 'pack-6', kind: 'quota', name: '额度包 · 小', priceCny: 6, memberDays: 0, chapterCredits: 20, imageCredits: 2 }),
-  Object.freeze({ id: 'pack-30', kind: 'quota', name: '额度包 · 中', priceCny: 30, memberDays: 0, chapterCredits: 110, imageCredits: 12 }),
-  Object.freeze({ id: 'pack-68', kind: 'quota', name: '额度包 · 大', priceCny: 68, memberDays: 0, chapterCredits: 260, imageCredits: 30 }),
+  Object.freeze({ id: 'member-month', kind: 'membership', name: '月卡', priceCny: 25, memberDays: 30, coins: 1200, chapterCredits: 0, imageCredits: 0 }),
+  Object.freeze({ id: 'member-quarter', kind: 'membership', name: '季卡', priceCny: 68, memberDays: 90, coins: 3600, chapterCredits: 0, imageCredits: 0 }),
+  Object.freeze({ id: 'member-year', kind: 'membership', name: '年卡', priceCny: 198, memberDays: 365, coins: 14400, chapterCredits: 0, imageCredits: 0, featured: true }),
+  Object.freeze({ id: 'pack-6', kind: 'quota', name: '额度包 · 小', priceCny: 6, memberDays: 0, coins: 300, chapterCredits: 0, imageCredits: 0 }),
+  Object.freeze({ id: 'pack-30', kind: 'quota', name: '额度包 · 中', priceCny: 30, memberDays: 0, coins: 1600, chapterCredits: 0, imageCredits: 0 }),
+  Object.freeze({ id: 'pack-68', kind: 'quota', name: '额度包 · 大', priceCny: 68, memberDays: 0, coins: 4000, chapterCredits: 0, imageCredits: 0 }),
 ])
 export const productById = (id) => PRODUCTS.find((product) => product.id === id) || null
 
@@ -142,7 +186,7 @@ export function pregeneratedFor(body) {
 // Entitlement records
 // ---------------------------------------------------------------------
 export const ZERO_ENTITLEMENTS = Object.freeze({
-  memberUntil: null, chapterCredits: 0, imageCredits: 0,
+  memberUntil: null, chapterCredits: 0, imageCredits: 0, coins: 0, coinGrantDay: null,
 })
 
 const count = (value) => typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
@@ -153,6 +197,8 @@ export function normalizeEntitlements(value) {
     memberUntil: typeof value.memberUntil === 'string' && !Number.isNaN(Date.parse(value.memberUntil)) ? value.memberUntil : null,
     chapterCredits: count(value.chapterCredits),
     imageCredits: count(value.imageCredits),
+    coins: count(value.coins),
+    coinGrantDay: typeof value.coinGrantDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.coinGrantDay) ? value.coinGrantDay : null,
     failedRedeems: Array.isArray(value.failedRedeems)
       ? value.failedRedeems.filter((at) => typeof at === 'string' && !Number.isNaN(Date.parse(at)))
       : [],
@@ -172,6 +218,7 @@ export function applyGrant(entitlements, product, nowMs) {
   }
   next.chapterCredits += product.chapterCredits
   next.imageCredits += product.imageCredits
+  next.coins += count(product.coins)
   return next
 }
 
@@ -333,6 +380,33 @@ export function createBillingService({
 
   const memberActive = async (uid) => memberActiveFor(await readEntitlements(uid), now().getTime())
 
+  /**
+   * The daily free grant, as a top-up (REQ-68): once per day the
+   * balance is raised to the free ceiling (member ceiling for
+   * members) when it sits below it. Paid balances above the ceiling
+   * are untouched and free coins can never stockpile past the
+   * ceiling. Fail-open in the house style: a store hiccup reports
+   * the stored state.
+   */
+  async function applyDailyCoinTopUp(uid) {
+    if (!backend || typeof uid !== 'string' || !uid) return normalizeEntitlements(null)
+    try {
+      return await serialise(uid, async () => {
+        const current = normalizeEntitlements(await backend.getEntitlement(uid))
+        const today = dayKeyFor(now())
+        if (current.coinGrantDay === today) return current
+        const ceiling = memberActiveFor(current, now().getTime()) ? COIN.dailyTopUpMember : COIN.dailyTopUpFree
+        const next = { ...current, coinGrantDay: today }
+        if (next.coins < ceiling) next.coins = ceiling
+        await writeEntitlements(uid, next)
+        return next
+      })
+    } catch {
+      log('billing: daily coin top-up failed; reporting the stored state')
+      return readEntitlements(uid)
+    }
+  }
+
   async function grantProduct(uid, productId, source) {
     const product = productById(productId)
     if (!product) throw new ApiError(400, '这个商品不存在。')
@@ -350,7 +424,7 @@ export function createBillingService({
     memberDailyTokenCap: memberCap,
 
     // --- metering (fail-open by contract) ---
-    async recordTextCost({ uid, scene, pregenerated, model, usage, storyId, chapterIndex, chapterId, creditUsed = false }) {
+    async recordTextCost({ uid, scene, pregenerated, model, usage, storyId, chapterIndex, chapterId, creditUsed = false, coinsSpent = 0 }) {
       if (!backend || typeof uid !== 'string' || !uid) return false
       try {
         const cost = textCostCny(model, usage)
@@ -365,6 +439,7 @@ export function createBillingService({
           chapterIndex: Number.isInteger(chapterIndex) ? chapterIndex : null,
           chapterId: typeof chapterId === 'string' ? chapterId : null,
           creditUsed: Boolean(creditUsed),
+          coinsSpent: count(coinsSpent),
           day: dayKeyFor(now()),
           at: now().toISOString(),
         })
@@ -374,7 +449,7 @@ export function createBillingService({
         return false
       }
     },
-    async recordImageCost({ uid, scene, model, creditUsed = false }) {
+    async recordImageCost({ uid, scene, model, creditUsed = false, coinsSpent = 0 }) {
       if (!backend || typeof uid !== 'string' || !uid) return false
       try {
         await backend.addCostRecord({
@@ -386,6 +461,7 @@ export function createBillingService({
           costCny: imageCostCny(model),
           storyId: null, chapterIndex: null, chapterId: null,
           creditUsed: Boolean(creditUsed),
+          coinsSpent: count(coinsSpent),
           day: dayKeyFor(now()),
           at: now().toISOString(),
         })
@@ -438,6 +514,31 @@ export function createBillingService({
       } catch {
         log('billing: image credit spend failed')
         return false
+      }
+    },
+
+    // --- coins (REQ-68): daily top-up, balance checks, settlement ---
+    applyDailyCoinTopUp,
+    async hasCoins(uid, minimum = 1) {
+      return (await readEntitlements(uid)).coins >= Math.max(1, minimum)
+    },
+    /** Settle a coin charge after the work landed; never goes negative. */
+    async spendCoins(uid, amount) {
+      if (!backend || typeof uid !== 'string' || !uid) return 0
+      const due = count(amount)
+      if (due <= 0) return 0
+      try {
+        return await serialise(uid, async () => {
+          const current = normalizeEntitlements(await backend.getEntitlement(uid))
+          const spent = Math.min(current.coins, due)
+          if (spent <= 0) return 0
+          current.coins -= spent
+          await writeEntitlements(uid, current)
+          return spent
+        })
+      } catch {
+        log('billing: coin spend failed')
+        return 0
       }
     },
 
@@ -516,7 +617,11 @@ export function createBillingService({
 
     /** The member page payload: my state + the catalog + the ceilings. */
     async publicState(uid, { stripeEnabled = false } = {}) {
-      const entitlements = await readEntitlements(uid)
+      // Opening the member page is a daily activity: the free top-up
+      // lands here (and at the generate gate), once per day.
+      const entitlements = typeof uid === 'string' && uid
+        ? await applyDailyCoinTopUp(uid)
+        : await readEntitlements(uid)
       return {
         available: backend !== null && backend !== undefined,
         member: {
@@ -525,11 +630,20 @@ export function createBillingService({
         },
         chapterCredits: entitlements.chapterCredits,
         imageCredits: entitlements.imageCredits,
+        coins: entitlements.coins,
+        coin: {
+          name: COIN.name,
+          tokensPerCoin: COIN.tokensPerCoin,
+          imageCoinCost: COIN.imageCoinCost,
+          fusionMultiplier: COIN.fusionMultiplier,
+          fusionMemberMultiplier: COIN.fusionMemberMultiplier,
+          dailyTopUp: memberActiveFor(entitlements, now().getTime()) ? COIN.dailyTopUpMember : COIN.dailyTopUpFree,
+        },
         memberDailyTokenCap: memberCap,
         products: PRODUCTS.map((product) => ({
           id: product.id, kind: product.kind, name: product.name, priceCny: product.priceCny,
           memberDays: product.memberDays, chapterCredits: product.chapterCredits,
-          imageCredits: product.imageCredits, featured: Boolean(product.featured),
+          imageCredits: product.imageCredits, coins: product.coins, featured: Boolean(product.featured),
         })),
         stripeEnabled: Boolean(stripeEnabled),
       }

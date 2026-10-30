@@ -1767,6 +1767,8 @@ button.plaza-source-row.is-link{cursor:pointer}
 .home-avatar-face-frame .avatar-portrait-img{width:100%;height:100%;display:block;object-fit:cover;object-position:50% 12%;transform:scale(2.05);transform-origin:50% 14%}
 .home-avatar-face-frame .avatar-portrait-fallback{width:100%;height:100%;display:grid;place-items:center;font-size:15px;font-weight:700;color:var(--dim)}
 .home-footer{display:flex;flex-wrap:wrap;gap:8px 20px;justify-content:center;margin-top:44px}
+.home-footer-legal{display:inline-flex;gap:8px 16px;align-items:center}
+.home-footer-legal a{text-decoration:none}
 
 /* Help (F-33). */
 .help-content{padding:4px 2px 8px}
@@ -2292,6 +2294,8 @@ button.settings-row{cursor:pointer}
 .billing-card.is-featured{border-color:var(--selected-border);background:var(--selected-surface)}
 .billing-card-badge{position:absolute;top:8px;right:8px;padding:1px 7px;border-radius:999px;background:var(--profile-ink-strong);color:var(--profile-panel);font-size:10.5px;font-weight:650}
 .billing-channel-note{margin:0;padding:12px 14px;border:1px dashed var(--profile-edge);border-radius:12px;font-size:13.5px;line-height:1.6;color:var(--profile-dim)}
+.billing-consent{margin:10px 2px 0;font-size:12.5px;line-height:1.6;color:var(--profile-dim)}
+.billing-consent a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 .billing-buy{display:flex;flex-direction:column;gap:8px}
 .billing-buy-button{min-height:44px;border:1px solid var(--profile-edge);border-radius:12px;background:var(--profile-panel);color:var(--profile-ink-strong);font:inherit;font-size:14.5px;font-weight:600;cursor:pointer}
 .billing-buy-button:disabled{opacity:.45;cursor:not-allowed}
