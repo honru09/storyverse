@@ -5532,6 +5532,7 @@ function StoreBookCard({ book, onOpen }) {
             BH-06): glyphs = title characters + the 《》 pair. */}
         <span className={`plaza-cover-title is-${plazaTitleTierFor(book.title)}`} style={{"--title-glyphs": [...String(book.title || "")].length + 2}}>《{book.title}》</span>
         <span className="store-card-status">{plazaLineStatusFor(book) === "serializing" ? "连载中" : "已完结"}</span>
+        {book.shareCount > 0 ? <span className="store-cover-share">被分享 {countTextFor(book.shareCount)} 次</span> : null}
       </button>
       <div className="store-book-body">
         {/* DEVICE-FIX3 (REQ-37, DESIGN §54): fixed slots, spec-first.
@@ -5539,12 +5540,16 @@ function StoreBookCard({ book, onOpen }) {
             name (18 units; the official badge spends from the same
             line) on its own line, the
             handle (≤20 chars by the username pattern) on its own
-            line, the intro excerpt in its 2-line slot, both chips on
-            one line, then one meta line each for length / rating /
-            shares. Slots render at full height whether or not their
-            item exists, so a row of cards shares every baseline and
-            no item ever competes with another for width. Nothing in
-            this body ellipsizes: over-budget legacy strings are
+            line, the intro excerpt in its 2-line slot, each chip on
+            its own row. STORE-DESIGN (proposed, STORE-DESIGN.md):
+            the meta block (length / rating) is pinned to the card
+            foot by margin-top:auto inside a framed card, an absent
+            world chip renders NO row (its variance is absorbed by
+            the one flexible joint above the meta block), an unrated
+            book says 暂无评价 instead of leaving a blank slot, and
+            the share count rides the cover as a badge — so no slot
+            is ever an invisible void. Nothing in this body
+            ellipsizes: over-budget legacy strings are
             whole-character clipped by clipToUnits as a safety net,
             and new input is capped at the source (§54). */}
         <div className="store-slot store-slot-name">
@@ -5567,20 +5572,23 @@ function StoreBookCard({ book, onOpen }) {
           <div className="store-chip-row">
             <span className="plaza-chip">{book.manual ? (shelfById(book.shelfId)?.name || "作者手写") : templateName}</span>
           </div>
-          <div className="store-chip-row">
-            {showWorld ? <span className="plaza-chip">{clipToUnits(book.worldName, 12)}</span> : null}
-          </div>
-        </div>
-        <div className="store-slot store-slot-meta">
-          <span>{plazaLengthLabel(book)}</span>
-        </div>
-        <div className="store-slot store-slot-meta">
-          {book.ratingCount > 0 && ratingAverageText(book) ? (
-            <span className="store-card-rating">★ {ratingAverageText(book)} · {countTextFor(book.ratingCount)} 条评价</span>
+          {showWorld ? (
+            <div className="store-chip-row">
+              <span className="plaza-chip">{clipToUnits(book.worldName, 12)}</span>
+            </div>
           ) : null}
         </div>
-        <div className="store-slot store-slot-meta">
-          {book.shareCount > 0 ? <span>被分享 {countTextFor(book.shareCount)} 次</span> : null}
+        <div className="store-meta-block">
+          <div className="store-slot store-slot-meta">
+            <span>{plazaLengthLabel(book)}</span>
+          </div>
+          <div className="store-slot store-slot-meta">
+            {book.ratingCount > 0 && ratingAverageText(book) ? (
+              <span className="store-card-rating">★ {ratingAverageText(book)} · {countTextFor(book.ratingCount)} 条评价</span>
+            ) : (
+              <span className="store-rating-empty">暂无评价</span>
+            )}
+          </div>
         </div>
       </div>
     </article>
