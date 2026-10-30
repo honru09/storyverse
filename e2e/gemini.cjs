@@ -176,7 +176,9 @@ async function finishBook(page, requests, { total = 24, ending = '这一季，�
       const requestCount = requests.length;
       await page.getByRole('button').filter({ hasText: '本机分享' }).click();
       await position(page, 1);
-      await page.getByText('只读版本 · 不会改变原作', { exact: true }).waitFor();
+      await page.locator('[data-reading-paragraph]').first().waitFor();
+      // REQ-54: no read-only note inside the reader any more.
+      assert.equal(await page.getByText('只读版本 · 不会改变原作', { exact: true }).count(), 0);
       assert.match(await page.locator('.reader-article').innerText(), /MOCK_GEMINI_CHAPTER_0/);
       await page.reload({ waitUntil: 'domcontentloaded' });
       await position(page, 1);

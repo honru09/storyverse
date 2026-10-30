@@ -384,16 +384,13 @@ const widths = (process.env.PW_WIDTHS || '360,390,430').split(',').map(Number).f
         await page.goto(`${target}/#/shared/publication-fixture-reader`);
         await page.reload();
         await page.locator('[data-reading-paragraph="21"]').waitFor();
-        await page.locator('.reader-readonly-note').waitFor();
 
-        await check('read-only reader: no shell bottom bar, note is quiet, hairlines painted', async () => {
+        await check('read-only reader: no shell bottom bar, no in-reader note, hairlines painted', async () => {
           assert.equal(await page.locator('.mobile-bottom-nav').count(), 0, 'no shell bottom bar inside the read-only reader');
-          const note = await page.locator('.reader-readonly-note').evaluate(node => {
-            const cs = getComputedStyle(node);
-            const secondary = getComputedStyle(document.querySelector('.reader-status-top')).color;
-            return { fontSize: parseFloat(cs.fontSize), color: cs.color, secondary };
-          });
-          assert.ok(note.fontSize <= 12.5, `read-only note stays a whisper (${note.fontSize}px)`);
+          // REQ-54: the read-only note was evicted from the reader —
+          // it is stated once on the book's detail page instead.
+          assert.equal(await page.locator('.reader-readonly-note').count(), 0, 'no read-only note element inside the reader');
+          assert.equal(await page.getByText('只读版本 · 不会改变原作', { exact: true }).count(), 0, 'no read-only note copy inside the reader');
           const geo = await page.evaluate(() => {
             const top = document.querySelector('.reader-status-top').getBoundingClientRect();
             const bottom = document.querySelector('.reader-status-bottom').getBoundingClientRect();

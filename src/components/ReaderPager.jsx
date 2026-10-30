@@ -224,6 +224,7 @@ export default function ReaderPager({
    * through refs (no re-render per frame). */
   const [curlView, setCurlView] = useState(null);
   const curlRef = useRef(null);
+  const curlStageRef = useRef(null);
   const curlFlatRef = useRef(null);
   const curlFlapRef = useRef(null);
   const curlMirrorRef = useRef(null);
@@ -236,6 +237,13 @@ export default function ReaderPager({
 
   const total = () => displayTotal(pagesRef.current || []);
   const width = () => Math.max(1, viewportRef.current?.clientWidth || window.innerWidth);
+  /* READER-POLISH2 (REQ-54): the curl stage is the whole reading
+   * page (a fixed, viewport-wide layer), not the page box. Before
+   * the stage mounts, its width is the window's, less the desktop
+   * rail the hairlines also respect; applyCurl replaces the guess
+   * with the stage's measured width on the first frame. */
+  const stageWidthGuess = () => Math.max(1, window.innerWidth
+    - (window.matchMedia?.("(min-width:1050px)").matches ? 88 : 0));
   const base = (page) => -page * width();
 
   const setTrack = useCallback((px) => {
@@ -402,10 +410,13 @@ export default function ReaderPager({
     if (drag.curl) {
       const curl = curlRef.current;
       if (!curl) return false;
-      const wNow = width();
       // The fold sweeps with the finger's displacement, 1:1 — drag
-      // further, curl further, whichever edge the turn started from.
-      curl.m = Math.min(wNow, Math.max(0, drag.direction > 0 ? wNow - (drag.x0 - x) : x - drag.x0));
+      // further, curl further, whichever edge the turn started
+      // from. READER-POLISH2: the sweep runs in stage coordinates
+      // (the whole reading page), so the fold travels edge to edge.
+      curl.pristine = false;
+      const stageW = curl.stageW || stageWidthGuess();
+      curl.m = Math.min(stageW, Math.max(0, drag.direction > 0 ? stageW - (drag.x0 - x) : x - drag.x0));
       applyCurl();
       return true;
     }
@@ -431,7 +442,7 @@ export default function ReaderPager({
     if (drag.curl) {
       const curl = curlRef.current;
       if (!curl) return true;
-      animateCurlTo(complete ? curl.completeM : (direction > 0 ? w : 0), { velocity });
+      animateCurlTo(complete ? curl.completeM : (direction > 0 ? (curl.stageW || stageWidthGuess()) : 0), { velocity });
       return true;
     }
     const target = complete ? pageRef.current + direction : pageRef.current;
@@ -631,49 +642,75 @@ export default function ReaderPager({
    *           roll casts onto the revealed page.
    * Every layer is opaque paper: no frame ever cross-fades two
    * different texts. The fold axis sweeps the stage and leans with
-   * the grab height, like the reference reader's corner curl. */
+   * the grab height, like the reference reader's corner curl.
+   *
+   * READER-POLISH2 (REQ-54): the stage is no longer the page box —
+   * it is the whole reading page (the fixed .reader-curl layer).
+   * All fold geometry below runs in stage coordinates: the axis,
+   * the band, the ridge and the cast shadow span the stage's full
+   * height and the sheet sweeps its full width. The articles ride
+   * in .reader-curl-box wrappers that applyCurl pins onto the
+   * static page box (the --curl-box-* custom properties), so the
+   * text never moves a pixel from where the settled page puts it;
+   * only the paper around it grew. curl.m / curl.completeM are
+   * stage-x positions; `pristine` marks a just-started curl whose
+   * rest position still has to be snapped to the measured stage
+   * width on the first frame. */
   const curlBandWidth = (m) => {
-    const w = width();
-    return Math.min(w * 0.36, Math.max(0, w - m) * 0.55);
+    const W = curlRef.current?.stageW || stageWidthGuess();
+    return Math.min(W * 0.36, Math.max(0, W - m) * 0.55);
   };
 
   const applyCurl = useCallback(() => {
     const curl = curlRef.current;
+    const stage = curlStageRef.current;
     const viewport = viewportRef.current;
-    if (!curl || !viewport) return;
-    const w = viewport.clientWidth;
-    const h = viewport.clientHeight;
-    const m = Math.min(w, Math.max(0, curl.m));
+    if (!curl || !stage || !viewport) return;
+    const stageRect = stage.getBoundingClientRect();
+    const boxRect = viewport.getBoundingClientRect();
+    const W = Math.max(1, stageRect.width);
+    const H = Math.max(1, stageRect.height);
+    curl.stageW = W;
+    curl.stageH = H;
+    curl.completeM = curl.dir > 0 ? 0 : W;
+    if (curl.pristine) curl.m = curl.dir > 0 ? W : 0;
+    // Pin the article wrappers onto the static page box.
+    stage.style.setProperty("--curl-box-x", `${boxRect.left - stageRect.left}px`);
+    stage.style.setProperty("--curl-box-y", `${boxRect.top - stageRect.top}px`);
+    stage.style.setProperty("--curl-box-w", `${boxRect.width}px`);
+    stage.style.setProperty("--curl-box-h", `${boxRect.height}px`);
+    const m = Math.min(W, Math.max(0, curl.m));
     const axTop = m - curl.lean / 2;
     const axBot = m + curl.lean / 2;
     const bw = curlBandWidth(m);
     const flat = curlFlatRef.current;
-    if (flat) flat.style.clipPath = `polygon(0px 0px, ${axTop - bw}px 0px, ${axBot - bw}px ${h}px, 0px ${h}px)`;
+    if (flat) flat.style.clipPath = `polygon(0px 0px, ${axTop - bw}px 0px, ${axBot - bw}px ${H}px, 0px ${H}px)`;
     const flap = curlFlapRef.current;
-    if (flap) flap.style.clipPath = `polygon(${axTop - bw}px 0px, ${axTop}px 0px, ${axBot}px ${h}px, ${axBot - bw}px ${h}px)`;
+    if (flap) flap.style.clipPath = `polygon(${axTop - bw}px 0px, ${axTop}px 0px, ${axBot}px ${H}px, ${axBot - bw}px ${H}px)`;
     const mirror = curlMirrorRef.current;
     if (mirror) {
-      // Reflection across the fold axis: the line through (m, h/2)
-      // with direction (lean, h). matrix(a,b,c,d,tx,ty) with
-      // transform-origin 0 0 (see reader-experience.css).
-      const len = Math.hypot(curl.lean, h) || 1;
+      // Reflection across the fold axis, in stage coordinates: the
+      // line through (m, H/2) with direction (lean, H).
+      // matrix(a,b,c,d,tx,ty) with transform-origin 0 0 (see
+      // reader-experience.css).
+      const len = Math.hypot(curl.lean, H) || 1;
       const ux = curl.lean / len;
-      const uy = h / len;
+      const uy = H / len;
       const a = 2 * ux * ux - 1;
       const b = 2 * ux * uy;
       const d = 2 * uy * uy - 1;
-      const tx = m - (a * m + b * (h / 2));
-      const ty = h / 2 - (b * m + d * (h / 2));
+      const tx = m - (a * m + b * (H / 2));
+      const ty = H / 2 - (b * m + d * (H / 2));
       mirror.style.transform = `matrix(${a}, ${b}, ${b}, ${d}, ${tx}, ${ty})`;
     }
     const shade = curlShadeRef.current;
     if (shade) {
-      shade.style.clipPath = `polygon(${axTop - bw - 30}px 0px, ${axTop}px 0px, ${axBot}px ${h}px, ${axBot - bw - 30}px ${h}px)`;
+      shade.style.clipPath = `polygon(${axTop - bw - 30}px 0px, ${axTop}px 0px, ${axBot}px ${H}px, ${axBot - bw - 30}px ${H}px)`;
       shade.style.background = `linear-gradient(90deg, rgba(0,0,0,0) ${Math.max(0, m - bw - 30)}px, rgba(0,0,0,.13) ${Math.max(0, m - bw)}px, rgba(0,0,0,.03) ${Math.max(0, m - bw * 0.45)}px, rgba(255,255,255,.15) ${Math.max(0, m - 16)}px, rgba(0,0,0,.26) ${m}px, rgba(0,0,0,0) ${m + 2}px)`;
     }
     const shadow = curlShadowRef.current;
     if (shadow) {
-      shadow.style.clipPath = `polygon(${axTop}px 0px, ${axTop + 36}px 0px, ${axBot + 36}px ${h}px, ${axBot}px ${h}px)`;
+      shadow.style.clipPath = `polygon(${axTop}px 0px, ${axTop + 36}px 0px, ${axBot + 36}px ${H}px, ${axBot}px ${H}px)`;
       shadow.style.background = `linear-gradient(90deg, rgba(0,0,0,.22) ${m}px, rgba(0,0,0,0) ${m + 36}px)`;
     }
   }, []);
@@ -704,6 +741,7 @@ export default function ReaderPager({
     const curl = curlRef.current;
     if (!curl) return;
     if (curl.raf) cancelAnimationFrame(curl.raf);
+    curl.pristine = false;
     const from = curl.m;
     const started = performance.now();
     const finish = () => {
@@ -757,16 +795,23 @@ export default function ReaderPager({
     const grab = rect && tapY !== null
       ? Math.min(1, Math.max(0, (tapY - rect.top) / Math.max(1, rect.height)))
       : 0.72;
+    const stageW = stageWidthGuess();
     curlRef.current = {
       dir: direction,
       from: current,
       target,
       sheet: direction > 0 ? current : target,
       under: direction > 0 ? target : current,
-      m: direction > 0 ? w : 0,
-      completeM: direction > 0 ? 0 : w,
+      // READER-POLISH2: rest and completion live at the STAGE's
+      // edges now; `pristine` lets the first applyCurl snap the
+      // rest position to the measured stage width.
+      m: direction > 0 ? stageW : 0,
+      completeM: direction > 0 ? 0 : stageW,
       lean: direction * (grab - 0.5) * 0.35 * w,
       raf: 0,
+      pristine: true,
+      stageW,
+      stageH: 0,
     };
     setCurlView({ sheet: curlRef.current.sheet, under: curlRef.current.under });
     return true;
@@ -843,12 +888,12 @@ export default function ReaderPager({
         )}
       </div>
       {curlView && (
-        <div className="reader-curl" aria-hidden="true">
-          <div className="reader-curl-layer">{renderPageArticle(curlView.under, true)}</div>
+        <div className="reader-curl" aria-hidden="true" ref={curlStageRef}>
+          <div className="reader-curl-layer"><div className="reader-curl-box">{renderPageArticle(curlView.under, true)}</div></div>
           <div className="reader-curl-shadow" ref={curlShadowRef} />
-          <div className="reader-curl-layer" ref={curlFlatRef}>{renderPageArticle(curlView.sheet, true)}</div>
+          <div className="reader-curl-layer" ref={curlFlatRef}><div className="reader-curl-box">{renderPageArticle(curlView.sheet, true)}</div></div>
           <div className="reader-curl-flap" ref={curlFlapRef}>
-            <div className="reader-curl-mirror" ref={curlMirrorRef}>{renderPageArticle(curlView.sheet, true)}</div>
+            <div className="reader-curl-mirror" ref={curlMirrorRef}><div className="reader-curl-box">{renderPageArticle(curlView.sheet, true)}</div></div>
           </div>
           <div className="reader-curl-shade" ref={curlShadeRef} />
         </div>

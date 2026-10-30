@@ -154,11 +154,14 @@ test("REQ-47: the curl turn renders the sheet, its mirrored back and the page be
   // text stays text (contracts intact), never a canvas snapshot.
   assert.match(pager, /mirror\.style\.transform = `matrix\(/);
   assert.match(pager, /decorative/);
-  assert.match(experienceCss, /\.reader-curl\{position:absolute;inset:0;z-index:3;pointer-events:none\}/);
+  // REQ-54 moved the stage from the page box to the whole reading
+  // page (fixed layer); the guard follows the move like the FIX3
+  // retune precedent — see the REQ-54 block below for its contract.
+  assert.match(experienceCss, /\.reader-curl\{position:fixed;inset:0;z-index:11;pointer-events:none\}/);
   // Tap turns sweep on the curl clock; drags drive the fold 1:1
   // from the finger's displacement.
   assert.match(pager, /CURL_MS = 480/);
-  assert.match(pager, /curl\.m = Math\.min\(wNow, Math\.max\(0, drag\.direction > 0/);
+  assert.match(pager, /curl\.m = Math\.min\(stageW, Math\.max\(0, drag\.direction > 0/);
 });
 
 test("REQ-47: turn style is a v7 preference plumbed from the sheet to the pager", () => {
@@ -169,4 +172,53 @@ test("REQ-47: turn style is a v7 preference plumbed from the sheet to the pager"
   assert.match(hook, /pageBy\(direction, opts\)/);
   // Motion off still short-circuits both styles to an instant land.
   assert.match(pager, /if \(!motionRef\.current\) \{ land\(target\); return true; \}/);
+});
+
+// --- REQ-54: reader polish — note eviction, print-through back, ------
+// --- full-page curl stage ---------------------------------------------
+
+test("REQ-54: the read-only note is out of the reader; it lives once on the detail page", () => {
+  // No banner element, class or copy anywhere in the reader layers.
+  assert.doesNotMatch(main, /reader-readonly-note/);
+  assert.doesNotMatch(experienceCss, /reader-readonly-note/);
+  const stylesCss = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  assert.doesNotMatch(stylesCss, /reader-readonly-note/);
+  // The sentence survives exactly once in the app: the detail
+  // page's status area (PlazaDetail cover copy).
+  assert.equal((main.match(/只读版本 · 不会改变原作/g) || []).length, 1);
+  assert.match(main, /<p className="plaza-detail-readonly">只读版本 · 不会改变原作<\/p>/);
+  assert.match(stylesCss, /\.plaza-detail-cover-copy \.plaza-detail-readonly\{/);
+});
+
+test("REQ-54: the curl stage covers the whole reading page; text stays pinned to the page box", () => {
+  // The overlay is a fixed full-page layer (below the hairlines at
+  // z-12 and the summoned chrome at z-15), rail-aware on desktop.
+  assert.match(experienceCss, /\.reader-curl\{position:fixed;inset:0;z-index:11;pointer-events:none\}/);
+  assert.match(experienceCss, /@media\(min-width:1050px\)\{\.reader-curl\{left:88px\}\}/);
+  // Articles ride in box wrappers positioned by the pager's own
+  // rect — pagination and the settled page are untouched.
+  assert.match(experienceCss, /\.reader-curl-box\{position:absolute;left:var\(--curl-box-x,0px\);top:var\(--curl-box-y,0px\)/);
+  assert.match(pager, /className="reader-curl-box"/);
+  assert.match(pager, /ref={curlStageRef}/);
+  assert.match(pager, /stage\.style\.setProperty\("--curl-box-x"/);
+  assert.match(pager, /stage\.style\.setProperty\("--curl-box-y"/);
+  // Fold math runs in stage coordinates measured off the stage
+  // itself: rest and completion sit at the stage's edges, and the
+  // axis, band, shade and shadow span the stage's full height.
+  assert.match(pager, /const stageRect = stage\.getBoundingClientRect\(\)/);
+  assert.match(pager, /curl\.completeM = curl\.dir > 0 \? 0 : W/);
+  assert.match(pager, /if \(curl\.pristine\) curl\.m = curl\.dir > 0 \? W : 0/);
+  assert.match(pager, /axBot - bw\}px \$\{H\}px/);
+  assert.match(pager, /drag\.direction > 0 \? stageW - \(drag\.x0 - x\) : x - drag\.x0/);
+});
+
+test("REQ-54: the paper's back is print-through — blurred, faded mirrored text on opaque paper", () => {
+  // Only the flap's article wrapper is blurred/faded; the mirror
+  // layer's own paper stays opaque, so the band never turns into a
+  // window onto the page beneath.
+  assert.match(experienceCss, /\.reader-curl-mirror \.reader-curl-box\{filter:blur\(1\.6px\);opacity:\.5\}/);
+  assert.match(experienceCss, /\.reader-curl-mirror\{position:absolute;inset:0;background:var\(--reader-bg\);transform-origin:0 0\}/);
+  // The flat sheet and the revealed page keep full-strength text:
+  // no blur rule may reach them.
+  assert.doesNotMatch(experienceCss, /\.reader-curl-layer \.reader-curl-box\{[^}]*blur/);
 });
