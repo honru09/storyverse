@@ -426,6 +426,66 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
     return { creditUsed: false, coinsSpent: 0 }
   }
 
+  /**
+   * Paid-image generation with the payment arranged BEFORE the
+   * picture exists (integrate-00052 review 1.1): the cover and
+   * avatar services persist the image inside their generate call,
+   * so the old check → generate → settle order left a stored,
+   * fetchable picture behind whenever the settlement then failed —
+   * the 402 refused a response the reader could bypass with a GET.
+   * Now a credit is consumed up front (and restored if the
+   * generation itself fails), and coins are frozen up front and
+   * settled against the hold, exactly like chapter text. Returns
+   * null when neither instrument can pay, leaving the caller to
+   * rethrow the service's own quota error.
+   */
+  const paidImageGeneration = async (identity, generatePaid) => {
+    const uid = identity.uid
+    const creditOffered = await billing.hasImageCredit(uid)
+    if (creditOffered && await billing.consumeImageCredit(uid)) {
+      try {
+        const result = await generatePaid()
+        return { result, creditUsed: true, coinsSpent: 0 }
+      } catch (error) {
+        if (typeof billing.restoreImageCredit === 'function') {
+          await billing.restoreImageCredit(uid).catch(() => {})
+        }
+        throw error
+      }
+    }
+    if (typeof billing.reserveCoins === 'function') {
+      const hold = await billing.reserveCoins(uid, COIN.imageCoinCost)
+      if (!hold) {
+        // A credit was on the books but its consume failed (raced
+        // away): the old settlement named that refusal
+        // coins-exhausted. With no credit in play, an unfreezable
+        // balance is the plain no-instrument case, and the caller
+        // rethrows the service's quota error for it.
+        if (creditOffered) throw new ApiError(402, '织币不足以结算这张图，请稍后再试。', 'coins-exhausted')
+        return null
+      }
+      try {
+        const result = await generatePaid()
+        const settled = await billing.settleReservation(uid, hold.id, COIN.imageCoinCost)
+        return { result, creditUsed: false, coinsSpent: settled?.spent ?? 0 }
+      } catch (error) {
+        if (typeof billing.releaseReservation === 'function') {
+          await billing.releaseReservation(uid, hold.id).catch(() => {})
+        }
+        throw error
+      }
+    }
+    // A billing service without the reservation API (older test
+    // fakes) keeps the previous check-then-settle flow.
+    if (await billing.hasCoins(uid, COIN.imageCoinCost)) {
+      const result = await generatePaid()
+      const settled = await settleImageCharge(uid, { coins: true })
+      return { result, creditUsed: false, coinsSpent: settled.coinsSpent }
+    }
+    if (creditOffered) throw new ApiError(402, '织币不足以结算这张图，请稍后再试。', 'coins-exhausted')
+    return null
+  }
+
   // Explicit opt-out preserves existing deployments until the release owner sets it.
   const generationEnabled = env.GENERATION_ENABLED !== 'false'
   // The model id is static configuration; remember it the first time status
@@ -752,21 +812,18 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             const spent = await billing.spendCoins(identity.uid, actualCoins)
             return { spent, covered: spent >= actualCoins }
           }
+          let settleShort = false
           if (spendChapterCredit) {
             creditUsed = await billing.consumeChapterCredit(identity.uid)
             if (!creditUsed) {
               const settled = await settleCoins()
-              if (!settled?.covered) {
-                throw new ApiError(402, '织币不足以结算这一章，请充值或开通会员后再试。', 'coins-exhausted')
-              }
-              coinsSpent = settled.spent
+              coinsSpent = settled?.spent ?? 0
+              if (!settled?.covered) settleShort = true
             }
           } else {
             const settled = await settleCoins()
-            if (!settled?.covered) {
-              throw new ApiError(402, '织币不足以结算这一章，请充值或开通会员后再试。', 'coins-exhausted')
-            }
-            coinsSpent = settled.spent
+            coinsSpent = settled?.spent ?? 0
+            if (!settled?.covered) settleShort = true
           }
           await billing.recordTextCost({
             uid: identity.uid,
@@ -782,6 +839,14 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             estimated: Boolean(metered?.estimated),
             mergedBasis,
           })
+          // The cost record above lands BEFORE this refusal on
+          // purpose (integrate-00052 review 1.1): the upstream
+          // tokens are spent and the settled coins are gone either
+          // way, so a short settlement must not vanish from the
+          // ledger just because the chapter itself is refused.
+          if (settleShort) {
+            throw new ApiError(402, '织币不足以结算这一章，请充值或开通会员后再试。', 'coins-exhausted')
+          }
         }
         // Registry write (task 3): only settled deliveries are
         // registered. A write failure logs and never blocks the
@@ -818,28 +883,23 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         }
         const coverBody = await readCoverJson(request)
         // BILLING: past the daily painting cap, an image credit buys
-        // one more cover — or, since REQ-68, the flat coin price;
-        // either is spent only on success.
-        let coverCredit = false
-        let coverCoins = false
+        // one more cover — or, since REQ-68, the flat coin price.
+        // The payment is arranged BEFORE the paid generation runs
+        // (paidImageGeneration): the cover service persists the
+        // picture inside its request call, so settling afterwards
+        // could never truly refuse delivery.
         let result
+        let paidOutcome = null
         try {
           result = await cover.request(identity, coverBody)
         } catch (error) {
           if (!(error instanceof ApiError) || error.code !== 'cover-quota' || !billing.available) throw error
-          if (await billing.hasImageCredit(identity.uid)) {
-            result = await cover.request(identity, coverBody, { credit: true })
-            coverCredit = true
-          } else if (await billing.hasCoins(identity.uid, COIN.imageCoinCost)) {
-            result = await cover.request(identity, coverBody, { credit: true })
-            coverCoins = true
-          } else throw error
+          paidOutcome = await paidImageGeneration(identity, () => cover.request(identity, coverBody, { credit: true }))
+          if (!paidOutcome) throw error
+          result = paidOutcome.result
         }
         if (billing.available) {
-          // Consumption returns are checked (task 1.3): a failed
-          // consume falls back to coins, a short spend refuses the
-          // picture — settleImageCharge throws before any delivery.
-          const settled = await settleImageCharge(identity.uid, { credit: coverCredit, coins: coverCoins })
+          const settled = paidOutcome ?? await settleImageCharge(identity.uid, { credit: false, coins: false })
           await billing.recordImageCost({ uid: identity.uid, scene: 'cover', model: cover.model, creditUsed: settled.creditUsed, coinsSpent: settled.coinsSpent })
         }
         // Cover ledger: identity, story id, model and provider usage only —
@@ -913,25 +973,21 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         const avatarBody = await readCoverJson(request)
         // BILLING: same paid path as covers — past the daily cap, an
         // image credit or the flat coin price buys one more portrait,
-        // spent only on success.
-        let avatarCredit = false
-        let avatarCoins = false
+        // with the payment arranged BEFORE the paid generation runs
+        // (paidImageGeneration; the avatar service persists the
+        // portrait inside its generate call).
         let result
+        let paidOutcome = null
         try {
           result = await avatar.generate(identity, avatarBody)
         } catch (error) {
           if (!(error instanceof ApiError) || error.code !== 'avatar-quota' || !billing.available) throw error
-          if (await billing.hasImageCredit(identity.uid)) {
-            result = await avatar.generate(identity, avatarBody, { credit: true })
-            avatarCredit = true
-          } else if (await billing.hasCoins(identity.uid, COIN.imageCoinCost)) {
-            result = await avatar.generate(identity, avatarBody, { credit: true })
-            avatarCoins = true
-          } else throw error
+          paidOutcome = await paidImageGeneration(identity, () => avatar.generate(identity, avatarBody, { credit: true }))
+          if (!paidOutcome) throw error
+          result = paidOutcome.result
         }
         if (billing.available) {
-          // Same checked settlement as covers (task 1.3).
-          const settled = await settleImageCharge(identity.uid, { credit: avatarCredit, coins: avatarCoins })
+          const settled = paidOutcome ?? await settleImageCharge(identity.uid, { credit: false, coins: false })
           await billing.recordImageCost({ uid: identity.uid, scene: 'avatar', model: avatar.model, creditUsed: settled.creditUsed, coinsSpent: settled.coinsSpent })
         }
         // Avatar ledger: identity, model, anchor kind and provider usage

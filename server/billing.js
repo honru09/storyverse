@@ -729,6 +729,26 @@ export function createBillingService({
         return false
       }
     },
+    /**
+     * The mirror of consumeImageCredit (integrate-00052 review 1.1):
+     * the paid-image path now consumes the credit BEFORE generation
+     * (the picture is persisted inside the generate call, so settling
+     * afterwards could not refuse delivery), and a generation that
+     * then fails hands the credit back through here.
+     */
+    async restoreImageCredit(uid) {
+      if (!backend || typeof uid !== 'string' || !uid) return false
+      try {
+        const { outcome } = await transactEntitlement(uid, (current, setOutcome) => {
+          setOutcome(true)
+          return { ...current, imageCredits: current.imageCredits + 1 }
+        })
+        return outcome === true
+      } catch {
+        log('billing: image credit restore failed')
+        return false
+      }
+    },
 
     // --- coins (REQ-68): daily top-up, balance checks, settlement ---
     applyDailyCoinTopUp,

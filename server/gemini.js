@@ -936,10 +936,43 @@ function contextFor({ story, index, skeleton }, resolvedTemplates = null, qualit
     ? clip(worldSettingOf(worldGenre, story.config), 600)
     : ''
   const safeWorldSetting = sanitizeSettingText(rawWorldSetting)
+  // REQ-69 integration seam (integrate-00052 review 2.3): the beat
+  // plan restates the protagonist anchors, the ability bounds and the
+  // ability effect from the RAW story (storyBeatPlan above), while
+  // compactConfig sanitises those same creator-authored strings into
+  // `config`. Register their [raw, safe] pairs as well, so the scrub
+  // below rewrites the beat plan's copies too and no surface carries
+  // the un-sanitised original. Anchor lines print the NORMALISED
+  // label/fact, so the pairs are built from the normalised values.
+  const restatedTexts = []
+  const collectAnchorTexts = (anchors) => {
+    const normalized = normalizeProtagonistAnchors(anchors)
+    if (!normalized) return
+    for (const event of normalized.events) restatedTexts.push(event.label)
+    restatedTexts.push(...normalized.identityFacts)
+  }
+  const collectAbilityTexts = (config) => {
+    if (!config) return
+    if (typeof config.abilityDesc === 'string' && config.abilityDesc) restatedTexts.push(config.abilityDesc)
+    if (typeof config.abilityBounds === 'string' && config.abilityBounds) restatedTexts.push(config.abilityBounds)
+  }
+  collectAnchorTexts(story.config?.anchors)
+  collectAnchorTexts(story.worldBible?.anchors)
+  collectAbilityTexts(story.config)
+  for (const person of Array.isArray(story.config?.protagonists) ? story.config.protagonists : []) {
+    collectAnchorTexts(person?.anchors)
+    collectAbilityTexts(person)
+  }
   let result = context
   const scrubPairs = [
     [rawSetting, safeSetting],
     [rawWorldSetting, safeWorldSetting],
+    ...restatedTexts.flatMap((raw) => {
+      // The beat plan prints these via cleanText (trim + 240 clip)
+      // and compactConfig via a 120 clip; pair every printed form.
+      const variants = new Set([raw, raw.trim(), clip(raw, 120), clip(raw.trim(), 240)])
+      return [...variants].map((variant) => [variant, sanitizeSettingText(variant)])
+    }),
   ].filter(([raw, safe]) => raw && safe !== raw)
   if (scrubPairs.length) {
     const scrub = (value) => {

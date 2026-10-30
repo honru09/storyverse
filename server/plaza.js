@@ -395,7 +395,7 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
     return ids
   }
 
-  async function assertFusionConsent(identity, story) {
+  async function assertFusionConsent(identity, story, preservedIds = []) {
     if (!socialBackend || typeof socialBackend.getFusionGrant !== 'function') return
     const nonEmpty = (value) => typeof value === 'string' && Boolean(value)
     const fromSources = new Set()
@@ -420,7 +420,13 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         throw new ApiError(400, '这本合流书的来源信息对不上，暂时不能发布。先在本地重新打开这条故事线，再发布一次。')
       }
     }
-    const direct = new Set([...fromSources, ...(reported || [])])
+    // Re-publish preservation (integrate-00052 review 3.3): ids the
+    // SERVER already recorded for this line on an earlier shelving
+    // join the check as direct sources. A client that strips its
+    // local provenance after the first shelving cannot wash the
+    // recorded graph away by re-publishing — the closure still walks
+    // (and refuses) exactly as if the ids had been re-sent.
+    const direct = new Set([...fromSources, ...(reported || []), ...preservedIds])
     if (!direct.size) return
     const visited = new Set()
     const queue = [...direct].map((id) => ({ id, depth: 0 }))
@@ -885,7 +891,8 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         // lines AND for solo entered lines (config.sourcePublicationId),
         // because an entered line re-shelved under the entrant's own
         // name is the first hop of the laundering path this closes.
-        await assertFusionConsent(identity, story)
+        const existing = await findOwnPublication(identity.uid, story.id)
+        await assertFusionConsent(identity, story, recordProvenanceIds(existing))
         const violation = redLineViolation(story)
         if (violation) throw new ApiError(400, violation)
         // Snapshot-source guard (DESIGN §27): a story carrying real
@@ -912,8 +919,13 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           throw new ApiError(400, `书名太长了，最多 ${BOOK_TITLE_MAX} 字。先在设定集里把书名改短一点，再发布。`)
         }
         const timestamp = now().toISOString()
-        const existing = await findOwnPublication(identity.uid, story.id)
-        const sources = await storedSourcesFor(story)
+        const derivedSources = await storedSourcesFor(story)
+        // Re-publish preservation (integrate-00052 review 3.3): a
+        // fresh derivation that comes back empty never erases the
+        // provenance recorded at the first shelving.
+        const sources = derivedSources.length
+          ? derivedSources
+          : (Array.isArray(existing?.sources) ? existing.sources : [])
         const record = {
           id: existing?.id || `pub-${randomUUID().slice(0, 12)}`,
           authorUid: identity.uid,
