@@ -43,6 +43,33 @@ const STYLE_PRESET_IDS = ['default', 'compact', 'immersive', 'austere']
 // dependency-free, like the length totals above).
 const LOREBOOK_LIMITS = { entries: 200, content: 2000, name: 60, key: 40, keys: 12 }
 
+// REQ-59 world-draft bounds, mirrored from src/story-engine.js
+// (PRESET_WORLD_SETTING_MAX / CUSTOM_WORLD_NAME_MAX; the draft map is
+// keyed by preset world id, of which there are six — the cap leaves
+// headroom without letting a corrupt record grow teeth).
+const WORLD_DRAFT_LIMITS = { entries: 12, name: 40, setting: 600 }
+
+function validateWorldDrafts(worldDrafts, prefix, errors) {
+  if (!isRecord(worldDrafts)) {
+    errors.push(`${prefix} must be an object`)
+    return
+  }
+  const keys = Object.keys(worldDrafts)
+  if (keys.length > WORLD_DRAFT_LIMITS.entries) errors.push(`${prefix} exceeds the supported entry count`)
+  for (const key of keys) {
+    const entry = worldDrafts[key]
+    const entryPrefix = `${prefix}.${key}`
+    if (!isRecord(entry)) { errors.push(`${entryPrefix} must be an object`); continue }
+    validateOptionalFields(entry, entryPrefix, ['name', 'setting'], 'string', errors)
+    if (typeof entry.name === 'string' && entry.name.length > WORLD_DRAFT_LIMITS.name) {
+      errors.push(`${entryPrefix}.name is too long`)
+    }
+    if (typeof entry.setting === 'string' && entry.setting.length > WORLD_DRAFT_LIMITS.setting) {
+      errors.push(`${entryPrefix}.setting is too long`)
+    }
+  }
+}
+
 function validateLorebook(lorebook, prefix, errors) {
   if (!Array.isArray(lorebook)) {
     errors.push(`${prefix} must be an array`)
@@ -123,7 +150,7 @@ function validateConfig(config, prefix, errors, merged = false, forStory = false
     return
   }
   validateOptionalFields(config, prefix, CONFIG_TEXT_FIELDS, 'string', errors)
-  validateOptionalFields(config, prefix, ['immersive', 'worldChosen'], 'boolean', errors)
+  validateOptionalFields(config, prefix, ['immersive', 'worldChosen', 'startPointCustom'], 'boolean', errors)
   validateOptionalFields(config, prefix, ['seasonNumber'], 'number', errors)
   if (config.storyLengthMode !== undefined && !['short', 'season', 'long', 'custom', 'endless'].includes(config.storyLengthMode)) {
     errors.push(`${prefix}.storyLengthMode is invalid`)
@@ -153,6 +180,9 @@ function validateConfig(config, prefix, errors, merged = false, forStory = false
   // Absent on every pre-import save and on every public snapshot (the
   // engine strips it there); when present it is a bounded entry list.
   if (config.lorebook !== undefined) validateLorebook(config.lorebook, `${prefix}.lorebook`, errors)
+  // REQ-59: the creator's edited drafts of preset worlds. Absent on
+  // every pre-REQ-59 save; when present a small bounded map.
+  if (config.worldDrafts !== undefined) validateWorldDrafts(config.worldDrafts, `${prefix}.worldDrafts`, errors)
   // 自己写标签 (WRITE-MODE §50): absent on every AI line; when present a
   // short list of short strings.
   if (config.tags !== undefined) {

@@ -1,5 +1,5 @@
 import { ApiError, sanitizeSettingText } from './gemini.js'
-import { GENRES } from '../src/story-engine.js'
+import { CUSTOM_GENRE_ID, GENRES, worldDraftOf, worldNameOf } from '../src/story-engine.js'
 import { dayKeyFor } from './usage.js'
 import { createCoverStore } from './cover-store.js'
 import { transcodeCoverImage } from './cover-image.js'
@@ -61,9 +61,15 @@ function worldOf(payload) {
   const genreId = clip(payload?.config?.genreId || payload?.genreId, 60)
   const genre = GENRES.find((item) => item.id === genreId) || null
   const customName = safeText(payload?.config?.customWorldName, 40)
+  // REQ-59: a preset world whose draft the creator edited paints under
+  // its own name and its own setting text; the catalogue flavour only
+  // seasons a world whose draft was never touched.
+  const draft = genre && genreId !== CUSTOM_GENRE_ID ? worldDraftOf(genre, payload?.config) : null
   return {
-    name: customName || genre?.world || '',
-    flavour: genre ? `${clip(genre.description, 300)} ${clip(genre.tagline, 80)}`.trim() : '',
+    name: customName || (genre ? worldNameOf(genre, payload?.config) : ''),
+    flavour: draft
+      ? safeText(draft.setting, 300)
+      : genre ? `${clip(genre.description, 300)} ${clip(genre.tagline, 80)}`.trim() : '',
   }
 }
 

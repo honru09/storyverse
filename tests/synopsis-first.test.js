@@ -160,7 +160,11 @@ test('the local fallback is factual for template, god-mode and fused books alike
   assert.ok(solo.synopsis.includes('沈砚'))
   assert.ok(solo.intro.background.includes('青岚宗'), solo.intro.background)
   assert.ok(solo.intro.thread.length > 0)
-  assert.deepEqual(solo.intro.rules, [], 'the template bible carries only filler rules — honestly none, never invented ones')
+  // REQ-59 supersede (integration): the preset bible's first rule is no longer
+  // filler — it carries the world's own setting text, which is concrete, so
+  // the fallback keeps exactly that one rule and drops the remaining filler.
+  assert.equal(solo.intro.rules.length, 1, 'only the concrete world-setting rule survives the filler filter')
+  assert.ok(solo.intro.rules[0].startsWith('世界设定（这个世界以此为准）：'), solo.intro.rules[0])
   for (const text of publicWordsOf(solo.intro, solo.synopsis)) {
     assert.equal(introViolationFor(text), null, `fallback copy obeys the bans: ${text}`)
   }

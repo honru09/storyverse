@@ -407,8 +407,11 @@ test('storyBeatPlan models prerequisites, concept grounding, tone shape, and bra
   assert.equal(beat0.chapterNumber, 1)
   assert.equal(beat0.act, '第 1 章 · 开篇')
   // Five since the length batch: world, protagonist, origin, ability, and
-  // the structure line (mode / act position / upgrade points).
-  assert.equal(beat0.prerequisites.length, 5)
+  // the structure line (mode / act position / upgrade points). Six since
+  // REQ-59: a preset world's final setting text rides as its own line,
+  // exactly like the god-mode 创世设定 line always did.
+  assert.equal(beat0.prerequisites.length, 6)
+  assert.ok(beat0.prerequisites.some((item) => item.startsWith('世界设定：') && item.includes('潮汐钟会改写记忆')))
   assert.ok(beat0.mustGround.some((item) => item.includes('第七码头')))
   assert.ok(beat0.mustGround.some((item) => item.includes('听见潮汐')))
   assert.match(beat0.toneDirective, /时间压力|因果逻辑/)
@@ -423,7 +426,7 @@ test('storyBeatPlan models prerequisites, concept grounding, tone shape, and bra
   const queued = queueIntervention(story, { text: '一场突如其来的暴雨封住了码头', readerIndex: 1 })
   const beat2 = storyBeatPlan(queued, 2)
   assert.equal(beat2.chapterNumber, 3)
-  assert.equal(beat2.prerequisites.length, 6)
+  assert.equal(beat2.prerequisites.length, 7)
   assert.ok(beat2.prerequisites.some((item) => item.includes('本章介入') && item.includes('暴雨封住了码头')))
   // …and once the chapter exists, later plans carry it as a landed fact.
   const landed = accept(queued, 2)

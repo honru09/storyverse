@@ -203,6 +203,12 @@ export const GENRES = [
 export const CUSTOM_GENRE_ID = 'custom'
 export const CUSTOM_WORLD_NAME_MAX = 40
 export const CUSTOM_WORLD_SETTING_MAX = 600
+// REQ-59: a preset world is a starting draft, not a fixed canon. The
+// creator may rename it and rewrite its setting text; the draft lives on
+// the config as worldDrafts[genreId] = { name, setting } (a full snapshot
+// of the world's effective text at edit time), and the setting text is
+// bounded exactly like the god-mode setting it now stands beside.
+export const PRESET_WORLD_SETTING_MAX = 600
 // A hand-typed book title caps at the same 30 characters as a hand-renamed
 // chapter title (EDIT-BOOK §29 set that rule for titles a reader edits).
 // Derived titles (the forge suggestion, a fused line's 合流：… name) are
@@ -645,6 +651,10 @@ export const DEFAULT_DRAFT = {
   originIdentityId: '',
   customWorldName: '',
   customWorldSetting: '',
+  // REQ-59: per-preset-world editable drafts ({ [genreId]: { name,
+  // setting } }). Absent/empty for every pre-REQ-59 draft and story —
+  // those keep resolving to the preset's own name and description.
+  worldDrafts: {},
   // 书名 (TITLE-FLOW): the book's own title, chosen by its creator. Empty
   // means "not chosen" — createStory then falls back to the derived
   // suggestion (titleFor). The world keeps its own name either way: the
@@ -660,6 +670,10 @@ export const DEFAULT_DRAFT = {
   stylePreset: 'default',
   startPointName: '',
   startPointHook: '',
+  // REQ-59: true when startPointName/Hook are a spawn point the creator
+  // wrote themselves for a preset world (god mode needs no flag — every
+  // typed point there is custom by construction).
+  startPointCustom: false,
   avatarId: '',
   avatarAppearance: '',
   sourcePublicationId: '',
@@ -899,13 +913,56 @@ const cleanText = (value, fallback = '') => {
 
 const cleanBounded = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : ''
 
-// The name a story's world is actually called. Preset stages use their fixed
-// name; a god-mode world uses the creator's own name (or the placeholder).
-const worldNameOf = (genre, config) => genre.id === CUSTOM_GENRE_ID
-  ? cleanBounded(config?.customWorldName, CUSTOM_WORLD_NAME_MAX) || CUSTOM_GENRE.world
-  : genre.world
-
 const customSettingOf = (config) => cleanBounded(config?.customWorldSetting, CUSTOM_WORLD_SETTING_MAX)
+
+// REQ-59: the creator's edited draft of one preset world, when they have
+// touched it. The entry is a full snapshot of the world's effective text
+// (the forge seeds it from the preset before the first edit lands), so a
+// present entry always speaks for both fields: its name is the world's
+// name and its setting is the world's setting text, even when one of them
+// was deliberately cleared.
+export const worldDraftOf = (genre, config) => {
+  if (!genre || genre.id === CUSTOM_GENRE_ID) return null
+  const entry = config?.worldDrafts?.[genre.id]
+  if (!entry || typeof entry !== 'object') return null
+  return {
+    name: cleanBounded(entry.name, CUSTOM_WORLD_NAME_MAX),
+    setting: cleanBounded(entry.setting, PRESET_WORLD_SETTING_MAX),
+  }
+}
+
+const normalizeWorldDrafts = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const result = {}
+  for (const genre of GENRES) {
+    const entry = value[genre.id]
+    if (!entry || typeof entry !== 'object') continue
+    const name = cleanBounded(entry.name, CUSTOM_WORLD_NAME_MAX)
+    const setting = cleanBounded(entry.setting, PRESET_WORLD_SETTING_MAX)
+    if (name || setting) result[genre.id] = { name, setting }
+  }
+  return result
+}
+
+// The name a story's world is actually called. A god-mode world uses the
+// creator's own name (or the placeholder); a preset world uses the name
+// in the creator's draft of it when they edited one, else the preset's.
+export const worldNameOf = (genre, config) => {
+  if (genre.id === CUSTOM_GENRE_ID) {
+    return cleanBounded(config?.customWorldName, CUSTOM_WORLD_NAME_MAX) || CUSTOM_GENRE.world
+  }
+  return worldDraftOf(genre, config)?.name || genre.world
+}
+
+// The setting text a story's world is defined by: a god-mode world's own
+// setting, or a preset world's draft setting when edited — and the
+// preset's catalogue description as the untouched draft's seed text.
+export const worldSettingOf = (genre, config) => {
+  if (!genre) return ''
+  if (genre.id === CUSTOM_GENRE_ID) return customSettingOf(config)
+  const draft = worldDraftOf(genre, config)
+  return draft ? draft.setting : cleanBounded(genre.description, PRESET_WORLD_SETTING_MAX)
+}
 
 /*
  * 出生点 (spawn point): the small, concrete place where chapter one opens.
@@ -938,6 +995,13 @@ export const resolveStartPoint = (genre, config = {}) => {
   const typedHook = cleanBounded(config?.startPointHook, START_POINT_HOOK_MAX)
   if (genre.id === CUSTOM_GENRE_ID) {
     return named ? { name: named, hook: typedHook, situation: '' } : null
+  }
+  // REQ-59: a spawn point the creator wrote themselves for a preset world.
+  // The flag is what separates a deliberate self-written point from a
+  // stale name left over from another identity's cell or another world —
+  // only a flagged name steps past the cell narrowing below.
+  if (config?.startPointCustom === true && named) {
+    return { name: named, hook: typedHook, situation: '' }
   }
   // With an identity picked, the resolution domain narrows to that identity's
   // landing cell in this world: a name inside the cell uses its table entry,
@@ -1002,11 +1066,13 @@ const normalizeDraft = (draft = {}) => {
     originIdentityId: originIdentityById(input.originIdentityId)?.id || '',
     customWorldName: cleanBounded(input.customWorldName, CUSTOM_WORLD_NAME_MAX),
     customWorldSetting: cleanBounded(input.customWorldSetting, CUSTOM_WORLD_SETTING_MAX),
+    worldDrafts: normalizeWorldDrafts(input.worldDrafts),
     bookTitle: cleanBounded(input.bookTitle, BOOK_TITLE_MAX),
     lorebook: normalizeLorebookEntries(input.lorebook),
     stylePreset: stylePresetById(input.stylePreset)?.id || 'default',
     startPointName: cleanBounded(input.startPointName, START_POINT_NAME_MAX),
     startPointHook: cleanBounded(input.startPointHook, START_POINT_HOOK_MAX),
+    startPointCustom: Boolean(input.startPointCustom),
     // The avatar this book was opened with (empty for every pre-avatar
     // save): the id ties the book to the reader's journeys list, and the
     // appearance line is the copy generation paints the protagonist from.
@@ -1095,9 +1161,7 @@ const outlineFor = (genre, config) => {
   const length = endless ? ENDLESS_ARC_CHAPTERS * 2 : total > 24 ? 20 : total
   const unitCount = endless ? 2 : total === 100 ? 4 : total === 6 ? 1 : 4
   const unitLabel = endless || total === 100 ? '弧' : '幕'
-  const arcClose = genre.id === CUSTOM_GENRE_ID
-    ? `这一弧的账在${worldNameOf(genre, config)}结清，${name}望向更深的地方——下一弧的门已经开了一条缝。`
-    : `这一弧的账在${genre.world}结清，${name}望向更深的地方——下一弧的门已经开了一条缝。`
+  const arcClose = `这一弧的账在${worldNameOf(genre, config)}结清，${name}望向更深的地方——下一弧的门已经开了一条缝。`
   const beats = genre.id === CUSTOM_GENRE_ID
     ? [
       spawn
@@ -1161,6 +1225,49 @@ export const worldBibleFor = (genre, config) => {
     }
   }
   const spawn = resolveStartPoint(genre, config)
+  // REQ-59: the preset bible is no longer stamped from fixed template
+  // sentences. It is composed from the world's FINAL setting text — the
+  // creator's edited draft when they touched it, the preset's own
+  // description as the untouched draft's seed — in the same shape the
+  // god-mode bible uses, so the model (or the local engine) writes the
+  // world's actual appearance and rules from that text, the chosen
+  // craft and this protagonist, instead of inheriting a canned canon.
+  const world = worldNameOf(genre, config)
+  const setting = worldSettingOf(genre, config)
+  return {
+    premise: setting
+      ? `${seasonNumber > 1 ? `第${seasonNumber}季——` : ''}${world}：${setting} ${originPremisePhrase(genre, config)}${name}${detail ? `（${detail}）` : ''}的故事，就从这个世界里开始${spawn ? `，第一幕落在${spawn.name}` : ''}。`
+      : `${seasonNumber > 1 ? `第${seasonNumber}季——` : ''}${world}里，${originPremisePhrase(genre, config)}${name}${detail ? `（${detail}）` : ''}在${spawn?.name || genre.location}醒来，这个世界的样子将随故事逐一显形。`,
+    rules: [
+      ...(setting
+        ? [`世界设定（这个世界以此为准）：${setting}`]
+        : ['这个世界尚无成文规则，第一章将随主角的行动立下第一条。']),
+      '已经发生的事会留下可追踪的回声，不能被无痕抹去。',
+      '能力有边界；每一次越界都会改变关系或世界稳定度。',
+      ...seasonRules,
+    ],
+    endingAnchor: storyLengthModeOf({ config }) === 'endless'
+      ? `${name}的路没有预设的终点：每十二章结清一弧的账，再向更深的地方走一弧，直到讲述者亲手停笔。`
+      : `${name}必须决定${world}的未来走向，以及谁有资格改写它的规则。`,
+    outline: outlineFor(genre, config),
+  }
+}
+
+/*
+ * The preset bible as it was stamped before REQ-59: fixed template
+ * sentences (a canned premise, a canned first rule, a mist-flavoured
+ * ending anchor for every world). Retired as a composition — kept ONLY
+ * so isLocalTemplateBible can still recognise bibles stamped by it. A
+ * stored bible never changes; the template it is compared against did.
+ */
+const legacyPresetBibleFor = (genre, config) => {
+  const name = protagonistName(config)
+  const detail = realityDetail(config)
+  const seasonNumber = Number.isInteger(config?.seasonNumber) && config.seasonNumber > 1 ? config.seasonNumber : 1
+  const seasonRules = seasonNumber > 1
+    ? [`第${seasonNumber}季升格：标尺整体抬高一格——对手的层级、筹码的价码与主角要守的东西都比上一季更重；上一季的结局是这一季的起点，不是重播。`]
+    : []
+  const spawn = resolveStartPoint(genre, config)
   return {
     premise: `${seasonNumber > 1 ? `第${seasonNumber}季——` : ''}${genre.world}里，${originPremisePhrase(genre, config)}${name}${detail ? `（${detail}）` : ''}在${spawn?.name || genre.location}发现一条会被无名外力搅动的世界线。`,
     rules: [
@@ -1174,6 +1281,23 @@ export const worldBibleFor = (genre, config) => {
       : `${name}必须决定把记忆交给谁，以及是否让世界继续保持原样。`,
     outline: outlineFor(genre, config),
   }
+}
+
+/*
+ * Whether a stored bible is one the local engine itself stamped for
+ * this config — the current composition, or (for preset worlds) the
+ * retired pre-REQ-59 one. The plaza snapshot-source guard asks this;
+ * without the legacy arm, every pre-REQ-59 local story whose prose had
+ * drifted across engine versions would suddenly read as unprovable.
+ */
+export const isLocalTemplateBible = (genre, config, bible) => {
+  if (!bible || typeof bible !== 'object') return false
+  const matches = (template) => bible.premise === template.premise
+    && bible.endingAnchor === template.endingAnchor
+    && JSON.stringify(bible.rules || []) === JSON.stringify(template.rules || [])
+    && JSON.stringify(bible.outline || []) === JSON.stringify(template.outline || [])
+  if (matches(worldBibleFor(genre, config))) return true
+  return genre.id !== CUSTOM_GENRE_ID && matches(legacyPresetBibleFor(genre, config))
 }
 
 const validateStory = (story) => {
@@ -2692,8 +2816,13 @@ export function storyBeatPlan(story, index) {
   const prerequisites = [
     isCustom
       ? (spawn ? `世界：${worldDisplay}（由创世者亲手写定的世界；出生点：${spawn.name}）` : `世界：${worldDisplay}（由创世者亲手写定的世界）`)
-      : `世界：${genre.world}（出生点：${spawnName}）`,
+      : `世界：${worldDisplay}（出生点：${spawnName}）`,
     ...(isCustom && customSetting ? [`创世设定：${customSetting}`] : []),
+    // REQ-59: a preset world's final setting text (the creator's edited
+    // draft, or the preset description as its seed) grounds every
+    // chapter's brief the same way the god-mode setting does — the
+    // telling writes the world from THIS text, not from a fixed canon.
+    ...(!isCustom && worldSettingOf(genre, config) ? [`世界设定：${worldSettingOf(genre, config)}`] : []),
     merged
       ? `双主角合流：${name}（规则：${config.merge?.rules === 'separate' ? '各自独立' : '互相融合'}，关系：${config.merge?.bond === 'rivals' ? '竞争' : '合作'}）`
       : `主角：${name}，身份“${identity}”，性格“${cleanText(config.trait, '') || '冷静观察者'}”`,
@@ -3251,8 +3380,11 @@ const redactedSnapshotConfig = (config, name) => ({
   destination: '',
   // A god-mode spawn point is free-form creator text; a share snapshot must
   // not carry it (the snapshot resolves to the world's default spawn point).
+  // REQ-59: the self-written-spawn flag is the same kind of owner state —
+  // cleared with the fields it flags.
   startPointName: '',
   startPointHook: '',
+  startPointCustom: false,
   // The avatar link is the owner's own thread back to their character; a
   // public snapshot is anonymous and keeps neither the id nor the look.
   avatarId: '',
@@ -3812,6 +3944,10 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
         seasonNumber: Number.isInteger(safeConfig.seasonNumber) ? safeConfig.seasonNumber : 1,
         customWorldName: safeConfig.customWorldName || '',
         customWorldSetting: safeConfig.customWorldSetting || '',
+        // REQ-59: the world as its creator finalised it — an entrant
+        // into a renamed/rewritten preset world enters THAT world,
+        // not the stock preset it started from.
+        worldDrafts: safeConfig.worldDrafts || {},
       },
       worldBible,
     },
