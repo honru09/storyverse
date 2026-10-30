@@ -469,9 +469,9 @@ test('createStory without a template choice carries no top-level template id', (
   assert.equal(story.config.genreTemplateId, '')
 })
 
-test('genre templates are pure categories: fifteen of them, none bound to a world', () => {
+test('genre templates are pure categories: twenty-six of them, none bound to a world', () => {
   assert.equal(GENRES.length, 6)
-  assert.equal(GENRE_TEMPLATES.length, 15)
+  assert.equal(GENRE_TEMPLATES.length, 26)
   for (const template of GENRE_TEMPLATES) {
     // Decoupled by product rule: a template carries no world reference at
     // all — only its own brick decoration (symbol/colour).

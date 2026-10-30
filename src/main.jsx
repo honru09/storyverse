@@ -177,8 +177,10 @@ import {
   COMMUNITY_BOOKS,
   CUSTOM_GENRE,
   CUSTOM_GENRE_ID,
+  CUSTOM_GENRE_TEXT_MAX,
   CUSTOM_LENGTH_MAX,
   CUSTOM_LENGTH_MIN,
+  CUSTOM_TEMPLATE_ID,
   CUSTOM_WORLD_NAME_MAX,
   CUSTOM_WORLD_SETTING_MAX,
   DEFAULT_DRAFT,
@@ -240,6 +242,8 @@ import {
   isStoryComplete,
   publicSnapshot,
   resolveStartPoint,
+  customGenreHomeShelfFor,
+  shelfArtBase,
   shelfById,
   shelfForTemplate,
   startNextSeason,
@@ -1974,6 +1978,14 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     const shelf = shelfForTemplate(initialDraft?.genreTemplateId || "");
     return shelf && shelf.templateIds.length > 1 ? shelf.id : null;
   });
+  // REQ-51 revised layout: the shelf taxonomy is step 1's SECOND layer.
+  // It starts open only when a restored draft actually picked a
+  // template (so the pick is visible and changeable); a fresh start or
+  // a custom-genre draft lands on the free-creation hero with the
+  // shelves tucked behind their door.
+  const [shelvesOpen, setShelvesOpen] = useState(() => Boolean(
+    templateWasPicked && initialDraft?.genreTemplateId !== CUSTOM_TEMPLATE_ID,
+  ));
   // The landing path of the last cross-shelf template roll, shown verbatim
   // （悬疑惊悚 · 规则怪谈） so a random pick never hides where it landed.
   const [rolledPath, setRolledPath] = useState(null);
@@ -1999,8 +2011,15 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     // otherwise the wall's first brick. The category is NEVER derived from
     // the world (and the world never from the category): the two picks are
     // independent. God mode is the exception: an empty template there means
-    // "completely free" and must survive the restore.
-    if (base.genreId !== CUSTOM_GENRE.id && !genreTemplateById(base.genreTemplateId)) {
+    // "completely free" and must survive the restore. A restored FREE
+    // genre (REQ-51) is a real pick too: 'custom' with its words intact
+    // resumes as itself, never folded into a stock template.
+    if (base.genreTemplateId === CUSTOM_TEMPLATE_ID) {
+      if (!(base.customGenreText || "").trim()) {
+        base.genreTemplateId = templateWall[0]?.id || "";
+        base.customGenreText = "";
+      }
+    } else if (base.genreId !== CUSTOM_GENRE.id && !genreTemplateById(base.genreTemplateId)) {
       base.genreTemplateId = templateWall[0]?.id || "";
     }
     return base;
@@ -2030,9 +2049,18 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
   const world = isCustom
     ? { ...toWorld(CUSTOM_GENRE), name: customWorldName || CUSTOM_GENRE.world, location: customWorldName || CUSTOM_GENRE.location }
     : toWorld(genreById[draft.genreId] || GENRES[0]);
+  // 自由题材 (REQ-51): a custom pin presents as a template-shaped object
+  // carrying the reader's own words, so every surface that names the
+  // category （摘要/预览/已选行） speaks the reader's genre, never a
+  // borrowed stock name. Its blurb stays empty — the step-one note has
+  // its own custom line.
+  const customGenreActive = draft.genreTemplateId === CUSTOM_TEMPLATE_ID
+    && Boolean((draft.customGenreText || "").trim());
   const template =
     genreTemplateById(draft.genreTemplateId) ||
-    (isCustom ? null : templateWall[0]);
+    (customGenreActive
+      ? { id: CUSTOM_TEMPLATE_ID, name: (draft.customGenreText || "").trim(), fullName: (draft.customGenreText || "").trim(), blurb: "" }
+      : (isCustom ? null : templateWall[0]));
   // The identity is a cross-world concept and survives world switches; the
   // spawn point belongs to (identity × world). When the world changes, a
   // picked spawn point survives only if the new world's cell for the same
@@ -2134,7 +2162,27 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
   const selectTemplate = (item) => {
     setPickedTemplate(true);
     setRolledPath(null);
-    set({ genreTemplateId: item.id });
+    set({ genreTemplateId: item.id, customGenreText: "" });
+  };
+  // 自由题材 (REQ-51): the input keeps its own text while typing (the
+  // custom-length field's discipline) — the draft only carries the
+  // words while the custom pin is live. Typing selects the pin;
+  // clearing the field retires it back to the wall's default brick.
+  // The local text survives template detours, so wandering off to a
+  // stock brick and coming back never costs the reader their words.
+  const [customGenreInput, setCustomGenreInput] = useState(() =>
+    (initialDraft?.genreTemplateId === CUSTOM_TEMPLATE_ID ? (initialDraft?.customGenreText || "") : ""));
+  const applyCustomGenreText = (value) => {
+    const text = value.slice(0, CUSTOM_GENRE_TEXT_MAX);
+    setCustomGenreInput(text);
+    if (text.trim()) {
+      setPickedTemplate(true);
+      setRolledPath(null);
+      setShelfId(null);
+      set({ genreTemplateId: CUSTOM_TEMPLATE_ID, customGenreText: text });
+    } else if (draft.genreTemplateId === CUSTOM_TEMPLATE_ID) {
+      set({ genreTemplateId: templateWall[0]?.id || "", customGenreText: "" });
+    }
   };
   // The template roll draws across ALL shelves' templates and lands on
   // the rolled template's own L2 screen, its full path stated out loud.
@@ -2145,7 +2193,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     const shelf = shelfForTemplate(rolledTemplate.id);
     setPickedTemplate(true);
     setRolledPath({ shelf: shelf?.name || "", template: rolledTemplate });
-    set({ genreTemplateId: rolledTemplate.id });
+    set({ genreTemplateId: rolledTemplate.id, customGenreText: "" });
     setShelfId(shelf && shelf.templateIds.length > 1 ? shelf.id : null);
   };
   // Picking a world touches the world field and lands the world marker —
@@ -2214,6 +2262,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     const point = points.length ? pick(points) : null;
     set({
       genreTemplateId: nextTemplate.id,
+      customGenreText: "",
       genreId: stageGenre.id,
       worldChosen: true,
       originIdentityId: nextIdentity.id,
@@ -2340,6 +2389,12 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     setCardPreview(null);
   };
   const next = () => {
+    // A free genre is reader-authored text like the god-mode setting:
+    // same red-line check on leaving its step, never while typing.
+    if (step === 1 && customGenreActive) {
+      const violation = findSettingViolation(draft.customGenreText);
+      if (violation) { setError(violation); return; }
+    }
     // God-mode settings are checked when leaving the world step (the god
     // form lives there now), not while typing: a refused setting stays on
     // screen, editable, with the reason shown.
@@ -2400,6 +2455,10 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
   }, [step]);
   const submit = async () => {
     if (operation.current) return;
+    if (customGenreActive) {
+      const violation = findSettingViolation(draft.customGenreText);
+      if (violation) { setError(violation); setStep(1); return; }
+    }
     if (isCustom) {
       const violation = findSettingViolation(draft.customWorldSetting);
       if (violation) { setError(violation); setStep(2); return; }
@@ -2492,7 +2551,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                 <div className="forge-section-heading">
                   <div>
                     <h2 tabIndex={-1}>想写哪种故事？</h2>
-                    <p className="step-intro">先挑一个大类，再选具体的写法。题材只是分类——故事发生在哪个世界，下一步由你自己选。</p>
+                    <p className="step-intro">先写你自己的题材；写不出来，分类也备好了。故事发生在哪个世界，下一步由你自己选。</p>
                   </div>
                 </div>
                 <div className="random-combo-row random-combo-row--top">
@@ -2504,7 +2563,67 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                 </Button>
                 </div>
               </div>
-              {openShelf ? (
+              {/* 自由创世 (REQ-51 修订，2026-10-30 23:43 用户亲定): the
+                  open door is the hero of this step now — a large
+                  black-hole visual region with the free-genre input
+                  inside it, so creating is never gated by a category
+                  list. The vortex is pure CSS (transform/opacity
+                  only) and stops under the shell's data-motion policy
+                  and prefers-reduced-motion. Typing selects the custom
+                  genre; the example chips fill the field for readers
+                  who want a running start. */}
+              <div className={`genre-hero ${customGenreActive ? "selected" : ""}`}>
+                <div className="genre-hero-vortex" aria-hidden="true">
+                  <span className="genre-hero-disc" />
+                  <span className="genre-hero-ring genre-hero-ring--a" />
+                  <span className="genre-hero-ring genre-hero-ring--b" />
+                  <span className="genre-hero-core" />
+                </div>
+                <div className="genre-hero-body">
+                  <div className="genre-hero-head">
+                    <strong>自由创世</strong>
+                    {customGenreActive
+                      ? <span className="selected-mark"><Icon name="check" size={13} /></span>
+                      : null}
+                  </div>
+                  <p className="genre-hero-sub">分类里没有的题材，直接写在这里。写法会贴着你写的题材走，借最接近的家族手法打底。</p>
+                  <input
+                    className="custom-genre-input"
+                    type="text"
+                    value={customGenreInput}
+                    maxLength={CUSTOM_GENRE_TEXT_MAX}
+                    autoComplete="off"
+                    aria-label="自己写个题材"
+                    placeholder="例如：民国谍战、末世种田、赛博侦探"
+                    onChange={(event) => applyCustomGenreText(event.target.value)}
+                    onFocus={() => { if (customGenreInput.trim() && !customGenreActive) applyCustomGenreText(customGenreInput); }}
+                  />
+                  <div className="custom-genre-chips">
+                    {["民国谍战", "末世种田", "赛博侦探"].map((example) => (
+                      <button type="button" key={example} className="stage-chip" onClick={() => applyCustomGenreText(example)}>
+                        {example}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {/* 分类的第二层入口：文案是用户原话。当前已选的分类在
+                  入口旁常驻可见，随时能展开回去改。 */}
+              <div className="genre-shelves-door">
+                <button
+                  type="button"
+                  className="genre-shelves-toggle"
+                  aria-expanded={shelvesOpen}
+                  onClick={() => setShelvesOpen((open) => !open)}
+                >
+                  没灵感？试试从分类里找
+                  <span className="genre-shelves-toggle-state">{shelvesOpen ? "收起" : "展开"}</span>
+                </button>
+                {!customGenreActive && template && genreTemplateById(draft.genreTemplateId)
+                  ? <span className="genre-shelves-current">已选：<b>{twoSegmentTemplateName(template)}</b></span>
+                  : null}
+              </div>
+              {shelvesOpen && (openShelf ? (
                 <>
                   <button type="button" className="shelf-back" onClick={() => setShelfId(null)}>
                     <Icon name="chevron" size={15} className="rotate-180" />
@@ -2539,25 +2658,26 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                           type="button"
                           className={`shelf-brick has-art ${holdsPick ? "selected" : ""}`}
                           aria-pressed={only ? holdsPick : undefined}
-                          aria-label={only ? shelf.name : `${shelf.name}，${shelf.templateIds.length} 种写法`}
+                          aria-label={shelf.name}
                           onClick={() => (only ? selectTemplate(only) : setShelfId(shelf.id))}
                         >
                           <img
                             className="shelf-brick-art"
-                            src={`/art/family-${shelf.id}-640.webp`}
-                            srcSet={`/art/family-${shelf.id}-640.webp 640w, /art/family-${shelf.id}-1122.webp 1122w`}
+                            src={`/art/${shelfArtBase(shelf)}-640.webp`}
+                            srcSet={`/art/${shelfArtBase(shelf)}-640.webp 640w, /art/${shelfArtBase(shelf)}-1122.webp 1122w`}
                             sizes="(min-width: 700px) 40vw, 44vw"
                             alt=""
                             loading="lazy"
                             decoding="async"
                           />
                           <strong>{shelf.name}</strong>
-                          {/* One sublabel form for every brick (FINAL-FIX
-                              N5): the count line is always there; the
-                              默认 badge and the selected check overlay
-                              it instead of replacing it, so the grid
-                              never mixes three label grammars. */}
-                          <span className="shelf-brick-count">{shelf.templateIds.length} 种写法</span>
+                          {/* GENRE-FREEDOM (REQ-51): the per-family
+                              template-count line is gone — it was
+                              internal bookkeeping wearing a label's
+                              clothes, and it framed the families as a
+                              closed set. The bricks are inspiration
+                              starts now; the only overlays are the pick
+                              state itself. */}
                           {holdsPick && !pickedTemplate
                             ? <span className="default-badge">默认</span>
                             : holdsPick
@@ -2568,18 +2688,30 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                     );
                   })}
                   <AnimatedContent className="shelf-brick-wrap" distance={8} delay={0.45}>
-                    <button type="button" className="shelf-brick shelf-brick-random" onClick={rollTemplate}>
+                    {/* GENRE-FREEDOM (REQ-51): the random brick is a
+                        full citizen of the grid — same size, same art
+                        treatment (a 3×3 collage of every family's art:
+                        any of them could be the roll), same pick
+                        grammar. No dashed special-case card. */}
+                    <button type="button" className="shelf-brick has-art shelf-brick-random" onClick={rollTemplate}>
+                      <span className="shelf-brick-collage" aria-hidden="true">
+                        {GENRE_SHELVES.slice(0, 9).map((shelf) => (
+                          <img key={shelf.id} src={`/art/${shelfArtBase(shelf)}-640.webp`} alt="" loading="lazy" decoding="async" />
+                        ))}
+                      </span>
                       <strong>随机题材</strong>
                       <span className="shelf-brick-count">掷一次，落在哪算哪</span>
                     </button>
                   </AnimatedContent>
                 </div>
-              )}
+              ))}
               <p className="world-selection-note" aria-live="polite">{rolledPath
                 ? <>命运指到了：<b>{rolledPath.shelf} · {rolledPath.template.name}</b>。不喜欢就再掷一次，或自己挑。</>
-                : template
-                  ? <>已选：<b>{twoSegmentTemplateName(template)}</b>{pickedTemplate ? "" : "（默认）"}。{template.blurb}。</>
-                  : "不绑任何题材模板，写法完全自由。世界在下一步由你决定。"}</p>
+                : customGenreActive
+                  ? <>已选：自定义题材<b>「{draft.customGenreText}」</b>。写法按这个题材的读者预设走，借「{customGenreHomeShelfFor(draft.customGenreText).name}」家族的手法打底。世界在下一步由你决定。</>
+                  : template
+                    ? <>已选：<b>{twoSegmentTemplateName(template)}</b>{pickedTemplate ? "" : "（默认）"}。{template.blurb}。</>
+                    : "不绑任何题材模板，写法完全自由。世界在下一步由你决定。"}</p>
               <button type="button" className="forge-manual-entry" onClick={() => setManualOpen(true)}>
                 <Icon name="pencil" size={20} />
                 <span className="forge-manual-copy">

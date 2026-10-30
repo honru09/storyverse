@@ -21,9 +21,16 @@ test('start flow runs five steps: 题材 世界 出身 主角 开局， and no s
   assert.doesNotMatch(main, /className="step-count"/)
 })
 
-test('step one is a two-level shelf: L1 families first, explanations live in the step intro', () => {
-  assert.match(main, /先挑一个大类，再选具体的写法/)
+test('step one leads with free creation; the two-level shelf is the second layer (REQ-51 revised)', () => {
+  // The 2026-10-30 23:43 ruling inverted the step: the free-genre hero
+  // is the main path, and the taxonomy — still a two-level shelf inside
+  // — sits behind its own door in the user's words. Explanations live
+  // in the step intro and the hero copy, not on the cards.
+  assert.match(main, /先写你自己的题材/)
   assert.match(main, /className="step-intro"/)
+  assert.match(main, /className=\{`genre-hero/)
+  assert.match(main, /没灵感？试试从分类里找/)
+  assert.match(main, /shelvesOpen && \(openShelf/)
   assert.match(main, /className="shelf-grid"/)
   // Single-member families go straight through; multi-member families
   // open their L2 wall, which carries the in-step way back.
@@ -184,7 +191,10 @@ test('draft compatibility: world marker kept, seven-step drafts fold into five',
 })
 
 test('template and world picks stay decoupled: each selection moves only its own axis', () => {
-  assert.match(main, /set\(\{ genreTemplateId: item\.id \}\)/)
+  // REQ-51: picking a shelf template also clears the free-genre pin —
+  // the two are alternatives on the SAME (genre) axis, so the world
+  // axis stays untouched exactly as before.
+  assert.match(main, /set\(\{ genreTemplateId: item\.id, customGenreText: "" \}\)/)
   assert.match(main, /const selectStage = \(genreId\) => \{\s*set\(\{ genreId, worldChosen: true \}\);/)
   assert.match(main, /const rollCombo = \(\) =>/)
   assert.doesNotMatch(main, /recommendedTemplateFor/)

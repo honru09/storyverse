@@ -4,14 +4,20 @@ import { readFileSync } from 'node:fs'
 import { GENRE_TEMPLATES } from '../src/story-engine.js'
 
 // The knowledge base and the engine's category list are two views of the
-// same fourteen templates; this file locks their agreement and the shape
+// same templates; this file locks their agreement and the shape
 // conventions every template (old and new) must keep.
 const knowledge = JSON.parse(readFileSync(new URL('../knowledge/genres.json', import.meta.url), 'utf8'))
 const byId = Object.fromEntries(knowledge.genres.map((genre) => [genre.id, genre]))
-const NEW_IDS = ['gaowu', 'campus', 'horror', 'guize-guatan', 'wuxianliu', 'lishi', 'er-ren']
+// The expansion waves after the founding eight: the 2026-10-27 ring
+// (gaowu…er-ren) and the REQ-51 ring of eleven (wuxia…zhongtian). Both
+// must follow the shuangwen conventions end to end — no shell cards.
+const NEW_IDS = [
+  'gaowu', 'campus', 'horror', 'guize-guatan', 'wuxianliu', 'lishi', 'er-ren',
+  'wuxia', 'chuanyue', 'chongsheng', 'gongdou', 'yulequan', 'moshi', 'lingyi', 'dianjing', 'junshi', 'tiyu', 'zhongtian',
+]
 
-test('knowledge base holds exactly the fourteen engine templates, in sync', () => {
-  assert.equal(knowledge.genres.length, 15)
+test('knowledge base holds exactly the engine templates, in sync', () => {
+  assert.equal(knowledge.genres.length, 26)
   assert.deepEqual(
     knowledge.genres.map((genre) => genre.id).sort(),
     GENRE_TEMPLATES.map((template) => template.id).sort(),
@@ -35,7 +41,7 @@ test('every template keeps the shared shape and the season-beat conventions', ()
   }
 })
 
-test('the six new templates follow the shuangwen conventions end to end', () => {
+test('the expansion templates follow the shuangwen conventions end to end', () => {
   for (const id of NEW_IDS) {
     const genre = byId[id]
     assert.ok(genre, id)
