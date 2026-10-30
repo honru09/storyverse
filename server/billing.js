@@ -632,10 +632,15 @@ export function createBillingService({
     memberDailyTokenCap: memberCap,
 
     // --- metering (fail-open by contract) ---
-    async recordTextCost({ uid, scene, pregenerated, model, usage, storyId, chapterIndex, chapterId, creditUsed = false, coinsSpent = 0 }) {
+    async recordTextCost({ uid, scene, pregenerated, model, usage, storyId, chapterIndex, chapterId, creditUsed = false, coinsSpent = 0, estimated = false, mergedBasis = null }) {
       if (!backend || typeof uid !== 'string' || !uid) return false
       try {
-        const cost = textCostCny(model, usage)
+        // REQ-69 integration seam: a settlement billed on the fallback
+        // estimate (provider returned no usage) must record the
+        // ESTIMATED quantities and say so — recomputing from the raw
+        // 'unknown' usage here would write a zero-cost ledger row for
+        // a chapter that was in fact charged.
+        const cost = estimated ? meteredTextCost(model, usage) : textCostCny(model, usage)
         await backend.addCostRecord({
           id: `cost-${randomUUID()}`,
           uid, kind: 'text', scene: scene || 'chapter',
@@ -648,6 +653,8 @@ export function createBillingService({
           chapterId: typeof chapterId === 'string' ? chapterId : null,
           creditUsed: Boolean(creditUsed),
           coinsSpent: count(coinsSpent),
+          estimated: Boolean(estimated),
+          mergedBasis: typeof mergedBasis === 'string' ? mergedBasis : null,
           day: dayKeyFor(now()),
           at: now().toISOString(),
         })
@@ -727,6 +734,7 @@ export function createBillingService({
     applyDailyCoinTopUp,
     availableCoins,
     coinFreezeForText,
+    meteredTextCost,
     async hasCoins(uid, minimum = 1) {
       return (await availableCoins(uid)) >= Math.max(1, minimum)
     },
