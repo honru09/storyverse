@@ -1,0 +1,16 @@
+你是一名资深代码审查者。工作目录 ~/workspace/storyverse-integrate-00052 是一个中文互动小说 Web 应用（React + Node，单仓）的集成 worktree：基线 e3f8424 之上依次合入了三个分支并加了一个微批，集成 HEAD 是 b6ce1a4。你可以直接读代码、用 git diff e3f8424..HEAD 看全部变更。请逐条复核下面三处跨批交叉面（也可提出新的），每条给出：结论（真问题/不成立/需人工确认）、严重度、代码证据（文件:行号或函数名）、若是真问题的修法建议。最后一句总体结论：可否 push。
+
+背景：三批内容——
+A. kb-integration（REQ-66）：给生成上下文加结构层：章节标题分族三档（chapterTitleStyle 字段逐章）、storyBeatPlan.mustGround 追加题材节奏行（kbArcLineFor）、开篇专用 openingPattern 与 worldSkeletonKb（只第 1 章）、书名公式、简介补双轨金手指/女频骨架/三眼自查。SYSTEM_PROMPT 标题段被重写为分档口径。
+B. content-consistency（REQ-69 内容防复发）：主角硬锚点（config/avatar/worldBible 三处 anchors，storyBeatPlan prerequisites 加「硬约束·锚点」行，章后 chapterDriftWarningsFor 只告警不拦截）、能力 bounds（config.abilityBounds/化身 ability.bounds/ALL_ABILITIES 80 条默认值，简报加「硬约束·能力边界」行，SYSTEM_PROMPT 加硬锚点段与能力边界段）、完本简介对齐通道（buildSynopsisAlignmentDraft/synopsisAlignmentCheck/applySynopsisAlignment，专名必须能在正文语料检索到）。
+C. audit-fixes（REQ-69 安全）：合流发布复检改为本体溯源+publication 图传递闭包；生成门预授权冻结（reserveCoins 冻 26 币/合流 39 币，settleReservation 按实付结算，章额度核销失败回落织币）；兑换与权益写入事务原子化；usage 缺失按 16000 token 估算计费（meteredTextCost）；交付幂等持久化；合流倍率服务端派生。
+微批：广场帖子作者 PATCH 编辑接口（server/plaza-feed.js updatePost + index.js 路由 + 客户端菜单内「编辑该帖」），编辑走与发布同一 cleanPostText（sanitize+500 字上限+findSettingViolation 红线扫描）。
+
+集成时唯一文本冲突在 server/gemini.js：import 取并集；SYSTEM_PROMPT 取 A 的版本（分档标题+简介补强），把 B 的「硬锚点」整段插入第一段与「文笔总则」段之间，B 侧旧的「8–16 字」标题句被 A 的分档口径取代。
+
+重点复核的三处交叉面：
+1. C 的冻结/结算路径（server/index.js 的生成端点接线 + server/billing.js）是否覆盖所有生成 scene：普通章、合流章、介入重写/重掷（revise/reroll）、图片（封面/化身）？B 的漂移告警挂在 accept/replace/reroll 路径上——这些路径与冻结结算的先后顺序有没有互相破坏（例如结算失败不交付时章节是否已被 accept 落盘、或告警章记录与交付幂等登记不一致）？A 的上下文增量（每章 +145–182 字、第 1 章 +504 字）会不会让单章实际成本系统性越过冻结锚（26/39 币，锚 TEXT_TOKEN_FREEZE_ANCHOR=26000），导致 covered=false 频发或差额结算异常？
+2. A 与 B 都往 storyBeatPlan 与生成上下文里加行：A 的 kbArcLineFor 追加行与 B 的 prerequisites 锚点行/bounds 行是否重复、矛盾或互相稀释（例如 KB 节奏行要求第 3 章前「第一次小兑现」与 bounds 的保守边界是否冲突）？SYSTEM_PROMPT 合并后，A 的标题分档段与 B 的硬锚点段、能力边界段有没有互相覆盖的表述（尤其标题口径：全文是否还残留 8–16 字的旧表述与分档打架）？compactConfig 同时带 anchors/abilityBounds 与 chapterTitleStyle/openingPattern 的字段拼装有没有键冲突或 scrub 遗漏？
+3. B 的 applySynopsisAlignment 只改 synopsis/intro 不动 sources/config——它写回后若再走发布，C 的溯源派生（sources[].publicationId ∪ sourcePublicationIds ∪ config.sourcePublicationId）与闭包核查是否仍完整？反过来，C 的 storedSourcesFor 在发布时写入 record.sources，B 的 redactedSnapshotConfig 剥除 anchors/abilityBounds 的口径与 C 的快照/溯源字段有没有交叉污染（例如对齐通道或快照把 publicationId 溯源字段误剥）？solo 进入线经对齐通道改简介后再发布，闭包复检是否仍能穿回原书？
+
+已知且已接受的边界（不要重复报告为新问题）：合流首架前剥光三处溯源与真无溯源旧线不可区分（按口径放行）；冻结锚高于实测最贵单章约 22 币是有意缓冲；漂移告警只记不拦是有意设计；对齐通道专名抽取是启发式、靠人工确认兜底。

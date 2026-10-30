@@ -1,0 +1,122 @@
+基于 `e3f8424..b6ce1a4` 的全量 diff 与源码走查，下面按三处跨批交叉面（含各子问题拆解）及微批逐条给出复核结果：
+
+---
+
+### 交叉面 1：C 的冻结/结算路径覆盖、B 的漂移告警先后顺序、A 的上下文增量成本
+
+#### 1.1 生成门预授权冻结与结算是否覆盖全部生成 scene（普通章、合流章、介入重写/重掷、封面/化身图片）
+- **结论**：**真问题**（文本类 5 种 scene 已完整覆盖；**图片类付费生成未接入预冻结，且存在「先落盘后结算」导致 402 时仍白嫖落盘的漏洞**；另有一处文本结算 `covered: false` 漏记 `cost_records` 的小瑕疵）
+- **严重度**：**中危 (Medium)**（图片生成先落盘后扣费 + 并发竞态）/ **低危 (Low)**（文本 `covered: false` 漏写成本流水）
+- **代码证据**：
+  1. **文本全 scene 已覆盖（不成立问题）**：普通章（`chapter`）、进入线（`entered`）、合流章（`fusion`）、介入重写（`mode: 'revise'` → `intervention`）、重掷（`mode: 'reroll'` → `reroll`）统一走 [server/index.js](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L568-L807) 的 `POST /api/generate`。[deriveMerged](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L389-L401) 从服务端书架权威记录派生 `merged`，[textSceneFor](file:///home/hatch/workspace/storyverse-integrate-00052/server/billing.js#L227-L234) 判定 `scene`，[coinFreezeForText](file:///home/hatch/workspace/storyverse-integrate-00052/server/billing.js#L176-L178) 将 `{ scene, merged }` 一并传给 [coinCostForText](file:///home/hatch/workspace/storyverse-integrate-00052/server/billing.js#L148-L155)（第 151 行判断 `if (scene === 'fusion' || merged)`）。因此即使合流书走 `revise` 或 `reroll`，也会按合流倍率预冻 **39 币**并在 [settleReservation](file:///home/hatch/workspace/storyverse-integrate-00052/server/billing.js#L755-L832) 按 1.5x（会员 1.2x）实付结算。
+  2. **图片付费分支未走预冻结且先落盘后扣费（真问题）**：
+     - 封面路由 [server/index.js](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L808-L858) 与化身立绘路由 [server/index.js](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L902-L950) 在免费日额度用尽走付费分支时（`credit === true`），仅在调上游前做非原子 [hasImageCredit](file:///home/hatch/workspace/storyverse-integrate-00052/server/billing.js#L557-L561) / [hasCoins](file:///home/hatch/workspace/storyverse-integrate-00052/server/billing.js#L569-L573) 读检查（[server/index.js](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L830-L835)、[server/index.js](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L923-L928)），未调用 [reserveCoins](file:///home/hatch/workspace/storyverse-integrate-00052/server/billing.js#L714-L751) 冻结 `COIN.imageCoinCost`（40 币），并发发两张图（或一张图 + 一章正文）可穿透同一笔 40 币余额。
+     - 更关键的是：[cover.request](file:///home/hatch/workspace/storyverse-integrate-00052/server/cover.js#L156-L234) 内部在第 208–220 行已执行 `backend.putCover(key, { status: 'ready', ... }, buffer)`，[avatar.generate](file:///home/hatch/workspace/storyverse-integrate-00052/server/avatar.js#L256-L343) 内部在第 315–340 行已执行 `backend.putImage(uid, buffer, ...)` 与 `commit(ready)`，**随后才返回到 [server/index.js](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L837-L842) / [server/index.js](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L929-L934) 调用 [settleImageCharge](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L411-L427)**。当 `settleImageCharge` 因余额被并发花光而抛出 `402 coins-exhausted` 时，只拦截了当次 `POST` 响应体，生成的封面/化身立绘已经写入 `coverStore`/`avatarStore`，客户端刷新或调 `GET /api/cover`、`GET /api/avatar/image` 即可无偿拿到成品。（注：[tests/audit-generation-gate.test.js](file:///home/hatch/workspace/storyverse-integrate-00052/tests/audit-generation-gate.test.js#L254-L271) 因使用不写 store 的 mock `cover.request`，未能暴露该落盘副作用。）
+  3. **文本结算 `covered: false` 时漏记 `recordTextCost`（低危真问题）**：在 [server/index.js](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L755-L785) 中，当 [settleReservation](file:///home/hatch/workspace/storyverse-integrate-00052/server/billing.js#L794-L815) 因实付超冻结锚且余额不足返回 `{ spent, covered: false }` 时，第 759–770 行直接抛 `ApiError(402, ...)`，跳过了第 771–784 行的 [recordTextCost](file:///home/hatch/workspace/storyverse-integrate-00052/server/billing.js#L859-L895)，导致上游 token 已消耗、用户账面也扣了 `settled.spent` 织币，但 `cost_records` 缺少对应流水。
+- **修法建议**：
+  1. 图片付费分支（`credit === true` 且无 `imageCredits` 时）在调用 `cover.request` / `avatar.generate` 前同样调用 `billing.reserveCoins(uid, COIN.imageCoinCost)`，或将 `settleImageCharge` 拆成「上游生成成功后、写入 `coverStore`/`avatarStore` 之前」的回调门禁（结算成功才 `putCover` / `putImage`）。
+  2. 在 [server/index.js](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L759-L785) 中，先执行 `await billing.recordTextCost(...)`（按实扣 `settled.spent` 记录），再对 `!settled?.covered` 抛出 402。
+
+---
+
+#### 1.2 B 的漂移告警（accept/replace/reroll）与 C 的冻结结算及交付幂等登记的先后顺序是否互相破坏
+- **结论**：**不成立**
+- **严重度**：**无 (None)**
+- **代码证据**：
+  1. 服务端 [validatedRequest](file:///home/hatch/workspace/storyverse-integrate-00052/server/gemini.js#L302) 调用的 `acceptChapter(story, skeleton, key)` 仅对占位 `skeleton` 做纯函数入参校验，不修改 `story` 也不落盘。
+  2. 真正挂载 [withDriftWarnings](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L4510-L4517) 的 [acceptChapter](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L4519-L4538)、[replaceChapter](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L2471-L2486)、[replaceFrontierChapter](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L3516-L3535) 全部在**客户端**的 [acceptGeneratedChapter](file:///home/hatch/workspace/storyverse-integrate-00052/src/generation.js#L67-L92)、[acceptRevisedChapter](file:///home/hatch/workspace/storyverse-integrate-00052/src/generation.js#L159-L168)、[acceptRerolledChapter](file:///home/hatch/workspace/storyverse-integrate-00052/src/generation.js#L188-L210) 中执行，严格发生在服务端完成 [settleReservation](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L755) + [deliveries.putDelivery](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L792) 并返回 HTTP 200 之后。若冻结（429）或结算（402）失败，[sendGenerateRequest](file:///home/hatch/workspace/storyverse-integrate-00052/src/generation.js#L133-L143) 直接抛错，客户端不会执行 accept/replace，原章节保持不变（见 [reviseChapter](file:///home/hatch/workspace/storyverse-integrate-00052/src/main.jsx#L12479-L12497)、[rerollChapter](file:///home/hatch/workspace/storyverse-integrate-00052/src/main.jsx#L12506-L12528)）。
+  3. 幂等键 [deliveryKeyFor](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L57-L84) 只提取 `story.chapters.map((chapter) => chapter?.id)`，不读 `chapter.driftWarnings`；`putDelivery` 缓存的是服务端原始 `result`，重放时客户端对同一 `result` 再次跑确定性的 `withDriftWarnings`，结果完全一致；后续章请求携带前序章节的 `driftWarnings` 也已获 [validateLibrary](file:///home/hatch/workspace/storyverse-integrate-00052/src/persistence.js#L349-L359) 放行。
+
+---
+
+#### 1.3 A 的上下文增量是否会让单章实际成本系统性越过冻结锚（26/39 币，`TEXT_TOKEN_FREEZE_ANCHOR = 26000`）
+- **结论**：**不成立**
+- **严重度**：**无 (None)**
+- **代码证据**：
+  - 冻结锚定在 [TEXT_TOKEN_FREEZE_ANCHOR](file:///home/hatch/workspace/storyverse-integrate-00052/server/billing.js#L172) = `26000` tokens（普通章 26 币 / 合流章 39 币，见 [coinFreezeForText](file:///home/hatch/workspace/storyverse-integrate-00052/server/billing.js#L176-L178)），而单章实测均值约 13,000–15,000 tokens、最贵单章约 22,000 tokens（22 币），预留了约 **4,000 tokens（4 币）** 的缓冲。
+  - A 批在 [contextFor](file:///home/hatch/workspace/storyverse-integrate-00052/server/gemini.js#L859-L868) 与 [storyBeatPlan](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L4092-L4096) 中：
+    - 每章常驻增量仅 `chapterTitleStyle`（~107 字）+ `kbArcLineFor`（~38–75 字）= **+145–182 字/章**（折合 ~100–150 input tokens，约 0.1–0.15 币），静态 `SYSTEM_PROMPT` 净增约 985 字（A 批 +591 字、B 批硬锚点段 +394 字，折合 ~700 tokens），合计仅消耗 4,000 tokens 缓冲的约 20%。
+    - 第 1 章虽额外带 `openingPattern` + `worldSkeletonKb`（+504 字）和 `blurbAnchors`，但第 1 章尚无历史章节 `summaries`、`recentChapter`（最高 6000 字）和 `ledger`，总 input 远低于中后段章节（通常 <12,000 tokens），不可能越过 26,000 tokens 冻结锚。
+
+---
+
+### 交叉面 2：A 与 B 在 `storyBeatPlan`、`SYSTEM_PROMPT`、`compactConfig` / `contextFor` 的交叉
+
+#### 2.1 `kbArcLineFor` 追加行与 B 的 `prerequisites` 锚点行/能力边界行是否重复、矛盾或互相稀释
+- **结论**：**不成立**
+- **严重度**：**无 (None)**
+- **代码证据**：
+  - **结构隔离**：B 的 [anchorConstraintLines](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L3980-L3983) 与 [abilityBoundsLine](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L3991-L3996) 写入 `beatPlan.prerequisites`（静态前置硬约束）；A 的 [kbArcLineFor](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L4092-L4096)、`KB_SEASON_FINALE_LINE`、`KB_UPGRADE_RITUAL_LINE` 追加在 `beatPlan.mustGround`（当章剧情落点），分属不同数组，无重复。
+  - **语义兼容**：A 在第 1 章 [openingPatternFor](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L3748-L3775) 和第 3 章 [KB_ARC_LINES](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L3722) 要求「金手指、先知或底牌第一次真正见效」，而 B 的 [abilityBoundsLine](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L993-L997) 约束的是「只能在这个边界内使用它，不得越界膨胀（不能从一种作用滑到另一种作用、不能无媒介全知）；正文里出现任何新能力，必须先有剧情里的授予事件（传承、交易、觉醒、缴获）」。前者要求「本职能力按期兑现」，后者禁止「跨类目膨胀为读心/全知」并显式允许通过「觉醒/传承/交易/缴获」获得新能力，两者互补而不冲突。
+
+---
+
+#### 2.2 `SYSTEM_PROMPT` 合并后标题分档段与硬锚点/能力边界段是否互相覆盖或残留 `8–16 字` 旧口径
+- **结论**：**不成立**
+- **严重度**：**无 (None)**
+- **代码证据**：
+  - 全仓检索 `server/` 与 `src/`，旧的「8–16 字」章节标题指令已完全清除（仅在 [src/story-engine.js](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L3623-L3658) 的历史背景注释及 `long` 档定义 `min: 8, max: 16` 中出现）。
+  - [server/gemini.js](file:///home/hatch/workspace/storyverse-integrate-00052/server/gemini.js#L70) 的 `responseSchema.properties.title.description` 与 [SYSTEM_PROMPT](file:///home/hatch/workspace/storyverse-integrate-00052/server/gemini.js#L973-L975) 均统一为 `context.chapterTitleStyle` 三档口径：第 973 行是 A 批简介三段规则，第 974 行是 B 批插入的「硬锚点（与篇幅同级）」与「硬约束·能力边界」段，第 975 行是 A 批「文笔总则」（含 `chapterTitleStyle`、`openingPattern`、`worldSkeletonKb`），段落边界清晰，无相互覆盖。
+
+---
+
+#### 2.3 `compactConfig` 与 `contextFor` 字段拼装是否有键冲突或 scrub 遗漏
+- **结论**：**真问题**（无键冲突，但存在 **scrub 遗漏**：`anchors` 与 `abilityBounds` 在 `compactConfig` / `worldBible` 中做了 `sanitizeSettingText`，却以**未清洗原文**漏进了 `context.beatPlan.prerequisites`）
+- **严重度**：**低–中危 (Low–Medium)**（防注入清洗绕过：用户自填的 `abilityBounds`、`anchors.events[].label`、`anchors.identityFacts[]` 中的 `<system>` / `忽略以上所有指令` 等标记会原样进入发给模型的 `beatPlan.prerequisites`）
+- **代码证据**：
+  1. **键空间无冲突**：B 批新增字段挂在 `context.config.anchors`、`context.config.abilityBounds`、`context.config.protagonists[].{anchors,abilityBounds}`（[compactConfig](file:///home/hatch/workspace/storyverse-integrate-00052/server/gemini.js#L393-L442)）及 `context.worldBible.anchors`（[contextFor](file:///home/hatch/workspace/storyverse-integrate-00052/server/gemini.js#L775-L784)）；A 批新增字段挂在 `context` 顶层的 `chapterTitleStyle`、`openingPattern`、`worldSkeletonKb`（[contextFor](file:///home/hatch/workspace/storyverse-integrate-00052/server/gemini.js#L859-L868)），键名完全正交。
+  2. **Scrub 遗漏证据**：
+     - 在 [compactConfig](file:///home/hatch/workspace/storyverse-integrate-00052/server/gemini.js#L393-L405)（及第 434–441 行合流 `protagonists`）和 [contextFor](file:///home/hatch/workspace/storyverse-integrate-00052/server/gemini.js#L775-L784) 中，B 批特意对 `abilityBounds`、`anchors.events[].label`、`anchors.identityFacts[]` 调用了 [sanitizeSettingText](file:///home/hatch/workspace/storyverse-integrate-00052/server/gemini.js#L332-L342)（注释明确写明："the free-text parts (event labels, identity facts) are creator-authored, so they are sanitised like the persona. The beat plan restates them as hard constraints"）。
+     - 然而 [contextFor](file:///home/hatch/workspace/storyverse-integrate-00052/server/gemini.js#L725) 在第 725 行直接对**未清洗的原始 `story`** 调用了 `const beatPlan = storyBeatPlan(story, index)`。[storyBeatPlan](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L3975-L3996) 将原始 `config.anchors`、`config.protagonists[].anchors`、`story.worldBible.anchors`、`config.abilityBounds`、`config.protagonists[].abilityBounds`（以及第 3975 行的 `config.abilityDesc` 和第 4010/4016 行的 `interventions`）直接拼进 `beatPlan.prerequisites` 字符串数组。
+     - 随后在 [contextFor](file:///home/hatch/workspace/storyverse-integrate-00052/server/gemini.js#L940-L956) 末尾，`scrubPairs` **只登记了 `[rawSetting, safeSetting]` 和 `[rawWorldSetting, safeWorldSetting]`**，没有把 `anchors` / `abilityBounds`（及 `abilityDesc`）的 `[raw, safe]` 放进 `scrubPairs`，也没有用清洗后的 config/bible 去构造 `storyBeatPlan`。因此未清洗的原文会留在 `result.beatPlan.prerequisites` 中直达模型。
+- **修法建议**：
+  - 在 [contextFor](file:///home/hatch/workspace/storyverse-integrate-00052/server/gemini.js#L725) 中，先构造清洗过 `config`（含 `anchors`、`abilityBounds`、`abilityDesc`、`protagonists`）与 `worldBible.anchors`（以及 `interventions`）的 sanitized story 视图再传入 `storyBeatPlan`，或将上述字段的 `[raw, sanitizeSettingText(raw)]` 一并推入第 940 行的 `scrubPairs`。
+
+---
+
+### 交叉面 3：B 的完本简介对齐通道与 C 的合流/进入线溯源及快照脱敏的交叉
+
+#### 3.1 `applySynopsisAlignment` 写回后再发布，C 的溯源派生与闭包核查是否仍完整
+- **结论**：**不成立**（溯源派生与闭包核查完整保留）
+- **严重度**：**无 (None)**
+- **代码证据**：
+  - [applySynopsisAlignment](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L3088-L3101) 校验通过后仅调用 [updateSynopsis](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L2581-L2593) 和 [updateIntro](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L2877-L2906)。这两个函数均采用 `{ ...story, updatedAt: now() }` 浅拷贝并只改写 `story.synopsis` 与 `story.intro`，完全不触碰 `story.sources`、`story.sourcePublicationIds` 及 `story.config.sourcePublicationId`。
+  - 写回后发布时，C 批的 [redLineViolation](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza.js#L188-L199) 会扫描新的 `story.synopsis` 和 `story.intro.*`（`collectStrings(story.intro)`），[assertFusionConsent](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza.js#L398-L454) 仍从 `story.sources[].publicationId ∪ story.sourcePublicationIds ∪ story.config.sourcePublicationId` 完整派生直接源集合并执行 BFS 传递闭包。
+
+---
+
+#### 3.2 C 的 `storedSourcesFor` 与 B 的 `redactedSnapshotConfig` 是否有交叉污染（误剥 `publicationId` 或泄露 `anchors`/`abilityBounds`）
+- **结论**：**不成立**
+- **严重度**：**无 (None)**
+- **代码证据**：
+  - B 批在 [redactedSnapshotConfig](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L4592-L4596) 中将快照内 `safeConfig.anchors = null`、`safeConfig.abilityBounds = ''`、`safeConfig.sourcePublicationId = ''` 一并置空；合流快照的 `safeConfig.protagonists`（[plazaSnapshot](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L5159-L5165)）与 `worldBible`（[plazaSnapshot](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L5235-L5240)）也均不拷贝 `anchors` 和 `abilityBounds`，私有锚点不会泄露到广场快照。
+  - 同时，C 批在 [plaza.publish](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza.js#L888-L937) 中，[assertFusionConsent](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza.js#L888) 与 [storedSourcesFor](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza.js#L916) 读取的都是**入参原始 `story`**（而非脱敏后的 `snapshot.config`），并将解析后的溯源数组持久化在服务端记录顶层的 `record.sources`（[server/plaza.js](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza.js#L937)）。闭包展开函数 [recordProvenanceIds](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza.js#L388-L396) 优先读取 `record.sources`，因此 `redactedSnapshotConfig` 清空 `safeConfig.sourcePublicationId` 不会污染或剥除服务端溯源图。
+
+---
+
+#### 3.3 solo 进入线经对齐通道改简介后再发布，闭包复检是否仍能穿回原书（附：重发更新时的防篡改加固点）
+- **结论**：**不成立**（正常对齐改简介后发布/重发，闭包均能完整穿回原书；但附带发现一处**重发更新（re-publish）时未合并服务端已存 `existing.sources`** 的加固缺口）
+- **严重度**：正常路径 **无 (None)**；恶意篡改重发路径 **低危 (Low)**
+- **代码证据**：
+  1. **正常对齐发布路径完全闭环**：读者进入原书 `pub-A` 时，[enterDraftFor](file:///home/hatch/workspace/storyverse-integrate-00052/src/plaza.js#L609-L647) 在第 641 行写入 `sourcePublicationId: detail?.id || ''`。走完后经 [applySynopsisAlignment](file:///home/hatch/workspace/storyverse-integrate-00052/src/story-engine.js#L3088-L3101) 改简介，`story.config.sourcePublicationId` 保持 `'pub-A'` 不变。发布为 `pub-B` 时：
+     - [assertFusionConsent](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza.js#L405) 读取 `story.config?.sourcePublicationId` 对 `pub-A` 及其上游闭包做授权与在架核查；
+     - [storedSourcesFor](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza.js#L298-L318) 专门针对 `story.kind !== 'merged'` 提取 `story.config.sourcePublicationId` 写入 `pub-B` 的 `record.sources`；
+     - 后续无论是 `pub-B` 再经对齐通道改简介重发，还是第三人拿 `pub-B` 去合流/再进入，[recordProvenanceIds](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza.js#L388-L396) 都能从 `pub-B.sources` 穿回 `pub-A`。
+  2. **附带发现（已上架书重发更新时的溯源覆盖）**：在 [plaza.publish](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza.js#L888-L937) 中，当一本已上架的书（`existing = await findOwnPublication(identity.uid, story.id)` 不为空，且 `existing.sources` 已在首次上架时落盘）再次调用 `publish` 更新时，[assertFusionConsent](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza.js#L398-L423) 仅从当次客户端上送的 `story` 提取 `direct` 源集合，且第 916/937 行 `const sources = await storedSourcesFor(story)` 会直接覆盖 `record.sources`。如果恶意客户端在**首架之后**通过脚本剥掉本地 `story` 的三处溯源再调重发，会把服务端已落盘的 `existing.sources` 洗空。
+- **修法建议**（针对附带发现）：
+  - 在 [plaza.publish](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza.js#L888-L916) 中先查 `existing = await findOwnPublication(identity.uid, story.id)`，将 `recordProvenanceIds(existing)` 并入 `assertFusionConsent` 的 `direct` 集合；且在 `storedSourcesFor(story)` 返回空而 `existing?.sources?.length` 非空时保留 `existing.sources`。
+
+---
+
+### 微批复核：广场帖子作者 `PATCH /api/plaza/posts/:id` 编辑（`b6ce1a4`）
+- **结论**：**不成立**（实现干净、权限与红线门禁严密）
+- **严重度**：**无 (None)**
+- **代码证据**：
+  - 服务端 [updatePost](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza-feed.js#L275-L287) 在 `serialise('post:' + id)` 互斥锁内校验 `post.status === 'active'`（已删或举报满 3 人自动隐藏的帖子均拒绝编辑，防洗白已隐藏帖）、`post.authorUid === identity.uid`（非作者返 403），并复用与发帖完全一致的 [cleanPostText](file:///home/hatch/workspace/storyverse-integrate-00052/server/plaza-feed.js#L43-L50)（`sanitizeSettingText` + 500 字上限 + `findSettingViolation` 红线扫描），只更新 `content` 与 `updatedAt`。
+  - 路由层 [server/index.js](file:///home/hatch/workspace/storyverse-integrate-00052/server/index.js#L1484-L1497) 与客户端 [PlazaPostCard](file:///home/hatch/workspace/storyverse-integrate-00052/src/main.jsx#L7168-L7267) 接线完整，单测覆盖充分。
+
+---
+
+### 总体结论
+
+**可 push（各批次主体功能与三处跨批主干逻辑均无阻断性冲突；建议在 push 前或紧随其后的小补丁中顺手修掉「1.1 图片生成先落盘后扣费/未预冻结」与「2.3 `beatPlan.prerequisites` 的 `anchors`/`abilityBounds` scrub 遗漏」两处中低危真问题）。**
