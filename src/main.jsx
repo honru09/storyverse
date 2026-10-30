@@ -93,6 +93,7 @@ import {
   publishToPlaza,
   rateBook,
   ratingAverageText,
+  recordPlazaRead,
   reportPlazaPost,
   reportPostComment,
   reportPublication,
@@ -7015,7 +7016,7 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
           <h1 className={`is-${plazaTitleTierFor(detail.title)}`}>《{detail.title}》</h1>
           <p>{detail.manual
             ? <>{shelfById(detail.shelfId)?.name ? `${shelfById(detail.shelfId).name} · ` : ""}作者手写 · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"} · 作者 {detail.authorName}</>
-            : <>{detail.worldName} × {templateName} · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"} · 作者 {detail.authorName}</>}</p>
+            : <>{detail.worldName} × {templateName} · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"} · 作者 {detail.authorName}</>} · 阅读量 {countTextFor(detail.readCount)}</p>
           {detail.merged && Array.isArray(detail.sourceTitles) && detail.sourceTitles.length === 2 && (
             <span className="plaza-badge is-fused">由《{detail.sourceTitles[0]}》×《{detail.sourceTitles[1]}》融合而来</span>
           )}
@@ -10831,6 +10832,25 @@ function App() {
       .catch(() => { if (!cancelled) setPlazaRouteFailed(true); });
     return () => { cancelled = true; };
   }, [pageRoute.plaza, pageRoute.id, plazaLines, plazaRetryTick]);
+  // READ-COUNT (REQ-42): a shelved book's text resolving into the
+  // reader IS the open that counts — the same moment the line lands
+  // for reading, beside where its opened-through reading begins.
+  // Fired once per publication per app session (the server's daily
+  // claim dedups across sessions), only for signed-in readers, and
+  // strictly fire-and-forget: counting must never gate or disturb
+  // reading. Shelf books and entered copies carry local story ids,
+  // so only plaza-line stories (the published text itself, including
+  // the shared official sample) can ever fire this.
+  const readCountFiredRef = useRef(new Set());
+  useEffect(() => {
+    if (view !== "reader" || !account?.user) return;
+    const storyId = readerStory?.id || "";
+    if (!storyId.startsWith("plaza-line-")) return;
+    const publicationId = storyId.slice("plaza-line-".length);
+    if (!publicationId || readCountFiredRef.current.has(publicationId)) return;
+    readCountFiredRef.current.add(publicationId);
+    recordPlazaRead({ id: publicationId, getAccessToken: () => authClient.getAccessToken() }).catch(() => {});
+  }, [view, readerStory?.id, account?.user]);
   // Reader-miss grace (§40 ⓪): a requested book that does not resolve
   // gets a short window for the cloud library to land before the route
   // may call it missing — and once declared missing it shows an honest

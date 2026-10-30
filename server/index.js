@@ -1001,6 +1001,26 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           return sendJson(response, 200, await ratings.remove(identity, id))
         }
       }
+      const storeReadMatch = pathname.match(/^\/api\/store\/([^/]+)\/read$/)
+      if (storeReadMatch && request.method === 'POST') {
+        // Recording a read (READ-COUNT, REQ-42): the reader's client
+        // fires this as the book's text opens in the reader; the
+        // service applies the counting rule (signed-in, not the
+        // author, once per reader per book per day). Guests get the
+        // sign-in error — their opens never count — and the client
+        // treats every outcome as fire-and-forget, so a failure here
+        // can never block reading.
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) {
+            throw new ApiError(401, '请先登录，再阅读这本书。', 'auth-required')
+          }
+          throw error
+        }
+        return sendJson(response, 200, await plaza.recordRead(identity, decodeURIComponent(storeReadMatch[1])))
+      }
       const storeMatch = pathname.match(/^\/api\/store\/([^/]+)(?:\/(report|withdraw|portrait|cover))?$/)
       if (storeMatch) {
         const id = decodeURIComponent(storeMatch[1])

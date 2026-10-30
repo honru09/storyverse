@@ -7,6 +7,8 @@ import { emptyLibrary, validateLibrary } from '../src/persistence.js'
 import { avatarAppearanceText } from '../src/avatar.js'
 import { usernameUid } from './username-auth.js'
 import { createPlazaStore } from './plaza-store.js'
+import { createReadCountStore } from './read-count-store.js'
+import { dayKeyFor } from './usage.js'
 import { createAvatarStore } from './avatar-store.js'
 import { createCoverStore } from './cover-store.js'
 import { createSocialStore, pictureSourceFor } from './social-store.js'
@@ -94,10 +96,14 @@ function summaryOf(record) {
     // this book, maintained by the feed service as posts come and go;
     // the rating pair (RATINGS) is the ratings service's denormalised
     // summary of the book's real rating records — honestly zero until
-    // a real rating exists, and never set by anything else.
+    // a real rating exists, and never set by anything else. readCount
+    // (READ-COUNT, REQ-42) is the read claims' denormalised total:
+    // signed-in non-author readers who opened the book's text, once
+    // per reader per day — honestly zero until a real read exists.
     shareCount: Math.max(0, record.shareCount || 0),
     ratingAverage: typeof record.ratingAverage === 'number' ? record.ratingAverage : 0,
     ratingCount: Math.max(0, record.ratingCount || 0),
+    readCount: Math.max(0, record.readCount || 0),
     // Fused-line provenance (FUSION2): a fused endless line publishes
     // like any endless line; the flag and the two source titles (already
     // redacted inside the snapshot) let every surface label it
@@ -218,8 +224,9 @@ function scrubSnapshotSetting(snapshot) {
   }
 }
 
-export function createPlazaService({ env = process.env, store, avatarStore, socialStore, coverStore, now = () => new Date() } = {}) {
+export function createPlazaService({ env = process.env, store, avatarStore, socialStore, coverStore, readStore, now = () => new Date() } = {}) {
   const backend = store === undefined ? createPlazaStore({ env }) : store
+  const readClaims = readStore === undefined ? createReadCountStore({ env }) : readStore
   const avatars = avatarStore === undefined ? createAvatarStore({ env }) : avatarStore
   const socialBackend = socialStore === undefined ? createSocialStore({ env }) : socialStore
   const covers = coverStore === undefined ? createCoverStore({ env }) : coverStore
@@ -429,6 +436,48 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
       })
     },
 
+    /**
+     * Record one read of a shelved book (READ-COUNT, REQ-42). The
+     * counting rule lives here, where the request cannot talk its way
+     * around it:
+     * - only a published book can accrue reads (anything else 404s,
+     *   exactly like detail);
+     * - the author reading their own line never counts;
+     * - an unsigned caller never counts (the route already 401s
+     *   guests; this is the second lock);
+     * - one count per reader per book per day — the day is the
+     *   platform's UTC quota day (usage.js dayKeyFor), and the
+     *   (book, reader, day) claim record is the dedup fact: the total
+     *   increments only when the claim lands.
+     * When no claim store is configured the read is reported but not
+     * counted: without the dedup fact the total could double-count,
+     * and an honest uncounted read beats an inflated number.
+     * The whole pass is serialised with the record's other counter
+     * writes, and the increment rides the same task — a separate
+     * serialised helper would queue behind itself and deadlock.
+     */
+    async recordRead(identity, id) {
+      if (!backend) throw NOT_FOUND()
+      return serialise(`publication:${id}`, async () => {
+        const record = await backend.getPublication(id)
+        if (!record || record.status !== 'published') throw NOT_FOUND()
+        const current = Math.max(0, record.readCount || 0)
+        if (!identity?.uid || record.authorUid === identity.uid || !readClaims) {
+          return { readCount: current, counted: false }
+        }
+        const claimed = await readClaims.claimRead({
+          bookId: id,
+          userUid: identity.uid,
+          day: dayKeyFor(now()),
+          createdAt: now().toISOString(),
+        })
+        if (!claimed) return { readCount: current, counted: false }
+        const readCount = current + 1
+        await backend.putPublication({ ...record, readCount, updatedAt: now().toISOString() })
+        return { readCount, counted: true }
+      })
+    },
+
     async detail(id) {
       if (!backend) throw NOT_FOUND()
       const record = await backend.getPublication(id)
@@ -473,6 +522,7 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
             shareCount: Math.max(0, existing?.shareCount || 0),
             ratingAverage: typeof existing?.ratingAverage === 'number' ? existing.ratingAverage : 0,
             ratingCount: Math.max(0, existing?.ratingCount || 0),
+            readCount: Math.max(0, existing?.readCount || 0),
             manual: true,
             manualShelfId: snapshot.config.manualShelfId || '',
             genreId: snapshot.genreId,
@@ -561,6 +611,7 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           shareCount: Math.max(0, existing?.shareCount || 0),
           ratingAverage: typeof existing?.ratingAverage === 'number' ? existing.ratingAverage : 0,
           ratingCount: Math.max(0, existing?.ratingCount || 0),
+          readCount: Math.max(0, existing?.readCount || 0),
           genreId: snapshot.genreId,
           genreTemplateId: snapshot.genreTemplateId,
           worldName: snapshot.worldName,
