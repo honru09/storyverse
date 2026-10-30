@@ -93,6 +93,8 @@
 .intervention-stages li.active{color:#06122b;background:linear-gradient(120deg,var(--cyan),var(--violet));border-color:transparent}
 .intervention-stages li.done{color:var(--mint);border-color:color-mix(in srgb,var(--mint) 45%,transparent)}
 .intervention-stage-note{min-height:26px;margin:0;color:var(--dim);font-size:13.5px;line-height:1.75}
+.intervention-cancel{min-height:44px;margin-top:18px;padding:0 22px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--ink);font-size:14px;font-weight:650;cursor:pointer}
+.intervention-cancel-note{margin:8px 0 0;color:var(--dim);font-size:13px;line-height:1.6}
 
 /* ---- Story map ---- */
 .storymap{display:block;width:100%}

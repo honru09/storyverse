@@ -28,6 +28,7 @@ const STAGE_MIN_MS = [850, 850, 0];
 export default function InterventionOverlay({
   settled = false,
   onDone,
+  onCancel,
   title = "无名的力量正在伸手",
   stages = STAGES,
   notes = STAGE_NOTES,
@@ -83,6 +84,14 @@ export default function InterventionOverlay({
           {notes[stage]}
         </p>
         <div className="intervention-progress" aria-hidden="true"><i style={{ width: `${progress}%` }} /></div>
+        {onCancel && (
+          <>
+            <button type="button" className="intervention-cancel" onClick={onCancel}>
+              回到阅读
+            </button>
+            <p className="intervention-cancel-note">重写在后台继续，落定后下一章自动换新版。</p>
+          </>
+        )}
       </div>
     </div>,
     document.body,
