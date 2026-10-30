@@ -3135,6 +3135,325 @@ const TONE_DIRECTIVES = {
   群像治愈: '注重人物对话、互动关系与共同解决问题的过程。',
 }
 
+/*
+ * 百本知识库接入 (REQ-66, 2026-10-31): measured patterns distilled from
+ * 100 platform novels （番茄 47 / 七猫 53, sw-prep/novel-kb-100) ride the
+ * EXISTING generation pipeline — the beat plan, the per-chapter context
+ * and the forge hints — rather than a parallel system. This section is
+ * the single source for those patterns: chapter-title bands, the
+ * front-24 season arc, first-chapter opening patterns, per-family
+ * world skeletons and book-title formulas. The 蒸馏库 (gen-quality)
+ * still owns prose voice; this layer owns structure and market shape.
+ */
+
+// The writing template a story actually generates with: its own pin, or
+// — for a free-genre pin — the borrowed shelf family's flagship
+// template (the same resolution the ability pools and the server-side
+// template slice use). '' when the story pins nothing at all.
+export const storyTemplateIdFor = (source) => {
+  const own = genreTemplateById(source?.genreTemplateId)?.id
+    || genreTemplateById(source?.config?.genreTemplateId)?.id
+  if (own) return own
+  const pin = source?.genreTemplateId === CUSTOM_TEMPLATE_ID
+    ? CUSTOM_TEMPLATE_ID
+    : (source?.config?.genreTemplateId === CUSTOM_TEMPLATE_ID ? CUSTOM_TEMPLATE_ID : '')
+  if (pin === CUSTOM_TEMPLATE_ID) {
+    return customGenreAnchorTemplateId(source?.config?.customGenreText || source?.customGenreText || '')
+  }
+  return ''
+}
+
+/*
+ * 章节标题口径对账 (REQ-66, the batch's headline decision; full
+ * argument in KB-INTEGRATION.md). The standing rule (8–16 字白话陈述式）
+ * was set against four-character riddle titles, and its SOUL stays:
+ * plain words, say what happens, no riddle imagery, no ending spoiler.
+ * But the KB measured 928 real chapter titles (57 books): median 6 字，
+ * only 33.8% inside 8–16, 63.9% shorter than 8. A band the market
+ * itself lives below is a band the model will keep missing, so the
+ * length moves to the measured distribution while the soul holds:
+ * - standard （默认）: 4–10 字 event statement — the 4–8 字 mass plus
+ *   the short end of 9–12; subject may drop, a concrete noun and an
+ *   event may not.
+ * - duizhang （玄幻/修仙/武侠/灵异/灵异悬疑）: the same statement, or
+ *   the family's measured signature — a 对仗 double clause （前半场景、
+ *   后半事件， 《凡骨》 style) at 9–13 字. The KB's pure-imagery short
+ *   titles （空屋/灾厄） are deliberately NOT adopted: they are exactly
+ *   the riddle register the standing rule exists to kill.
+ * - long （都市/校园/体育/种田 — 生活流）: 8–16 字， two events side by
+ *   side in one double clause, digits and colloquial words welcome.
+ * Upgrade chapters （幕末/弧末/季终） shift one band up and may NAME
+ * their result (KB: upgrade titles run long and spoil the payoff on
+ * purpose — the upgrade IS the promised兑现）; every other chapter
+ * keeps the no-spoiler rule. CHAPTER_TITLE_MAX (30) stays the storage
+ * cap — a different surface, untouched.
+ */
+export const CHAPTER_TITLE_BANDS = {
+  standard: {
+    id: 'standard', label: '标准事件档', min: 4, max: 10, upgradeMin: 6, upgradeMax: 14,
+    shape: '白话事件陈述，主语可省，必须有一个具体名词和一件正在发生的事',
+  },
+  duizhang: {
+    id: 'duizhang', label: '对仗档', min: 4, max: 13, upgradeMin: 8, upgradeMax: 16,
+    shape: '白话事件陈述（4–10 字），或对仗双分句（前半场景、后半事件，9–13 字）；用白话常用词，不堆生僻意象词',
+  },
+  long: {
+    id: 'long', label: '长解说档', min: 8, max: 16, upgradeMin: 10, upgradeMax: 16,
+    shape: '双分句并排本章两件事，或一句完整的事件解说；允许口语与数字入题',
+  },
+}
+
+const CHAPTER_TITLE_BAND_BY_TEMPLATE = {
+  xuanhuan: 'duizhang', xianxia: 'duizhang', wuxia: 'duizhang',
+  lingyi: 'duizhang', 'suspense-supernatural': 'duizhang',
+  urban: 'long', campus: 'long', tiyu: 'long', zhongtian: 'long',
+}
+
+export const chapterTitleBandIdFor = (templateId) => CHAPTER_TITLE_BAND_BY_TEMPLATE[templateId] || 'standard'
+
+export function chapterTitleGuidanceFor(templateId, { upgrade = false } = {}) {
+  const band = CHAPTER_TITLE_BANDS[chapterTitleBandIdFor(templateId)]
+  const min = upgrade ? band.upgradeMin : band.min
+  const max = upgrade ? band.upgradeMax : band.max
+  return `本章标题按「${band.label}」写：${min}–${max} 字，${band.shape}；${upgrade
+    ? '本章是升格章，标题可以点明升格结果（突破、夺冠、揭露、登顶）——那是读者等着的兑现，不算剧透'
+    : '不提前剧透本章结局'}`
+}
+
+/*
+ * The fit checker for a stored or drafted chapter title (canon QA and
+ * tests; generation itself keeps only the bare-number hard gate — a
+ * length miss is a sampling outcome, not a format fact, and must never
+ * stall a chapter). `fits` speaks of the band; the absolute storage
+ * cap reports separately as 'over-absolute-max'.
+ */
+export function chapterTitleFitFor(title, templateId, { upgrade = false } = {}) {
+  const text = typeof title === 'string' ? title.trim() : ''
+  const length = [...text].length
+  const band = CHAPTER_TITLE_BANDS[chapterTitleBandIdFor(templateId)]
+  const issues = []
+  if (!text) issues.push('empty')
+  else {
+    if (/^[\d０-９]+$/.test(text)) issues.push('bare-number')
+    if (length > CHAPTER_TITLE_MAX) issues.push('over-absolute-max')
+    const min = upgrade ? band.upgradeMin : band.min
+    const max = upgrade ? band.upgradeMax : band.max
+    if (length < min) issues.push('below-band')
+    if (length > max && length <= CHAPTER_TITLE_MAX) issues.push('above-band')
+  }
+  return { band: band.id, length, fits: issues.length === 0, issues }
+}
+
+/*
+ * 题材节奏 (KB GENRES §0/§17): the front-24 season arc measured across
+ * 57 books' opening directories. Position is counted inside the
+ * current 24-chapter season block: a 24-chapter season maps directly,
+ * a 100-chapter long line is four such blocks (§17.4), an endless line
+ * rolls the same skeleton, and a custom line of 24+ chapters follows
+ * it for its first block only. Short 6-chapter lines keep their own
+ * six-beat shape and take none of this.
+ */
+export const kbArcPositionFor = (structure, index) => {
+  if (!structure || structure.mode === 'short') return null
+  if (structure.mode === 'custom') {
+    return Number.isFinite(structure.total) && structure.total >= 24 && index < 24 ? index + 1 : null
+  }
+  return (index % 24) + 1
+}
+
+const KB_ARC_LINES = [
+  [1, 1, '开季第一章的落点：谷底定格与异变点（重生、穿越、系统、觉醒其一）必须在本章内同时落地——先把主角的惨钉死，再让全书的引擎当场点火，不许只铺处境不落异变'],
+  [2, 2, '本章把金手指或核心规则讲清：只讲最核心的一条，讲清怎么用、代价是什么，不倾倒设定'],
+  [3, 3, '第一次小兑现必须在本章落地：金手指、先知或底牌第一次真正见效，给读者一口实甜头'],
+  [4, 8, '本段（这一季的第 4–8 章）要进入新场域：压迫者与第一个盟友都要在这几章内登场'],
+  [9, 12, '本段（第 9–12 章）要打出第一次公开小胜：当众打脸、夺下资源或公开过关至少其一，必须有见证人在场'],
+  [13, 20, '本段（第 13–20 章）要安排第一个小 Boss 战或一次公开评比，让主角拿到在新场域里被公开认可的位置'],
+  [21, 23, '向季终升格蓄势：本季的线头在此收束，主要代价逼近台面，为最后一格升格攒满势能'],
+]
+
+export function kbArcLineFor(structure, index) {
+  const position = kbArcPositionFor(structure, index)
+  if (!position) return ''
+  const hit = KB_ARC_LINES.find(([from, to]) => position >= from && position <= to)
+  return hit ? hit[2] : ''
+}
+
+// 季终升格的量级 (KB GENRES §0): a season finale borrows the magnitude
+// of a long book's chapter 50–120 event, never a small win.
+export const KB_SEASON_FINALE_LINE = '季终升格的量级要对标长书第 50–120 章的事件：突破大境界、公开大比夺冠、身份揭露一段、离开新手地图——量级至少取其一，不许用小胜充数'
+// 升格先有仪式 (KB GENRES §17.3): upgrades land in public, on a stage.
+export const KB_UPGRADE_RITUAL_LINE = '升格落在公开场合才算数：先定仪式场（大比、放榜、宴席、赛场、柜台），再定升格内容'
+
+/*
+ * 开篇骨架 (KB OPENINGS §3/§5): every first chapter, whatever its
+ * family, runs the same four beats — 定格 → 异变 → 规则一瞥 → 章末钩 —
+ * and only the opening TYPE varies by family (measured distribution:
+ * 压力型 28% / 机会型 33% / 日常切入 26% / 设定铺陈 13%).
+ */
+const OPENING_PATTERNS = {
+  rebirth: { type: '重生点型', beats: '痛点闪回（不超过 3 句）→睁眼→确认锚点（日历、镜子、熟人）→同章内完成第一个改命小动作' },
+  system: { type: '系统降临型', beats: '谷底事件（不超过本章 1/3）→绑定→规则一句话讲清→首次奖励当场花掉并见效' },
+  humiliation: { type: '羞辱型', beats: '公开场合（家宴、分手局）把羞辱写足半章→底牌碎片一闪（一个电话、一人认主）→撂话离场收尾' },
+  conflict: { type: '冲突型', beats: '开场动作进行时→身份在打斗或对峙中带出→以弱胜强的第一个小兑现→更大的对手现身收尾' },
+  daily: { type: '日常切入型', beats: '日常细节立人设（手艺、习惯、关系）→异物闯入（消息、来客、异象）→章末必须落到异变，不许两章纯日常' },
+  rules: { type: '设定铺陈型（规则条文）', beats: '规则以条文或判决书的形态开场→立刻落到主角被这条规则判负→逆判动作收尾' },
+  identity: { type: '身份揭底型', beats: '第一幕先认清身边一人的真面目，或抛出一桩全书级秘密→处境钉死→主角做出第一个不合原命运的动作' },
+}
+
+const OPENING_PATTERN_BY_TEMPLATE = {
+  chongsheng: 'rebirth',
+  wuxianliu: 'system',
+  urban: 'humiliation',
+  gongdou: 'identity', 'romance-ancient': 'identity',
+  'guize-guatan': 'rules',
+  lingyi: 'daily', 'suspense-supernatural': 'daily', horror: 'daily',
+  zhongtian: 'daily', campus: 'daily', 'romance-modern': 'daily',
+}
+
+export function openingPatternFor(templateId) {
+  const id = OPENING_PATTERN_BY_TEMPLATE[templateId] || 'conflict'
+  const pattern = OPENING_PATTERNS[id]
+  return {
+    id,
+    type: pattern.type,
+    line: `第一章按四段骨架写：定格（主角身份与处境一句钉死）→异变（全书引擎在此点火）→规则一瞥（只讲一条规则）→章末钩（类型随题材走）。开场用「${pattern.type}」：${pattern.beats}。红线：第 1 章没有异变落点、设定倾倒超过本章 1/3、重生型没有确认锚点——犯一条即整章重写。`,
+  }
+}
+
+/*
+ * 世界骨架 (KB WORLDS): the cross-family law plus one measured
+ * skeleton line per writing template, distilled from each family's
+ * 「织界骨架」 in WORLDS.md. genres.json's worldSkeleton already
+ * carries each template's rule list into the opening brief; this layer
+ * adds what that list does not say — the double-layer default, the
+ * scale ladder, and the skeletons of the families the rule lists
+ * underplay （神豪/赘婿 ride urban; 系统形态谱系 rides wuxianliu).
+ */
+export const WORLD_SKELETON_CROSS_LINE = '世界骨架总规（百本实测）：双层世界是默认——表层是读者熟悉的日常、历史或校园，里层是修行界、武道界、规则副本或豪门暗盘；主角开局站在表层谷底，故事就是逐层揭开里层往上爬。力量或处境的标尺必须可数（境界、品级、金额、咖位），读者随时知道主角在第几级、离顶还差几级。规模沿个人→家族/组织→一城一域→国家/大陆→诸天/全球放大；24 章一季只取第一级完整弧，再加第二级的门把。'
+
+const WORLD_SKELETON_KB = {
+  xuanhuan: '测灵骨式开局判决（品级一测就定天赋谷底）+宗门小社会+境界数字标尺；每升一境换一张地图。',
+  xianxia: '开局一次公开判决（测灵根、定品级）钉死谷底+宗门小社会+境界数字标尺；金手指可以弱，靠积累与机缘慢慢兑现。',
+  gaowu: '一次公开测试定初始排名+数值可视增长（气血、品级）+考试与大比做固定升格仪式；标尺与升学、编制绑定，读者零学习成本。',
+  scifi: '升维地图序列写死（求生地→区域→星域/废土秩序），每升一层，旧成就贬值一截；成长标尺可枚举（军衔、进化等级、积分）。',
+  wuxianliu: '系统只保留一种形态贯穿全书（签到、选择题、返利、任务链、熟练度、词条、模拟器，选其一）；奖励分三档：小奖励每章、中奖励每 6 章、大奖励季终，章末发任务、次章兑现。',
+  'guize-guatan': '每个副本一条可推理的明规则加一条隐藏规则；规则文本本身就是世界观交付物，要写成条文，不写成百科条目。',
+  horror: '规则型里世界覆盖日常表层；力量来自理解规则的深度，不来自数值碾压；每桩怪事都要有一条能回溯到活人的祸线。',
+  lishi: '权力阶梯就是标尺（白身→县→州→朝堂→天下）；每升一级权力解决一类新问题（粮→兵→钱→礼制），事功当场换算成官品与版图。',
+  'romance-modern': '职场与城市是公开层，私人情感是里层；段位标尺写明（职级、收入量级、行业话语权），现实账（事业、名分、和解）逐项结算。',
+  'suspense-supernatural': '异常有固定规律可推理（出现条件、边界、破解方式全程守恒）；每个副本一条明规则加一条隐藏规则，章末钩以规则反转为主。',
+  campus: '成绩榜就是标尺（一张表走全季：分数、名次、录取线逐项可比）；考试日历即节拍，大考做固定升格仪式。',
+  urban: '双层圈子世界：表层日常，里层是钱、权与信息差的暗盘。金额量级阶梯写进圣经（万→十万→百万→亿→产业→资本局），每次花钱都要有围观者反应链（柜员→经理→老板→圈子传说），围观规模就是升格刻度；隐藏身份型底牌按三段揭露（亲近人→对手→全场），每段一次大型打脸。',
+  'zhihu-short': '设定极简，人物关系先于世界观；筹码标尺写明（收入、职位、证据、把柄逐项列清），反转靠筹码易手，不靠新设定。',
+  'er-ren': '恶名就是标尺（恶名等级、通缉等级、悬赏金额定一套全表）；掠夺必须入账（地盘、物资、人手、情报），围剿规格随恶名同步升级。',
+  wuxia: '一门绝学贯穿全书做记忆点；江湖大会做固定升格仪式；武学境界加门派声望双标尺。',
+  chuanyue: '现代知识降维，但每次兑现要付本地化代价；权力阶梯（白身→县→州→朝堂）即标尺，每升一级解决一类新问题（粮→兵→钱→礼制）。',
+  chongsheng: '先知就是唯一标尺：遗憾清单全程可见，划掉一条报一次账；先知每兑现一次，必须付出一笔新的未知代价，防无悬念。',
+  gongdou: '身份与信息即标尺（嫡庶、位份、管家权、子嗣）；每 6 章一次公开场合的礼法规格对决（宴席、请安、祭祀），爽点靠体面碾压，不靠数字暴击。',
+  'romance-ancient': '礼法即权力（辈分、名声、婚嫁都是资源，越界先付名声的账）；位分标尺写明（嫡庶、妻妾、位分等级），升降须有由头且当章可见；爽点靠以礼还礼的体面碾压，不靠数字暴击。',
+  yulequan: '咖位阶梯（素人→网红→三线→顶流→资本）加数据标尺（票房、热搜位）；每个作品都是一次公开评比仪式，黑粉与对家是常驻压力。',
+  moshi: '开局 72 小时倒计时+囤货清单可视化+天赋一抽定终身但可进化；规模沿一栋楼→安全区→基地市放大，资源（晶核、物资）即经济标尺。',
+  lingyi: '规则型里世界覆盖日常表层；每桩邪事有死人执念与活人算计两条线，揭底时一起结清；禁忌与镇法破一次、兑现一次。',
+  dianjing: '段位/排名加技能卡品级双标尺；每场比赛一个完整小弧（赛前舆论→赛中逆转→赛后排名跳变），规模沿排位→俱乐部→联赛→世界赛放大。',
+  junshi: '军衔与战功双标尺；每次任务一个完整弧，战功公示即升格仪式，番号与纪律的仪式感不能错。',
+  tiyu: '绝活命名做全书招牌（单点绝活比全面强化更出戏）；技能卡品级（S/SS/SSS）加数据（进球、身价、周薪）双标尺；每场关键比赛兑现一次「被开除者打脸旧主」。',
+  zhongtian: '经营阶梯即标尺（一亩地→作坊→铺子→商号），口碑与现银双账；每 6 章一个经营里程碑（开张、爆单、开分号），极品亲戚是固定压力源、按季回收。',
+}
+
+export const worldSkeletonKbFor = (templateId) => WORLD_SKELETON_KB[templateId] || ''
+
+/*
+ * 书名公式 (KB TITLES §3/§5): the market is bimodal — long-sentence
+ * selling titles （中位 11 字， 9–16 字占 65%) versus short brand names
+ * (≤4 字， 16%), and no sampled title exceeded 16 字， so REQ-63's
+ * 20-字 ceiling never binds in practice; the sweet spot is 11–13 字.
+ * Every formula below composes inside that ceiling by construction.
+ * Short names are licensed only for the families whose readers take
+ * an image for a hook （玄幻/武侠/灵异/宫斗） — anywhere else a 2–4 字
+ * name is invisible on a chart page.
+ */
+export const BOOK_TITLE_TARGET = '11–13 字（市场甜点区；上限 20 字，实测样本最长 16 字）'
+
+const BOOK_TITLE_FORMULAS = {
+  xuanhuan: { pattern: '宣言式 / 短名意象', formula: '「体质·天赋 + 态度宣言」（如「…的我，只想…」），或 2–4 字单意象短名', hook: '体质/天赋名，或一个强画面意象' },
+  xianxia: { pattern: '宣言式 / 短名意象', formula: '「体质·天赋 + 态度宣言」，或 2–4 字单意象短名', hook: '体质/天赋名，或一个强画面意象' },
+  gaowu: { pattern: '结果宣言式 / 系统式', formula: '「高武·武考 + 战力结果」，把初始排名与翻盘结果写进名字', hook: '战力结果或系统形态（觉醒、签到、SSS 级）' },
+  'romance-ancient': { pattern: '身份式', formula: '身份词（嫡女、凤女、贵女）+ 命运反转', hook: '身份词加一处命运反转' },
+  scifi: { pattern: '开局式', formula: '「全球·末世 + 开局觉醒 X」，或身份加结果宣言', hook: '开局事件或觉醒的天赋名' },
+  wuxianliu: { pattern: '开局式 / 系统式', formula: '副本·规则词 + 开局结果，系统形态可以直接入名', hook: '副本规则词或系统形态' },
+  'guize-guatan': { pattern: '短名意象 + 规则词', formula: '时间词·规则词 + 终局词的短名（须单意象强画面），或一句规则宣言', hook: '规则词或终局意象' },
+  horror: { pattern: '短名意象 + 规则词', formula: '意象短名加一处规则词，或一句谷底事件', hook: '规则词或终局意象' },
+  lishi: { pattern: '穿越式', formula: '「穿越成 X + 一件现代事」：朝代/身份加降维事件', hook: '朝代身份加一件现代事' },
+  'romance-modern': { pattern: '日常反差式', formula: '生活场景 + 身份反差，一句话说清两个人的位置差', hook: '身份反差词' },
+  'suspense-supernatural': { pattern: '短名意象 + 规则词', formula: '时间词·规则词 + 终局词的短名（须单意象强画面），或一句异变事件', hook: '规则词或终局意象' },
+  campus: { pattern: '身份式', formula: '校园身份（学渣、校花、转学生）+ 结果宣言', hook: '校园身份词加结果' },
+  urban: { pattern: '身份式（双关）', formula: '表层身份（赘婿、保安、外卖员、小职员）× 真实底牌的双关；神豪变体用「神豪·首富 + 消费场景」', hook: '表层身份词必现，底牌只揭一半' },
+  'zhihu-short': { pattern: '宣言式 / 反问式', formula: '第一人称态度句，一句说清反转的钩子', hook: '态度宣言本身' },
+  'er-ren': { pattern: '身份式', formula: '恶人身份直陈 + 掀桌结果', hook: '恶人身份词' },
+  wuxia: { pattern: '短名意象', formula: '2–4 字短名，单意象强画面（剑、账、江湖意象）', hook: '一个强画面意象' },
+  chuanyue: { pattern: '穿越式', formula: '「穿越成 X + 一件现代事」：身份加降维事件', hook: '穿越身份加一件现代事' },
+  chongsheng: { pattern: '重生式 / 反问式', formula: '「重生 + 年代·节点 + 这次我要 X」，或「都重生了，谁还 Y」的反问式', hook: '重生节点（年代、年份、前世死因）' },
+  gongdou: { pattern: '身份式', formula: '身份词（嫡女、凤女、贵女）+ 命运反转；三字短名亦可', hook: '身份词加一处命运反转' },
+  yulequan: { pattern: '咖位式', formula: '行业词（娱乐、穿书娱乐圈）+ 咖位结果', hook: '行业词必现，加咖位结果' },
+  moshi: { pattern: '开局式', formula: '「全球·末世 + 开局觉醒 X」——开局式占比最高的一族', hook: '觉醒的天赋名' },
+  lingyi: { pattern: '短名意象 + 规则词', formula: '意象短名加一处民俗规则词，或一句异变事件', hook: '民俗规则词或终局意象' },
+  dianjing: { pattern: '封神式', formula: '游戏名·赛事 + 封神结果，可带国运情绪', hook: '赛事名加封神结果' },
+  junshi: { pattern: '宣言式', formula: '番号·兵种 + 战绩宣言', hook: '番号或兵种词' },
+  tiyu: { pattern: '冒号分段式', formula: '「项目：谷底事件，奖励绝活」——冒号分段是这一族的招牌', hook: '绝活名必现' },
+  zhongtian: { pattern: '经营式', formula: '年代·地点 + 经营结果，朴素白话，忌华丽', hook: '经营结果（开铺、暴富、翻身）' },
+}
+
+const BOOK_TITLE_FORMULA_DEFAULT = {
+  pattern: '身份式 / 开局式 / 宣言式',
+  formula: '在身份式、开局式、宣言式里三选一：一句长句把「谁、凭什么、爽在哪」说清至少两问',
+  hook: '身份反差词、金手指名、年代/地点、绝活名，四者取一',
+}
+
+export function bookTitleFormulaFor(templateId) {
+  const entry = BOOK_TITLE_FORMULAS[templateId] || BOOK_TITLE_FORMULA_DEFAULT
+  return { templateId: templateId || '', target: BOOK_TITLE_TARGET, ...entry }
+}
+
+export const bookTitleFormulaForDraft = (draft = {}) => {
+  const templateId = genreTemplateById(draft.genreTemplateId)?.id
+    || (draft.genreTemplateId === CUSTOM_TEMPLATE_ID
+      ? customGenreAnchorTemplateId(draft.customGenreText || '')
+      : '')
+  return bookTitleFormulaFor(templateId)
+}
+
+// Families whose readers accept a ≤4-字 image name as the whole hook.
+const SHORT_TITLE_FAMILIES = new Set([
+  'xuanhuan', 'xianxia', 'wuxia', 'lingyi', 'suspense-supernatural',
+  'horror', 'guize-guatan', 'gongdou',
+])
+
+const TITLE_HOOK_WORDS = [
+  '开局', '重生', '穿越', '系统', '签到', '返现', '觉醒', '无敌', '神豪', '首富',
+  '赘婿', '战神', '嫡', '离婚', '退婚', '开除', '下山', '归来', '登顶', '封神', '夺冠',
+]
+
+/*
+ * A soft fit read for a drafted book title against its family formula
+ * (forge hint + tests). Advisory only — the ONE hard gate on titles
+ * stays REQ-63's length limit, and it is reported here as 'over-limit'
+ * straight from bookTitleWithinLimit so the two can never drift.
+ */
+export function bookTitleFormulaFitFor(title, templateId) {
+  const text = typeof title === 'string' ? title.trim() : ''
+  const length = [...text].length
+  const issues = []
+  if (!text) issues.push('empty')
+  else {
+    if (!bookTitleWithinLimit(text)) issues.push('over-limit')
+    if (length <= 4 && !SHORT_TITLE_FAMILIES.has(templateId)) issues.push('short-name-family')
+    const hasHook = /\d/.test(text) || text.includes('：') || text.includes(':') || text.includes('，')
+      || TITLE_HOOK_WORDS.some((word) => text.includes(word))
+    if (length > 4 && !hasHook && !issues.includes('over-limit')) issues.push('no-hook-element')
+  }
+  return { length, fits: issues.length === 0, issues }
+}
+
 // 为每一章提供确定性的章节结构规划，供模型生成与阅读器剧情概览共享。
 export function storyBeatPlan(story, index) {
   validateStory(story)
@@ -3287,6 +3606,19 @@ export function storyBeatPlan(story, index) {
       '自然收尾并引出下一章内容',
     ]
 
+  // REQ-66 题材节奏： the KB front-24 arc line for this chapter's
+  // season-block position rides the chapter's grounding (segment
+  // directives repeat across their segment — they are段级 instructions,
+  // not chapter facts). A season finale additionally carries the
+  // magnitude line, and every non-finale upgrade point carries the
+  // public-ritual line. Appends only: the position lines above keep
+  // their order and wording.
+  const mustGround = [...(structure.isFinale ? mustGroundFinale : mustGroundByPosition[structure.beatPosition])]
+  const arcLine = kbArcLineFor(structure, index)
+  if (arcLine) mustGround.push(arcLine)
+  if (structure.isFinale && structure.mode === 'season') mustGround.push(KB_SEASON_FINALE_LINE)
+  if (!structure.isFinale && structure.isUnitEnd) mustGround.push(KB_UPGRADE_RITUAL_LINE)
+
   return {
     chapterNumber: index + 1,
     act: structure.mode === 'short'
@@ -3298,7 +3630,7 @@ export function storyBeatPlan(story, index) {
         ? '结清这一弧的账：标尺跳格、代价清账，并打开下一弧的门。'
         : dramaticQuestions[structure.beatPosition],
     prerequisites,
-    mustGround: structure.isFinale ? mustGroundFinale : mustGroundByPosition[structure.beatPosition],
+    mustGround,
     unlockedInterventions,
     toneDirective,
     paragraphShape,

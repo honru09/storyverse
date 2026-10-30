@@ -237,6 +237,9 @@ import {
   INTRO_RULES_MAX,
   INTRO_THREAD_MAX,
   bookTitleSuggestionFor,
+  bookTitleFormulaForDraft,
+  customGenreAnchorTemplateId,
+  worldSkeletonKbFor,
   effectiveIntroFor,
   renameBookTitle,
   renameChapterTitle,
@@ -2752,6 +2755,17 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
   // world name WAS the book title.
   const bookTitleSuggestion = bookTitleSuggestionFor(draft);
   const effectiveBookTitle = (draft.bookTitle || "").trim() || bookTitleSuggestion;
+  // REQ-66: the family's measured title formula (KB TITLES), shown as
+  // the 书名 field's craft hint — pattern, shape and the one hook
+  // element the name must carry. Advisory only; the hard limit stays
+  // BOOK_TITLE_MAX in the hint above it.
+  const bookTitleFormula = bookTitleFormulaForDraft(draft);
+  // REQ-66: the family's measured world skeleton (KB WORLDS), shown in
+  // the world step's draft fold as a reference for the setting text.
+  const worldSkeletonHint = worldSkeletonKbFor(
+    genreTemplateById(draft.genreTemplateId)?.id
+      || (customGenreActive ? customGenreAnchorTemplateId(draft.customGenreText || "") : ""),
+  );
   const openShelf = shelfById(shelfId);
   // The custom-length input keeps its own text while typing (so a reader
   // can clear the field on the way to a new number); the draft only ever
@@ -3269,6 +3283,9 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                           <span className="field-hint">不改也行，现在这样就能开书。改过的名字和设定会成为这本书的世界依据。</span>
                           <span className="da-count">{worldDraftSetting.length} / {PRESET_WORLD_SETTING_MAX}</span>
                         </div>
+                        {worldSkeletonHint && (
+                          <p className="field-hint">这个题材的世界骨架（百本实测）：{worldSkeletonHint}</p>
+                        )}
                         {activeWorldDraft && (
                           <button type="button" className="small-link" onClick={clearWorldDraft}>
                             恢复这个世界的预设原文
@@ -3760,6 +3777,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                   />
                 </label>
                 <p className="field-hint">书名可以和世界不一样，最多 {BOOK_TITLE_MAX} 字。不改，就用上面这个建议名；开书以后也能在设定集里改。</p>
+                <p className="field-hint">这个题材的取名公式（百本实测）：{bookTitleFormula.pattern}——{bookTitleFormula.formula}；钩子要带{bookTitleFormula.hook}；{bookTitleFormula.target}最稳。</p>
               </div>
               <div className="opening-details" aria-label="确认故事设定">
                 {isCustom ? (
