@@ -146,7 +146,7 @@ async function startFixtureServer() {
     await page.getByRole('heading', { name: '确认你的故事', exact: true }).waitFor();
 
     await check('chapter 1 generates (stubbed) with the card protagonist', async () => {
-      const gemini = page.getByRole('group', { name: '故事方式' }).getByRole('button', { name: 'Gemini 创作', exact: true });
+      const gemini = page.getByRole('group', { name: '故事方式' }).getByRole('button', { name: '在线塑造', exact: true });
       await gemini.click();
       assert.equal(await gemini.getAttribute('aria-pressed'), 'true');
       await page.getByRole('button', { name: '进入第一章', exact: true }).click();

@@ -268,7 +268,7 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       </div>}
       {usage && <div className="account-usage">
         <div className="account-usage-head"><h4>我的消耗</h4><button type="button" disabled={busy} onClick={() => void run(() => client.refreshUser())}>刷新</button></div>
-        <div className="account-usage-total"><span>累计总 token</span><strong>{formatTokenCount(usage.total)}</strong></div>
+        <div className="account-usage-total"><span>累计总消耗</span><strong>{formatTokenCount(usage.total)}</strong></div>
         <div className="account-usage-grid">
           <div><span>输入</span><b>{formatTokenCount(usage.prompt)}</b></div>
           <div><span>输出</span><b>{formatTokenCount(usage.candidates)}</b></div>
