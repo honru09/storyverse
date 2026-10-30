@@ -100,11 +100,18 @@ export const COIN = Object.freeze({
   dailyTopUpMember: 300,
 })
 
-/** Coins a finished text generation settles for, by scene and membership. */
-export function coinCostForText({ scene, totalTokens, member = false } = {}) {
+/**
+ * Coins a finished text generation settles for, by scene and membership.
+ * The fusion rate follows the LINE, not the mode: an intervention
+ * revision or a re-roll of a merged story still generates with the
+ * multi-source context priced into the fusion rate, so callers pass
+ * `merged` alongside the scene (the scene label itself stays purely
+ * descriptive for the cost ledger).
+ */
+export function coinCostForText({ scene, totalTokens, member = false, merged = false } = {}) {
   const metered = Number.isFinite(totalTokens) && totalTokens > 0 ? totalTokens : 0
   const base = Math.ceil(metered / COIN.tokensPerCoin)
-  if (scene === 'fusion') {
+  if (scene === 'fusion' || merged) {
     return Math.ceil(base * (member ? COIN.fusionMemberMultiplier : COIN.fusionMultiplier))
   }
   return base

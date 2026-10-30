@@ -137,6 +137,7 @@ async function sendGenerateRequest(story, payload, { fetchImpl = globalThis.fetc
       throw new Error('请先登录，再继续在线创作。登录后这一章会接着生成。')
     }
     if (result?.code === 'quota-exceeded') throw new Error('今天的生成额度已用完，请明天再继续创作。你的故事和进度都已保存。')
+    if (result?.code === 'coins-exhausted') throw new Error('织币不足了。每天的免费织币会自动补足，开通会员或购买额度包可以继续创作。你的故事和进度都已保存。')
     const messages = { 429: '请求较多，请稍后再试。', 503: '在线创作暂不可用，已保存的章节仍可阅读。请稍后再试。', 504: '这一章等待较久，进度已保留，请重试。' }
     throw new Error(messages[response.status] || '这一章暂时没能接上，进度已保留，请重试。')
   }

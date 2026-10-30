@@ -263,6 +263,39 @@ test('publish refuses an over-limit hand-written title too (the manual branch ta
   assert.match(refusal.error || refusal.message || '', /书名太长了/)
 })
 
+test('the rename mirror never carries an over-limit title onto the shelf', async (t) => {
+  const base = await startServer(t)
+  const token = await registerUser(base, 'req63_mirror')
+  const avatar = await makeAvatar(base, token)
+  let line = createStory({
+    genreId: 'cultivation',
+    genreTemplateId: 'xianxia',
+    storyLengthMode: 'endless',
+    name: '沈砚',
+    avatarId: avatar.id,
+    avatarAppearance: '银灰长发，左颊一颗泪痣',
+    ability: '借火一瞬',
+  })
+  const chapter = buildChapter(line, 0)
+  line = { ...acceptChapter(line, chapter, chapterKey(line, 0)), engine: 'gemini' }
+  line = renameBookTitle(line, '合流：从灵田杂役开始 × 神豪系统找上门')
+  const accepted = await publish(base, token, line)
+  assert.equal(accepted.status, 200, 'the compliant line shelves')
+  const book = (await accepted.json()).publication
+
+  // A legacy-shaped save (an old backup import, a client that never
+  // ran the naming gates) renames the library copy past the limit.
+  // The library write itself still succeeds — the mirror never fails
+  // it — but the shelf record keeps the last compliant title.
+  const legacy = { ...line, title: '合流：从灵田杂役开始登天 × 刚失业，神豪系统找上门' }
+  const put = await fetch(`${base}/api/library/stories/${line.id}`, {
+    method: 'PUT', headers: auth(token), body: JSON.stringify({ story: legacy }),
+  })
+  assert.equal(put.status, 200, 'the library write is not failed by the mirror')
+  const detail = await (await fetch(`${base}/api/store/${book.id}`)).json()
+  assert.equal(detail.book.title, '合流：从灵田杂役开始 × 神豪系统找上门', 'the shelf keeps the compliant title')
+})
+
 test('client wiring: two-line card slot, unit-fed glyph count, forge pre-check, honest input caps', () => {
   const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
   const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')

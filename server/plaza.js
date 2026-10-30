@@ -917,6 +917,12 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           if (record.manual === true) {
             const nextTitle = story.title.trim()
             if (!nextTitle || nextTitle === record.title) return { synced: false }
+            // REQ-63: the mirror never fails the library write, but it
+            // must not carry an over-limit title onto the public shelf
+            // either (a legacy import can hold one the naming gates
+            // never saw). The record keeps its last compliant title
+            // until the owner shortens the name and saves again.
+            if (!bookTitleWithinLimit(nextTitle)) return { synced: false }
             const timestamp = now().toISOString()
             const next = {
               ...record,
@@ -933,6 +939,9 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           }
           const nextTitle = redactedTitleFor(story, safeConfig).trim()
           if (!nextTitle || nextTitle === record.title) return { synced: false }
+          // REQ-63: same guard as the manual branch — an over-limit
+          // title stays in the owner's library only, never on the shelf.
+          if (!bookTitleWithinLimit(nextTitle)) return { synced: false }
           const timestamp = now().toISOString()
           const snapshot = { ...record.snapshot, title: nextTitle }
           const next = {

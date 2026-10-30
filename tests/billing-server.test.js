@@ -208,6 +208,36 @@ test('coins gate generation: a drained balance blocks, a coin pack refills', asy
   assert.equal(me.member.active, true)
 })
 
+test('a legacy chapter credit pays inside the ceiling when the coin balance is empty', async (t) => {
+  const { base, billingStore } = await startBillingServer(t)
+  const official = await register(base, 'storyweave')
+  const token = await register(base, 'credit_inside')
+  const uid = 'username:credit_inside'
+  const story = { id: 'story-credit-inside', kind: 'solo', readerIndex: 0, chapters: [] }
+
+  // Membership keeps the fixture ceiling far away so the coin/credit
+  // layering inside the ceiling is what binds.
+  const card = await mint(base, official, 'member-month')
+  assert.equal((await post(base, '/api/billing/redeem', token, { code: card })).status, 200)
+  assert.equal((await generate(base, token, story, 0)).status, 200)
+
+  // Drained coins, one legacy credit left, top-up already stamped today.
+  const stored = await billingStore.getEntitlement(uid)
+  await billingStore.putEntitlement(uid, { ...stored, coins: 0, chapterCredits: 1 })
+
+  assert.equal((await generate(base, token, story, 1)).status, 200, 'the credit carries the chapter inside the ceiling')
+  const me = await (await get(base, '/api/billing/me', token)).json()
+  assert.equal(me.chapterCredits, 0, 'the credit is actually spent, not just waved at')
+  assert.equal(me.coins, 0, 'no coins are settled on a credit generation')
+  const creditRecord = (await billingStore.listCostRecords()).find((record) => record.creditUsed)
+  assert.ok(creditRecord, 'the credit generation is marked in the ledger')
+  assert.equal(creditRecord.coinsSpent, 0)
+
+  const drained = await generate(base, token, story, 2)
+  assert.equal(drained.status, 429)
+  assert.equal((await drained.json()).code, 'coins-exhausted', 'one credit is one chapter, not a perpetual pass')
+})
+
 test('membership raises the daily ceiling instead of spending credits', async (t) => {
   const { base } = await startBillingServer(t)
   const official = await register(base, 'storyweave')
@@ -380,6 +410,11 @@ test('coin math: per-thousand settlement, fusion rates, and the pricing guardrai
   assert.equal(coinCostForText({ scene: 'intervention', totalTokens: 15_000 }), 15)
   assert.equal(coinCostForText({ scene: 'fusion', totalTokens: 13_316 }), 21)
   assert.equal(coinCostForText({ scene: 'fusion', totalTokens: 13_316, member: true }), 17)
+  // The fusion rate follows the line, not the mode: revising or
+  // re-rolling a merged chapter still pays the fusion rate.
+  assert.equal(coinCostForText({ scene: 'intervention', totalTokens: 13_316, merged: true }), 21)
+  assert.equal(coinCostForText({ scene: 'reroll', totalTokens: 13_316, merged: true, member: true }), 17)
+  assert.equal(coinCostForText({ scene: 'intervention', totalTokens: 13_316 }), 14)
   // Guardrail (PRICING.md): the worst measured text cost is ¥0.0065
   // per coin of usage; every product's per-coin revenue must clear
   // twice that, so the cheapest coin sold still pays for itself.

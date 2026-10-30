@@ -147,6 +147,11 @@ test('the daily quota response maps to a clear quota message, not the generic 42
   await assert.rejects(requestChapter(fresh(), 0, { fetchImpl }), /今天的生成额度已用完/)
 })
 
+test('the coins-exhausted response maps to the coin message, not the generic 429 copy', async () => {
+  const fetchImpl = async () => Response.json({ error: 'server copy is not shown', code: 'coins-exhausted' }, { status: 429 })
+  await assert.rejects(requestChapter(fresh(), 0, { fetchImpl }), /织币不足了/)
+})
+
 test('season pre-generation: unconditional, one chapter only, keyed by the intervention queue', () => {
   let current = { ...createStory({ name: '旅人', genreId: 'mist', storyLengthMode: 'season' }), engine: 'gemini' }
   current = acceptGeneratedChapter(current, resultFor(current, 0))

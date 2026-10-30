@@ -469,9 +469,17 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
               throw new ApiError(429, '今天的生成额度已用完，请明天再继续创作。', 'quota-exceeded')
             }
           } else if (billing.available
-            && !(await billing.hasCoins(identity.uid, 1))
-            && !(await billing.hasChapterCredit(identity.uid))) {
-            throw new ApiError(429, '织币不足了。每天的免费织币会自动补足，开通会员或购买额度包可以继续创作。', 'coins-exhausted')
+            && !(await billing.hasCoins(identity.uid, 1))) {
+            // Coins are the everyday source; a legacy chapter credit is
+            // the fallback INSIDE the ceiling too. The settlement below
+            // must be told, or the chapter would ride free on the mere
+            // presence of a credit and the credit would never burn
+            // (integration review, REQ-68 cross-check).
+            if (await billing.hasChapterCredit(identity.uid)) {
+              spendChapterCredit = true
+            } else {
+              throw new ApiError(429, '织币不足了。每天的免费织币会自动补足，开通会员或购买额度包可以继续创作。', 'coins-exhausted')
+            }
           }
         }
         const body = await readJson(request)
@@ -516,6 +524,7 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
             const member = await billing.memberActive(identity.uid)
             coinsSpent = await billing.spendCoins(identity.uid, coinCostForText({
               scene, totalTokens: metered.totalTokens, member,
+              merged: body?.story?.kind === 'merged',
             }))
           }
           await billing.recordTextCost({
