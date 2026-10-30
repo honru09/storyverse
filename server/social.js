@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { ApiError, sanitizeSettingText } from './gemini.js'
 import { avatarAppearanceText, normalizeAvatarAbility } from '../src/avatar.js'
-import { CUSTOM_GENRE_ID } from '../src/story-engine.js'
+import { CUSTOM_GENRE_ID, normalizeProtagonistAnchors } from '../src/story-engine.js'
 import { createSocialStore, pictureSourceFor, bannerSourceFor, friendshipKeyFor } from './social-store.js'
 import { emailCodeUid, normalizeEmailAddress, validEmailAddress } from './email-code.js'
 import { createPlazaStore } from './plaza-store.js'
@@ -748,7 +748,13 @@ export function createSocialService({
               id: ability.id,
               name: sanitizeSettingText(clip(ability.name, 40)).trim(),
               desc: sanitizeSettingText(clip(ability.desc, 120)).trim(),
+              ...(ability.bounds ? { bounds: sanitizeSettingText(clip(ability.bounds, 120)).trim() } : {}),
             },
+          } : {}),
+          // REQ-69 W5: the avatar's anchors are part of who they
+          // publicly are (age + key years), carried like the ability.
+          ...(normalizeProtagonistAnchors(item?.anchors) ? {
+            anchors: normalizeProtagonistAnchors(item.anchors),
           } : {}),
           ...(ready ? { portraitUrl: `/api/users/${encodeURIComponent(target)}/portrait?avatar=${encodeURIComponent(item.id)}&v=${item.portrait?.version || 1}` } : {}),
           ...(worldByAvatarName.get(name) ? { currentWorld: worldByAvatarName.get(name) } : {}),

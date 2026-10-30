@@ -4,6 +4,7 @@ import { dayKeyFor } from './usage.js'
 import { createAvatarStore, collectionFromRecord, imageSlotFor } from './avatar-store.js'
 import { transcodePortraitImage, normalizedStoredImage } from './portrait-image.js'
 import {
+  AVATAR_ABILITY_BOUNDS_MAX,
   AVATAR_ABILITY_DESC_MAX,
   AVATAR_ABILITY_NAME_MAX,
   AVATAR_DESCRIPTION_MAX,
@@ -128,6 +129,20 @@ function scrubProfile(profile) {
       ...profile.ability,
       name: safeText(profile.ability.name, AVATAR_ABILITY_NAME_MAX),
       desc: safeText(profile.ability.desc, AVATAR_ABILITY_DESC_MAX),
+      ...(profile.ability.bounds ? { bounds: safeText(profile.ability.bounds, AVATAR_ABILITY_BOUNDS_MAX) } : {}),
+    }
+  }
+  // REQ-69 W5: the anchors' free-text parts (event labels, identity
+  // facts) are reader-authored and travel into story prompts through
+  // the book config, so they pass the same scrub; the numbers are
+  // already normalised integers.
+  if (profile.anchors && typeof profile.anchors === 'object') {
+    scrubbed.anchors = {
+      ...profile.anchors,
+      events: (Array.isArray(profile.anchors.events) ? profile.anchors.events : [])
+        .map((event) => ({ ...event, label: safeText(event.label, 40) })),
+      identityFacts: (Array.isArray(profile.anchors.identityFacts) ? profile.anchors.identityFacts : [])
+        .map((fact) => safeText(fact, 120)),
     }
   }
   return scrubbed
@@ -146,11 +161,14 @@ function validatedProfile(body, existing) {
   // "none set / cleared") wins; a payload without the key (a stale
   // client) keeps the stored ability rather than clearing it.
   const ability = 'ability' in scrubbed ? scrubbed.ability : existing?.ability
+  // REQ-69 W5: anchors follow the ability's tri-state exactly.
+  const anchors = 'anchors' in scrubbed ? scrubbed.anchors : existing?.anchors
   return {
     id: existing?.id || profile.id || `avatar-${randomUUID().slice(0, 12)}`,
     name: scrubbed.name,
     description: scrubbed.description,
     ...(ability ? { ability } : {}),
+    ...(anchors ? { anchors } : {}),
     // AVATAR-TRIM: a stored legacy `appearance` object is inert data —
     // carried through untouched (never read, never re-submitted, no
     // migration), and never taken from the request payload.

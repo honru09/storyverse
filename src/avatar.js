@@ -20,6 +20,8 @@
 // back as a reference image. The goal is a character readers recognise as
 // the same person — never pixel-identical reproduction.
 
+import { normalizeProtagonistAnchors } from './story-engine.js'
+
 export const AVATAR_NAME_MAX = 20
 export const AVATAR_DESCRIPTION_MAX = 300
 export const AVATAR_APPEARANCE_TEXT_MAX = 300
@@ -35,6 +37,9 @@ export const AVATAR_APPEARANCE_TEXT_MAX = 300
 export const AVATAR_ABILITY_NAME_MAX = 40
 export const AVATAR_ABILITY_DESC_MAX = 120
 export const AVATAR_ABILITY_ID_MAX = 64
+// 金手指边界 (REQ-69 W5): the signature ability's `bounds` — what it
+// cannot do — mirrors ABILITY_BOUNDS_MAX in the story engine.
+export const AVATAR_ABILITY_BOUNDS_MAX = 120
 
 /**
  * Normalise a signature-ability value (an { id, name, desc } object, or
@@ -51,7 +56,15 @@ export function normalizeAvatarAbility(input) {
   if (!name) return null
   const desc = typeof raw.desc === 'string' ? raw.desc.replace(/\s+/g, ' ').trim().slice(0, AVATAR_ABILITY_DESC_MAX) : ''
   const id = typeof raw.id === 'string' ? raw.id.trim().slice(0, AVATAR_ABILITY_ID_MAX) : ''
-  return { id, name, desc }
+  // REQ-69 W5: `bounds` rides only when set, so a pre-bounds ability
+  // keeps its exact historical { id, name, desc } shape.
+  const bounds = typeof raw.bounds === 'string' ? raw.bounds.replace(/\s+/g, ' ').trim().slice(0, AVATAR_ABILITY_BOUNDS_MAX) : ''
+  return { id, name, desc, ...(bounds ? { bounds } : {}) }
+}
+
+/** The avatar's preset protagonist anchors (REQ-69 W5), or null. */
+export function avatarAnchorsOf(avatar) {
+  return normalizeProtagonistAnchors(avatar?.anchors)
 }
 
 /** The avatar's preset signature ability, normalised, or null. */
@@ -102,11 +115,16 @@ export function avatarDraftPatch(avatar) {
   if (!avatar || typeof avatar !== 'object') return null
   const description = typeof avatar.description === 'string' ? avatar.description.trim() : ''
   const ability = avatarAbilityOf(avatar)
+  const anchors = avatarAnchorsOf(avatar)
   return {
     name: typeof avatar.name === 'string' ? avatar.name : '',
     avatarId: typeof avatar.id === 'string' ? avatar.id : '',
     avatarAppearance: avatarAppearanceText(avatar),
     ...(description ? { persona: description } : {}),
+    // 主角硬锚点 (REQ-69 W5): the avatar's anchors land on the book
+    // like its character does — the book's copy, so later edits to
+    // the profile never rewrite a book already under way.
+    ...(anchors ? { anchors } : {}),
     // The signature ability rides along as information only (REQ-57):
     // the forge's ability step reads it to offer 「带专属能力进入」 as
     // the default, but the pick still lands as the book's own ability —
@@ -139,12 +157,18 @@ export function validateAvatarProfile(input) {
   // it in the editor (the server then stores none).
   const abilityProvided = Object.prototype.hasOwnProperty.call(input, 'ability')
   const ability = normalizeAvatarAbility(input.ability)
+  // 主角硬锚点 (REQ-69 W5): same tri-state as the ability — ABSENT
+  // says nothing (the server keeps the stored anchors), PRESENT
+  // carries the normalised anchors or null for "cleared".
+  const anchorsProvided = Object.prototype.hasOwnProperty.call(input, 'anchors')
+  const anchors = normalizeProtagonistAnchors(input.anchors)
   return {
     profile: {
       ...(typeof input.id === 'string' && input.id ? { id: input.id.slice(0, 64) } : {}),
       name,
       description,
       ...(abilityProvided ? { ability } : {}),
+      ...(anchorsProvided ? { anchors } : {}),
     },
   }
 }
@@ -178,7 +202,8 @@ export function avatarCollectionSignature(avatars, mainId) {
     // stage prints the ability from the server payload — without it in
     // the signature that line would go stale until a cold start.
     const ability = avatarAbilityOf(avatar)
-    return `${avatar.id}:${avatar.name || ''}:${portrait.status}:${portrait.version}:${ability ? `${ability.name}:${ability.desc}` : ''}`
+    const anchors = avatarAnchorsOf(avatar)
+    return `${avatar.id}:${avatar.name || ''}:${portrait.status}:${portrait.version}:${ability ? `${ability.name}:${ability.desc}:${ability.bounds || ''}` : ''}:${anchors ? JSON.stringify(anchors) : ''}`
   })
   return `${typeof mainId === 'string' ? mainId : ''}|${rows.join('|')}`
 }
@@ -192,19 +217,19 @@ export const AVATAR_PRESETS = [
     id: 'preset-lin-wanzhou',
     name: '林晚舟',
     description: '清冷安静的剑客，乌黑长发，一袭浅色长袍，眼下一点泪痣，话不多，站在人群里也像站在风里。',
-    ability: { id: 'gen-mindglimpse', name: '读心余光', desc: '与人对视时，能瞥见对方没说出口的半句话' },
+    ability: { id: 'gen-mindglimpse', name: '读心余光', desc: '与人对视时，能瞥见对方没说出口的半句话', bounds: '只能瞥见半句没说出口的话，断章取义常有，不是完整读心；对方无话可说时什么也瞥不见' },
   },
   {
     id: 'preset-a-can',
     name: '阿灿',
     description: '笑起来很亮的街头少年，银灰短发，鼻尖几点雀斑，穿街头夹克和运动鞋，好奇心比胆子大，口袋里总有糖。',
-    ability: { id: 'gen-luck', name: '逢凶化吉', desc: '坏事落到你身上时，总差最后临门一脚' },
+    ability: { id: 'gen-luck', name: '逢凶化吉', desc: '坏事落到你身上时，总差最后临门一脚', bounds: '只让坏事差临门一脚，不是逢凶必化；该付的代价迟早换个方式找回来' },
   },
   {
     id: 'preset-bai-yu',
     name: '白榆',
     description: '温润耐心的年轻学者，茶棕长发，戴细框眼镜，穿文人长衫，喜欢把袖口挽起来，慢慢把事情讲清楚。',
-    ability: { id: 'gen-verse', name: '言出法随', desc: '说出口的小事，总会以某种方式成真' },
+    ability: { id: 'gen-verse', name: '言出法随', desc: '说出口的小事，总会以某种方式成真', bounds: '只对小事生效，大事、生死与他人意志一概推不动；成真的方式往往绕弯，不按字面兑现' },
   },
 ]
 

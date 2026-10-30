@@ -2510,9 +2510,9 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
   // The signature source stands outside that rule by design — the
   // avatar's own ability is world-independent, like its character.
   const abilityPick = abilitySourceEff === "signature" && signatureAbility
-    ? { id: signatureAbility.id || "signature", name: signatureAbility.name, desc: signatureAbility.desc }
+    ? { id: signatureAbility.id || "signature", name: signatureAbility.name, desc: signatureAbility.desc, bounds: signatureAbility.bounds || "" }
     : abilityId === "custom"
-      ? (customAbility.trim() ? { id: "custom", name: customAbility.trim(), desc: "你亲手写下的能力" } : null)
+      ? (customAbility.trim() ? { id: "custom", name: customAbility.trim(), desc: "你亲手写下的能力", bounds: "" } : null)
       : abilityCandidates.find((item) => item.id === abilityId) || null;
   const abilityName = abilityPick?.name || "";
   const set = (patch) => setDraft((current) => ({ ...current, ...patch }));
@@ -2681,6 +2681,8 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       // same source with the same custom text (the custom text itself
       // is the stored ability name, as before).
       abilityDesc: abilityPick?.desc || "",
+      // REQ-69 W5: the pick's bounds ride the draft beside its effect.
+      abilityBounds: abilityPick?.bounds || "",
       abilitySource: abilitySourceEff || "",
       step,
       // Whether the step-one template was EVER deliberately picked or
@@ -2693,7 +2695,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       // migratedDraftStep) instead of folding them a second time.
       flowVersion: 5,
     });
-  }, [draft, abilityName, abilityPick?.id, abilityPick?.desc, abilitySourceEff, step, pickedTemplate, onDraftChange]);
+  }, [draft, abilityName, abilityPick?.id, abilityPick?.desc, abilityPick?.bounds, abilitySourceEff, step, pickedTemplate, onDraftChange]);
   useEffect(() => {
     scrollToTop();
     forgeRef.current
@@ -2722,6 +2724,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       ...draft,
       ability: abilityName,
       abilityDesc: abilityPick?.desc || "",
+      abilityBounds: abilityPick?.bounds || "",
       world,
       abilityOption: abilityPick || { id: "", name: "", desc: "" },
     }, { engine, signal: controller.signal });
@@ -10458,6 +10461,7 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
         startPointHook: spawnHook,
         ability: enterAbilityName,
         abilityDesc: enterAbilityDesc,
+        abilityBounds: enterAbilityBounds,
         avatarId: chosenAvatar?.id || "",
       }, { signal: controller.signal });
     } catch (failure) {
@@ -10487,6 +10491,7 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
       : abilities.find((item) => item.name === abilityName) || null) || abilities[0] || null;
   const enterAbilityName = enterPickedAbility?.name || "";
   const enterAbilityDesc = enterPickedAbility?.desc || "";
+  const enterAbilityBounds = enterPickedAbility?.bounds || "";
   // Switching the avatar reopens the source choice on the new avatar's
   // own default; a half-typed custom ability does not follow across.
   const chosenAvatarId = chosenAvatar?.id || "";
@@ -12562,6 +12567,7 @@ function App() {
           startPointHook: payload.startPointHook,
           startPointCustom: payload.startPointCustom,
           name: payload.name,
+          anchors: payload.anchors,
           persona: payload.persona,
           avatarId: payload.avatarId,
           avatarAppearance: payload.avatarAppearance,
@@ -12569,6 +12575,7 @@ function App() {
           origin: payload.origin,
           ability: payload.ability,
           abilityDesc: payload.abilityDesc,
+          abilityBounds: payload.abilityBounds,
           tone: payload.tone,
           immersive: payload.immersive,
           hometown: payload.hometown,

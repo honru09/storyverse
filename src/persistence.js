@@ -26,7 +26,7 @@ const totalForStory = (story) => {
   return LENGTH_TOTALS[mode] || 6
 }
 const CONFIG_TEXT_FIELDS = [
-  'genreId', 'genreTemplateId', 'customGenreText', 'storyLengthMode', 'originIdentityId', 'customWorldName', 'customWorldSetting', 'bookTitle', 'startPointName', 'startPointHook', 'avatarId', 'avatarAppearance', 'sourcePublicationId', 'name', 'persona', 'trait', 'origin', 'ability', 'abilityDesc', 'tone', 'hometown',
+  'genreId', 'genreTemplateId', 'customGenreText', 'storyLengthMode', 'originIdentityId', 'customWorldName', 'customWorldSetting', 'bookTitle', 'startPointName', 'startPointHook', 'avatarId', 'avatarAppearance', 'sourcePublicationId', 'name', 'persona', 'trait', 'origin', 'ability', 'abilityDesc', 'abilityBounds', 'tone', 'hometown',
   'school', 'company', 'role', 'friend', 'destination', 'protagonist', 'appearance', 'finishedAt', 'stylePreset', 'manualShelfId',
 ]
 
@@ -48,6 +48,45 @@ const LOREBOOK_LIMITS = { entries: 200, content: 2000, name: 60, key: 40, keys: 
 // keyed by preset world id, of which there are six — the cap leaves
 // headroom without letting a corrupt record grow teeth).
 const WORLD_DRAFT_LIMITS = { entries: 12, name: 40, setting: 600 }
+
+// 主角硬锚点 bounds (REQ-69 W5), mirrored from src/story-engine.js
+// (ANCHOR_* constants; this storage layer stays dependency-free).
+const ANCHOR_LIMITS = { events: 8, label: 40, fact: 120, facts: 5 }
+
+function validateAnchors(anchors, prefix, errors) {
+  if (anchors === null || anchors === undefined) return
+  if (!isRecord(anchors)) {
+    errors.push(`${prefix} must be an object or null`)
+    return
+  }
+  if (anchors.age !== undefined && anchors.age !== null
+    && (!Number.isInteger(anchors.age) || anchors.age < 1 || anchors.age > 999)) {
+    errors.push(`${prefix}.age must be null or an integer from 1 to 999`)
+  }
+  if (anchors.events !== undefined) {
+    if (!Array.isArray(anchors.events) || anchors.events.length > ANCHOR_LIMITS.events) {
+      errors.push(`${prefix}.events must be an array of at most ${ANCHOR_LIMITS.events} entries`)
+    } else {
+      for (let index = 0; index < anchors.events.length; index += 1) {
+        const event = anchors.events[index]
+        const eventPrefix = `${prefix}.events[${index}]`
+        if (!isRecord(event)) { errors.push(`${eventPrefix} must be an object`); continue }
+        if (!isNonEmptyString(event.label) || event.label.length > ANCHOR_LIMITS.label) {
+          errors.push(`${eventPrefix}.label must be a non-empty string of at most ${ANCHOR_LIMITS.label} characters`)
+        }
+        if (!Number.isInteger(event.yearsAgo) || event.yearsAgo < 0 || event.yearsAgo > 9999) {
+          errors.push(`${eventPrefix}.yearsAgo must be an integer from 0 to 9999`)
+        }
+      }
+    }
+  }
+  if (anchors.identityFacts !== undefined) {
+    if (!Array.isArray(anchors.identityFacts) || anchors.identityFacts.length > ANCHOR_LIMITS.facts
+      || anchors.identityFacts.some((fact) => typeof fact !== 'string' || fact.length > ANCHOR_LIMITS.fact)) {
+      errors.push(`${prefix}.identityFacts must be an array of at most ${ANCHOR_LIMITS.facts} strings of at most ${ANCHOR_LIMITS.fact} characters`)
+    }
+  }
+}
 
 function validateWorldDrafts(worldDrafts, prefix, errors) {
   if (!isRecord(worldDrafts)) {
@@ -180,6 +219,9 @@ function validateConfig(config, prefix, errors, merged = false, forStory = false
   // Absent on every pre-import save and on every public snapshot (the
   // engine strips it there); when present it is a bounded entry list.
   if (config.lorebook !== undefined) validateLorebook(config.lorebook, `${prefix}.lorebook`, errors)
+  // 主角硬锚点 (REQ-69 W5): absent on every pre-batch save; null or
+  // the bounded anchors shape when present.
+  if (config.anchors !== undefined) validateAnchors(config.anchors, `${prefix}.anchors`, errors)
   // REQ-59: the creator's edited drafts of preset worlds. Absent on
   // every pre-REQ-59 save; when present a small bounded map.
   if (config.worldDrafts !== undefined) validateWorldDrafts(config.worldDrafts, `${prefix}.worldDrafts`, errors)
@@ -209,6 +251,7 @@ function validateConfig(config, prefix, errors, merged = false, forStory = false
         else {
           if (!isNonEmptyString(person.name)) errors.push(`${personPrefix}.name must be a non-empty string`)
           validateOptionalFields(person, personPrefix, CONFIG_TEXT_FIELDS, 'string', errors)
+          if (person.anchors !== undefined) validateAnchors(person.anchors, `${personPrefix}.anchors`, errors)
         }
       }
     }
@@ -296,6 +339,20 @@ function validateChapter(chapter, prefix, index, merged, errors) {
   if (chapter.degraded !== undefined && typeof chapter.degraded !== 'boolean') {
     errors.push(`${prefix}.degraded must be a boolean`)
   }
+  // 漂移告警 (REQ-69 W5): warnings the acceptance scan recorded
+  // against the story's anchors. Absent on clean chapters and on
+  // every pre-batch chapter.
+  if (chapter.driftWarnings !== undefined) {
+    if (!Array.isArray(chapter.driftWarnings)) errors.push(`${prefix}.driftWarnings must be an array`)
+    else {
+      for (let warningIndex = 0; warningIndex < chapter.driftWarnings.length; warningIndex += 1) {
+        const warning = chapter.driftWarnings[warningIndex]
+        const warningPrefix = `${prefix}.driftWarnings[${warningIndex}]`
+        if (!isRecord(warning)) errors.push(`${warningPrefix} must be an object`)
+        else validateOptionalFields(warning, warningPrefix, ['kind', 'excerpt'], 'string', errors)
+      }
+    }
+  }
 }
 
 function validateStory(story, prefix) {
@@ -312,6 +369,7 @@ function validateStory(story, prefix) {
     for (const field of ['rules', 'outline']) {
       if (story.worldBible[field] !== undefined) validateStringArray(story.worldBible[field], `${prefix}.worldBible.${field}`, errors)
     }
+    if (story.worldBible.anchors !== undefined) validateAnchors(story.worldBible.anchors, `${prefix}.worldBible.anchors`, errors)
   }
   if (!Array.isArray(story.chapters)) errors.push(`${prefix}.chapters must be an array`)
   else {

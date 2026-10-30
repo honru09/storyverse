@@ -43,7 +43,7 @@ import {
   isLocalTemplateBible,
   worldBibleFor,
 } from './story-engine.js'
-import { avatarAppearanceText } from './avatar.js'
+import { avatarAnchorsOf, avatarAppearanceText } from './avatar.js'
 
 export const PLAZA_REPORT_THRESHOLD = 3
 
@@ -606,7 +606,7 @@ export function plazaLengthLabel(source) {
  * (identity, spawn point, ability). story-engine's createStory consumes
  * exactly this shape.
  */
-export function enterDraftFor(detail, { avatar, identityId = '', startPointName = '', startPointHook = '', ability = '', abilityDesc = '' } = {}) {
+export function enterDraftFor(detail, { avatar, identityId = '', startPointName = '', startPointHook = '', ability = '', abilityDesc = '', abilityBounds = '', anchors = null } = {}) {
   const template = detail?.enterTemplate?.config || {}
   return {
     genreId: template.genreId || detail?.genreId || 'mist',
@@ -633,6 +633,10 @@ export function enterDraftFor(detail, { avatar, identityId = '', startPointName 
     // a swapped candidate, a hand-written one — its effect lands in
     // the new book's config beside the name.
     abilityDesc: abilityDesc || '',
+    // REQ-69 W5: the same pick's bounds, and the avatar's anchors,
+    // land beside them the same way.
+    abilityBounds: abilityBounds || '',
+    anchors: anchors || avatarAnchorsOf(avatar) || null,
     tone: '诗性冒险',
     sourcePublicationId: detail?.id || '',
     // Bookkeeping only: the entrant's story is created directly from this
