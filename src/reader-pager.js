@@ -28,8 +28,19 @@ function anchorOffset(paragraph, charStart, paragraphLengths) {
   return Math.min(1, Math.max(0, charStart / length));
 }
 
-export function packPages(lines, pageHeight, { titleHeight = 0, paragraphLengths = [] } = {}) {
-  const capacity = Math.max(1, Math.floor(pageHeight));
+export function packPages(lines, pageHeight, { titleHeight = 0, paragraphLengths = [], safetyPx = 0 } = {}) {
+  /* READER-FIX3 (REQ-47): the packer never spends the last
+   * `safetyPx` of the box. REQ-46 budgeted the summed line advances
+   * against the FULL box height, and the tightest sandbox pages
+   * landed within ~11px of the bottom — inside one line advance of
+   * headroom. A device whose real line stack runs even slightly
+   * taller than the measured one (the owner's iPhone: PingFang line
+   * metrics + iOS line-box snapping, ~1 line over a full page) then
+   * pushes the last line's ink past the box and it renders cut in
+   * half. The caller passes one full line pitch as the safety band,
+   * so the last line's bottom edge always keeps >= 1 line of air
+   * above the box bottom. */
+  const capacity = Math.max(1, Math.floor(pageHeight - Math.max(0, safetyPx)));
   const reserve = Math.max(0, titleHeight);
   const pages = [];
   let segments = [];

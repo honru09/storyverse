@@ -175,10 +175,10 @@ export function useReaderExperience({ readerRef, locationKey, settings, blocked,
 
   const pageInfo = useCallback(() => pagerApiRef.current?.pageInfo() ?? null, []);
 
-  const pageBy = useCallback(direction => {
+  const pageBy = useCallback((direction, opts = {}) => {
     if (blockedRef.current) return;
     if (settingsRef.current.readingMode === 'page') {
-      pagerApiRef.current?.pageBy(direction);
+      pagerApiRef.current?.pageBy(direction, opts);
       return;
     }
     const top = window.scrollY + direction * Math.max(120, window.innerHeight - inset() - 96);
@@ -201,9 +201,9 @@ export function useReaderExperience({ readerRef, locationKey, settings, blocked,
    * the finger 1:1, release settles on a spring). In scroll mode the
    * gesture was always inert and stays so. Chapter boundaries stay
    * tap-only: the pager builds nothing past its first/last page. */
-  const dragStart = useCallback((x) => {
+  const dragStart = useCallback((x, y = null) => {
     if (blockedRef.current) return;
-    pagerActive()?.dragStart(x);
+    pagerActive()?.dragStart(x, y);
   }, [pagerActive]);
   const dragMove = useCallback((x) => {
     if (blockedRef.current) return false;

@@ -58,7 +58,7 @@ test("invalid values cannot inject CSS or escape supported size and spacing rang
 });
 
 test("malformed or unknown-version stored settings safely recover without writing", () => {
-  for (const raw of ["{broken", "null", "[]", "true", '"night"', '{"version":7,"theme":"night"}']) {
+  for (const raw of ["{broken", "null", "[]", "true", '"night"', '{"version":8,"theme":"night"}']) {
     const storage = memoryStorage(raw);
     const store = createReadingPreferencesStore({ storage });
     assert.deepEqual(store.getSnapshot().settings, DEFAULT_READING_PREFERENCES);
@@ -153,7 +153,7 @@ test("version 1 preferences upgrade silently and retain all existing reader choi
   assert.equal(storage.values.get(READING_PREFERENCES_KEY), raw);
   assert.deepEqual(storage.writes, []);
   store.update({ fontFamily: "serif" });
-  assert.equal(JSON.parse(storage.values.get(READING_PREFERENCES_KEY)).version, 6);
+  assert.equal(JSON.parse(storage.values.get(READING_PREFERENCES_KEY)).version, 7);
   assert.equal(createReadingPreferencesStore({ storage }).getSnapshot().storageWarning, null);
 });
 
@@ -187,9 +187,10 @@ test("all advanced typography and reader behavior options persist without touchi
     readingMode: "page", keepAwake: true };
   store.update(settings);
   /* READER-FIX3/§32 contract: the scale clamps to the 1.5 ladder top and
-     prose weight is pinned to 400; every other option round-trips. */
+     prose weight is pinned to 400; every other option round-trips.
+     REQ-47: the untouched turn style rides along at its curl default. */
   assert.deepEqual(createReadingPreferencesStore({ storage }).getSnapshot().settings,
-    { ...settings, fontScale: 1.5, fontWeight: 400 });
+    { ...settings, fontScale: 1.5, fontWeight: 400, turnStyle: "curl" });
   assert.equal(storage.writes.length, 1);
   const appearance = getReaderAppearance(settings);
   assert.equal(appearance["data-reader-theme"], "system");
@@ -263,13 +264,13 @@ test("READER-PAGE (REQ-38): a pre-v5 stored 'scroll' is the frozen old default a
   }
 });
 
-test("READER-PAGE (REQ-38): a pre-v5 stored 'page' stays paged, and writes land as version 6 with the explicit marker", () => {
+test("READER-PAGE (REQ-38): a pre-v5 stored 'page' stays paged, and writes land as version 7 with the explicit marker", () => {
   const storage = memoryStorage(JSON.stringify({ version: 4, ...DEFAULT_READING_PREFERENCES, readingMode: "page" }));
   const store = createReadingPreferencesStore({ storage });
   assert.equal(store.getSnapshot().settings.readingMode, "page");
   assert.equal(store.update({ readingMode: "scroll" }), true);
   const written = JSON.parse(storage.values.get(READING_PREFERENCES_KEY));
-  assert.equal(written.version, 6);
+  assert.equal(written.version, 7);
   assert.equal(written.readingMode, "scroll");
   assert.equal(written.readingModeExplicit, true);
 });
@@ -283,7 +284,7 @@ test("DEVICE-FIX4 (REQ-45): an unmarked version-5 'scroll' is not proof of a del
 });
 
 test("DEVICE-FIX4 (REQ-45): a marked 'scroll' is a deliberate choice and is never migrated", () => {
-  for (const version of [5, 6]) {
+  for (const version of [5, 6, 7]) {
     const raw = JSON.stringify({ version, ...DEFAULT_READING_PREFERENCES, readingMode: "scroll", readingModeExplicit: true });
     const snapshot = createReadingPreferencesStore({ storage: memoryStorage(raw) }).getSnapshot();
     assert.equal(snapshot.settings.readingMode, "scroll", `version ${version}`);
@@ -301,7 +302,7 @@ test("DEVICE-FIX4 (REQ-45): choosing 'scroll' in the UI sticks across store inst
   // An unrelated change must not clear the marker on disk.
   assert.equal(store.update({ theme: "night" }), true);
   const written = JSON.parse(storage.values.get(READING_PREFERENCES_KEY));
-  assert.equal(written.version, 6);
+  assert.equal(written.version, 7);
   assert.equal(written.readingMode, "scroll");
   assert.equal(written.readingModeExplicit, true);
   const reloaded = createReadingPreferencesStore({ storage }).getSnapshot();
@@ -318,4 +319,33 @@ test("DEVICE-FIX4 (REQ-45): the reading-mode group leads the preferences sheet, 
   assert.ok(modeAt < sizeAt, "reading mode is the first setting group in the sheet");
   // Exactly one reading-mode group: the move must not duplicate it.
   assert.equal(jsx.split('"readingMode"').length - 1, 1);
+});
+
+test("READER-FIX3 (REQ-47): version 6 records gain the curl default silently; a chosen slide style persists as version 7", () => {
+  const storage = memoryStorage(JSON.stringify({ version: 6, ...DEFAULT_READING_PREFERENCES }));
+  const store = createReadingPreferencesStore({ storage });
+  assert.equal(store.getSnapshot().settings.turnStyle, "curl");
+  assert.equal(store.getSnapshot().storageWarning, null);
+  assert.equal(store.update({ turnStyle: "slide" }), true);
+  const written = JSON.parse(storage.values.get(READING_PREFERENCES_KEY));
+  assert.equal(written.version, 7);
+  assert.equal(written.turnStyle, "slide");
+  assert.equal(createReadingPreferencesStore({ storage }).getSnapshot().settings.turnStyle, "slide");
+});
+
+test("READER-FIX3 (REQ-47): an unknown turn style falls back to curl and reports the fallback", () => {
+  const raw = JSON.stringify({ version: 7, ...DEFAULT_READING_PREFERENCES, turnStyle: "spin" });
+  const snapshot = createReadingPreferencesStore({ storage: memoryStorage(raw) }).getSnapshot();
+  assert.equal(snapshot.settings.turnStyle, "curl");
+  assert.match(snapshot.storageWarning, /默认/);
+});
+
+test("READER-FIX3 (REQ-47): the turn-style group sits with the reading-mode group, gated to paged mode", async () => {
+  const { readFileSync } = await import("node:fs");
+  const jsx = readFileSync(new URL("../src/components/ReadingPreferences.jsx", import.meta.url), "utf8");
+  const modeAt = jsx.indexOf('"readingMode"');
+  const turnAt = jsx.indexOf('"turnStyle"');
+  const sizeAt = jsx.indexOf("<legend>文字大小</legend>");
+  assert.ok(modeAt > -1 && turnAt > modeAt && turnAt < sizeAt, "turn style follows the mode group, before font size");
+  assert.match(jsx, /settings\.readingMode === "page" && options\("turnStyle"/);
 });

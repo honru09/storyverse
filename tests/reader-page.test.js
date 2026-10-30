@@ -36,7 +36,9 @@ test("REQ-46: paged mode renders the pre-paginating ReaderPager in one fixed con
   // The reader's DOM contract survives in paged mode: every rendered
   // slice stays addressable by its source paragraph index, exactly
   // like the scroll-mode article's paragraphs (e2e + find rely on it).
-  assert.match(pager, /data-reading-paragraph=\{segment\.p\}/);
+  // REQ-47: track pages keep the contract verbatim; only the curl
+  // overlay copies render decorative (no paragraph anchors).
+  assert.match(pager, /decorative \? \{\} : \{ "data-reading-paragraph": segment\.p \}/);
 });
 
 test("REQ-46: pagination measures real line boxes and packs whole lines only", () => {
@@ -56,13 +58,17 @@ test("REQ-46: pagination measures real line boxes and packs whole lines only", (
 
 test("REQ-46: turns slide the whole-page track; drag is 1:1 and spring-settled", () => {
   assert.match(pager, /track\.animate\(/);
-  assert.match(pager, /cubic-bezier\(\.32,\.72,0,1\)/);
+  // REQ-47 retune (user-ordered "harmonious" easing): the slide now
+  // runs 360ms on cubic-bezier(.3,.7,.25,1) with a softer release
+  // spring (omega 15); the guard follows the retune like the FIX2
+  // precedent, it does not pin the retired REQ-46 curve.
+  assert.match(pager, /cubic-bezier\(\.3,\.7,\.25,1\)/);
   // Release thresholds keep the established feel (26% travel or a
   // decisive flick), and the release runs on a critically damped
   // spring seeded with the finger's velocity — no overshoot.
   assert.match(pager, /Math\.abs\(dx\) > w \* 0\.26/);
   assert.match(pager, /Math\.abs\(velocity\) > 0\.45 && Math\.abs\(dx\) > 36/);
-  assert.match(pager, /springKeyframes\(from, to, springVelocity\)/);
+  assert.match(pager, /springKeyframes\(from, to, springVelocity, 15\)/);
   assert.match(pager, /Math\.exp\(-omega \* t\)/);
   // Chapter boundaries stay tap-only: the pager refuses to drag past
   // its first/last page.
@@ -117,4 +123,50 @@ test("REQ-39: the contents page mirrors the directory's availability rules", () 
 test("REQ-39: front matter gates prose taps and keyboard paging while up", () => {
   assert.match(main, /frontStage !== null \}\)/);
   assert.match(main, /frontStage === "cover" && zone >= 1 \/ 3/);
+});
+
+// --- REQ-47: pagination safety band + turn-style choice -----------------
+
+test("REQ-47: packing reserves a safety band under the measured stack", () => {
+  // The packer takes an explicit safetyPx budget (one line pitch in
+  // the component) so a device whose real stack outgrows the hidden
+  // host's promise by up to a line still lands its last line inside
+  // the box — REQ-46 packed to the exact box height and clipped.
+  assert.match(pagerCore, /safetyPx = 0/);
+  assert.match(pagerCore, /pageHeight - Math\.max\(0, safetyPx\)/);
+  assert.match(pager, /safetyPx: safetyLevelRef\.current \* \(bodyLineHeightPx/);
+  // The guarantee is audited on the rendered pages themselves: if a
+  // page's own ink still crosses the box floor, the band escalates
+  // and the chapter repacks (bounded, per chapter).
+  assert.match(pager, /post-pack audit/);
+  assert.match(pager, /safetyLevelRef\.current \+= 1/);
+  // Re-pagination rides the existing paths (fonts.ready + resize
+  // already repack through the same paginate()).
+  assert.match(pager, /document\.fonts\?\.ready/);
+});
+
+test("REQ-47: the curl turn renders the sheet, its mirrored back and the page beneath", () => {
+  assert.match(pager, /reader-curl/);
+  assert.match(pager, /reader-curl-mirror/);
+  assert.match(pager, /reader-curl-shade/);
+  assert.match(pager, /reader-curl-shadow/);
+  // The flap is the sheet's own DOM reflected across the fold axis —
+  // text stays text (contracts intact), never a canvas snapshot.
+  assert.match(pager, /mirror\.style\.transform = `matrix\(/);
+  assert.match(pager, /decorative/);
+  assert.match(experienceCss, /\.reader-curl\{position:absolute;inset:0;z-index:3;pointer-events:none\}/);
+  // Tap turns sweep on the curl clock; drags drive the fold 1:1
+  // from the finger's displacement.
+  assert.match(pager, /CURL_MS = 480/);
+  assert.match(pager, /curl\.m = Math\.min\(wNow, Math\.max\(0, drag\.direction > 0/);
+});
+
+test("REQ-47: turn style is a v7 preference plumbed from the sheet to the pager", () => {
+  const prefsSource = readFileSync(new URL("../src/reading-preferences.js", import.meta.url), "utf8");
+  assert.match(prefsSource, /READER_TURN_STYLES = Object\.freeze\(\["curl", "slide"\]\)/);
+  assert.match(prefsSource, /turnStyle: "curl"/);
+  assert.match(main, /turnStyle=\{preferences\.settings\.turnStyle\}/);
+  assert.match(hook, /pageBy\(direction, opts\)/);
+  // Motion off still short-circuits both styles to an instant land.
+  assert.match(pager, /if \(!motionRef\.current\) \{ land\(target\); return true; \}/);
 });

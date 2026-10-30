@@ -5016,7 +5016,7 @@ function Reader({
       pointerId: event.pointerId,
       interactive: Boolean(event.target.closest("button, a, input, textarea, select, summary, label, dialog, .reader-chrome")),
     };
-    if (!tapStart.current.interactive && !frontStage) reading.dragStart(event.clientX);
+    if (!tapStart.current.interactive && !frontStage) reading.dragStart(event.clientX, event.clientY);
   };
   const forgetTap = () => { tapStart.current = null; };
   // READER-PAGE (REQ-38/39): horizontal drags feed the turn engine;
@@ -5036,7 +5036,7 @@ function Reader({
     }
   };
   const handleReaderCancel = () => { reading.dragCancel(); forgetTap(); };
-  const turnScreen = (direction) => {
+  const turnScreen = (direction, tapY = null) => {
     setChromeOpen(false);
     if (preferences.settings.readingMode === "page") {
       // READER-FIX2 (REQ-46): in paged mode the window never scrolls,
@@ -5046,7 +5046,7 @@ function Reader({
       if (!info) return;
       if (direction > 0 && info.page >= info.total - 1) { chapterTurn(1); return; }
       if (direction < 0 && info.page <= 0) { if (index > 0) chapterTurn(-1); return; }
-      reading.pageBy(direction);
+      reading.pageBy(direction, { tapY });
       return;
     }
     const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
@@ -5076,8 +5076,8 @@ function Reader({
       if (frontStage === "cover" && zone >= 1 / 3) setFrontStage("toc");
       return;
     }
-    if (zone < 1 / 3) turnScreen(-1);
-    else if (zone > 2 / 3) turnScreen(1);
+    if (zone < 1 / 3) turnScreen(-1, start.y);
+    else if (zone > 2 / 3) turnScreen(1, start.y);
     else setChromeOpen((open) => !open);
   };
   const clockText = clock.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -5515,6 +5515,7 @@ function Reader({
             paragraphs={chapter.paragraphs}
             endMatter={endMatter}
             motionOn={turnMotion}
+            turnStyle={preferences.settings.turnStyle}
             onSettle={reading.notePagerSettle}
           />
         ) : (

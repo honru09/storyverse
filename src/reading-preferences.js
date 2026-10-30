@@ -20,6 +20,11 @@ export const READER_FONT_FAMILIES = Object.freeze({
   system: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
   serif: '"Songti SC", "Noto Serif CJK SC", "Noto Serif SC", "Source Han Serif SC", SimSun, serif',
 });
+/* READER-FIX3 (REQ-47): the paged turn is a style choice — "curl" is
+   the book-like simulated page turn (the default), "slide" keeps
+   REQ-46's whole-page slide with a gentler curve. Only meaningful in
+   paged mode; scroll mode ignores it. */
+export const READER_TURN_STYLES = Object.freeze(["curl", "slide"]);
 export const DEFAULT_READING_PREFERENCES = Object.freeze({
   /* Default step is 1x on the fluid base (≈16px at 390 wide). The
      fixed 18px default was measured on the user's iPhone still
@@ -40,6 +45,8 @@ export const DEFAULT_READING_PREFERENCES = Object.freeze({
      record carries the explicit marker (see the load migration);
      unmarked "scroll" values follow this default. */
   readingMode: "page",
+  /* READER-FIX3 (REQ-47): the simulated curl is the default turn. */
+  turnStyle: "curl",
   keepAwake: false,
 });
 
@@ -57,6 +64,7 @@ const OPTIONS = Object.freeze({
   textAlign: ["left", "justify"],
   letterSpacing: [0, 0.03, 0.06],
   readingMode: ["scroll", "page"],
+  turnStyle: READER_TURN_STYLES,
   keepAwake: [true, false],
 });
 
@@ -91,7 +99,7 @@ function loadPreferences(storage) {
       return { settings: DEFAULT_READING_PREFERENCES, storageWarning: null, readingModeExplicit: false };
     }
     const parsed = JSON.parse(raw);
-    if (!isRecord(parsed) || ![1, 2, 3, 4, 5, 6].includes(parsed.version)) {
+    if (!isRecord(parsed) || ![1, 2, 3, 4, 5, 6, 7].includes(parsed.version)) {
       return { settings: DEFAULT_READING_PREFERENCES, storageWarning: INVALID_MESSAGE, readingModeExplicit: false };
     }
     /* Stored-settings rationalization (READER-FIX3 §31, fluid pass
@@ -102,8 +110,10 @@ function loadPreferences(storage) {
        almost certainly frozen rather than chosen, so it follows the
        current default; deliberate non-default choices are never
        touched. Migration is in-memory only — the record on disk is
-       rewritten (as version 6) on the next explicit change, never on
-       mount. */
+       rewritten (as version 7) on the next explicit change, never on
+       mount. REQ-47 added turnStyle at version 7: records from v6 or
+       earlier simply lack the key, and normalization supplies the
+       "curl" default, exactly like any other later-added field. */
     const migrated = { ...parsed };
     if (parsed.version < 4) {
       /* px -> multiplier (DESIGN §32): legacy sizes divide by the 16px
@@ -181,7 +191,7 @@ export function createReadingPreferencesStore({ storage = browserStorage() } = {
     let storageWarning = null;
     try {
       if (!storage?.setItem) throw new Error("Storage unavailable");
-      storage.setItem(READING_PREFERENCES_KEY, JSON.stringify({ version: 6, ...settings, readingModeExplicit }));
+      storage.setItem(READING_PREFERENCES_KEY, JSON.stringify({ version: 7, ...settings, readingModeExplicit }));
     } catch {
       storageWarning = UNAVAILABLE_MESSAGE;
     }

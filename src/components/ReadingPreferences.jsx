@@ -55,6 +55,10 @@ export default function ReadingPreferences({ value, onChange, storageWarning }) 
         it; the primary reading choice is the first thing listed now. */}
     {options("readingMode", "阅读方式", [{ value: "page", label: "逐屏阅读" }, { value: "scroll", label: "上下滚动" }])}
     {settings.readingMode === "page" && <p className="reading-preference-hint reading-font-note">点页面左／右两侧逐屏翻页，保留少量内容重叠，也可以直接上下滚动。</p>}
+    {/* READER-FIX3 (REQ-47): the turn animation is chosen right
+        under the mode it belongs to — simulated curl by default,
+        the smooth slide as the alternative. */}
+    {settings.readingMode === "page" && options("turnStyle", "翻页动画", [{ value: "curl", label: "仿真翻页" }, { value: "slide", label: "平滑滑动" }])}
 
     <fieldset className="reading-preferences-fieldset">
       <legend>文字大小</legend>

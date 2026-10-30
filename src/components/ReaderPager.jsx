@@ -31,14 +31,21 @@ import {
  *    100%.
  */
 
-const TURN_MS = 300;
-const TURN_EASE = "cubic-bezier(.32,.72,0,1)";
+/* READER-FIX3 (REQ-47): the slide turn's curve is retuned on the
+ * owner's word ("smooth, but harmonious"): 360ms on a soft-in,
+ * long-settle bezier replaces REQ-46's snappier drawer curve, and
+ * the drag-release spring softens from ω=18 to ω=15. */
+const TURN_MS = 360;
+const TURN_EASE = "cubic-bezier(.3,.7,.25,1)";
+/* The simulated curl's tap sweep: long enough for the fold to read
+ * as paper, eased in-out so the fold accelerates mid-page. */
+const CURL_MS = 480;
+const CURL_EASE = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 /* Critically damped spring sampled into WAAPI keyframes: position is
  * continuous AND velocity is continuous at release (the spring is
  * seeded with the finger's velocity), and it never overshoots. */
-function springKeyframes(from, to, velocityPxPerMs) {
-  const omega = 18;
+function springKeyframes(from, to, velocityPxPerMs, omega = 18) {
   const A = from - to;
   const B = velocityPxPerMs * 1000 + omega * A;
   const step = 1 / 60;
@@ -111,6 +118,9 @@ function measureChapter(host, { title, paragraphs }) {
   const articleRect = article.getBoundingClientRect();
   const proseRect = prose.getBoundingClientRect();
   const titleHeight = Math.max(0, proseRect.top - articleRect.top);
+  // READER-FIX3 (REQ-47): the fullest line pitch in the chapter —
+  // the pagination safety band is one of these (see reader-pager.js).
+  let bodyLineHeightPx = 0;
   const lines = [];
   // The previous paragraph's last line, as {top, advance}: paragraph
   // spacing in stack terms is the distance from the end of that line
@@ -144,6 +154,7 @@ function measureChapter(host, { title, paragraphs }) {
     // NEXT line's top; a paragraph's last line advances by the
     // paragraph's own computed line-height.
     const lineHeightPx = Number.parseFloat(getComputedStyle(element).lineHeight) || 0;
+    if (lineHeightPx > bodyLineHeightPx) bodyLineHeightPx = lineHeightPx;
     let searchFrom = 0;
     const own = [];
     lineBoxes.forEach((box, lineIndex) => {
@@ -173,7 +184,7 @@ function measureChapter(host, { title, paragraphs }) {
     const lastAdvance = own.length ? own[own.length - 1].height : 0;
     prevLast = { top: lastBox.top, advance: lastAdvance };
   }
-  return { titleHeight, lines };
+  return { titleHeight, lines, bodyLineHeightPx };
 }
 
 export default function ReaderPager({
@@ -183,6 +194,7 @@ export default function ReaderPager({
   paragraphs,
   endMatter,
   motionOn,
+  turnStyle = "curl",
   onSettle,
 }) {
   const viewportRef = useRef(null);
@@ -199,6 +211,24 @@ export default function ReaderPager({
   const dragRef = useRef(null);
   const motionRef = useRef(motionOn);
   motionRef.current = motionOn;
+  /* READER-FIX3 (REQ-47): turn style + pagination safety state.
+   * safetyLevel escalates the one-pitch safety band when the
+   * post-pack audit (below) still finds ink past the box on this
+   * device — the device's own rendered geometry is the final word. */
+  const turnStyleRef = useRef(turnStyle);
+  turnStyleRef.current = turnStyle;
+  const safetyLevelRef = useRef(1);
+  const linePitchRef = useRef(0);
+  /* The curl overlay: React state only carries WHICH pages play the
+   * sheet and the under-page; the fold itself is driven per-frame
+   * through refs (no re-render per frame). */
+  const [curlView, setCurlView] = useState(null);
+  const curlRef = useRef(null);
+  const curlFlatRef = useRef(null);
+  const curlFlapRef = useRef(null);
+  const curlMirrorRef = useRef(null);
+  const curlShadeRef = useRef(null);
+  const curlShadowRef = useRef(null);
   const onSettleRef = useRef(onSettle);
   onSettleRef.current = onSettle;
   const lengthsRef = useRef(paragraphs.map((text) => text.length));
@@ -245,7 +275,7 @@ export default function ReaderPager({
     pageRef.current = target;
     let animation;
     if (springVelocity !== null) {
-      const { frames, durationMs } = springKeyframes(from, to, springVelocity);
+      const { frames, durationMs } = springKeyframes(from, to, springVelocity, 15);
       animation = track.animate(frames, { duration: durationMs, easing: "linear", fill: "forwards" });
     } else {
       animation = track.animate(
@@ -286,8 +316,20 @@ export default function ReaderPager({
     return next >= 0 && next <= total() - 1;
   }, []);
 
-  const pageBy = useCallback((direction) => {
+  const pageBy = useCallback((direction, opts = {}) => {
     if (!pagesRef.current) return false;
+    if (turnStyleRef.current === "curl") {
+      if (curlRef.current) { queuedRef.current = direction; return true; }
+      if (!canTurn(direction)) return false;
+      const target = pageRef.current + direction;
+      if (!motionRef.current) { land(target); return true; }
+      startCurl(direction, { tapY: opts.tapY ?? null });
+      requestAnimationFrame(() => {
+        const curl = curlRef.current;
+        if (curl) animateCurlTo(curl.completeM, { tap: true });
+      });
+      return true;
+    }
     if (animationRef.current) { queuedRef.current = direction; return true; }
     if (!canTurn(direction)) return false;
     const target = pageRef.current + direction;
@@ -306,6 +348,7 @@ export default function ReaderPager({
 
   const seekTo = useCallback((percent) => {
     if (!pagesRef.current) return;
+    dropCurl();
     stopAnimation();
     land(pageForProgress(percent, total()));
   }, [land, stopAnimation]);
@@ -313,12 +356,20 @@ export default function ReaderPager({
   const restoreAnchor = useCallback((anchor) => {
     if (!anchor) return;
     if (!pagesRef.current) { pendingAnchorRef.current = anchor; return; }
+    dropCurl();
     stopAnimation();
     land(pageForAnchor(pagesRef.current, anchor, lengthsRef.current));
   }, [land, stopAnimation]);
 
   /* ——— drag ——— */
-  const dragStart = useCallback((x) => {
+  const dragStart = useCallback((x, y = null) => {
+    if (curlRef.current) {
+      // Same rule as the slide path: a grab commits the in-flight
+      // curl to its target page before the new drag begins.
+      const target = curlRef.current.target;
+      dropCurl();
+      land(target);
+    }
     if (animationRef.current) {
       // Commit the in-flight turn instantly so the finger grabs a
       // settled page, never a moving one.
@@ -327,7 +378,7 @@ export default function ReaderPager({
       try { token.animation.finish(); } catch { /* noop */ }
       land(pageRef.current);
     }
-    dragRef.current = { x0: x, active: false, dead: false, direction: 0, samples: [{ x, t: performance.now() }] };
+    dragRef.current = { x0: x, y0: y, active: false, dead: false, direction: 0, curl: false, samples: [{ x, t: performance.now() }] };
   }, [land]);
 
   const dragMove = useCallback((x) => {
@@ -343,6 +394,20 @@ export default function ReaderPager({
       if (!canTurn(direction)) { drag.dead = true; return false; }
       drag.active = true;
       drag.direction = direction;
+      if (turnStyleRef.current === "curl") {
+        drag.curl = true;
+        startCurl(direction, { tapY: drag.y0 });
+      }
+    }
+    if (drag.curl) {
+      const curl = curlRef.current;
+      if (!curl) return false;
+      const wNow = width();
+      // The fold sweeps with the finger's displacement, 1:1 — drag
+      // further, curl further, whichever edge the turn started from.
+      curl.m = Math.min(wNow, Math.max(0, drag.direction > 0 ? wNow - (drag.x0 - x) : x - drag.x0));
+      applyCurl();
+      return true;
     }
     const w = width();
     const offset = Math.min(w, Math.max(-w, dx));
@@ -363,6 +428,12 @@ export default function ReaderPager({
     // Release the flick INTO the spring: its sign follows the finger.
     const complete = !forceBack && (Math.abs(dx) > w * 0.26
       || (Math.sign(velocity) === -direction && Math.abs(velocity) > 0.45 && Math.abs(dx) > 36));
+    if (drag.curl) {
+      const curl = curlRef.current;
+      if (!curl) return true;
+      animateCurlTo(complete ? curl.completeM : (direction > 0 ? w : 0), { velocity });
+      return true;
+    }
     const target = complete ? pageRef.current + direction : pageRef.current;
     animateTo(target, { springVelocity: velocity });
     return true;
@@ -442,6 +513,7 @@ export default function ReaderPager({
     const w = viewport.clientWidth;
     const h = viewport.clientHeight;
     if (!w || !h) return false;
+    dropCurl();
     host.style.width = `${w}px`;
     // A chapter change must NOT inherit the old chapter's anchor: the
     // hook's restore (which runs right after this layout pass) owns
@@ -450,12 +522,18 @@ export default function ReaderPager({
     // repagination (settings, resize, fonts) keeps the position.
     const chapterChanged = lastChapterKeyRef.current !== chapterKey;
     lastChapterKeyRef.current = chapterKey;
+    if (chapterChanged) safetyLevelRef.current = 1;
     const anchorBefore = chapterChanged
       ? pendingAnchorRef.current
       : (pagesRef.current ? anchorOf(pageRef.current) : pendingAnchorRef.current);
-    const { titleHeight, lines } = measureChapter(host, { title, paragraphs });
+    const { titleHeight, lines, bodyLineHeightPx } = measureChapter(host, { title, paragraphs });
+    linePitchRef.current = bodyLineHeightPx || 0;
     const cappedTitle = Math.min(titleHeight, Math.floor(h * 0.5));
-    const next = packPages(lines, h, { titleHeight: cappedTitle, paragraphLengths: lengthsRef.current });
+    const next = packPages(lines, h, {
+      titleHeight: cappedTitle,
+      paragraphLengths: lengthsRef.current,
+      safetyPx: safetyLevelRef.current * (bodyLineHeightPx || 0),
+    });
     pagesRef.current = next;
     setPages(next);
     const target = anchorBefore
@@ -507,51 +585,274 @@ export default function ReaderPager({
     return () => { cancelled = true; observer.disconnect(); };
   }, [signature, paginate]);
 
-  const renderSegment = (segment, key) => {
+  /* ——— READER-FIX3 (REQ-47): post-pack audit ———
+   * The packer budgets from the hidden host's measured advances plus
+   * a one-pitch safety band. If THIS device still renders some page's
+   * last line past the box (its real stack outgrew the host's
+   * promise), escalate the band by another pitch and repack — at
+   * most twice per chapter. The audit reads the rendered pages' own
+   * ink, so the no-clipped-line guarantee is checked where the
+   * reader actually reads, in the device's own metrics. */
+  useLayoutEffect(() => {
+    if (!pages || safetyLevelRef.current >= 3) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const boxHeight = viewport.clientHeight;
+    let overflow = false;
+    for (const pageEl of viewport.querySelectorAll(".reader-pager-page:not(.reader-pager-end)")) {
+      const segments = pageEl.querySelectorAll("[data-reading-paragraph]");
+      const node = segments[segments.length - 1]?.firstChild;
+      if (!node || node.nodeType !== 3) continue;
+      const pageRect = pageEl.getBoundingClientRect();
+      const range = document.createRange();
+      range.setStart(node, 0);
+      range.setEnd(node, node.length);
+      const rects = [...range.getClientRects()].filter((rect) => rect.height > 0);
+      range.detach?.();
+      const inkBottom = rects.length ? rects[rects.length - 1].bottom - pageRect.top : 0;
+      if (inkBottom > boxHeight - 1) { overflow = true; break; }
+    }
+    if (overflow) {
+      safetyLevelRef.current += 1;
+      paginate();
+    }
+  }, [pages, paginate]);
+
+  /* ——— READER-FIX3 (REQ-47): the simulated curl ———
+   * The stage stacks three renderings of the chapter's own text:
+   *   under — the page being revealed, static and complete;
+   *   flat  — the turning sheet's still-flat part, clipped to the
+   *           left of the curl band;
+   *   flap  — the sheet's back inside the band: the same DOM
+   *           reflected across the fold axis by a 2D reflection matrix
+   *           reflection, so the "print through the paper" is the
+   *           page's own mirrored text, dimmed under a shade whose
+   *           bright ridge rides the fold, plus the soft shadow the
+   *           roll casts onto the revealed page.
+   * Every layer is opaque paper: no frame ever cross-fades two
+   * different texts. The fold axis sweeps the stage and leans with
+   * the grab height, like the reference reader's corner curl. */
+  const curlBandWidth = (m) => {
+    const w = width();
+    return Math.min(w * 0.36, Math.max(0, w - m) * 0.55);
+  };
+
+  const applyCurl = useCallback(() => {
+    const curl = curlRef.current;
+    const viewport = viewportRef.current;
+    if (!curl || !viewport) return;
+    const w = viewport.clientWidth;
+    const h = viewport.clientHeight;
+    const m = Math.min(w, Math.max(0, curl.m));
+    const axTop = m - curl.lean / 2;
+    const axBot = m + curl.lean / 2;
+    const bw = curlBandWidth(m);
+    const flat = curlFlatRef.current;
+    if (flat) flat.style.clipPath = `polygon(0px 0px, ${axTop - bw}px 0px, ${axBot - bw}px ${h}px, 0px ${h}px)`;
+    const flap = curlFlapRef.current;
+    if (flap) flap.style.clipPath = `polygon(${axTop - bw}px 0px, ${axTop}px 0px, ${axBot}px ${h}px, ${axBot - bw}px ${h}px)`;
+    const mirror = curlMirrorRef.current;
+    if (mirror) {
+      // Reflection across the fold axis: the line through (m, h/2)
+      // with direction (lean, h). matrix(a,b,c,d,tx,ty) with
+      // transform-origin 0 0 (see reader-experience.css).
+      const len = Math.hypot(curl.lean, h) || 1;
+      const ux = curl.lean / len;
+      const uy = h / len;
+      const a = 2 * ux * ux - 1;
+      const b = 2 * ux * uy;
+      const d = 2 * uy * uy - 1;
+      const tx = m - (a * m + b * (h / 2));
+      const ty = h / 2 - (b * m + d * (h / 2));
+      mirror.style.transform = `matrix(${a}, ${b}, ${b}, ${d}, ${tx}, ${ty})`;
+    }
+    const shade = curlShadeRef.current;
+    if (shade) {
+      shade.style.clipPath = `polygon(${axTop - bw - 30}px 0px, ${axTop}px 0px, ${axBot}px ${h}px, ${axBot - bw - 30}px ${h}px)`;
+      shade.style.background = `linear-gradient(90deg, rgba(0,0,0,0) ${Math.max(0, m - bw - 30)}px, rgba(0,0,0,.13) ${Math.max(0, m - bw)}px, rgba(0,0,0,.03) ${Math.max(0, m - bw * 0.45)}px, rgba(255,255,255,.15) ${Math.max(0, m - 16)}px, rgba(0,0,0,.26) ${m}px, rgba(0,0,0,0) ${m + 2}px)`;
+    }
+    const shadow = curlShadowRef.current;
+    if (shadow) {
+      shadow.style.clipPath = `polygon(${axTop}px 0px, ${axTop + 36}px 0px, ${axBot + 36}px ${h}px, ${axBot}px ${h}px)`;
+      shadow.style.background = `linear-gradient(90deg, rgba(0,0,0,.22) ${m}px, rgba(0,0,0,0) ${m + 36}px)`;
+    }
+  }, []);
+
+  const endCurl = useCallback((targetPage) => {
+    const curl = curlRef.current;
+    if (curl?.raf) cancelAnimationFrame(curl.raf);
+    curlRef.current = null;
+    setCurlView(null);
+    land(targetPage);
+    const queued = queuedRef.current;
+    queuedRef.current = 0;
+    if (queued) apiRef.current?.pageBy(queued);
+  }, [land]);
+
+  const dropCurl = useCallback(() => {
+    const curl = curlRef.current;
+    if (!curl) return;
+    if (curl.raf) cancelAnimationFrame(curl.raf);
+    curlRef.current = null;
+    setCurlView(null);
+  }, []);
+
+  /* Sweep the fold to an end position: eased for taps, a closed-form
+   * critically damped spring (seeded with the finger's velocity) for
+   * drag releases — the same spring family as the slide settle. */
+  const animateCurlTo = useCallback((toM, { velocity = 0, tap = false } = {}) => {
+    const curl = curlRef.current;
+    if (!curl) return;
+    if (curl.raf) cancelAnimationFrame(curl.raf);
+    const from = curl.m;
+    const started = performance.now();
+    const finish = () => {
+      const done = curlRef.current;
+      if (!done) return;
+      done.m = toM;
+      applyCurl();
+      endCurl(toM === done.completeM ? done.target : done.from);
+    };
+    if (tap) {
+      const step = (now) => {
+        const live = curlRef.current;
+        if (!live) return;
+        const t = Math.min(1, (now - started) / CURL_MS);
+        live.m = from + (toM - from) * CURL_EASE(t);
+        applyCurl();
+        if (t < 1) { live.raf = requestAnimationFrame(step); return; }
+        live.raf = 0;
+        finish();
+      };
+      curl.raf = requestAnimationFrame(step);
+      return;
+    }
+    const omega = 16;
+    const A = from - toM;
+    const B = velocity * 1000 + omega * A;
+    const step = (now) => {
+      const live = curlRef.current;
+      if (!live) return;
+      const t = (now - started) / 1000;
+      const e = Math.exp(-omega * t);
+      const x = toM + (A + B * t) * e;
+      const v = (B - omega * (A + B * t)) * e;
+      live.m = x;
+      applyCurl();
+      if ((t > 0.05 && Math.abs(x - toM) < 0.9 && Math.abs(v) < 16) || t > 0.65) {
+        live.raf = 0;
+        finish();
+        return;
+      }
+      live.raf = requestAnimationFrame(step);
+    };
+    curl.raf = requestAnimationFrame(step);
+  }, [applyCurl, endCurl]);
+
+  const startCurl = useCallback((direction, { tapY = null } = {}) => {
+    const current = pageRef.current;
+    const target = current + direction;
+    const w = width();
+    const rect = viewportRef.current?.getBoundingClientRect();
+    const grab = rect && tapY !== null
+      ? Math.min(1, Math.max(0, (tapY - rect.top) / Math.max(1, rect.height)))
+      : 0.72;
+    curlRef.current = {
+      dir: direction,
+      from: current,
+      target,
+      sheet: direction > 0 ? current : target,
+      under: direction > 0 ? target : current,
+      m: direction > 0 ? w : 0,
+      completeM: direction > 0 ? 0 : w,
+      lean: direction * (grab - 0.5) * 0.35 * w,
+      raf: 0,
+    };
+    setCurlView({ sheet: curlRef.current.sheet, under: curlRef.current.under });
+    return true;
+  }, []);
+
+  /* The overlay's first frame lands once its layers mount. */
+  useLayoutEffect(() => {
+    if (curlView) applyCurl();
+  }, [curlView, applyCurl]);
+
+  /* A style switch mid-curl parks the sheet back on its page. */
+  useEffect(() => { dropCurl(); }, [turnStyle, dropCurl]);
+
+  const renderSegment = (segment, key, decorative = false) => {
     const text = (paragraphs[segment.p] || "").slice(segment.start, segment.end);
     const style = {};
     if (segment.gap) style.marginTop = `${segment.gap}px`;
     if (!segment.startsParagraph) style.textIndent = "0px";
+    /* The curl overlay re-renders the same slices as decoration;
+     * the addressable DOM contract (data-reading-paragraph) stays
+     * unique to the track pages, so lookups never see doubles. */
+    const contract = decorative ? {} : { "data-reading-paragraph": segment.p };
     if (segment.p === 0) {
       return (
-        <p key={key} className="article-lede" style={style} data-reading-paragraph={segment.p}>
+        <p key={key} className="article-lede" style={style} {...contract}>
           {text}
         </p>
       );
     }
     return (
-      <p key={key} style={style} data-reading-paragraph={segment.p}>
+      <p key={key} style={style} {...contract}>
         {text}
       </p>
+    );
+  };
+
+  /* One page's article, shared by the track and the curl overlay.
+   * `pageIndex` may address the chapter-end page (== pages.length). */
+  const renderPageArticle = (pageIndex, decorative = false) => {
+    const list = pages || [];
+    if (pageIndex >= list.length) {
+      return <article className="reader-article">{endMatter}</article>;
+    }
+    const page = list[pageIndex];
+    if (!page) return null;
+    const lede = page.segments.filter((segment) => segment.p === 0);
+    const bodySegments = page.segments.filter((segment) => segment.p > 0);
+    const prefix = decorative ? "curl-" : "";
+    return (
+      <article className="reader-article">
+        {pageIndex === 0 && <h1>{title}</h1>}
+        <div className="reader-prose" lang="zh-CN">
+          {lede.map((segment, index) => renderSegment(segment, `${prefix}lede-${index}`, decorative))}
+          <div className="article-body">
+            {bodySegments.map((segment, index) => renderSegment(segment, `${prefix}body-${index}`, decorative))}
+          </div>
+        </div>
+      </article>
     );
   };
 
   return (
     <div className="reader-pager" ref={viewportRef}>
       <div className="reader-pager-track" ref={trackRef}>
-        {(pages || []).map((page, pageIndex) => {
-          const lede = page.segments.filter((segment) => segment.p === 0);
-          const bodySegments = page.segments.filter((segment) => segment.p > 0);
-          return (
-            <div className="reader-pager-page" key={pageIndex} aria-hidden={pageIndex !== pageRef.current || undefined}>
-              <article className="reader-article">
-                {pageIndex === 0 && <h1>{title}</h1>}
-                <div className="reader-prose" lang="zh-CN">
-                  {lede.map((segment, index) => renderSegment(segment, `lede-${index}`))}
-                  <div className="article-body">
-                    {bodySegments.map((segment, index) => renderSegment(segment, `body-${index}`))}
-                  </div>
-                </div>
-              </article>
-            </div>
-          );
-        })}
+        {(pages || []).map((page, pageIndex) => (
+          <div className="reader-pager-page" key={pageIndex} aria-hidden={pageIndex !== pageRef.current || undefined}>
+            {renderPageArticle(pageIndex)}
+          </div>
+        ))}
         {pages && (
           <div className="reader-pager-page reader-pager-end">
             <article className="reader-article">{endMatter}</article>
           </div>
         )}
       </div>
+      {curlView && (
+        <div className="reader-curl" aria-hidden="true">
+          <div className="reader-curl-layer">{renderPageArticle(curlView.under, true)}</div>
+          <div className="reader-curl-shadow" ref={curlShadowRef} />
+          <div className="reader-curl-layer" ref={curlFlatRef}>{renderPageArticle(curlView.sheet, true)}</div>
+          <div className="reader-curl-flap" ref={curlFlapRef}>
+            <div className="reader-curl-mirror" ref={curlMirrorRef}>{renderPageArticle(curlView.sheet, true)}</div>
+          </div>
+          <div className="reader-curl-shade" ref={curlShadeRef} />
+        </div>
+      )}
       <div className="reader-pager-measure" ref={measureRef} aria-hidden="true" />
     </div>
   );

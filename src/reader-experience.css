@@ -189,3 +189,13 @@
 .reader-pager-end{overflow-y:auto;overscroll-behavior:contain}
 .reader-pager-end .reader-article{padding-bottom:7.5rem}
 .reader-pager-measure{position:absolute;left:-10000px;top:0;visibility:hidden;pointer-events:none}
+/* READER-FIX3 (REQ-47): the simulated-curl overlay. Every layer is
+   full-stage opaque paper; the fold is driven per frame by
+   clip-path polygons, and the flap's text is the sheet's own DOM
+   reflected across the fold axis — the mirror layer therefore runs
+   with transform-origin 0 0 (ReaderPager sets the matrix). */
+.reader-curl{position:absolute;inset:0;z-index:3;pointer-events:none}
+.reader-curl-layer{position:absolute;inset:0;background:var(--reader-bg)}
+.reader-curl-flap{position:absolute;inset:0}
+.reader-curl-mirror{position:absolute;inset:0;background:var(--reader-bg);transform-origin:0 0}
+.reader-curl-shade,.reader-curl-shadow{position:absolute;inset:0}

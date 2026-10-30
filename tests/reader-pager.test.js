@@ -109,3 +109,22 @@ test("progress math: first page 0, end page 100, seek is the inverse", () => {
   assert.equal(pageForProgress(100, 3), 2);
   assert.equal(pageForProgress(140, 3), 2);
 });
+
+test("packPages safety band (REQ-47): pages respect box minus band, no line is ever dropped", () => {
+  const { lines, paragraphLengths } = chapterLines();
+  const heightOf = (page) => page.segments.reduce((sum, seg, i) => (
+    sum + (seg.end - seg.start) / 10 * 30 + seg.gap
+  ), 0);
+  const unbanded = packPages(lines, 150, { paragraphLengths });
+  const banded = packPages(lines, 150, { paragraphLengths, safetyPx: 30 });
+  assert.ok(banded.length >= unbanded.length, 'the band can only split pages further');
+  for (const page of banded) assert.ok(heightOf(page) <= 120 + 1e-9, 'page stack stays one pitch above the box floor');
+  assert.equal(banded.reduce((sum, page) => sum + page.lineCount, 0), lines.length, 'no line dropped');
+  // The band also applies under the title block on page 1.
+  const titled = packPages(lines, 150, { paragraphLengths, titleHeight: 50, safetyPx: 30 });
+  assert.ok(50 + heightOf(titled[0]) <= 120 + 1e-9, 'title page honours the band');
+  // An absurd band degrades to sparse pages but still packs every
+  // line exactly once — content is never sacrificed to the margin.
+  const extreme = packPages(lines, 150, { paragraphLengths, safetyPx: 100000 });
+  assert.equal(extreme.reduce((sum, page) => sum + page.lineCount, 0), lines.length);
+});
