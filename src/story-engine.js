@@ -251,6 +251,84 @@ export const CUSTOM_GENRE = {
 }
 
 /*
+ * 自由题材 (REQ-51, GENRE-FREEDOM): step one of the forge is no longer a
+ * closed taxonomy. Beside the fifteen writing templates the reader may
+ * type ANY genre in their own words （民国谍战 / 末世种田 / 赛博侦探…).
+ * The pick is stored as genreTemplateId 'custom' + customGenreText —
+ * note genreId stays the WORLD id (its 'custom' already means the
+ * god-mode world), so the free genre rides the template field, never
+ * the world field. The text is reader-authored data: it reaches the
+ * model only through the server's delimited data block, sanitised like
+ * the god-mode setting.
+ *
+ * No new template is minted for a free genre. Its writing support is
+ * borrowed from the nearest shelf family via the small keyword table
+ * below — the same table the bookstore files the finished book under,
+ * so the craft a free genre borrows and the shelf it lands on can never
+ * disagree. A text that hits no keyword borrows the flagship family's
+ * craft and files under it too: 玄幻修真 is the house's main-current
+ * 爽文 family, the closest thing to a general-purpose power-fantasy
+ * scaffold the taxonomy has.
+ */
+export const CUSTOM_TEMPLATE_ID = 'custom'
+export const CUSTOM_GENRE_TEXT_MAX = 40
+export const CUSTOM_GENRE_FALLBACK_SHELF_ID = 'xuanzhen'
+
+// Keyword → shelf family, scanned longest-match first (a longer, more
+// specific word beats a short generic one); ties break by table order,
+// which puts the strongest genre signals （规则怪谈/灵异， 反派） ahead of
+// the broad containers. Kept deliberately small and explicit — this is
+// a routing table, not a classifier.
+export const CUSTOM_GENRE_FAMILY_KEYWORDS = [
+  ['xuanyi', ['规则怪谈', '怪谈', '悬疑', '惊悚', '恐怖', '诡异', '克苏鲁', '侦探', '探案', '推理', '刑侦']],
+  ['lingyi', ['灵异', '民俗', '风水', '阴阳', '茅山', '僵尸', '冥婚', '捉鬼', '闹鬼', '纸扎']],
+  ['fanpai', ['反派主角', '反派', '恶人', '魔头', '黑化', '大反派']],
+  ['fuben', ['无限流', '无限', '副本', '轮回乐园', '主神空间', '闯关']],
+  ['dianjing', ['电竞', '竞技', '网游', '游戏', '手游']],
+  ['chuanyue', ['穿越', '重生', '快穿', '穿书', '魂穿', '胎穿']],
+  ['moshi', ['末世', '末日', '废土', '丧尸', '灾变', '囤货', '天灾']],
+  ['kehuan', ['科幻', '星际', '赛博', '机甲', '太空', '外星', '异星', '人工智能', '时空', '宇宙']],
+  ['wuxia', ['武侠', '江湖', '武林', '门派', '镖局', '侠客']],
+  ['xuanzhen', ['修仙', '修真', '仙侠', '玄幻', '高武', '灵气', '宗门', '御剑', '渡劫', '洪荒']],
+  ['junshi', ['军事', '军旅', '特种兵', '佣兵', '军营']],
+  ['lishi', ['历史', '谍战', '特工', '间谍', '民国', '古代', '朝堂', '权谋', '宫廷', '帝王', '三国', '大明', '大唐', '大宋', '大清', '抗战']],
+  ['yanqing', ['言情', '恋爱', '爱情', '甜宠', '虐恋', '耽美', '百合', '总裁', '替嫁', '婚恋', '暗恋', '初恋', '宫斗', '宅斗', '后宫']],
+  ['yule', ['娱乐圈', '明星', '演员', '综艺', '影帝', '影后', '偶像', '选秀']],
+  ['zhongtian', ['种田', '农家', '田园', '农场', '渔村', '山村']],
+  ['tiyu', ['体育', '足球', '篮球', '网球', '奥运', '运动员', '赛场', '拳击', '赛车']],
+  ['duanpian', ['短篇', '知乎', '盐选', '微小说', '短故事']],
+  ['dushi', ['都市', '职场', '校园', '青春', '现实', '创业', '神豪', '商战', '官场', '医生', '律师']],
+]
+
+// Resolve free genre text to its nearest shelf family, or null when no
+// keyword hits (callers then use CUSTOM_GENRE_FALLBACK_SHELF_ID).
+export const customGenreShelfFor = (text) => {
+  const haystack = typeof text === 'string' ? text : ''
+  if (!haystack) return null
+  let best = null
+  for (const [shelfId, keywords] of CUSTOM_GENRE_FAMILY_KEYWORDS) {
+    for (const keyword of keywords) {
+      if (haystack.includes(keyword) && (!best || keyword.length > best.keyword.length)) {
+        best = { shelfId, keyword }
+      }
+    }
+  }
+  return best ? shelfById(best.shelfId) : null
+}
+
+// The shelf a free-genre book always ends up with: nearest family, or
+// the fallback family when the text matches nothing.
+export const customGenreHomeShelfFor = (text) =>
+  customGenreShelfFor(text) || shelfById(CUSTOM_GENRE_FALLBACK_SHELF_ID)
+
+// The writing template whose craft a free genre borrows: the home
+// family's first (flagship) template.
+export const customGenreAnchorTemplateId = (text) => {
+  const shelf = customGenreHomeShelfFor(text)
+  return shelf?.templateIds[0] || 'xuanhuan'
+}
+
+/*
  * 身份 (origin identity): the concept layer above the spawn point. The reader
  * first picks WHO they are in this world — one of ten cross-world concepts —
  * and only then picks a concrete place to wake up in, from the short list
@@ -525,6 +603,53 @@ export const TEMPLATE_SIGNATURE_ABILITIES = {
     { id: 'sig-er-ren-1', name: '恶名远播', desc: '你的名字先你三天到达下一座城，守门人听见就手抖' },
     { id: 'sig-er-ren-2', name: '掠夺直觉', desc: '一眼看穿一处地方最值钱、又最守不住的东西是什么' },
   ],
+  // REQ-51 expansion templates: two signature abilities each, the same
+  // contract every template signs (they travel with the category into
+  // any world the reader pairs it with).
+  wuxia: [
+    { id: 'sig-wuxia-1', name: '听风辨器', desc: '兵器破空的声音先到，你总能提前半招知道来路' },
+    { id: 'sig-wuxia-2', name: '人情嗅觉', desc: '一桌酒喝下来，谁欠谁的、谁要卖谁，你心里有一本账' },
+  ],
+  chuanyue: [
+    { id: 'sig-chuanyue-1', name: '超前眼光', desc: '别人看是废物的东西，你能看见它三年后的价钱' },
+    { id: 'sig-chuanyue-2', name: '图纸记忆', desc: '见过的器物结构过目不忘，拆过一遍就能仿着做出来' },
+  ],
+  chongsheng: [
+    { id: 'sig-chongsheng-1', name: '前尘索引', desc: '上一世的重大日期与价位，你都记得分毫不差' },
+    { id: 'sig-chongsheng-2', name: '偏差预警', desc: '事情开始偏离上一世剧本时，你心里会先响一下警' },
+  ],
+  gongdou: [
+    { id: 'sig-gongdou-1', name: '赏罚过目', desc: '府里历年的赏罚与人事看过一遍，记得比账房还牢' },
+    { id: 'sig-gongdou-2', name: '话外听音', desc: '一句客套话里藏着几层意思，你总能听出最底下那层' },
+  ],
+  yulequan: [
+    { id: 'sig-yulequan-1', name: '镜头直觉', desc: '镜头在哪里、光在哪里，你不用看监视器也知道' },
+    { id: 'sig-yulequan-2', name: '热度嗅觉', desc: '一个话题会不会火，你比热搜早半天闻到味道' },
+  ],
+  moshi: [
+    { id: 'sig-moshi-1', name: '存量心算', desc: '任何仓库扫一眼，存量与能撑的天数你心里有数' },
+    { id: 'sig-moshi-2', name: '废墟嗅觉', desc: '一片废墟里哪里还没被搜过，你走一圈就知道' },
+  ],
+  lingyi: [
+    { id: 'sig-lingyi-1', name: '阴阳耳', desc: '不该听见的声音，你总比别人早听见一息' },
+    { id: 'sig-lingyi-2', name: '规矩直觉', desc: '到一个陌生的地方，先犯哪条忌讳会出事，你心里有谱' },
+  ],
+  dianjing: [
+    { id: 'sig-dianjing-1', name: '操作预读', desc: '对手的起手式一露，你能提前半秒看见他的下一步' },
+    { id: 'sig-dianjing-2', name: '版本嗅觉', desc: '版本公告看一遍，哪个打法要起飞、哪个要废，你心里有数' },
+  ],
+  junshi: [
+    { id: 'sig-junshi-1', name: '地形烙印', desc: '走过一遍的地形连同射界与死角，全部刻在脑子里' },
+    { id: 'sig-junshi-2', name: '名单记忆', desc: '带过的人的姓名、籍贯与本事，你一个都不会记错' },
+  ],
+  tiyu: [
+    { id: 'sig-tiyu-1', name: '肌肉记忆', desc: '一个动作练过千遍后，身体比脑子先做出反应' },
+    { id: 'sig-tiyu-2', name: '对手慢放', desc: '关键回合里，对手的动作在你眼里自动慢了半拍' },
+  ],
+  zhongtian: [
+    { id: 'sig-zhongtian-1', name: '节气感应', desc: '雨什么时候来、地什么时候冻，你比天气预报早一天知道' },
+    { id: 'sig-zhongtian-2', name: '粮价心算', desc: '一担粮从地头到集市的每个环节值多少钱，你张口就报得出' },
+  ],
 }
 
 export const GENERIC_ABILITY_POOL = [
@@ -607,6 +732,22 @@ export const GENRE_TEMPLATES = [
   { id: 'urban', name: '都市', fullName: '都市', blurb: '小人物在城市规则里翻盘', symbol: '都', color: '#a78bfa' },
   { id: 'zhihu-short', name: '知乎短篇', fullName: '知乎风短篇', blurb: '第一人称，三分钟一个反转', symbol: '知', color: '#facc15' },
   { id: 'er-ren', name: '恶人', fullName: '恶人', blurb: '这一回，你来当那个恶人', symbol: '恶', color: '#f87171' },
+  // GENRE-FREEDOM expansion (REQ-51, 2026-10-30): the taxonomy grows a
+  // second ring of full templates so readers who prefer picking still
+  // find their ground. Every id below has a complete entry in
+  // knowledge/genres.json (beats / ruler / cost / craft) — no shell
+  // cards — and a style-anchor mapping in the gen-quality build.
+  { id: 'wuxia', name: '武侠', fullName: '武侠 · 江湖', blurb: '一柄旧剑，一张恩仇账，走遍江湖', symbol: '侠', color: '#2dd4bf' },
+  { id: 'chuanyue', name: '穿越', fullName: '穿越', blurb: '带着现代的脑子，落进一个不讲理的年代', symbol: '穿', color: '#8b5cf6' },
+  { id: 'chongsheng', name: '重生', fullName: '重生', blurb: '回到一切开始之前，这次每一步都算数', symbol: '回', color: '#f59e0b' },
+  { id: 'gongdou', name: '宫斗宅斗', fullName: '宫斗 · 宅斗', blurb: '位分与人心都是棋盘，输赢当场见分晓', symbol: '斗', color: '#e11d48' },
+  { id: 'yulequan', name: '娱乐圈', fullName: '娱乐圈', blurb: '从无人问津到聚光灯正中，每一步都被看着', symbol: '星', color: '#ec4899' },
+  { id: 'moshi', name: '末世', fullName: '末世', blurb: '秩序塌了以后，仓库、名单和人心都要重算', symbol: '墟', color: '#f97316' },
+  { id: 'lingyi', name: '灵异', fullName: '灵异 · 民俗', blurb: '老规矩不是迷信，是前人付过账的活法', symbol: '阴', color: '#64748b' },
+  { id: 'dianjing', name: '电竞', fullName: '游戏电竞', blurb: '段位与排名全服可见，从替补席打进决赛', symbol: '竞', color: '#06b6d4' },
+  { id: 'junshi', name: '军事', fullName: '军事', blurb: '命令、阵地与名单：每一次调动都见真章', symbol: '军', color: '#78716c' },
+  { id: 'tiyu', name: '体育', fullName: '体育', blurb: '成绩不会说谎，从陪练打进国家队名单', symbol: '赛', color: '#22c55e' },
+  { id: 'zhongtian', name: '种田', fullName: '种田', blurb: '一亩薄田起家，把日子一寸一寸过成家业', symbol: '田', color: '#84cc16' },
 ]
 
 const GENRE_TEMPLATE_BY_ID = Object.fromEntries(GENRE_TEMPLATES.map((template) => [template.id, template]))
@@ -626,15 +767,34 @@ export const genreTemplateById = (id) => GENRE_TEMPLATE_BY_ID[id] || null
  */
 export const GENRE_SHELVES = [
   { id: 'xuanzhen', name: '玄幻修真', templateIds: ['xuanhuan', 'xianxia', 'gaowu'] },
-  { id: 'yanqing', name: '言情', templateIds: ['romance-ancient', 'romance-modern'] },
+  // GENRE-FREEDOM expansion (REQ-51): nine more families. `art` is the
+  // public/art basename for the family's card face — this batch mints
+  // no new artwork, so each new family borrows the closest existing
+  // plate (family-* for the original nine, world/cover plates for the
+  // newcomers); a shelf without `art` uses its own family-<id> plate.
+  { id: 'wuxia', name: '武侠江湖', templateIds: ['wuxia'], art: 'cover-eastern' },
+  { id: 'chuanyue', name: '穿越重生', templateIds: ['chuanyue', 'chongsheng'], art: 'court' },
+  { id: 'yanqing', name: '言情', templateIds: ['romance-ancient', 'romance-modern', 'gongdou'] },
   { id: 'dushi', name: '都市现实', templateIds: ['urban', 'campus'] },
+  { id: 'yule', name: '娱乐圈', templateIds: ['yulequan'], art: 'neon' },
   { id: 'lishi', name: '历史', templateIds: ['lishi'] },
   { id: 'kehuan', name: '科幻', templateIds: ['scifi'] },
+  { id: 'moshi', name: '末世求生', templateIds: ['moshi'], art: 'cover-scifi' },
   { id: 'xuanyi', name: '悬疑惊悚', templateIds: ['horror', 'guize-guatan', 'suspense-supernatural'] },
+  { id: 'lingyi', name: '灵异民俗', templateIds: ['lingyi'], art: 'cover-xuanyi' },
   { id: 'fuben', name: '副本竞技', templateIds: ['wuxianliu'] },
+  { id: 'dianjing', name: '游戏电竞', templateIds: ['dianjing'], art: 'cover-fuben' },
+  { id: 'junshi', name: '军事', templateIds: ['junshi'], art: 'frontier' },
+  { id: 'tiyu', name: '体育竞技', templateIds: ['tiyu'], art: 'city' },
+  { id: 'zhongtian', name: '种田经营', templateIds: ['zhongtian'], art: 'mist' },
   { id: 'duanpian', name: '短篇', templateIds: ['zhihu-short'] },
   { id: 'fanpai', name: '反派主角', templateIds: ['er-ren'] },
 ]
+
+// The public/art basename of a family's card face (REQ-51 expansion):
+// shelves that borrow a plate say so in `art`; the original nine use
+// their own family-<id> plate.
+export const shelfArtBase = (shelf) => shelf?.art || `family-${shelf?.id}`
 
 export const shelfForTemplate = (templateId) =>
   GENRE_SHELVES.find((shelf) => shelf.templateIds.includes(templateId)) || null
@@ -644,6 +804,10 @@ export const shelfById = (shelfId) => GENRE_SHELVES.find((shelf) => shelf.id ===
 export const DEFAULT_DRAFT = {
   genreId: 'mist',
   genreTemplateId: '',
+  // 自由题材 (REQ-51): the reader's own genre words, present only while
+  // genreTemplateId is 'custom' (normalizeDraft strips it otherwise, so
+  // a stale text can never haunt a template-pinned book).
+  customGenreText: '',
   // UI-only flow marker: true once the user has actually picked (or rolled)
   // a world on the world screen. The engine ignores it; the start flow uses
   // it to tell a deliberate world apart from the default and to recognise
@@ -1060,9 +1224,19 @@ const normalizeDraft = (draft = {}) => {
   // The UI may retain these optional details in its draft after the switch is
   // turned off. A newly created story must not inherit them without opt-in.
   const lifeDetail = (field) => immersive ? cleanText(input[field], DEFAULT_DRAFT[field]) : ''
+  // 自由题材 (REQ-51): 'custom' is a real pin, kept only with its text —
+  // a custom pin whose text was cleared is no pin at all, and a text
+  // without the pin is stripped (see DEFAULT_DRAFT's note).
+  const customGenreText = input.genreTemplateId === CUSTOM_TEMPLATE_ID
+    ? cleanBounded(input.customGenreText, CUSTOM_GENRE_TEXT_MAX).trim()
+    : ''
+  const genreTemplateId = customGenreText
+    ? CUSTOM_TEMPLATE_ID
+    : genreTemplateById(input.genreTemplateId)?.id || ''
   return {
     genreId,
-    genreTemplateId: genreTemplateById(input.genreTemplateId)?.id || '',
+    genreTemplateId,
+    customGenreText: genreTemplateId === CUSTOM_TEMPLATE_ID ? customGenreText : '',
     storyLengthMode,
     targetChapters: storyLengthMode === 'custom' ? targetChapters : null,
     finishedAt: cleanBounded(input.finishedAt, 40),
@@ -4005,9 +4179,21 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
     }
     safeConfig.sourceGenres = protagonists.map((person) => person.genreId)
   }
+  // 自由题材 (REQ-51): a 'custom' pin survives the snapshot verbatim —
+  // it is the book's public category label, not private stock. The book
+  // also files under its home shelf via manualShelfId (the derivation
+  // the bookstore already honours first), resolved from the same
+  // keyword table the writing craft borrowed from, so a free-genre
+  // book is never unclassifiable and never blocks on taxonomy.
+  const customGenrePin = (value) => (value === CUSTOM_TEMPLATE_ID && safeConfig.customGenreText ? CUSTOM_TEMPLATE_ID : '')
   const genreTemplateId = genreTemplateById(story.genreTemplateId)?.id
     || genreTemplateById(story.config?.genreTemplateId)?.id
+    || customGenrePin(story.genreTemplateId)
+    || customGenrePin(story.config?.genreTemplateId)
     || ''
+  if (genreTemplateId === CUSTOM_TEMPLATE_ID && !safeConfig.manualShelfId) {
+    safeConfig.manualShelfId = customGenreHomeShelfFor(safeConfig.customGenreText)?.id || ''
+  }
   const bibleSource = story.worldBible && typeof story.worldBible === 'object'
     ? story.worldBible
     : worldBibleFor(genre, safeConfig)
@@ -4141,6 +4327,11 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
         // into a renamed/rewritten preset world enters THAT world,
         // not the stock preset it started from.
         worldDrafts: safeConfig.worldDrafts || {},
+        // An entered line keeps telling the entered book's own free
+        // genre (REQ-51): the words ride the enter template like the
+        // god-mode setting does, or the entrant's telling would
+        // silently re-pin to a stock template.
+        customGenreText: genreTemplateId === CUSTOM_TEMPLATE_ID ? (safeConfig.customGenreText || '') : '',
       },
       worldBible,
     },

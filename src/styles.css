@@ -1527,9 +1527,47 @@ button.plaza-source-row.is-link{cursor:pointer}
    label) instead of row-flexing it — the caption's long text used to
    squeeze 随机题材 into a one-character-per-line column on narrow
    phones. Same dashed identity, same family as its siblings. */
-.shelf-brick-random{flex-direction:column;align-items:flex-start;justify-content:center;gap:5px;border-style:dashed}
+/* GENRE-FREEDOM (REQ-51): the random brick used to be a dashed,
+   art-less special case — smaller in spirit and different in build.
+   It now carries the same art treatment as every family brick (a 3×3
+   collage of the family plates: any of them could be the roll) and
+   the same geometry; the only thing random about it is the outcome. */
+.shelf-brick-collage{position:absolute;inset:0;z-index:-2;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr)}
+.shelf-brick-collage img{width:100%;height:100%;object-fit:cover;display:block}
 .shelf-brick-random strong{white-space:nowrap}
 .shelf-brick-random .shelf-brick-count{flex-shrink:1;white-space:normal;line-height:1.45}
+/* GENRE-FREEDOM hero (REQ-51 revised): free creation is the step's
+   main visual — a black-hole region (fixed dark plate in every theme,
+   like the family cards' artwork) with the free-genre input inside.
+   The vortex is three slow-rotating CSS layers, transform/opacity
+   only; the shell's [data-motion="off"] blanket rule and the global
+   prefers-reduced-motion rule both still it completely. */
+.genre-hero{position:relative;overflow:hidden;margin:0 0 18px;padding:26px 20px 22px;border:1px solid rgba(148,184,255,.28);border-radius:24px;background:radial-gradient(120% 130% at 78% -10%,#1c2b52 0%,#0a1024 46%,#04060f 100%);color:#eef3ff;box-shadow:0 18px 44px rgba(2,6,20,.35)}
+.genre-hero.selected{border-color:rgba(125,211,252,.75);box-shadow:0 0 0 1px rgba(125,211,252,.45),0 18px 44px rgba(2,6,20,.35)}
+.genre-hero-vortex{position:absolute;top:-72px;right:-56px;width:250px;height:250px;pointer-events:none}
+.genre-hero-disc{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,transparent 0deg,rgba(125,211,252,.5) 40deg,transparent 90deg,rgba(167,139,250,.42) 150deg,transparent 210deg,rgba(56,189,248,.36) 280deg,transparent 330deg);-webkit-mask:radial-gradient(circle,transparent 58px,#000 60px,#000 108px,transparent 124px);mask:radial-gradient(circle,transparent 58px,#000 60px,#000 108px,transparent 124px);animation:genre-vortex-spin 26s linear infinite}
+.genre-hero-ring{position:absolute;border-radius:50%;border:1px solid rgba(165,205,255,.4)}
+.genre-hero-ring--a{inset:38px;animation:genre-vortex-spin-rev 17s linear infinite;border-style:dashed}
+.genre-hero-ring--b{inset:66px;border-color:rgba(196,181,253,.35);animation:genre-vortex-spin 11s linear infinite}
+.genre-hero-core{position:absolute;inset:96px;border-radius:50%;background:radial-gradient(circle,#0b1330 52%,rgba(10,16,38,.65) 68%,transparent 74%);box-shadow:0 0 44px 14px rgba(56,130,255,.35),inset 0 0 18px rgba(0,0,0,.9);animation:genre-core-pulse 5.2s ease-in-out infinite}
+@keyframes genre-vortex-spin{to{transform:rotate(360deg)}}
+@keyframes genre-vortex-spin-rev{to{transform:rotate(-360deg)}}
+@keyframes genre-core-pulse{0%,100%{opacity:.82}50%{opacity:1}}
+.genre-hero-body{position:relative;display:grid;gap:12px}
+.genre-hero-head{display:flex;align-items:center;gap:10px}
+.genre-hero-head strong{font-size:24px;font-weight:800;letter-spacing:.02em}
+.genre-hero .selected-mark{position:static}
+.genre-hero-sub{margin:0;color:rgba(219,231,255,.78);font-size:13.5px;line-height:1.6}
+.genre-hero .custom-genre-input{width:100%;min-height:52px;padding:12px 16px;border:1px solid rgba(165,205,255,.38);border-radius:14px;background:rgba(6,10,24,.72);color:#f4f8ff;font-size:16px;font-weight:600;outline:none}
+.genre-hero .custom-genre-input::placeholder{color:rgba(190,210,245,.45);font-weight:500}
+.genre-hero .custom-genre-input:focus{border-color:rgba(125,211,252,.85);box-shadow:0 0 0 3px rgba(56,189,248,.22)}
+.genre-hero .custom-genre-chips{display:flex;flex-wrap:wrap;gap:8px}
+.genre-hero .stage-chip{border-color:rgba(165,205,255,.3);background:rgba(16,26,54,.55);color:rgba(226,238,255,.88)}
+.genre-shelves-door{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:0 0 16px}
+.genre-shelves-toggle{display:inline-flex;align-items:center;gap:10px;min-height:46px;padding:10px 18px;border:1px solid var(--line);border-radius:999px;background:var(--glass);color:var(--ink);font-size:15px;font-weight:700}
+.genre-shelves-toggle-state{font-size:12px;font-weight:650;color:var(--dim)}
+.genre-shelves-current{font-size:13px;color:var(--dim)}
+.genre-shelves-current b{color:var(--ink)}
 .shelf-back{display:inline-flex;align-items:center;gap:6px;margin:0 0 14px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:var(--glass);color:var(--ink);font-size:13px;font-weight:650}
 .shelf-back svg{transform:rotate(180deg)}
 .random-combo-row--top{margin:0 0 18px}

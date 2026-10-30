@@ -18,6 +18,10 @@ export function mergeSourceContext(story) {
     // The template this source pinned for itself (if any). A merged story
     // borrows each side's own pinned craft — never a world-derived default.
     genreTemplateId: text(story.genreTemplateId || story.config?.genreTemplateId, 80),
+    // A free-genre source (REQ-51) carries its own words too, so the
+    // server can borrow the same nearest-family craft for this side of
+    // the merge instead of dropping the pin as unknown.
+    customGenreText: text(story.config?.customGenreText, 40),
     worldBible: {
       premise: text(story.worldBible.premise, 1000),
       rules: story.worldBible.rules.slice(0, 8).map((value) => text(value, 400)),

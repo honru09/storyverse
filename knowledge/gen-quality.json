@@ -28,7 +28,18 @@
     "lishi": "guyan",
     "wuxianliu": "guizetanguai",
     "zhihu-short": "xuanyi",
-    "er-ren": "xuanhuan"
+    "er-ren": "xuanhuan",
+    "wuxia": "xiuxian",
+    "chuanyue": "guyan",
+    "chongsheng": "dushi",
+    "gongdou": "guyan",
+    "yulequan": "xianyan",
+    "moshi": "kehuan",
+    "lingyi": "kongbu",
+    "dianjing": "dushi",
+    "junshi": "kehuan",
+    "tiyu": "gaowu",
+    "zhongtian": "dushi"
   },
   "hookTypes": [
     "危机型",
@@ -86,6 +97,45 @@
       "face"
     ],
     "lishi": [
+      "face"
+    ],
+    "wuxia": [
+      "face",
+      "reveal"
+    ],
+    "chuanyue": [
+      "face",
+      "reveal"
+    ],
+    "chongsheng": [
+      "face",
+      "reveal"
+    ],
+    "gongdou": [
+      "face"
+    ],
+    "yulequan": [
+      "face",
+      "reveal"
+    ],
+    "moshi": [
+      "face"
+    ],
+    "lingyi": [
+      "horror"
+    ],
+    "dianjing": [
+      "face",
+      "reveal"
+    ],
+    "junshi": [
+      "face"
+    ],
+    "tiyu": [
+      "face",
+      "reveal"
+    ],
+    "zhongtian": [
       "face"
     ]
   },

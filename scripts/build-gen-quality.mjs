@@ -52,6 +52,23 @@ const TEMPLATE_EXEMPLARS = {
   wuxianliu: 'guizetanguai',
   'zhihu-short': 'xuanyi',
   'er-ren': 'xuanhuan',
+  // REQ-51 expansion templates borrow their nearest family's passage,
+  // the same documented-fallback rule as er-ren above: wuxia writes
+  // like 修仙 (江湖气), chuanyue like 古言, gongdou like 古言, moshi
+  // like 科幻, lingyi like 恐怖, the modern-competition templates
+  // (dianjing/tiyu/yulequan/zhongtian/chongsheng) like 都市/现言/高武
+  // by their emotional register.
+  wuxia: 'xiuxian',
+  chuanyue: 'guyan',
+  chongsheng: 'dushi',
+  gongdou: 'guyan',
+  yulequan: 'xianyan',
+  moshi: 'kehuan',
+  lingyi: 'kongbu',
+  dianjing: 'dushi',
+  junshi: 'kehuan',
+  tiyu: 'gaowu',
+  zhongtian: 'dushi',
 }
 
 // The STYLE-BIBLE §5 four chapter-end hook types, and which H-cards
@@ -85,6 +102,17 @@ const TEMPLATE_CARD_POOLS = {
   'zhihu-short': ['face'],
   scifi: ['face'],
   lishi: ['face'],
+  wuxia: ['face', 'reveal'],
+  chuanyue: ['face', 'reveal'],
+  chongsheng: ['face', 'reveal'],
+  gongdou: ['face'],
+  yulequan: ['face', 'reveal'],
+  moshi: ['face'],
+  lingyi: ['horror'],
+  dianjing: ['face', 'reveal'],
+  junshi: ['face'],
+  tiyu: ['face', 'reveal'],
+  zhongtian: ['face'],
 }
 
 function exemplarText(file) {
