@@ -1,13 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  AVATAR_APPEARANCE_FIELDS,
   AVATAR_PRESETS,
-  avatarAppearancePrompt,
   avatarAppearanceText,
   avatarJourneys,
   avatarPortraitState,
-  normalizeAppearance,
   validateAvatarProfile,
 } from '../src/avatar.js'
 
@@ -18,82 +15,54 @@ test('validateAvatarProfile requires a name and bounds the text', () => {
   const { profile, error } = validateAvatarProfile({
     name: '  林晚舟  ',
     description: 'x'.repeat(500),
-    appearance: { hairColor: 'silver' },
   })
   assert.equal(error, undefined)
   assert.equal(profile.name, '林晚舟')
   assert.equal(profile.description.length, 300)
-  assert.equal(profile.appearance.hairColor, 'silver')
 })
 
-test('normalizeAppearance keeps unpicked fields unspecified and rejects non-objects (FINAL-FIX R-07)', () => {
-  // Policy change, pinned deliberately: unpicked and unknown ids used
-  // to fall back to a baked-in default look (black / long-straight /
-  // coat / boots), which then outranked the reader's own written
-  // description in the portrait prompt — the R-07 field failure. They
-  // now normalise to null = unspecified, and only an explicit pick
-  // produces a descriptor.
-  assert.equal(normalizeAppearance(null), null)
-  assert.equal(normalizeAppearance('look'), null)
-  const look = normalizeAppearance({ hairColor: 'not-a-color', hairStyle: 'ponytail', faceNote: 'y'.repeat(90) })
-  assert.equal(look.hairColor, null, 'an unknown id is unspecified, never a silent default')
-  assert.equal(look.hairStyle, 'ponytail')
-  assert.equal(look.faceNote.length, 60)
-  const blank = normalizeAppearance({})
-  assert.deepEqual(
-    [blank.hairColor, blank.hairStyle, blank.outfit, blank.shoes, blank.face],
-    [null, null, null, null, null],
-    'a profile with nothing picked carries no look at all',
-  )
-})
-
-test('avatarAppearanceText composes the Chinese look line from real picks only', () => {
-  const text = avatarAppearanceText({ hairColor: 'silver', hairStyle: 'short', outfit: 'modern-street', shoes: 'sneakers', face: 'freckles', faceNote: '左耳有痣' })
-  assert.equal(text, '银灰，利落短发，现代街头，运动鞋，雀斑，左耳有痣')
-  const plain = avatarAppearanceText({ hairColor: 'black', hairStyle: 'long-straight', outfit: 'coat', shoes: 'boots', face: 'none', faceNote: '' })
-  assert.ok(!plain.includes('无特别标记'), 'the none face pick contributes nothing')
-})
-
-test('unpicked parts contribute nothing to the look line or the prompt (FINAL-FIX R-07)', () => {
-  // The field case: a description that says 短发 with only the hair
-  // colour picked must not grow long-straight hair, a coat and boots
-  // out of untouched defaults.
-  assert.equal(avatarAppearanceText({ hairStyle: 'short' }), '利落短发')
-  assert.equal(avatarAppearanceText({}), '')
-  assert.equal(avatarAppearanceText(null), '')
-  assert.equal(avatarAppearancePrompt({}), '')
-  assert.equal(avatarAppearancePrompt(null), '')
-  const prompt = avatarAppearancePrompt({ hairStyle: 'short' })
-  assert.match(prompt, /short hair/)
-  assert.ok(!/long straight|long coat|boots/.test(prompt), 'no default garment leaks into the prompt')
-  // A profile saved WITHOUT an appearance payload validates to an
-  // all-unspecified look instead of the old defaults.
-  const { profile, error } = validateAvatarProfile({ name: '只写描述的人', description: '短发，穿旧夹克。' })
+test('validateAvatarProfile ignores a parts payload entirely (AVATAR-TRIM)', () => {
+  // Per-part personalisation is offline: a caller still sending the
+  // old appearance object gets a profile with no appearance key at
+  // all, so parts can neither persist from a fresh save nor render.
+  const { profile, error } = validateAvatarProfile({
+    name: '沈砚',
+    description: '清冷安静的剑客。',
+    appearance: { hairColor: 'silver', hairStyle: 'ponytail', outfit: 'street-jacket', shoes: 'sneakers', face: 'scar', faceNote: 'note' },
+  })
   assert.equal(error, undefined)
-  assert.equal(profile.appearance.hairStyle, null)
-  assert.equal(avatarAppearanceText(profile.appearance), '')
+  assert.equal('appearance' in profile, false)
 })
 
-test('avatarAppearancePrompt paints English fragments and skips the empty face', () => {
-  const prompt = avatarAppearancePrompt({ hairColor: 'silver', hairStyle: 'short', outfit: 'modern-street', shoes: 'sneakers', face: 'none', faceNote: '' })
-  assert.match(prompt, /silver-grey hair/)
-  assert.match(prompt, /streetwear/)
-  assert.ok(!prompt.includes('undefined'))
-  const faced = avatarAppearancePrompt({ hairColor: 'black', hairStyle: 'bun', outfit: 'scholar', shoes: 'cloth-shoes', face: 'glasses', faceNote: '' })
-  assert.match(faced, /glasses/)
+test('avatarAppearanceText is the written description, folded and clipped', () => {
+  assert.equal(avatarAppearanceText({ name: '沈砚', description: '银灰短发，\n穿旧夹克。' }), '银灰短发， 穿旧夹克。')
+  assert.equal(avatarAppearanceText({ name: '沈砚', description: '' }), '')
+  assert.equal(avatarAppearanceText({ name: '沈砚' }), '')
+  assert.equal(avatarAppearanceText(null), '')
+  assert.equal(avatarAppearanceText({ name: '沈砚', description: 'x'.repeat(400) }).length, 300)
 })
 
-test('every preset is a valid, distinct, fully-specified avatar', () => {
+test('avatarAppearanceText never resurrects stored parts (AVATAR-TRIM)', () => {
+  // A legacy record still carrying the old appearance object: the
+  // look line in pickers and story configs comes from the description
+  // alone — the stored parts stay inert.
+  const legacy = {
+    name: '沈砚',
+    description: '从山里走出来的年轻人，话少，手稳。',
+    appearance: { hairColor: 'silver', hairStyle: 'ponytail', outfit: 'street-jacket', shoes: 'sneakers', face: 'scar', faceNote: '左眉一道疤' },
+  }
+  assert.equal(avatarAppearanceText(legacy), '从山里走出来的年轻人，话少，手稳。')
+})
+
+test('every preset is a valid, distinct, described avatar', () => {
   assert.equal(AVATAR_PRESETS.length, 3)
   const names = new Set()
   for (const preset of AVATAR_PRESETS) {
     const { profile, error } = validateAvatarProfile(preset)
     assert.equal(error, undefined, preset.id)
     names.add(profile.name)
-    for (const field of AVATAR_APPEARANCE_FIELDS) {
-      assert.ok(field.options.some((item) => item.id === preset.appearance[field.key]), `${preset.id}.${field.key}`)
-    }
-    assert.ok(avatarAppearanceText(preset.appearance).length > 0)
+    assert.ok(preset.description.length > 0, `${preset.id} needs a written description`)
+    assert.equal(avatarAppearanceText(preset), preset.description)
   }
   assert.equal(names.size, 3)
 })

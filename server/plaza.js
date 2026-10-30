@@ -577,7 +577,7 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           lineStatus: gate.lineStatus,
           avatar: {
             name: profile.name,
-            appearance: avatarAppearanceText(profile.appearance),
+            appearance: avatarAppearanceText(profile),
             hasPortrait: profile.portrait?.status === 'ready',
           },
           // The composed public world outline (§40 ④), baked at
@@ -587,7 +587,7 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           worldIntro: plazaWorldIntroFor({
             title: snapshot.title,
             worldName: snapshot.worldName,
-            avatar: { name: profile.name, appearance: avatarAppearanceText(profile.appearance) },
+            avatar: { name: profile.name, appearance: avatarAppearanceText(profile) },
             worldBible: snapshot.worldBible,
             beats: snapshot.beats,
             synopsis: snapshot.synopsis,

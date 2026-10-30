@@ -114,8 +114,7 @@ async function makeAvatar(base, token, name = '沈砚') {
     body: JSON.stringify({
       profile: {
         name,
-        description: '清冷安静的剑客。',
-        appearance: { hairColor: 'silver', hairStyle: 'long-straight', outfit: 'xianxia-robe', shoes: 'cloth-shoes', face: 'tear-mole', faceNote: '' },
+        description: '清冷安静的剑客，银灰长发。',
       },
     }),
   })
@@ -159,7 +158,7 @@ test('profile payload: identity, avatar, counts, worlds, publications — and no
   assert.equal(profile.displayName, 'social_author', 'username accounts resolve their name from the uid itself')
   assert.equal(profile.handle, 'social_author')
   assert.equal(profile.avatar.name, '沈砚')
-  assert.equal(profile.avatar.description, '清冷安静的剑客。')
+  assert.equal(profile.avatar.description, '清冷安静的剑客，银灰长发。')
   assert.match(profile.avatar.appearance, /银灰/)
   assert.equal(profile.avatar.hasPortrait, true)
   assert.equal(profile.avatar.portraitUrl, `/api/users/${encodeURIComponent(author.uid)}/portrait`)

@@ -17,7 +17,7 @@ import { acceptChapter, buildChapter, chapterKey, chooseBranch, createStory } fr
 
 // Multi-avatar batch (PERSONA-QA F-27 + F-28): the per-account collection,
 // legacy single-avatar migration, per-avatar painting slots, main swaps,
-// deletion degradation, and the repaint lock at the request level.
+// deletion degradation, and whole-image repaints at the request level.
 
 const identity = { uid: 'user-multi-1', email: null, displayName: '多化身测试', emailVerified: false, provider: 'username' }
 
@@ -199,40 +199,15 @@ test('save with an id edits that avatar; an unknown id is a truthful 404', async
   )
 })
 
-test('buildAvatarPrompt under a lock names the one change and preserves the rest verbatim', () => {
-  const locked = buildAvatarPrompt(profile({
-    appearance: { hairColor: 'silver', hairStyle: 'long-straight', outfit: 'coat', shoes: 'boots', face: 'tear-mole', faceNote: '' },
-  }), { hasReference: true, lockPart: 'hairColor' })
-  assert.match(locked, /REPAINT LOCK/)
-  assert.match(locked, /change ONLY the hair colour \(now: silver-grey hair\)/)
-  assert.match(locked, /preserved unchanged: .*a long tailored trench coat/)
-  assert.match(locked, /preserved unchanged: .*tall boots/)
-  assert.match(locked, /beauty mark/)
-  assert.match(locked, /the reference wins/, 'on every part but the locked one, the reference wins')
-  assert.ok(!locked.includes('the stated look wins.'), 'the blanket stated-look-wins line is gone under a lock')
-
-  const free = buildAvatarPrompt(profile(), { hasReference: true })
-  assert.match(free, /stated look wins/, 'an unlocked repaint keeps the original precedence')
-  assert.ok(!free.includes('REPAINT LOCK'))
-
-  const noReference = buildAvatarPrompt(profile(), { lockPart: 'hairColor' })
-  assert.ok(!noReference.includes('REPAINT LOCK'), 'no reference painting, no lock')
-})
-
-test('generate with lockPart assembles the locked request for that avatar', async () => {
+test('a repaint repaints the whole image from the edited description (AVATAR-TRIM)', async () => {
   const { service, calls } = fakeService()
   const a = await service.create(identity, { profile: profile() })
   await service.generate(identity, { avatarId: a.id })
-  const changed = {
-    ...profile(),
-    id: a.id,
-    appearance: { hairColor: 'silver', hairStyle: 'long-straight', outfit: 'xianxia-robe', shoes: 'cloth-shoes', face: 'tear-mole', faceNote: '' },
-  }
-  await service.generate(identity, { profile: changed, lockPart: 'hairColor' })
+  const changed = { ...profile({ description: '清冷安静的剑客，银灰长发披肩。' }), id: a.id }
+  await service.generate(identity, { profile: changed })
   assert.equal(calls.length, 2)
-  assert.match(calls[1].prompt, /REPAINT LOCK/)
-  assert.match(calls[1].prompt, /silver-grey hair/)
-  assert.match(calls[1].prompt, /xianxia robes/, 'the untouched outfit descriptor is restated as preserved')
+  assert.match(calls[1].prompt, /银灰长发/, 'the repaint follows the edited description')
+  assert.ok(!calls[1].prompt.includes('REPAINT LOCK'), 'there is no locked-part repaint anymore')
   assert.ok(calls[1].reference, 'the repaint anchors on the avatar’s own previous painting')
 })
 

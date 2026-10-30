@@ -43,7 +43,6 @@ import { downloadText } from "./downloads.js";
 import { drawPersonalityTraits, personalityTraitText } from "./personality-traits.js";
 import { drawInspirationFragments } from "./inspiration-fragments.js";
 import {
-  AVATAR_APPEARANCE_FIELDS,
   AVATAR_LIMIT,
   AVATAR_PRESETS,
   avatarAppearanceText,
@@ -940,7 +939,7 @@ function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, dr
         ) : (
           <Icon name="users" size={20}/>
         )}
-        <span><strong>我的化身</strong><small>{avatar ? `${avatar.name} · ${avatarAppearanceText(avatar.appearance)}` : "让同一个角色，走进每一个世界"}</small></span><Icon name="chevron" size={16}/>
+        <span><strong>我的化身</strong><small>{avatar ? `${avatar.name} · ${avatarAppearanceText(avatar)}` : "让同一个角色，走进每一个世界"}</small></span><Icon name="chevron" size={16}/>
       </button>
 
       {syncNote && <p className="library-sync-note">{syncNote}</p>}
@@ -1295,49 +1294,6 @@ function AvatarPortrait({ avatar, getAccessToken, which = "current", className =
   );
 }
 
-function AppearanceFields({ appearance, onPick, onFaceNote, disabled = false }) {
-  return (
-    <div className="avatar-fields">
-      {/* Unpicked is a real choice now (FINAL-FIX R-07): a part left
-          blank follows the written description instead of a hidden
-          default. The hint says so, and tapping a picked chip again
-          clears it back to blank. */}
-      <p className="avatar-fields-hint">每一项都可以不选——不选的样子，就按你在上面写下的描述来画。再点一次已选的项可以取消。</p>
-      {AVATAR_APPEARANCE_FIELDS.map((field) => (
-        <div className="form-block" key={field.key}>
-          <span className="field-label">{field.label}</span>
-          <div className="chip-grid">
-            {field.options.map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                className={`choice-chip ${appearance[field.key] === item.id ? "active" : ""}`}
-                aria-pressed={appearance[field.key] === item.id}
-                disabled={disabled}
-                onClick={() => onPick(field.key, appearance[field.key] === item.id ? null : item.id)}
-              >
-                {item.label}
-                {appearance[field.key] === item.id && <Icon name="check" size={13} />}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-      <label className="field-label">
-        脸部备注（选填）
-        <input
-          maxLength={60}
-          autoComplete="off"
-          value={appearance.faceNote || ""}
-          disabled={disabled}
-          onChange={(event) => onFaceNote(event.target.value)}
-          placeholder="例如：笑起来左边有酒窝"
-        />
-      </label>
-    </div>
-  );
-}
-
 function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, onOpenAccount, onNavigate }) {
   const { avatars, mainId, quota } = avatarState;
   // editingId: undefined = not seeded yet, "" = creating a new avatar,
@@ -1358,12 +1314,12 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
   const creating = editingId === "";
 
   const seedForm = (target) => {
+    // The form is name + description only (AVATAR-TRIM): a stored
+    // legacy `appearance` object is never seeded into the form, so it
+    // can neither render nor be submitted back.
     setForm(target
-      ? { id: target.id, name: target.name, description: target.description || "", appearance: { ...target.appearance } }
-      // A new avatar starts with NOTHING picked (FINAL-FIX R-07): the
-      // old all-defaults seed is what let untouched chips overwrite the
-      // reader's own written description.
-      : { id: "", name: "", description: "", appearance: { hairColor: null, hairStyle: null, outfit: null, shoes: null, face: null, faceNote: "" } });
+      ? { id: target.id, name: target.name, description: target.description || "" }
+      : { id: "", name: "", description: "" });
     setConfirmDelete(false);
     setShowPrevious(false);
     setError("");
@@ -1404,14 +1360,14 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
   const portrait = avatarPortraitState(selected);
   const painting = busy || portrait.status === "pending";
   const previewAvatar = selected
-    ? { ...selected, name: form.name || selected.name, appearance: form.appearance }
-    : { id: form.id || "", name: form.name, appearance: form.appearance, portrait: { status: painting ? "pending" : "none", version: 0, hasPrevious: false } };
+    ? { ...selected, name: form.name || selected.name }
+    : { id: form.id || "", name: form.name, portrait: { status: painting ? "pending" : "none", version: 0, hasPrevious: false } };
   const journeys = selected ? avatarJourneys(selected, stories) : [];
   const profileDirty = Boolean(selected) && (form.name !== selected.name || form.description !== (selected.description || ""));
   const atLimit = avatars.length >= AVATAR_LIMIT;
   const quotaLine = quota ? `今天已用 ${quota.used} / ${quota.limit} 次` : "";
 
-  const paint = async (nextForm, { lockPart = null } = {}) => {
+  const paint = async (nextForm) => {
     if (busy) return;
     if (!nextForm.name.trim()) { setError("先给化身取个名字。"); return; }
     setBusy(true);
@@ -1426,7 +1382,6 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
       const painted = await generateAvatar({
         profile: { ...nextForm, id: targetId },
         avatarId: targetId,
-        lockPart,
         getAccessToken: getToken,
       });
       avatarState.updateAvatar(painted);
@@ -1445,15 +1400,6 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
     }
   };
 
-  const pickAppearance = (key, id) => {
-    const appearance = { ...form.appearance, [key]: id };
-    const nextForm = { ...form, appearance };
-    setForm(nextForm);
-    // One part changed → repaint right away under the repaint lock (an
-    // existing avatar only; the creation form paints on its own button).
-    if (selected) void paint(nextForm, { lockPart: key });
-  };
-  const applyFaceNote = () => { if (selected) void paint(form, { lockPart: "faceNote" }); };
   const saveProfileOnly = async () => {
     if (busy) return;
     setBusy(true);
@@ -1469,7 +1415,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
     }
   };
   const adoptPreset = (preset) => {
-    setForm({ id: "", name: preset.name, description: preset.description, appearance: { ...preset.appearance } });
+    setForm({ id: "", name: preset.name, description: preset.description });
     setError("");
   };
   const makeMain = async () => {
@@ -1536,7 +1482,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
                     <b>{item.name}</b>
                     {item.id === mainId && <span className="avatar-main-badge">主化身</span>}
                   </span>
-                  <small>{avatarAppearanceText(item.appearance)}</small>
+                  <small>{avatarAppearanceText(item)}</small>
                 </span>
               </button>
             ))}
@@ -1637,23 +1583,16 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
                   >
                     <b>{preset.name}</b>
                     <small>{preset.description}</small>
-                    <span>{avatarAppearanceText(preset.appearance)}</span>
                   </button>
                 ))}
               </div>
             </div>
           )}
           {selected && (
-            <p className="avatar-lock-note">
-              重画只改你动的那一项，其余样子保持不变。每次重画用掉今天 1 次立绘额度{quotaLine ? `（${quotaLine}）` : ""}。新风格：海报式立绘，机位与氛围都画进图里。
+            <p className="avatar-repaint-note">
+              改描述后点「按描述重画立绘」，整张图重新生成。每次重画用掉今天 1 次立绘额度{quotaLine ? `（${quotaLine}）` : ""}。
             </p>
           )}
-          <AppearanceFields
-            appearance={form.appearance}
-            disabled={painting}
-            onPick={pickAppearance}
-            onFaceNote={(value) => setForm({ ...form, appearance: { ...form.appearance, faceNote: value } })}
-          />
           <div className="avatar-actions">
             {creating && (
               <Button icon="spark" disabled={busy || !form.name.trim()} onClick={() => void paint(form)}>
@@ -1661,8 +1600,10 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
               </Button>
             )}
             {creating && quotaLine && <span className="field-hint">新立绘用掉今天 1 次额度（{quotaLine}）。</span>}
-            {selected && form.appearance.faceNote !== (selected.appearance.faceNote || "") && (
-              <Button disabled={busy} onClick={applyFaceNote}>用新备注重画</Button>
+            {selected && portrait.status === "ready" && (
+              <Button icon="spark" disabled={busy} onClick={() => void paint(form)}>
+                {busy ? "正在画…" : "按描述重画立绘"}
+              </Button>
             )}
             {profileDirty && (
               <button type="button" className="small-link" disabled={busy} onClick={() => void saveProfileOnly()}>
@@ -1670,7 +1611,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
               </button>
             )}
           </div>
-          {selected && painting && <p className="field-hint">正在重画立绘，其余调整先等一下。</p>}
+          {selected && painting && <p className="field-hint">正在重画立绘，请稍等。</p>}
         </section>
       </div>
       {selected && (
@@ -2919,7 +2860,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                       </span>
                       <span className="avatar-bring-copy">
                         <b>{item.name}{item.id === mainId ? " · 主化身" : ""}</b>
-                        <small>{avatarAppearanceText(item.appearance)}</small>
+                        <small>{avatarAppearanceText(item)}</small>
                       </span>
                       <button
                         type="button"
@@ -9504,7 +9445,7 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
                 </span>
                 <span className="avatar-bring-copy">
                   <b>{item.name}{item.id === mainId ? " · 主化身" : ""}</b>
-                  <small>{avatarAppearanceText(item.appearance)}</small>
+                  <small>{avatarAppearanceText(item)}</small>
                 </span>
                 {chosenAvatar?.id === item.id
                   ? <span className="plaza-chip">就 TA 了</span>

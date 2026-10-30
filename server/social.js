@@ -735,7 +735,7 @@ export function createSocialService({
           id: item.id,
           name,
           description: sanitizeSettingText(clip(item.description, 300)).trim(),
-          appearance: avatarAppearanceText(item.appearance),
+          appearance: avatarAppearanceText(item),
           isMain: Boolean(mainAvatarId) && item.id === mainAvatarId,
           hasPortrait: ready,
           ...(ready ? { portraitUrl: `/api/users/${encodeURIComponent(target)}/portrait?avatar=${encodeURIComponent(item.id)}&v=${item.portrait?.version || 1}` } : {}),
@@ -756,7 +756,7 @@ export function createSocialService({
         avatar: profile ? {
           name: sanitizeSettingText(clip(profile.name, 40)).trim(),
           description: sanitizeSettingText(clip(profile.description, 300)).trim(),
-          appearance: avatarAppearanceText(profile.appearance),
+          appearance: avatarAppearanceText(profile),
           hasPortrait,
           ...(hasPortrait ? { portraitUrl: `/api/users/${encodeURIComponent(target)}/portrait` } : {}),
           ...(worldByAvatarName.get(avatarName) ? { currentWorld: worldByAvatarName.get(avatarName) } : {}),
