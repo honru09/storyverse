@@ -138,6 +138,7 @@ import {
   rememberProfileViewState,
   subscribeProfile,
 } from "./profile-cache.js";
+import { armRestoredStageGuard } from "./profile-stage-guard.js";
 import { acceptGeneratedChapter, acceptRerolledChapter, acceptRevisedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter, requestChapterReroll, requestChapterRevision } from "./generation.js";
 import InterventionOverlay from "./components/InterventionOverlay.jsx";
 import WorldArtwork from "./components/WorldArtwork.jsx";
@@ -8627,7 +8628,17 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
       if (windowForm) { if (pageRef.current) pageRef.current.scrollTop = saved; }
       else window.scrollTo(0, saved);
     });
-    return () => cancelAnimationFrame(raf);
+    // REQ-48 stage guard: the verbatim restore above can park the
+    // avatar stage straddling the shell topbar (page form) or the
+    // sheet's top edge (window form) — the remembered stop was
+    // recorded mid-scroll, and the portrait's head band then sits
+    // behind the bar on every return visit ("opens headless"). The
+    // anchor path was already protected by scroll-margin-top; the
+    // restore now gets the same protection via the shared guard,
+    // which parks a straddling stage on the safe line and stands
+    // down the moment the reader scrolls on their own.
+    const disarm = armRestoredStageGuard({ windowForm, root: pageRef.current, saved });
+    return () => { cancelAnimationFrame(raf); disarm(); };
   }, [profile, uid, windowForm]);
   useEffect(() => {
     const target = windowForm ? pageRef.current : window;
@@ -11141,6 +11152,19 @@ function App() {
         requestAnimationFrame(() => window.scrollTo(0, saved));
       } else {
         scrollToTop();
+      }
+      // REQ-48: a keep-alive return to my own profile tab restores
+      // the remembered scroll while ProfileView itself stays
+      // mounted, so its own restore guard never re-arms. Arm the
+      // shared stage guard here too: if the remembered stop parks
+      // the avatar stage straddling the topbar, it is re-parked on
+      // the safe line instead of opening headless.
+      if (view === "profile" && typeof saved === "number" && saved > 0) {
+        return armRestoredStageGuard({
+          windowForm: false,
+          root: document.querySelector(".page-profile.is-page-form"),
+          saved,
+        });
       }
     }
   }, [view, pageRoute.id, readerStory?.title, profileRoute]);
