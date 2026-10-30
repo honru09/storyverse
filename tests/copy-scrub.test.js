@@ -76,8 +76,12 @@ function* walk(dir, exts) {
 // - src/plaza.js: WORLD_INTRO_ENGINE_TERMS is the filter list of engine
 //   terms scrubbed OUT of published world intros; '提示词' appears as a
 //   term to remove, never as copy shown to a reader.
+// - src/story-engine.js: INTRO_ENGINE_TERMS (REQ-56) is the same kind of
+//   filter list — the single source the plaza composer imports; its
+//   terms are objects to strip from generated intros, never copy.
 const WHITELIST = [
   ['src/plaza.js', /WORLD_INTRO_ENGINE_TERMS/],
+  ['src/story-engine.js', /'资产与负债', '因果账目', '制约', '稳定度', '数值', '参数', '提示词'/],
 ]
 
 function scanText(rel, text, { onlyErrorLines = false } = {}) {
