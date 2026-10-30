@@ -97,3 +97,49 @@ test("main.jsx arms the guard on every profile scroll restore", () => {
   assert.match(main, /armRestoredStageGuard\(\{ windowForm, root: pageRef\.current, saved \}\)/);
   assert.match(main, /root: document\.querySelector\("\.page-profile\.is-page-form"\)/);
 });
+
+/* REQ-62: the restore guard's blind spot, measured on the owner's
+   phone (2026-10-31 screenshot): both scroll memories are
+   session-only and native browser scroll restoration stays on, so
+   reloads, tab restores, web-app relaunches and bfcache thaws set
+   the resting scroll with NO app restore running — the sliced rest
+   then persists forever (fixture end-state proof: stage.top −70.2,
+   head −41.6..44.4 behind the 71px bar, unchanged over 5s). The
+   settle guard defends the resting state from the surface's
+   lifecycle instead of from restore bookkeeping. */
+
+test("the settle guard exists and re-checks on settle, image load, thaw and resize", () => {
+  const guard = readFileSync(new URL("../src/profile-stage-guard.js", import.meta.url), "utf8");
+  assert.match(guard, /export function armStageSettleGuard\(/);
+  // Scroll-settle debounce is the workhorse: a park may only start
+  // from a position that stayed put for the whole settle window.
+  assert.match(guard, /addEventListener\("scroll", onScroll, \{ passive: true \}\)/);
+  assert.match(guard, /position\(\) === seen/);
+  // Late layout (portrait load), bfcache thaw (no effects re-run)
+  // and geometry changes each get a re-check.
+  assert.match(guard, /addEventListener\("load", onImgLoad\)/);
+  assert.match(guard, /event\?\.persisted/);
+  assert.match(guard, /addEventListener\("resize", onResize\)/);
+  // Parking reuses the one geometry entry point, which now bails on
+  // a hidden surface (zero-size rect) instead of touching the
+  // visible tab's scroller.
+  assert.match(guard, /if \(!rect\.height \|\| !rect\.width\) return null/);
+});
+
+test("main.jsx arms the settle guard from the profile lifecycle, not the profile object", () => {
+  const main = readFileSync(new URL("../src/main.jsx", import.meta.url), "utf8");
+  assert.match(main, /armStageSettleGuard\(\{ windowForm, root: pageRef\.current \}\)/);
+  // The arming effect's deps must NOT include the bare `profile`
+  // object: SWR revalidation replaces its identity right after
+  // mount, and a cleanup on that change would disarm the guard —
+  // the race that leaves even the restore path exposed.
+  const armRegion = main.slice(main.indexOf("armStageSettleGuard({ windowForm") - 800, main.indexOf("armStageSettleGuard({ windowForm") + 200);
+  assert.match(armRegion, /\}, \[Boolean\(profile\), uid, windowForm\]\);/);
+});
+
+test("the settings entry row carries no explanatory subtitle (REQ-62)", () => {
+  const main = readFileSync(new URL("../src/main.jsx", import.meta.url), "utf8");
+  assert.ok(!main.includes("都收在这里"), "settings subtitle must be gone");
+  // The row itself — icon, title, chevron — stays.
+  assert.match(main, /settings-entry-row/);
+});

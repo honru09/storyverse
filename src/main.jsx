@@ -138,7 +138,7 @@ import {
   rememberProfileViewState,
   subscribeProfile,
 } from "./profile-cache.js";
-import { armRestoredStageGuard } from "./profile-stage-guard.js";
+import { armRestoredStageGuard, armStageSettleGuard } from "./profile-stage-guard.js";
 import { acceptGeneratedChapter, acceptRerolledChapter, acceptRevisedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter, requestChapterReroll, requestChapterRevision } from "./generation.js";
 import InterventionOverlay from "./components/InterventionOverlay.jsx";
 import WorldArtwork from "./components/WorldArtwork.jsx";
@@ -8661,6 +8661,24 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
     const disarm = armRestoredStageGuard({ windowForm, root: pageRef.current, saved });
     return () => { cancelAnimationFrame(raf); disarm(); };
   }, [profile, uid, windowForm]);
+  // REQ-62 settle guard: the restore guard above only covers stops
+  // the app itself restores. Both scroll memories are session-only
+  // and native browser scroll restoration stays on, so a reload, a
+  // Safari tab restore, a web-app relaunch or a bfcache thaw can set
+  // the resting scroll without any app restore running — and the
+  // stage then rests sliced behind the topbar indefinitely (the
+  // owner's 2026-10-31 screenshot, REQ-48's fix in place). This
+  // guard is armed by the surface's lifecycle, not by restore
+  // bookkeeping, and re-checks the resting state on mount, on
+  // scroll settle, after the portrait loads, on bfcache thaw and on
+  // resize. Its deps deliberately exclude the profile object itself:
+  // SWR revalidation replaces that identity right after mount, and
+  // an effect keyed on it would disarm this guard in its own
+  // cleanup — the same race the restore guard above is exposed to.
+  useEffect(() => {
+    if (!profile) return undefined;
+    return armStageSettleGuard({ windowForm, root: pageRef.current });
+  }, [Boolean(profile), uid, windowForm]);
   useEffect(() => {
     const target = windowForm ? pageRef.current : window;
     if (!target || !profile) return undefined;
@@ -9306,7 +9324,6 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
               <span className="settings-row-ic"><Icon name="gear" size={19} /></span>
               <span className="settings-row-copy">
                 <strong>设置</strong>
-                <small>都收在这里</small>
               </span>
               <Icon name="chevron" size={16} />
             </button>
