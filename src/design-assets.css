@@ -1,0 +1,614 @@
+/* =====================================================================
+   Storyweave 专属设计素材库 (design assets library) — REQ-34 第一批
+   ---------------------------------------------------------------------
+   母题：织线 / 星点 / 书页。素材 = UI 工艺件：按钮、窗口边角与边框、
+   字体效果、显示效果、线条分隔、角落细节——不是图片素材。
+
+   纪律（与 DESIGN.md §51/§53 一脉）：
+   - 全部颜色/材质走壳层主题 token；本文件不写死主题色值。
+   - 玻璃组用回退链 var(--glass-card-*, var(--glass))：黑/白主题吃
+     §53 盐系毛玻璃定版（blur 22 / chips 14 / modal 12 档），极光主题
+     --glass-card-* 未定义 → 自动回落到极光自己的 --glass / --blur-card
+     （blur 12px）——极光只用它自己的 token 值，本文件不给极光新造
+     数值、不改极光任何既有规则。
+   - 圆角走既有阶梯（--radius-control 10 / selection 12 / card 16 /
+     surface 20 / sheet 24 / glass-card 26 / 胶囊 999）。
+   - 发丝线走 --line / --line-2 的 alpha 体系，不另起炉灶。
+   - 动效只 transform / opacity，曲线用弹簧口径 token
+     （--ease-spring / --ease-press，ζ ≥ 1 不回弹）。
+   - 输入字号 ≥16px 地板（DEVICE-FIX2 口径，防 iOS 聚焦放大）。
+
+   编号：BTN 按钮 / FRM 窗口边框 / DIV 分隔线 / TYP 字体效果 /
+         FX 显示效果 / DTL 角落细节。图鉴：public/design-catalog.html
+   本文件独立存在，不被 styles.css 引用；接入生产时按 ASSET-LIB.md
+   的落点建议逐件取用。
+   ===================================================================== */
+
+:root{
+  /* —— da 材质回退链：一条链三主题（见文件头纪律） —— */
+  --da-glass-bg:var(--glass-card-bg, var(--glass));
+  --da-glass-blur:var(--glass-card-blur, var(--blur-card));
+  --da-glass-line:var(--glass-card-line, var(--line));
+  --da-glass-edge:var(--glass-card-edge, var(--glass-edge));
+  --da-glass-shadow:var(--glass-card-shadow, var(--shadow-flat));
+  --da-glass-radius:var(--glass-card-radius, 26px);
+  --da-chip-bg:var(--glass-chip-bg, var(--glass-2));
+  --da-chip-blur:var(--glass-chip-blur, var(--blur-panel));
+  --da-modal-bg:var(--glass-modal-bg, var(--surface));
+  --da-nav-bg:var(--glass-nav-bg, var(--nav-bg));
+  /* —— 母题色（随主题 accent 走，三主题各有其貌） —— */
+  --da-weave:linear-gradient(120deg, var(--cyan) 0%, var(--violet) 55%, var(--pink) 100%);
+  --da-weave-soft:linear-gradient(120deg, var(--selected-surface), var(--thread-soft));
+  --da-thread:var(--thread);          /* 织线粉：缝线、书签、spinner */
+  --da-star:var(--cyan);              /* 星点青：星结、角点、焦点 */
+  --da-corner:color-mix(in srgb, var(--cyan) 72%, transparent);
+  /* —— 动效（token 优先，字面值与 app 同值兜底） —— */
+  --da-dur-press:var(--dur-press, 120ms);
+  --da-dur-state:var(--dur-state, 180ms);
+  --da-dur-pop:var(--dur-pop, 450ms);
+  --da-ease-press:var(--ease-press, cubic-bezier(.2,.9,.3,1));
+  --da-ease-spring:var(--ease-spring, cubic-bezier(.3,1,.4,1));
+  --da-ease-out:var(--ease-out, cubic-bezier(.22,1,.36,1));
+  --da-font:var(--font-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif);
+}
+
+/* ============================ BTN 按钮族 ============================ */
+
+.da-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  min-height:44px; padding:0 20px; border-radius:var(--radius-control, 10px);
+  border:1px solid transparent; background:transparent; color:var(--ink);
+  font-family:var(--da-font); font-size:15px; font-weight:600; line-height:1;
+  cursor:pointer; user-select:none; -webkit-user-select:none;
+  transition:transform var(--da-dur-press) var(--da-ease-press),
+             opacity var(--da-dur-state) var(--da-ease-out),
+             background-color var(--da-dur-state) var(--da-ease-out),
+             border-color var(--da-dur-state) var(--da-ease-out);
+}
+.da-btn:active{transform:scale(.97)}
+.da-btn:focus-visible{outline:2px solid var(--cyan); outline-offset:2px}
+.da-btn:disabled, .da-btn.is-disabled{opacity:.45; pointer-events:none}
+.da-btn svg{width:18px; height:18px; flex:none}
+
+/* BTN-01 主按钮·织线渐变 */
+.da-btn--weave{
+  background:var(--da-weave); color:var(--action-ink);
+  box-shadow:var(--shadow-card), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.da-btn--weave:hover{opacity:.92}
+.da-btn--weave:active{opacity:.85}
+
+/* BTN-02 玻璃次按钮（玻璃上再叠小玻璃片的口径） */
+.da-btn--glass{
+  background:var(--da-glass-bg); color:var(--ink);
+  border-color:var(--da-glass-line);
+  backdrop-filter:var(--da-glass-blur); -webkit-backdrop-filter:var(--da-glass-blur);
+  box-shadow:var(--shadow-glass-top);
+}
+.da-btn--glass:hover{border-color:var(--line-2)}
+
+/* BTN-03 发丝线幽灵按钮 */
+.da-btn--ghost{
+  background:transparent; color:var(--ink); border-color:var(--line-2);
+}
+.da-btn--ghost:hover{background:var(--glass); border-color:var(--cyan)}
+
+/* BTN-04 危险按钮（软填充，危险色走 token） */
+.da-btn--danger{
+  background:color-mix(in srgb, var(--danger) 12%, transparent);
+  color:var(--danger);
+  border-color:color-mix(in srgb, var(--danger) 45%, transparent);
+}
+.da-btn--danger:hover{background:color-mix(in srgb, var(--danger) 20%, transparent)}
+
+/* BTN-05 胶囊 CTA（全圆角 + 尾箭位移） */
+.da-btn--cta{
+  min-height:52px; padding:0 26px; border-radius:999px;
+  background:var(--da-weave); color:var(--action-ink); font-size:16px;
+  box-shadow:var(--shadow-floating), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.da-btn--cta .da-cta-arrow{transition:transform var(--da-dur-state) var(--da-ease-spring)}
+.da-btn--cta:hover .da-cta-arrow{transform:translateX(3px)}
+
+/* BTN-06 图标钮 */
+.da-icon-btn{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:40px; height:40px; padding:0; border-radius:var(--radius-control, 10px);
+  border:1px solid var(--line); background:var(--glass); color:var(--ink);
+  cursor:pointer;
+  transition:transform var(--da-dur-press) var(--da-ease-press),
+             background-color var(--da-dur-state) var(--da-ease-out),
+             border-color var(--da-dur-state) var(--da-ease-out);
+}
+.da-icon-btn svg{width:19px; height:19px}
+.da-icon-btn:hover{border-color:var(--line-2); background:var(--glass-2)}
+.da-icon-btn:active{transform:scale(.92)}
+.da-icon-btn:focus-visible{outline:2px solid var(--cyan); outline-offset:2px}
+.da-icon-btn:disabled{opacity:.45; pointer-events:none}
+.da-icon-btn.is-round{border-radius:50%}
+
+/* BTN-07 悬浮动作胶囊（近实色——压住内容不可辨笔画，SALT-3 裁定） */
+.da-fab{
+  display:inline-flex; align-items:center; gap:8px;
+  padding:11px 18px; border-radius:999px;
+  background:var(--da-nav-bg); color:var(--ink);
+  border:1px solid var(--line);
+  backdrop-filter:var(--blur-bar, blur(12px)); -webkit-backdrop-filter:var(--blur-bar, blur(12px));
+  box-shadow:var(--shadow-floating);
+  font-family:var(--da-font); font-size:14px; font-weight:600; line-height:1;
+  cursor:pointer;
+  transition:transform var(--da-dur-press) var(--da-ease-press),
+             opacity var(--da-dur-state) var(--da-ease-out);
+}
+.da-fab svg{width:17px; height:17px}
+.da-fab:active{transform:scale(.96)}
+.da-fab:focus-visible{outline:2px solid var(--cyan); outline-offset:2px}
+
+/* ========================= FRM 窗口 / 边框 ========================= */
+
+/* FRM-01 弹窗框·四角线角（织线色线角收束四角） */
+.da-frame-corners{
+  position:relative; border-radius:var(--radius-sheet, 24px);
+  background:var(--surface-solid); border:1px solid var(--line);
+  box-shadow:var(--shadow-raised);
+  padding:22px;
+}
+.da-frame-corners::before{
+  content:""; position:absolute; inset:9px; border-radius:16px; pointer-events:none;
+  background:
+    linear-gradient(var(--da-corner), var(--da-corner)) left 0 top 0 / 16px 2px,
+    linear-gradient(var(--da-corner), var(--da-corner)) left 0 top 0 / 2px 16px,
+    linear-gradient(var(--da-corner), var(--da-corner)) right 0 top 0 / 16px 2px,
+    linear-gradient(var(--da-corner), var(--da-corner)) right 0 top 0 / 2px 16px,
+    linear-gradient(var(--da-corner), var(--da-corner)) left 0 bottom 0 / 16px 2px,
+    linear-gradient(var(--da-corner), var(--da-corner)) left 0 bottom 0 / 2px 16px,
+    linear-gradient(var(--da-corner), var(--da-corner)) right 0 bottom 0 / 16px 2px,
+    linear-gradient(var(--da-corner), var(--da-corner)) right 0 bottom 0 / 2px 16px;
+  background-repeat:no-repeat;
+}
+
+/* FRM-02 弹窗框·星点角（四角星点 + 顶边中央星结） */
+.da-frame-stars{
+  position:relative; border-radius:var(--radius-sheet, 24px);
+  background:var(--da-modal-bg); border:1px solid var(--da-glass-line);
+  backdrop-filter:var(--blur-modal, blur(12px)); -webkit-backdrop-filter:var(--blur-modal, blur(12px));
+  box-shadow:var(--shadow-raised), var(--shadow-glass-top);
+  padding:22px;
+}
+.da-frame-stars::before{
+  content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  background:
+    radial-gradient(circle 3px at 14px 14px, var(--da-star) 98%, transparent),
+    radial-gradient(circle 3px at calc(100% - 14px) 14px, var(--da-star) 98%, transparent),
+    radial-gradient(circle 3px at 14px calc(100% - 14px), var(--da-star) 98%, transparent),
+    radial-gradient(circle 3px at calc(100% - 14px) calc(100% - 14px), var(--da-star) 98%, transparent);
+  background-repeat:no-repeat; opacity:.85;
+}
+.da-frame-stars::after{
+  content:"✦"; position:absolute; top:-9px; left:50%; transform:translateX(-50%);
+  padding:0 8px; color:var(--da-star); font-size:13px; line-height:1;
+  background:transparent; text-shadow:0 0 12px color-mix(in srgb, var(--cyan) 55%, transparent);
+}
+
+/* FRM-03 渐变描边框（织线渐变 1px 描边，内面走主题实面） */
+.da-grad-border{
+  border-radius:var(--radius-surface, 20px); padding:1px;
+  background:var(--da-weave);
+}
+.da-grad-border-in{
+  border-radius:19px; background:var(--surface-solid);
+  padding:20px; height:100%;
+}
+
+/* FRM-04 双发丝线框（外线 + 内线，3px 呼吸距） */
+.da-frame-double{
+  border-radius:var(--radius-card, 16px);
+  border:1px solid var(--line-2);
+  box-shadow:inset 0 0 0 3px var(--bg), inset 0 0 0 4px var(--line);
+  background:var(--surface-card); padding:20px;
+}
+
+/* FRM-05 书封框·角标 tick（织线缎带缺口 + 角 tick） */
+.da-book-frame{
+  position:relative; border-radius:var(--radius-media, 8px);
+  border:1px solid var(--line); overflow:hidden;
+  background:var(--glass-dark); box-shadow:var(--shadow-card);
+}
+.da-book-frame::before{ /* 缎带角标：织线色书签缺口 */
+  content:""; position:absolute; top:0; left:14px; z-index:2;
+  width:14px; height:20px; background:var(--da-thread);
+  clip-path:polygon(0 0, 100% 0, 100% 100%, 50% 76%, 0 100%);
+}
+.da-book-frame::after{ /* 右下角 tick */
+  content:""; position:absolute; right:7px; bottom:7px; z-index:2;
+  width:12px; height:12px;
+  border-right:2px solid var(--da-corner); border-bottom:2px solid var(--da-corner);
+}
+.da-book-frame img{display:block; width:100%; height:100%; object-fit:cover}
+
+/* ========================== DIV 线条分隔 ========================== */
+
+/* DIV-01 发丝线 */
+.da-hr{border:0; height:1px; margin:0; background:var(--line)}
+
+/* DIV-02 渐变隐线（两端隐入背景） */
+.da-hr--fade{
+  border:0; height:1px; margin:0;
+  background:linear-gradient(90deg, transparent, var(--line-2), transparent);
+}
+
+/* DIV-03 缝线（针脚虚线，织造母题；针距 10px 定版） */
+.da-hr--stitch{
+  border:0; height:2px; margin:0; opacity:.55;
+  background-image:linear-gradient(90deg, var(--da-thread) 55%, transparent 45%);
+  background-size:10px 2px; background-repeat:repeat-x;
+}
+
+/* DIV-04 星点结分隔（隐线 + 中央星结 + 两侧星点） */
+.da-hr--knot{
+  display:flex; align-items:center; gap:10px; color:var(--da-star);
+}
+.da-hr--knot::before, .da-hr--knot::after{
+  content:""; flex:1; height:1px;
+  background:linear-gradient(90deg, transparent, var(--line-2));
+}
+.da-hr--knot::after{background:linear-gradient(90deg, var(--line-2), transparent)}
+.da-hr--knot .da-knot-dot{width:4px; height:4px; border-radius:50%; background:var(--da-star); opacity:.7; flex:none}
+.da-hr--knot .da-knot-star{font-size:13px; line-height:1; flex:none; text-shadow:0 0 10px color-mix(in srgb, var(--cyan) 50%, transparent)}
+
+/* DIV-05 带标签的分区线 */
+.da-hr--label{display:flex; align-items:center; gap:12px}
+.da-hr--label::before, .da-hr--label::after{
+  content:""; flex:1; height:1px; background:var(--line);
+}
+.da-hr--label .da-hr-label-text{
+  font-size:11px; letter-spacing:.14em; color:var(--dim-2);
+  font-family:var(--da-font); white-space:nowrap;
+}
+
+/* ========================== TYP 字体效果 ========================== */
+
+/* TYP-01 渐变标题字（织线渐变裁字） */
+.da-title-grad{
+  font-family:var(--da-font); font-weight:800; letter-spacing:.01em;
+  background:var(--da-weave);
+  -webkit-background-clip:text; background-clip:text;
+  -webkit-text-fill-color:transparent; color:transparent;
+}
+@supports not ((-webkit-background-clip:text) or (background-clip:text)){
+  .da-title-grad{color:var(--ink); -webkit-text-fill-color:currentColor}
+}
+
+/* TYP-02 章节大数字（display 数字 + caps 章标） */
+.da-chapter-num{
+  font-family:var(--da-font); font-weight:800; line-height:.95;
+  font-size:64px; letter-spacing:-.01em; color:var(--ink);
+  font-variant-numeric:tabular-nums lining-nums;
+}
+.da-chapter-num .da-chapter-num-unit{
+  font-size:15px; font-weight:600; color:var(--dim); letter-spacing:.14em;
+}
+
+/* TYP-03 小灰 caps 分区标签（§53 分区标题同口径：11px/.14em/L3 灰） */
+.da-caps{
+  font-family:var(--da-font); font-size:11px; line-height:1.5;
+  letter-spacing:.14em; color:var(--dim-2); text-transform:uppercase;
+}
+
+/* TYP-04 统计大数字砖（实面砖 + 大数字 + 绿色点缀副标） */
+.da-stat-brick{
+  border-radius:var(--radius-card, 16px); padding:16px 18px;
+  background:var(--surface-solid); border:1px solid var(--line);
+  box-shadow:var(--shadow-flat);
+}
+.da-stat-brick .da-stat-num{
+  font-family:var(--da-font); font-size:30px; font-weight:800; line-height:1.1;
+  color:var(--ink); font-variant-numeric:tabular-nums;
+}
+.da-stat-brick .da-stat-sub{font-size:12px; color:var(--dim); margin-top:4px}
+.da-stat-brick .da-stat-delta{color:var(--success); font-weight:700}
+
+/* TYP-05 描边字（outline 显示字） */
+.da-outline-text{
+  font-family:var(--da-font); font-weight:800; letter-spacing:.02em;
+  color:var(--dim-2);
+}
+@supports ((-webkit-text-stroke:1px black)){
+  .da-outline-text{color:transparent; -webkit-text-stroke:1.5px var(--line-2)}
+}
+
+/* ========================== FX 显示效果 ========================== */
+
+/* FX-01 玻璃面（§53 毛玻璃配方：染色面 + blur + 亮发丝边 + 外环） */
+.da-glass-panel{
+  border-radius:var(--da-glass-radius);
+  background:var(--da-glass-bg);
+  border:1px solid var(--da-glass-line);
+  outline:1px solid var(--da-glass-edge); outline-offset:-1px;
+  backdrop-filter:var(--da-glass-blur); -webkit-backdrop-filter:var(--da-glass-blur);
+  box-shadow:var(--da-glass-shadow), var(--shadow-glass-top);
+  padding:20px;
+}
+/* 玻璃上的小玻璃片（chips 二层玻璃，blur 14 档） */
+.da-glass-chip{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:6px 12px; border-radius:999px;
+  background:var(--da-chip-bg); border:1px solid var(--da-glass-line);
+  backdrop-filter:var(--da-chip-blur); -webkit-backdrop-filter:var(--da-chip-blur);
+  font-family:var(--da-font); font-size:12px; color:var(--ink);
+}
+
+/* FX-02 光晕环（星环：细环 + 双层辉光，中央置星/头像） */
+.da-halo{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:88px; height:88px; border-radius:50%;
+  border:1px solid var(--glass-edge); color:var(--da-star);
+  box-shadow:
+    0 0 0 8px color-mix(in srgb, var(--cyan) 7%, transparent),
+    0 0 34px color-mix(in srgb, var(--violet) 24%, transparent),
+    inset 0 0 18px color-mix(in srgb, var(--cyan) 10%, transparent);
+  font-size:22px;
+}
+
+/* FX-03 星点尘（多层星点颗粒，星图母题） */
+.da-stardust{
+  border-radius:var(--radius-card, 16px); border:1px solid var(--line);
+  background-color:var(--surface-solid);
+  background-image:
+    radial-gradient(circle 2px at 18% 30%, color-mix(in srgb, var(--cyan) 85%, transparent) 98%, transparent),
+    radial-gradient(circle 1.5px at 66% 18%, color-mix(in srgb, var(--ink) 75%, transparent) 98%, transparent),
+    radial-gradient(circle 1.5px at 82% 58%, color-mix(in srgb, var(--violet) 80%, transparent) 98%, transparent),
+    radial-gradient(circle 2px at 42% 74%, color-mix(in srgb, var(--pink) 70%, transparent) 98%, transparent),
+    radial-gradient(circle 1.2px at 30% 56%, color-mix(in srgb, var(--ink) 55%, transparent) 98%, transparent),
+    radial-gradient(circle 1.2px at 90% 84%, color-mix(in srgb, var(--cyan) 60%, transparent) 98%, transparent),
+    radial-gradient(120px 60px at 78% 12%, color-mix(in srgb, var(--violet) 12%, transparent) 98%, transparent);
+  background-repeat:no-repeat;
+}
+
+/* FX-04 细噪点（SVG 湍流噪点覆层，哑光面去塑料感） */
+.da-noise{position:relative}
+.da-noise::after{
+  content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+}
+
+/* FX-05 微光扫过（shimmer 骨架：光带以 transform 平移扫过） */
+.da-shimmer{
+  position:relative; overflow:hidden;
+  background:var(--glass-2); border-radius:var(--radius-media, 8px);
+}
+.da-shimmer::after{
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--ink) 9%, transparent) 50%, transparent 80%);
+  transform:translateX(-100%);
+  animation:da-shimmer-sweep var(--dur-shimmer, 1600ms) var(--da-ease-out) infinite;
+}
+@keyframes da-shimmer-sweep{55%, 100%{transform:translateX(100%)}}
+
+/* FX-06 氛围色晕（三色晕 swatch：页面氛围底的取色卡） */
+.da-ambient{
+  border-radius:var(--radius-card, 16px); border:1px solid var(--line);
+  background:
+    radial-gradient(180px 120px at 12% 0%, color-mix(in srgb, var(--cyan) 16%, transparent), transparent 78%),
+    radial-gradient(200px 140px at 88% 18%, color-mix(in srgb, var(--violet) 15%, transparent), transparent 78%),
+    radial-gradient(220px 150px at 50% 108%, color-mix(in srgb, var(--mint) 10%, transparent), transparent 78%),
+    var(--bg-2);
+  background-repeat:no-repeat;
+}
+
+/* ========================== DTL 角落细节 ========================== */
+
+/* DTL-01 徽章（官方 / 主化身 / 连载中 / 已完结） */
+.da-badge{
+  display:inline-flex; align-items:center; gap:4px;
+  padding:3px 9px; border-radius:999px;
+  border:1px solid var(--line);
+  background:var(--glass-2); color:var(--dim);
+  font-family:var(--da-font); font-size:11px; font-weight:600; line-height:1.4;
+  white-space:nowrap;
+}
+.da-badge--official{
+  color:var(--rank-gold);
+  background:color-mix(in srgb, var(--rank-gold) 14%, transparent);
+  border-color:color-mix(in srgb, var(--rank-gold) 38%, transparent);
+}
+.da-badge--main{
+  color:var(--thread-ink);
+  background:var(--thread-soft);
+  border-color:color-mix(in srgb, var(--thread) 42%, transparent);
+}
+.da-badge--serial{
+  color:var(--success);
+  background:color-mix(in srgb, var(--success) 12%, transparent);
+  border-color:color-mix(in srgb, var(--success) 35%, transparent);
+}
+.da-badge--done{color:var(--dim-2)}
+
+/* DTL-02 Chips（可选标签，选中走 selected token 族） */
+.da-chip{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:8px 14px; border-radius:999px;
+  border:1px solid var(--line); background:var(--surface-pill);
+  color:var(--ink); font-family:var(--da-font); font-size:13px; line-height:1;
+  cursor:pointer; user-select:none; -webkit-user-select:none;
+  transition:transform var(--da-dur-press) var(--da-ease-press),
+             background-color var(--da-dur-state) var(--da-ease-out),
+             border-color var(--da-dur-state) var(--da-ease-out),
+             color var(--da-dur-state) var(--da-ease-out);
+}
+.da-chip:active{transform:scale(.96)}
+.da-chip:focus-visible{outline:2px solid var(--cyan); outline-offset:2px}
+.da-chip[aria-pressed="true"], .da-chip.is-on{
+  background:var(--selected-surface); border-color:var(--selected-border);
+  color:var(--selected-text); font-weight:600;
+}
+.da-chip:disabled{opacity:.45; pointer-events:none}
+
+/* DTL-03 开关（弹簧推钮，ζ ≥ 1 不回弹） */
+.da-switch{display:inline-flex; align-items:center; gap:10px; cursor:pointer; font-family:var(--da-font); font-size:14px; color:var(--ink)}
+.da-switch input{position:absolute; opacity:0; width:0; height:0}
+.da-switch-ui{
+  position:relative; flex:none; width:46px; height:27px; border-radius:999px;
+  background:var(--glass-2); border:1px solid var(--line);
+  transition:background-color var(--da-dur-state) var(--da-ease-out), border-color var(--da-dur-state) var(--da-ease-out);
+}
+.da-switch-ui::after{
+  content:""; position:absolute; top:2px; left:2px; width:21px; height:21px;
+  border-radius:50%; background:var(--dim-2);
+  transition:transform var(--da-dur-pop) var(--da-ease-spring), background-color var(--da-dur-state) var(--da-ease-out);
+}
+.da-switch input:checked + .da-switch-ui{background:var(--action); border-color:transparent}
+.da-switch input:checked + .da-switch-ui::after{transform:translateX(19px); background:var(--action-ink)}
+.da-switch input:focus-visible + .da-switch-ui{outline:2px solid var(--cyan); outline-offset:2px}
+.da-switch input:disabled + .da-switch-ui{opacity:.45}
+.da-switch input:disabled ~ .da-switch-label{opacity:.45}
+
+/* DTL-04 单选 / 勾选（自绘，选中点弹簧胀入；勾形以 clip-path 绘） */
+.da-radio, .da-check{
+  display:inline-flex; align-items:center; gap:9px; cursor:pointer;
+  font-family:var(--da-font); font-size:14px; color:var(--ink);
+}
+.da-radio input, .da-check input{
+  appearance:none; -webkit-appearance:none; flex:none;
+  width:20px; height:20px; margin:0; cursor:pointer; position:relative;
+  border:1.5px solid var(--line-2); background:transparent;
+  transition:border-color var(--da-dur-state) var(--da-ease-out), background-color var(--da-dur-state) var(--da-ease-out);
+}
+.da-radio input{border-radius:50%}
+.da-radio input::after{
+  content:""; position:absolute; inset:4px; border-radius:50%;
+  background:var(--action); transform:scale(.3); opacity:0;
+  transition:transform var(--da-dur-pop) var(--da-ease-spring), opacity var(--da-dur-state) var(--da-ease-out);
+}
+.da-radio input:checked{border-color:var(--action)}
+.da-radio input:checked::after{transform:scale(1); opacity:1}
+.da-check input{border-radius:6px}
+.da-check input::after{
+  content:""; position:absolute; inset:3px;
+  background:var(--action-ink); opacity:0; transform:scale(.5);
+  clip-path:polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  transition:transform var(--da-dur-pop) var(--da-ease-spring), opacity var(--da-dur-state) var(--da-ease-out);
+}
+.da-check input:checked{background:var(--action); border-color:var(--action)}
+.da-check input:checked::after{opacity:1; transform:scale(1)}
+.da-radio input:focus-visible, .da-check input:focus-visible{outline:2px solid var(--cyan); outline-offset:2px}
+.da-radio input:disabled, .da-check input:disabled{opacity:.45; pointer-events:none}
+
+/* DTL-05 输入·下划线式（16px 地板；聚焦织线色下划线点亮） */
+.da-field{display:flex; flex-direction:column; gap:6px; font-family:var(--da-font)}
+.da-field-label{font-size:12px; color:var(--dim); letter-spacing:.04em}
+.da-field-hint{font-size:12px; color:var(--dim-2)}
+.da-field-error{font-size:12px; color:var(--danger)}
+.da-input-under{
+  width:100%; box-sizing:border-box; padding:9px 2px;
+  background:transparent; border:0; border-bottom:1px solid var(--line-2);
+  color:var(--ink); font-family:var(--da-font); font-size:16px; line-height:1.4;
+  border-radius:0; outline:none;
+  transition:border-color var(--da-dur-state) var(--da-ease-out), box-shadow var(--da-dur-state) var(--da-ease-out);
+}
+.da-input-under::placeholder{color:var(--dim-2)}
+.da-input-under:focus{border-bottom-color:var(--cyan); box-shadow:0 1px 0 var(--cyan)}
+.da-input-under:disabled{opacity:.45}
+.da-field.is-error .da-input-under{border-bottom-color:var(--danger); box-shadow:0 1px 0 var(--danger)}
+
+/* DTL-06 输入·框式 */
+.da-input-box{
+  width:100%; box-sizing:border-box; padding:11px 14px;
+  background:var(--surface-card); border:1px solid var(--line);
+  border-radius:var(--radius-control, 10px);
+  color:var(--ink); font-family:var(--da-font); font-size:16px; line-height:1.4;
+  outline:none;
+  transition:border-color var(--da-dur-state) var(--da-ease-out), box-shadow var(--da-dur-state) var(--da-ease-out);
+}
+.da-input-box::placeholder{color:var(--dim-2)}
+.da-input-box:focus{border-color:var(--cyan); box-shadow:0 0 0 3px color-mix(in srgb, var(--cyan) 18%, transparent)}
+.da-input-box:disabled{opacity:.45}
+.da-field.is-error .da-input-box{border-color:var(--danger)}
+.da-field.is-error .da-input-box:focus{box-shadow:0 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent)}
+
+/* DTL-07 焦点环（静态演示类：与各控件 :focus-visible 同一口径） */
+.da-focus-ring{
+  outline:2px solid var(--cyan); outline-offset:2px;
+}
+
+/* DTL-08 滚动条（细条，thumb 走发丝线强档） */
+.da-scroll{
+  scrollbar-width:thin; scrollbar-color:var(--line-2) transparent;
+}
+.da-scroll::-webkit-scrollbar{width:6px; height:6px}
+.da-scroll::-webkit-scrollbar-track{background:transparent}
+.da-scroll::-webkit-scrollbar-thumb{background:var(--line-2); border-radius:999px}
+.da-scroll::-webkit-scrollbar-thumb:hover{background:var(--dim-2)}
+
+/* DTL-09 选区色（接入时由应用以此 token 族刷 ::selection；
+   本类供局部容器直接套用演示） */
+.da-selection-demo::selection, .da-selection-demo *::selection{
+  background:var(--selected-surface); color:var(--selected-text);
+}
+
+/* DTL-10 Toast（近实色浮面 + 状态星点） */
+.da-toast{
+  display:flex; align-items:center; gap:10px;
+  padding:12px 16px; border-radius:var(--radius-surface, 20px);
+  background:var(--float-solid); border:1px solid var(--line);
+  backdrop-filter:var(--blur-bar, blur(12px)); -webkit-backdrop-filter:var(--blur-bar, blur(12px));
+  box-shadow:var(--shadow-floating);
+  font-family:var(--da-font); font-size:14px; color:var(--ink);
+}
+.da-toast .da-toast-dot{width:8px; height:8px; border-radius:50%; background:var(--success); flex:none; box-shadow:0 0 10px color-mix(in srgb, var(--success) 60%, transparent)}
+.da-toast .da-toast-action{margin-left:auto; color:var(--action); font-weight:600; white-space:nowrap; cursor:pointer}
+
+/* DTL-11 进度条·星结（织线渐变填充，星结骑在进度头） */
+.da-progress{
+  position:relative; height:6px; border-radius:999px;
+  background:var(--glass-2);
+}
+.da-progress-fill{
+  position:relative; height:100%; border-radius:999px;
+  background:var(--da-weave);
+  transition:width var(--da-dur-pop) var(--da-ease-spring);
+}
+.da-progress-fill::after{
+  content:"✦"; position:absolute; right:-7px; top:50%;
+  transform:translateY(-50%); font-size:12px; line-height:1; color:var(--da-star);
+  text-shadow:0 0 8px color-mix(in srgb, var(--cyan) 60%, transparent);
+}
+
+/* DTL-12 织线 loading spinner（线色转环 + 中央星点呼吸） */
+.da-spinner{
+  position:relative; display:inline-flex; align-items:center; justify-content:center;
+  width:36px; height:36px;
+}
+.da-spinner::before{
+  content:""; position:absolute; inset:0; border-radius:50%;
+  border:2px solid var(--glass-2); border-top-color:var(--da-thread);
+  animation:da-spin .9s linear infinite;
+}
+.da-spinner::after{
+  content:"✦"; font-size:11px; color:var(--da-star);
+  animation:da-star-pulse 1.8s var(--da-ease-out) infinite;
+}
+@keyframes da-spin{to{transform:rotate(360deg)}}
+@keyframes da-star-pulse{0%, 100%{opacity:.35} 50%{opacity:1}}
+
+/* DTL-13 空态小标记（虚线圆 + 星，等待被织入） */
+.da-empty-mark{
+  display:inline-flex; flex-direction:column; align-items:center; gap:10px;
+  font-family:var(--da-font);
+}
+.da-empty-mark .da-empty-glyph{
+  display:flex; align-items:center; justify-content:center;
+  width:56px; height:56px; border-radius:50%;
+  border:1.5px dashed var(--line-2); color:var(--da-star); font-size:18px;
+}
+.da-empty-mark .da-empty-text{font-size:11px; letter-spacing:.14em; color:var(--dim-2)}
+
+/* —— 动效总开关口径：减少动态时，循环动效停转/停扫，星点静态 —— */
+@media (prefers-reduced-motion: reduce){
+  .da-shimmer::after{animation:none; transform:none; opacity:0}
+  .da-spinner::before{animation:none}
+  .da-spinner::after{animation:none; opacity:.8}
+  .da-btn, .da-chip, .da-icon-btn, .da-fab,
+  .da-switch-ui::after, .da-progress-fill{transition:none}
+}
