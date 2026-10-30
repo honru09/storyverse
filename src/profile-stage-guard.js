@@ -1,4 +1,7 @@
-// REQ-48: the profile stage restore guard.
+// REQ-48: the profile stage restore guard. REQ-62 adds the
+// lifecycle-armed settle guard at the bottom of this module: the
+// restore guard alone left every non-app arrival (native browser
+// scroll restoration, bfcache thaw) undefended.
 //
 // The defect (measured end to end on honru-like state, WebKit
 // 393x852, black theme, the owner's real portrait): a profile visit
@@ -54,6 +57,10 @@ export function stageParkTarget({ windowForm, root } = {}) {
   const stage = root?.querySelector?.(".profile-stage")
   if (!root || !stage) return null
   const rect = stage.getBoundingClientRect()
+  // A hidden surface (the profile tab's keep-alive slot while another
+  // tab is active) lays out as all-zero rects; there is nothing to
+  // park and the window scroller belongs to the visible tab then.
+  if (!rect.height || !rect.width) return null
   if (windowForm) {
     const sheet = root.closest(".profile-window-sheet")
     if (!sheet) return null
@@ -98,4 +105,78 @@ export function armRestoredStageGuard({ windowForm, root, saved, delays = [200, 
   }
   const timers = delays.map((delay) => window.setTimeout(check, delay))
   return () => timers.forEach((timer) => window.clearTimeout(timer))
+}
+
+/**
+ * REQ-62: the settle guard — the resting-state half of the defence.
+ *
+ * REQ-48's restore guard only arms inside the app's own two restore
+ * effects. But both scroll memories are session-memory-only and the
+ * app leaves the browser's native scroll restoration on, so a whole
+ * class of arrivals never passes an armed restore: a reload, a
+ * Safari tab restore, a home-screen web app relaunched after iOS
+ * evicted it, a back-forward-cache thaw. On those, the browser puts
+ * the window back at a remembered stop — possibly the sliced stop —
+ * and nothing ever looks at the stage again (measured: the sliced
+ * rest persists indefinitely, stage.top −70.2 against the 71px bar,
+ * head band entirely behind it — the owner's 2026-10-31 screenshot).
+ *
+ * This guard is armed by the profile surface's lifecycle instead of
+ * by restore bookkeeping, and defends the RESTING state however the
+ * scroll got there:
+ *  - timed checks shortly after arming (mount / first data),
+ *  - a check once scrolling has been still for `settleMs` — a park
+ *    only ever starts from a position that stayed put for the whole
+ *    settle window, so a travelling finger is never fought,
+ *  - a re-check after the portrait image loads (late layout),
+ *  - a re-check on pageshow with persisted=true (bfcache thaw runs
+ *    no effects), and on resize (rotation / chrome geometry moves
+ *    the safe line).
+ * Parking reuses stageParkTarget, so it inherits the geometry and
+ * the hidden-surface bail. Returns a disarm function.
+ */
+export function armStageSettleGuard({ windowForm, root, delays = [250, 800, 1600, 2800], settleMs = 180 } = {}) {
+  if (!root) return () => {}
+  const scroller = windowForm ? root : window
+  let disposed = false
+  let settleTimer = null
+  let resizeTimer = null
+  const position = () => (windowForm ? root.scrollTop : window.scrollY)
+  const check = () => {
+    if (disposed) return
+    const target = stageParkTarget({ windowForm, root })
+    if (target == null) return
+    if (windowForm) root.scrollTop = target
+    else window.scrollTo(0, target)
+  }
+  const onScroll = () => {
+    const seen = position()
+    if (settleTimer) window.clearTimeout(settleTimer)
+    settleTimer = window.setTimeout(() => {
+      settleTimer = null
+      if (!disposed && position() === seen) check()
+    }, settleMs)
+  }
+  const onPageshow = (event) => { if (event?.persisted) check() }
+  const onResize = () => {
+    if (resizeTimer) window.clearTimeout(resizeTimer)
+    resizeTimer = window.setTimeout(() => { resizeTimer = null; check() }, 200)
+  }
+  const img = root.querySelector?.(".profile-stage-img")
+  const onImgLoad = () => window.setTimeout(check, 80)
+  if (img && !img.complete) img.addEventListener("load", onImgLoad)
+  scroller.addEventListener("scroll", onScroll, { passive: true })
+  window.addEventListener("pageshow", onPageshow)
+  window.addEventListener("resize", onResize)
+  const timers = delays.map((delay) => window.setTimeout(check, delay))
+  return () => {
+    disposed = true
+    timers.forEach((timer) => window.clearTimeout(timer))
+    if (settleTimer) window.clearTimeout(settleTimer)
+    if (resizeTimer) window.clearTimeout(resizeTimer)
+    scroller.removeEventListener("scroll", onScroll)
+    window.removeEventListener("pageshow", onPageshow)
+    window.removeEventListener("resize", onResize)
+    if (img && !img.complete) img.removeEventListener("load", onImgLoad)
+  }
 }
