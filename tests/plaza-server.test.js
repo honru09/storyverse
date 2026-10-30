@@ -8,6 +8,11 @@ import { createMemoryPlazaStore } from '../server/plaza-store.js'
 import { createPlazaService } from '../server/plaza.js'
 import { createMemoryCoverStore } from '../server/cover-store.js'
 import { createServer } from '../server/index.js'
+import { createAuthService } from '../server/auth.js'
+import { createUsernameAuthService } from '../server/username-auth.js'
+import { createEmailCodeService } from '../server/email-code.js'
+import { createMemoryIdentityStore } from '../server/identity-store.js'
+import { randomBytes, scryptSync } from 'node:crypto'
 import {
   acceptChapter,
   buildChapter,
@@ -75,7 +80,29 @@ function completedLine(avatarId, { marker = '', redLine = false, title = '' } = 
   return { ...story, engine: 'gemini' }
 }
 
+/**
+ * REQ-69: reserved names can no longer be registered over HTTP, so
+ * the official account is provisioned directly in the identity
+ * store (as in production, where it predates the block) and the
+ * fixture signs in through the normal login route. The auth service
+ * is built on that store and injected, mirroring the server's own
+ * default wiring.
+ */
+async function seedOfficialUser(identityStore) {
+  const salt = randomBytes(16).toString('hex')
+  const passwordHash = scryptSync('plaza-pass-123', Buffer.from(salt, 'hex'), 64, { N: 16384, r: 8, p: 1 }).toString('hex')
+  await identityStore.putUser('storyweave', {
+    username: 'storyweave', uid: 'username:storyweave', salt, passwordHash, recoveryEmail: null, createdAt: Date.now(),
+  })
+}
+
 async function startPlazaServer(t) {
+  const identityStore = createMemoryIdentityStore()
+  await seedOfficialUser(identityStore)
+  const mailer = { configured: false, sendCode: async () => {}, sendRecoveryCode: async () => {} }
+  const usernameAuth = createUsernameAuthService({ env: { AUTH_ENABLED: 'true' }, store: identityStore, mailer, log: () => {} })
+  const emailCode = createEmailCodeService({ env: {}, store: identityStore, mailer, log: () => {} })
+  const auth = createAuthService({ env: { AUTH_ENABLED: 'true' }, usernameAuth, emailCode })
   const avatarStore = createMemoryAvatarStore()
   const avatarService = createAvatarService({
     env: { GENAI_BACKEND: 'vertex', GOOGLE_CLOUD_PROJECT: 'project-test-123' },
@@ -87,6 +114,7 @@ async function startPlazaServer(t) {
   const plazaService = createPlazaService({ env: {}, store: plazaStore, avatarStore, coverStore })
   const server = createServer({
     env: { AUTH_ENABLED: 'true', DATA_STORE: 'memory' },
+    auth,
     generator: { status: () => ({ configured: false, provider: 'gemini', model: 'fixture' }), generate: async () => { throw new Error('unused') } },
     avatar: avatarService,
     plaza: plazaService,
@@ -110,6 +138,18 @@ async function register(base, username) {
     body: JSON.stringify({ username, password: 'plaza-pass-123' }),
   })
   assert.equal(response.status, 200, `register ${username}`)
+  const { token } = await response.json()
+  return token
+}
+
+/** The seeded official account (see seedOfficialUser), signed in via the login route. */
+async function loginOfficial(base) {
+  const response = await fetch(`${base}/api/auth/username/login`, {
+    method: 'POST',
+    headers: { ...ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'storyweave', password: 'plaza-pass-123' }),
+  })
+  assert.equal(response.status, 200, 'official login')
   const { token } = await response.json()
   return token
 }
@@ -207,7 +247,7 @@ test('publish → feed → detail round-trip: the book’s own text verbatim, st
 test('official flag: derived from the author uid, never claimable through client input', async (t) => {
   const { base } = await startPlazaServer(t)
   // The designated official account (server-owned username constant).
-  const officialToken = await register(base, 'storyweave')
+  const officialToken = await loginOfficial(base)
   const officialAvatar = await makeAvatar(base, officialToken, '沈知遥')
   const officialResponse = await publish(base, officialToken, completedLine(officialAvatar.id, { title: '官方示例线' }))
   assert.equal(officialResponse.status, 200)

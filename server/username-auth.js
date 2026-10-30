@@ -16,6 +16,23 @@ export const USERNAME_PATTERN = /^[a-z0-9_.]{3,20}$/
 /** Usernames are case-insensitive: one normalised (lowercase) form is the account key, the uid and the display name. */
 export const normalizeUsername = (value) => typeof value === 'string' ? value.trim().toLowerCase() : ''
 
+// Reserved names (REQ-69): official identity is DERIVED from the
+// username (plaza.js OFFICIAL_USERNAMES = storyweave /
+// storyweave_official), so anyone who registers a look-alike inherits
+// official privileges. Registration therefore refuses names whose
+// canonical form — lowercase, with every [_.\-\s] separator removed —
+// is the brand name, the brand name plus a numeric suffix, or one of
+// the generic authority words below. Containment is not enough:
+// `storyweave_fan` and `mystoryweave` stay registrable.
+const RESERVED_CANONICAL = new Set(['official', 'admin', 'support', 'system'])
+export function isReservedUsername(name) {
+  const canonical = normalizeUsername(name).replace(/[._\-\s]/g, '')
+  if (!canonical) return false
+  if (canonical === 'storyweave' || canonical === 'storyweaveofficial') return true
+  if (/^storyweave\d+$/.test(canonical)) return true
+  return RESERVED_CANONICAL.has(canonical)
+}
+
 export const usernameUid = (username) => `username:${username}`
 
 const LOGIN_WINDOW_MS = 15 * 60 * 1000
@@ -142,6 +159,7 @@ export function createUsernameAuthService({
     if (!enabled) throw notConfigured()
     const username = normalizeUsername(rawUsername)
     if (!USERNAME_PATTERN.test(username)) throw new ApiError(400, '用户名只能用字母、数字、下划线和点，3–20 个字符。')
+    if (isReservedUsername(username)) throw new ApiError(400, '这个名字不能用，换一个吧。')
     const password = checkedPassword(rawPassword)
     const recoveryEmail = checkedRecoveryEmail(rawRecoveryEmail)
     const rateKey = `register:${clientKey}`
@@ -393,5 +411,23 @@ export function createUsernameAuthService({
     }
   }
 
-  return { enabled, recoveryEnabled, register, login, resolveSession, recoveryState, recoveryStatus, requestRecoveryCode, resetPasswordWithCode, setRecoveryEmail }
+  /**
+   * Revoke one site session (sign-out): the session record is keyed
+   * by the token hash, exactly as resolveSession derives it, so
+   * deleting that key ends the credential immediately — the token
+   * stops resolving on the very next request. Idempotent by design:
+   * an unknown, malformed or already-revoked token still answers ok,
+   * the same posture as the email channel's revokeSession.
+   */
+  async function signOut(token) {
+    if (!backend || typeof token !== 'string' || !token) return { ok: true }
+    try {
+      await backend.deleteSession(sha256(token))
+    } catch {
+      log('username-auth: session revoke failed')
+    }
+    return { ok: true }
+  }
+
+  return { enabled, recoveryEnabled, register, login, resolveSession, signOut, recoveryState, recoveryStatus, requestRecoveryCode, resetPasswordWithCode, setRecoveryEmail }
 }

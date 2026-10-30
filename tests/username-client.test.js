@@ -41,7 +41,9 @@ function fixture({ config = usernameOnlyConfig } = {}) {
         ? Response.json({ token: `site-token-u-${++issued}`, uid: `username:${body.username}`, username: body.username, expiresAt: Date.now() + 60_000 })
         : Response.json({ error: '用户名或密码不正确。' }, { status: 401 })
     }
-    if (url === '/api/auth/email/signout') { revokedTokens.add(options.headers.Authorization?.replace('Bearer ', '')); return Response.json({ ok: true }) }
+    // REQ-69: username sessions revoke through the username channel's
+    // own sign-out route, not the email channel's.
+    if (url === '/api/auth/username/signout') { revokedTokens.add(options.headers.Authorization?.replace('Bearer ', '')); return Response.json({ ok: true }) }
     if (url === '/api/account') {
       const token = options.headers.Authorization?.replace('Bearer ', '')
       if (!token?.startsWith('site-token-u') || revokedTokens.has(token)) return Response.json({ error: 'revoked' }, { status: 401 })

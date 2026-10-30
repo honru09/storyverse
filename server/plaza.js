@@ -178,8 +178,45 @@ export const RATING_PRIOR_STRENGTH = 10
 function redLineViolation(story) {
   const texts = []
   const push = (value) => { if (typeof value === 'string' && value) texts.push(value) }
-  push(story.config?.customWorldName)
-  push(story.config?.customWorldSetting)
+  // REQ-69 (audit cluster A): the scan covers EVERY user-visible
+  // free-text field on the publish surface, not only the world setting
+  // and the chapters — a violation parked in the book title, the
+  // owner's synopsis, the generated intro or a config free field used
+  // to reach readers exactly the same way. (Style bans for intro copy
+  // stay with introViolationFor / REQ-56/65; this scan is only the
+  // findSettingViolation red line.)
+  push(story.title)
+  push(story.synopsis)
+  // story.intro.* — every string field, arrays item by item.
+  const collectStrings = (value, depth = 0) => {
+    if (depth > 4) return
+    if (typeof value === 'string') { push(value); return }
+    if (Array.isArray(value)) { for (const item of value) collectStrings(item, depth + 1); return }
+    if (value && typeof value === 'object') {
+      for (const item of Object.values(value)) collectStrings(item, depth + 1)
+    }
+  }
+  collectStrings(story.intro)
+  const config = story.config || {}
+  for (const field of [
+    'customWorldName', 'customWorldSetting', 'customGenreText',
+    'name', 'persona', 'trait', 'origin', 'ability', 'abilityDesc',
+    'startPointName', 'startPointHook', 'avatarAppearance',
+    'hometown', 'school', 'company', 'role', 'friend', 'destination',
+    'bookTitle',
+  ]) push(config[field])
+  // Per-world creator drafts (REQ-59) rename/rewrite a preset world in
+  // the creator's own words — public the moment the book shelves.
+  if (config.worldDrafts && typeof config.worldDrafts === 'object') {
+    for (const draft of Object.values(config.worldDrafts)) {
+      push(draft?.name)
+      push(draft?.setting)
+    }
+  }
+  // A fused line's cast: each protagonist's free fields are public too.
+  for (const person of Array.isArray(config.protagonists) ? config.protagonists : []) {
+    for (const field of ['name', 'trait', 'origin', 'ability', 'appearance']) push(person?.[field])
+  }
   const bible = story.worldBible || {}
   push(bible.premise)
   push(bible.endingAnchor)
@@ -258,7 +295,27 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
    * author identity is the fused book's own, resolved at read time.
    */
   async function storedSourcesFor(story) {
-    if (story?.kind !== 'merged') return []
+    if (story?.kind !== 'merged') {
+      // REQ-69 (audit cluster A): a solo ENTERED line also leaves its
+      // provenance on the server record. plazaSnapshot strips
+      // config.sourcePublicationId to '' by design, so without this
+      // entry a re-published entered line would be a provenance dead
+      // end — exactly the one-hop laundering hole. The entry rides
+      // record.sources (server-side; detail only surfaces sources for
+      // merged books), where the publish re-check's closure reads it.
+      const publicationId = typeof story?.config?.sourcePublicationId === 'string'
+        ? story.config.sourcePublicationId
+        : ''
+      if (!publicationId) return []
+      const source = await backend.getPublication(publicationId).catch(() => null)
+      return [{
+        publicationId,
+        title: source?.title || (typeof story.title === 'string' && story.title ? story.title : '未命名故事'),
+        authorName: source?.authorName || '',
+        authorHandle: typeof source?.authorHandle === 'string' ? source.authorHandle : '',
+        genreId: source?.genreId || '',
+      }]
+    }
     const listed = Array.isArray(story.sources) && story.sources.length
       ? story.sources
       : (Array.isArray(story.sourceTitles) ? story.sourceTitles : []).map((title, index) => ({
@@ -286,6 +343,114 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         : { publicationId, title: fallbackTitle, authorName: '', authorHandle: '', genreId })
     }
     return resolved
+  }
+
+  /*
+   * 合流授权复检 (REQ-49, hardened by REQ-69 audit cluster A). The
+   * re-check is bound to the story's own provenance, never to one
+   * client-reported array alone:
+   * - the direct source set is DERIVED from the story body —
+   *   story.sources[].publicationId, story.sourcePublicationIds[] and
+   *   story.config.sourcePublicationId (an entered solo line) merged
+   *   and de-duplicated. A merged line whose self-reported
+   *   sourcePublicationIds disagrees with the set derived from
+   *   sources[]/config (under- or over-reported) is refused outright.
+   * - the check then walks the SERVER-side publication graph as a
+   *   transitive closure: every source publication's stored record
+   *   (record.sources[].publicationId, plus
+   *   record.snapshot.config.sourcePublicationId when present)
+   *   enqueues its own sources, so re-publishing an entered line —
+   *   once, twice, any number of hops — cannot wash the original
+   *   author out. Bounds: at most FUSION_CLOSURE_MAX_DEPTH expansion
+   *   hops and FUSION_CLOSURE_MAX_NODES visited publications; cycles
+   *   exit through the visited set.
+   * - every OTHER author in the closure must currently allow the
+   *   fusion: their fusionPermission is free, or a durable grant
+   *   covers THIS publisher for THAT publication id (a grant on an
+   *   intermediate book covers that book only — the hop to the
+   *   original author is checked against the original publication).
+   *   The publisher's own books need no consent but are still walked
+   *   through, because their provenance may lead to someone else.
+   * - a claimed source that cannot be found as a published record
+   *   (withdrawn, hidden, deleted, never existed) REFUSES the publish
+   *   — being taken down is not a bypass switch.
+   * - legacy fused lines minted before REQ-53 whose three provenance
+   *   fields are ALL empty carry no source information at all and
+   *   keep the historical pass (the boundary stated in
+   *   FUSION-PERMISSION.md); a line that strips sources[] AND the id
+   *   array AND the config pointer before its first shelving is
+   *   indistinguishable from such a legacy line — that residual is
+   *   inherent to client-held stories and is not claimed closed here.
+   */
+  const FUSION_CLOSURE_MAX_DEPTH = 5
+  const FUSION_CLOSURE_MAX_NODES = 32
+
+  function recordProvenanceIds(record) {
+    const ids = []
+    for (const entry of Array.isArray(record?.sources) ? record.sources : []) {
+      if (typeof entry?.publicationId === 'string' && entry.publicationId) ids.push(entry.publicationId)
+    }
+    const solo = record?.snapshot?.config?.sourcePublicationId
+    if (typeof solo === 'string' && solo) ids.push(solo)
+    return ids
+  }
+
+  async function assertFusionConsent(identity, story) {
+    if (!socialBackend || typeof socialBackend.getFusionGrant !== 'function') return
+    const nonEmpty = (value) => typeof value === 'string' && Boolean(value)
+    const fromSources = new Set()
+    for (const entry of Array.isArray(story.sources) ? story.sources : []) {
+      if (nonEmpty(entry?.publicationId)) fromSources.add(entry.publicationId)
+    }
+    if (nonEmpty(story.config?.sourcePublicationId)) fromSources.add(story.config.sourcePublicationId)
+    const reported = Array.isArray(story.sourcePublicationIds)
+      ? new Set(story.sourcePublicationIds.filter(nonEmpty))
+      : null
+    // Self-report vs derivation (merged lines only): sources[] is an
+    // independent provenance channel minted by createMergedStory
+    // alongside the id array, so a disagreement means the payload was
+    // tampered with (or is corrupt) — refuse in human words. Lines
+    // without a sources list have no second channel to compare
+    // against; their reported ids are taken as their provenance.
+    const hasSourcesList = Array.isArray(story.sources) && story.sources.length > 0
+    if (story.kind === 'merged' && reported && hasSourcesList) {
+      const mismatch = reported.size !== fromSources.size
+        || [...reported].some((id) => !fromSources.has(id))
+      if (mismatch) {
+        throw new ApiError(400, '这本合流书的来源信息对不上，暂时不能发布。先在本地重新打开这条故事线，再发布一次。')
+      }
+    }
+    const direct = new Set([...fromSources, ...(reported || [])])
+    if (!direct.size) return
+    const visited = new Set()
+    const queue = [...direct].map((id) => ({ id, depth: 0 }))
+    for (const id of direct) visited.add(id)
+    while (queue.length) {
+      const { id: publicationId, depth } = queue.shift()
+      const source = await backend.getPublication(publicationId).catch(() => null)
+      if (!source || source.status !== 'published') {
+        throw new ApiError(403, story.kind === 'merged'
+          ? '这本合流书的来源之一已经下架或不存在，暂时不能发布。'
+          : '这条故事线的来源已经下架或不存在，暂时不能发布。')
+      }
+      if (source.authorUid !== identity.uid) {
+        const granted = await socialBackend.getFusionGrant(identity.uid, publicationId)
+        if (!granted) {
+          const authorRecord = await socialBackend.getProfileRecord(source.authorUid).catch(() => null)
+          if (normalizeFusionPermission(authorRecord?.fusionPermission) !== 'free') {
+            throw new ApiError(403, story.kind === 'merged'
+              ? '这本合流书里有一本别人的书还没拿到合流授权，暂时不能发布。先向对方申请合流，或等对方把合流权限设为自由。'
+              : '这条故事线的来源还没拿到合流授权，暂时不能发布。先向对方申请合流，或等对方把合流权限设为自由。')
+          }
+        }
+      }
+      if (depth >= FUSION_CLOSURE_MAX_DEPTH) continue
+      for (const nextId of recordProvenanceIds(source)) {
+        if (visited.has(nextId) || visited.size >= FUSION_CLOSURE_MAX_NODES) continue
+        visited.add(nextId)
+        queue.push({ id: nextId, depth: depth + 1 })
+      }
+    }
   }
 
   /*
@@ -714,29 +879,13 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         if (!profile) {
           throw new ApiError(400, '这条故事线不是用你的化身走完的，无法发布。')
         }
-        // 合流授权复检 (REQ-49): a fused book built on someone else's
-        // publication may only shelve while the fusion is allowed —
-        // the source author's CURRENT setting is free, or a durable
-        // grant from an approved application covers this publisher.
-        // The merged story names its outside sources itself
-        // (sourcePublicationIds, pinned at creation); a source whose
-        // publication is gone has no author left to consult and does
-        // not block. Fused lines minted before the field existed
-        // carry no source ids and pass unchecked — the boundary is
-        // stated in FUSION-PERMISSION.md, not hidden.
-        if (story.kind === 'merged' && socialBackend && typeof socialBackend.getFusionGrant === 'function') {
-          const sourceIds = Array.isArray(story.sourcePublicationIds)
-            ? [...new Set(story.sourcePublicationIds.filter((id) => typeof id === 'string' && id))]
-            : []
-          for (const publicationId of sourceIds) {
-            const source = await backend.getPublication(publicationId).catch(() => null)
-            if (!source || source.status !== 'published' || source.authorUid === identity.uid) continue
-            if (await socialBackend.getFusionGrant(identity.uid, publicationId)) continue
-            const authorRecord = await socialBackend.getProfileRecord(source.authorUid).catch(() => null)
-            if (normalizeFusionPermission(authorRecord?.fusionPermission) === 'free') continue
-            throw new ApiError(403, '这本合流书里有一本别人的书还没拿到合流授权，暂时不能发布。先向对方申请合流，或等对方把合流权限设为自由。')
-          }
-        }
+        // 合流授权复检 (REQ-49 + REQ-69 hardening): provenance-bound,
+        // transitive-closure re-check over the server publication
+        // graph — see assertFusionConsent above. It runs for fused
+        // lines AND for solo entered lines (config.sourcePublicationId),
+        // because an entered line re-shelved under the entrant's own
+        // name is the first hop of the laundering path this closes.
+        await assertFusionConsent(identity, story)
         const violation = redLineViolation(story)
         if (violation) throw new ApiError(400, violation)
         // Snapshot-source guard (DESIGN §27): a story carrying real
