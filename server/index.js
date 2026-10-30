@@ -16,6 +16,9 @@ import { createPlazaFeedStore } from './plaza-feed-store.js'
 import { createBookRatingsService } from './book-ratings.js'
 import { createBookRatingsStore } from './book-ratings-store.js'
 import { createSocialService } from './social.js'
+import { createSocialStore } from './social-store.js'
+import { createPlazaStore } from './plaza-store.js'
+import { createFusionService } from './fusion.js'
 import { createLibraryService } from './library.js'
 import { createBillingService, pregeneratedFor, textSceneFor } from './billing.js'
 import { createStripeService } from './stripe.js'
@@ -247,7 +250,7 @@ async function serveStatic(request, response, pathname, distDir) {
   response.end(request.method === 'HEAD' ? undefined : bytes)
 }
 
-export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth, cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza = createPlazaService({ env }), plazaFeed, ratings, social, library = createLibraryService({ env }), billing = createBillingService({ env }), stripe, distDir = DEFAULT_DIST } = {}) {
+export function createServer({ env = process.env, fetchImpl = globalThis.fetch, generator = createGeminiGenerator({ env, fetchImpl }), auth, cover = createCoverService({ env }), avatar = createAvatarService({ env }), plaza, plazaFeed, ratings, social, fusion, library = createLibraryService({ env }), billing = createBillingService({ env }), stripe, distDir = DEFAULT_DIST } = {}) {
   // Billing rides the same durable store family as usage; the Stripe
   // facade is env-gated code only (BILLING.md) and fulfils through
   // the billing service's one grant path.
@@ -270,6 +273,12 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
   // ratings service writes the records, and the social service
   // derives the message centre's 评价 items from those very records.
   const sharedRatingsStore = createBookRatingsStore({ env })
+  // The social store is shared three ways (REQ-49): the social
+  // service owns profile records (where the fusion setting lives),
+  // the fusion service writes applications / grants / applicant
+  // events into it, and the plaza publish gate reads grants back out
+  // of it. One instance, so memory mode cannot split the chain.
+  const sharedSocialStore = createSocialStore({ env })
   if (auth === undefined || social === undefined) {
     const identityStore = createIdentityStore({ env })
     auth ??= createAuthService({
@@ -277,8 +286,11 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
       emailCode: createEmailCodeService({ env, store: identityStore }),
       usernameAuth: createUsernameAuthService({ env, store: identityStore }),
     })
-    social ??= createSocialService({ env, identityStore, feedStore: sharedFeedStore, ratingsStore: sharedRatingsStore })
+    social ??= createSocialService({ env, identityStore, store: sharedSocialStore, feedStore: sharedFeedStore, ratingsStore: sharedRatingsStore })
   }
+  const sharedPlazaStore = createPlazaStore({ env })
+  plaza ??= createPlazaService({ env, store: sharedPlazaStore, socialStore: sharedSocialStore })
+  fusion ??= createFusionService({ env, socialStore: sharedSocialStore, plazaStore: sharedPlazaStore })
   plazaFeed ??= createPlazaFeedService({ env, store: sharedFeedStore, books: plaza })
   ratings ??= createBookRatingsService({ env, store: sharedRatingsStore, books: plaza })
   // Account events for the message centre's 系统 category
@@ -761,6 +773,50 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         }
         const body = await readAuthJson(request)
         return sendJson(response, 200, await social.markNotificationsRead(identity, body.category))
+      }
+      if (pathname === '/api/fusion/status' && request.method === 'POST') {
+        // 合流权限 (REQ-49): the merge page's per-book truth — the
+        // author's current setting, the caller's durable grants and
+        // pending applications. Signed-in only: consent state is
+        // account property, never a public listing.
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再看合流权限。', 'auth-required')
+          throw error
+        }
+        return sendJson(response, 200, await fusion.status(identity, (await readAuthJson(request)).publicationIds))
+      }
+      if (pathname === '/api/fusion/requests' && request.method === 'GET') {
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再看合流申请。', 'auth-required')
+          throw error
+        }
+        return sendJson(response, 200, await fusion.listMine(identity))
+      }
+      if (pathname === '/api/fusion/requests' && request.method === 'POST') {
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再申请合流。', 'auth-required')
+          throw error
+        }
+        return sendJson(response, 200, await fusion.apply(identity, await readAuthJson(request)))
+      }
+      if (pathname === '/api/fusion/requests/decide' && request.method === 'POST') {
+        let identity
+        try {
+          identity = await auth.identity(request.headers.authorization)
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再回应合流申请。', 'auth-required')
+          throw error
+        }
+        return sendJson(response, 200, await fusion.decide(identity, await readAuthJson(request)))
       }
       if (pathname === '/api/announcements' && request.method === 'GET') {
         // Public like the plaza feed: announcements are site notices.

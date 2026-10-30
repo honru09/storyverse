@@ -638,6 +638,43 @@ export function enterDraftFor(detail, { avatar, identityId = '', startPointName 
 }
 
 /**
+ * The fused book's detail-page sources (REQ-53). The server resolves
+ * each entry's state live ('live' | 'gone' | 'own'); this helper is the
+ * client-side floor for details that arrive WITHOUT a resolved list —
+ * older servers, offline caches, pre-REQ-53 payloads: entries rebuild
+ * from the detail's own fields (detail.sources when present but plain,
+ * else sourceTitles + the snapshot's per-source genres). An entry whose
+ * publication is still on the shelf renders as a link; without a state
+ * the client cannot know a source went down, so plain entries with an
+ * id arrive as 'live' links and id-less ones as display-only 'listed'
+ * rows — never a dead link, never a blank section.
+ */
+export function detailSourcesFor(detail) {
+  if (!detail || detail.merged !== true) return []
+  const genres = Array.isArray(detail.snapshot?.config?.sourceGenres) ? detail.snapshot.config.sourceGenres : []
+  const listed = Array.isArray(detail.sources) && detail.sources.length
+    ? detail.sources
+    : (Array.isArray(detail.sourceTitles) ? detail.sourceTitles : []).map((title, index) => ({
+      publicationId: '',
+      title,
+      authorName: '',
+      authorHandle: '',
+      genreId: genres[index] || '',
+      coverUrl: null,
+      state: 'listed',
+    }))
+  return listed.slice(0, 10).map((entry, index) => ({
+    publicationId: typeof entry?.publicationId === 'string' ? entry.publicationId : '',
+    title: typeof entry?.title === 'string' && entry.title ? entry.title : '未命名故事',
+    authorName: typeof entry?.authorName === 'string' ? entry.authorName : '',
+    authorHandle: typeof entry?.authorHandle === 'string' ? entry.authorHandle : '',
+    genreId: typeof entry?.genreId === 'string' && entry.genreId ? entry.genreId : (genres[index] || ''),
+    coverUrl: typeof entry?.coverUrl === 'string' && entry.coverUrl ? entry.coverUrl : null,
+    state: ['live', 'gone', 'own', 'listed'].includes(entry?.state) ? entry.state : (entry?.publicationId ? 'live' : 'listed'),
+  })).filter((entry) => entry.title)
+}
+
+/**
  * The read-only story the reader opens for 读原作线： the publication's
  * snapshot, shaped exactly like a local story. The author's
  * choices ride along in `choices`, so the reader sees the path that was
@@ -655,9 +692,10 @@ export function plazaReaderStory(detail) {
     // A hand-written book reads as what it is (WRITE-MODE §50): the mark
     // keeps every generation/repair path away from its chapters.
     ...(detail.manual ? { creationMode: 'manual' } : {}),
-    // A published fused line reads as what it is — a two-protagonist
-    // merged line — and carries its source titles for the provenance
-    // label; the ids themselves never leave the server.
+    // A published fused line reads as what it is — a merged line whose
+    // cast is every source's lead — and carries its source titles and
+    // the resolved sources list for the provenance label and the
+    // reader's sources block; the local story ids never leave the server.
     kind: detail.merged ? 'merged' : 'solo',
     ...(detail.merged && Array.isArray(detail.sourceTitles) ? { sourceTitles: detail.sourceTitles } : {}),
     // The publication's OWN cover rides the reader copy (BOOK-FACE-FIX):
@@ -668,6 +706,7 @@ export function plazaReaderStory(detail) {
     // picture than the one on the shelf. detail.coverUrl is the public
     // /api/plaza/<id>/cover path the service resolves for exactly this.
     coverUrl: typeof detail.coverUrl === 'string' ? detail.coverUrl : '',
+    ...(detail.merged ? { sources: detailSourcesFor(detail) } : {}),
     config: snapshot.config || {},
     worldBible: snapshot.worldBible || { premise: '', rules: [], endingAnchor: '', outline: [] },
     chapters: snapshot.chapters,

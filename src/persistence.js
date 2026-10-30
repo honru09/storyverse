@@ -197,8 +197,10 @@ function validateConfig(config, prefix, errors, merged = false, forStory = false
     }
   }
   if (merged || config.protagonists !== undefined) {
-    if (!Array.isArray(config.protagonists) || config.protagonists.length !== 2) {
-      errors.push(`${prefix}.protagonists must contain two characters`)
+    // 合流多源 (REQ-53): the cast is every source's lead — two to ten
+    // characters, matching the engine's fusion source bounds.
+    if (!Array.isArray(config.protagonists) || config.protagonists.length < 2 || config.protagonists.length > 10) {
+      errors.push(`${prefix}.protagonists must contain between two and ten characters`)
     } else {
       for (let index = 0; index < config.protagonists.length; index += 1) {
         const person = config.protagonists[index]
@@ -214,8 +216,14 @@ function validateConfig(config, prefix, errors, merged = false, forStory = false
   if (config.merge !== undefined) {
     if (!isRecord(config.merge)) errors.push(`${prefix}.merge must be an object`)
     else {
-      for (const [field, allowed] of Object.entries({ rules: ['bridge', 'separate'], lead: ['a', 'b'], bond: ['allies', 'rivals'] })) {
+      for (const [field, allowed] of Object.entries({ rules: ['bridge', 'separate'], bond: ['allies', 'rivals'] })) {
         if (!allowed.includes(config.merge[field])) errors.push(`${prefix}.merge.${field} is invalid`)
+      }
+      // lead: 'a'/'b' for the first two sources, or the plain cast
+      // index when a deeper source leads a multi-source fusion (REQ-53).
+      const lead = config.merge.lead
+      if (!(lead === 'a' || lead === 'b' || (Number.isInteger(lead) && lead >= 0 && lead <= 9))) {
+        errors.push(`${prefix}.merge.lead is invalid`)
       }
     }
   }
@@ -424,7 +432,23 @@ function validateStory(story, prefix) {
   // titles at fusion time. Absent on every solo line and on fused lines
   // minted before the field existed.
   if (story.derivedFrom !== undefined) validateStringArray(story.derivedFrom, `${prefix}.derivedFrom`, errors)
+  if (story.sourcePublicationIds !== undefined) validateStringArray(story.sourcePublicationIds, `${prefix}.sourcePublicationIds`, errors)
   if (story.sourceTitles !== undefined) validateStringArray(story.sourceTitles, `${prefix}.sourceTitles`, errors)
+  // 来源清单 (REQ-53): one provenance entry per fusion source, aligned
+  // with sourceTitles/sourcePublicationIds. Absent on solo lines and on
+  // fused lines minted before the list existed (readers rebuild it from
+  // the parallel arrays).
+  if (story.sources !== undefined) {
+    if (!Array.isArray(story.sources) || story.sources.length > 10) {
+      errors.push(`${prefix}.sources must be an array of at most ten entries`)
+    } else {
+      for (let index = 0; index < story.sources.length; index += 1) {
+        const entry = story.sources[index]
+        if (!isRecord(entry)) { errors.push(`${prefix}.sources[${index}] must be an object`); continue }
+        validateOptionalFields(entry, `${prefix}.sources[${index}]`, ['title', 'publicationId'], 'string', errors)
+      }
+    }
+  }
 
   return errors
 }

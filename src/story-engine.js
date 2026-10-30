@@ -1479,6 +1479,38 @@ const mergedVariationSceneFor = (story, index, { first, second, lead, bond }) =>
   return positions[structure.beatPosition]
 }
 
+/*
+ * The multi-source cast form (REQ-53): past two sources the pair scenes
+ * above give way to whole-cast scenes — the same six-position skeleton
+ * and the same rolling-arc variation, addressed to the full cast by
+ * name instead of to a fixed pair.
+ */
+const mergedCastScenesFor = (names, lead, bond, location) => [
+  [`${names.join('、')}的世界在${location}相撞。`, `${lead}先听见其它世界线的回声；${bond}的一行人，必须在同一秒抬头。`],
+  [`合流信号逼近，${names.join('和')}面对同一扇没有门的门。`, '门内的光停在众人脚边，既没有催促，也没有替他们迈出第一步。', `他们各自的能力都被要求说出真实名字。`],
+  [`共同的天空短暂地恢复颜色。`, `${names.join('和')}把各自的记忆叠在一起，发现敌人来自规则之外。`],
+  [`各套世界规则同时发出警报。`, '几种声音争相占据天空，尚未有人决定让它们靠近，还是各自退回边界。', `${lead}把选择权递给身边的同伴，而同伴们没有立即回答。`],
+  [`合流点开始坍缩，所有未说出口的话变成可见的路标。`, `他们决定把最重要的秘密留给彼此，而不是留给任何一条旧世界线。`],
+  [`新的宇宙终于找到共同的呼吸。`, `${names.join('与')}站在同一片晨光里：边界没有消失，只是终于学会了相遇。`],
+]
+
+const mergedCastVariationSceneFor = (story, index, { names, lead, bond }) => {
+  const structure = structureFor(story, index)
+  const genre = genreFor(story.genreId || story.config?.genreId)
+  const motifs = ACT_MOTIFS[genre.id] || ACT_MOTIFS.custom
+  const motif = motifs[structure.unitIndex % motifs.length]
+  const cast = names.join('、')
+  const positions = [
+    [`合流点在${motif}里重新亮起，各套规则的光交叠成新的颜色。`, `${lead}先一步踏进去，其余人紧随其后——上一弧的账还没算完，新的局势已经压到眼前。`, `这一弧里，众人共同见证的每一次扰动，都要比上一弧更贵。`],
+    [`新的信号同时抵达${cast}手边，比上一弧更急，也更不容拒绝。`, '信号停在众人中间，安静地等着一个共同的回答。', `${bond}的一行人，第一次为同一件事皱眉。`],
+    [`${cast}把各条原线带来的一条未解线索，在合流点拼成一张完整的图。`, `图的全貌刚刚显形，缺口处就先亮出了对手的名字。`],
+    [`${motif}把各套规则的冲突推到台前，价码比上一弧抬高一格。`, '翻译还是分离，众人必须当场选一边站。', '真正的对手还没有露面，只先送来了一句写在价目表上的话。'],
+    [`${cast}把这一弧攒下的筹码一次押上，局势当场翻面。`, `合流点深处传来回应——比预想的更快，也更近。`],
+    [`${motif}落幕，这一弧的账当场结清：标尺、代价与新到手的筹码，一样不少。`, `${cast}站稳了新的一格，下一弧的门已经开了一条缝，缝里的光和这一弧的结尾完全不同。`],
+  ]
+  return positions[structure.beatPosition]
+}
+
 const sceneFor = (story, index) => {
   const config = story.config || {}
   const genre = genreFor(story.genreId || config.genreId)
@@ -1495,10 +1527,16 @@ const sceneFor = (story, index) => {
 
   if (story.kind === 'merged') {
     const protagonists = Array.isArray(config.protagonists) ? config.protagonists : []
-    const first = protagonistName(protagonists[0], '旅者甲')
-    const second = protagonistName(protagonists[1], '旅者乙')
+    const names = protagonists.map((person, personIndex) => protagonistName(person, protagonistFallbackName(personIndex)))
+    const first = names[0] || '旅者甲'
+    const second = names[1] || '旅者乙'
     const bond = config.merge?.bond === 'rivals' ? '彼此提防' : '暂时结盟'
-    const lead = config.merge?.lead === 'b' ? second : first
+    const lead = names[mergeLeadIndexFor(config.merge)] || first
+    if (names.length > 2) {
+      const castScenes = mergedCastScenesFor(names, lead, bond, genre.location)
+      if (index < castScenes.length) return castScenes[index]
+      return mergedCastVariationSceneFor(story, index, { names, lead, bond })
+    }
     const mergedScenes = [
       [`${first}与${second}的世界在${genre.location}相撞。`, `${lead}先听见另一条世界线的回声；${bond}的两个人，必须在同一秒抬头。`],
       [`合流信号逼近，${first}和${second}面对同一扇没有门的门。`, '门内的光停在两个人脚边，既没有催促，也没有替他们迈出第一步。', `他们各自的能力都被要求说出真实名字。`],
@@ -1661,7 +1699,7 @@ export function buildChapter(story, index) {
     ? titles[index]
     : `${titleBase} · 第${index + 1}章 · ${CHAPTER_POSITION_TITLES[structure.beatPosition]}`
   const name = story.kind === 'merged'
-    ? (story.config.protagonists || []).map((item, itemIndex) => protagonistName(item, `旅者${itemIndex === 0 ? '甲' : '乙'}`)).join('与')
+    ? (story.config.protagonists || []).map((item, itemIndex) => protagonistName(item, protagonistFallbackName(itemIndex))).join('与')
     : protagonistName(story.config)
   const paragraphs = [...scene]
   // 介入落地： interventions aimed at this chapter are woven in as an
@@ -2182,23 +2220,40 @@ export function localIntroFor(genre, config, bible) {
 }
 
 /**
- * The fused line's local intro draft: both worlds, both leads, the
- * merge's concrete rules — the same factual-assembly discipline as
- * localIntroFor, for a book whose cast is a pair.
+ * The fused line's local intro draft: every source's world, every
+ * lead, the merge's concrete rules — the same factual-assembly
+ * discipline as localIntroFor. Accepts either the historical pair
+ * shape ({ genreA, genreB, configA, configB }) or a REQ-53 cast list
+ * ({ cast: [{ genre, config }, …] }); the pair wording stays verbatim
+ * for a cast of two.
  */
-export function localMergedIntroFor({ genreA, genreB, configA, configB, bible, bond }) {
-  const nameA = protagonistName(configA, '旅者甲')
-  const nameB = protagonistName(configB, '旅者乙')
-  const worldA = worldNameOf(genreA, configA)
-  const worldB = worldNameOf(genreB, configB)
+export function localMergedIntroFor(input) {
+  const cast = Array.isArray(input.cast) && input.cast.length
+    ? input.cast
+    : [
+      { genre: input.genreA, config: input.configA },
+      { genre: input.genreB, config: input.configB },
+    ]
+  const { bible, bond } = input
+  const pair = cast.length === 2
+  const names = cast.map(({ config }, index) => protagonistName(config, protagonistFallbackName(index)))
+  const worlds = cast.map(({ genre, config }) => worldNameOf(genre, config))
   const backgroundParts = []
-  const descA = genreA?.id === CUSTOM_GENRE_ID ? introFirstSentence(customSettingOf(configA)) : introFirstSentence(genreA?.description)
-  const descB = genreB?.id === CUSTOM_GENRE_ID ? introFirstSentence(customSettingOf(configB)) : introFirstSentence(genreB?.description)
-  if (descA) backgroundParts.push(descA)
-  if (descB && descB !== descA) backgroundParts.push(descB)
-  backgroundParts.push(`${worldA}与${worldB}在一处合流点相遇，两个世界的规则在这里交叠。`)
+  const seenDesc = new Set()
+  for (const { genre, config } of cast) {
+    const desc = genre?.id === CUSTOM_GENRE_ID ? introFirstSentence(customSettingOf(config)) : introFirstSentence(genre?.description)
+    if (desc && !seenDesc.has(desc)) {
+      seenDesc.add(desc)
+      backgroundParts.push(desc)
+    }
+  }
+  backgroundParts.push(pair
+    ? `${worlds[0]}与${worlds[1]}在一处合流点相遇，两个世界的规则在这里交叠。`
+    : `${worlds.join('、')}在一处合流点相遇，各个世界的规则在这里交叠。`)
   const openingBeat = Array.isArray(bible?.outline) && typeof bible.outline[0] === 'string' ? bible.outline[0].trim() : ''
-  const threadParts = [`${nameA}来自${worldA}，${nameB}来自${worldB}。`]
+  const threadParts = [pair
+    ? `${names[0]}来自${worlds[0]}，${names[1]}来自${worlds[1]}。`
+    : `${names.map((name, index) => `${name}来自${worlds[index]}`).join('，')}。`]
   if (openingBeat) threadParts.push(openingBeat)
   threadParts.push(bond === 'rivals' ? '他们是对手，也是彼此唯一的同类。' : '他们必须学会信任对方，才能一起走下去。')
   const intro = sanitizeIntro({
@@ -2206,7 +2261,9 @@ export function localMergedIntroFor({ genreA, genreB, configA, configB, bible, b
     rules: introRulesFromBible(bible),
     thread: threadParts.join(''),
   })
-  const synopsis = `${nameA}与${nameB}，一个来自${worldA}，一个来自${worldB}。两个世界在一处合流点相撞，两人被迫同行：规则要互相翻译，代价要共同承担。这条线讲他们如何为两个世界找到共同的出路。`
+  const synopsis = pair
+    ? `${names[0]}与${names[1]}，一个来自${worlds[0]}，一个来自${worlds[1]}。两个世界在一处合流点相撞，两人被迫同行：规则要互相翻译，代价要共同承担。这条线讲他们如何为两个世界找到共同的出路。`
+    : `${names.join('、')}分别来自${worlds.join('、')}。多个世界在一处合流点相撞，他们被迫同行：规则要互相翻译，代价要共同承担。这条线讲他们如何为各个世界找到共同的出路。`
   return { intro, synopsis }
 }
 
@@ -2221,14 +2278,12 @@ export function effectiveIntroFor(story) {
   if (own) return own
   if (!story || typeof story !== 'object') return null
   if (story.kind === 'merged') {
-    const [configA, configB] = Array.isArray(story.config?.protagonists) ? story.config.protagonists : []
-    const genreA = genreFor(configA?.genreId || story.genreId)
-    const genreB = genreFor(configB?.genreId || story.genreId)
+    const protagonists = Array.isArray(story.config?.protagonists) ? story.config.protagonists : []
     return localMergedIntroFor({
-      genreA,
-      genreB,
-      configA: { ...story.config, ...(configA || {}) },
-      configB: { ...story.config, ...(configB || {}) },
+      cast: protagonists.map((person) => ({
+        genre: genreFor(person?.genreId || story.genreId),
+        config: { ...story.config, ...(person || {}) },
+      })),
       bible: story.worldBible,
       bond: story.config?.merge?.bond,
     }).intro
@@ -2788,7 +2843,7 @@ export function storyBeatPlan(story, index) {
   const merged = story.kind === 'merged'
   const structure = structureFor(story, index)
   const name = merged
-    ? (config.protagonists || []).map((item, idx) => protagonistName(item, `旅者${idx === 0 ? '甲' : '乙'}`)).join('与')
+    ? (config.protagonists || []).map((item, idx) => protagonistName(item, protagonistFallbackName(idx))).join('与')
     : protagonistName(config)
   const identity = displayIdentity(config, genre)
   const ability = cleanText(config.ability, '') || '尚未命名的能力'
@@ -3430,37 +3485,78 @@ export const fusionSourceStateFor = (source) => {
   return storyLengthModeOf(source) === 'endless' && !isManuallyFinished(source) ? 'serializing' : 'finished'
 }
 
-export const fusionProductModeFor = (a, b) =>
-  fusionSourceStateFor(a) === 'serializing' || fusionSourceStateFor(b) === 'serializing' ? 'endless' : 'short'
+/*
+ * 合流多源 (REQ-53): a fusion takes TWO TO TEN source lines — the
+ * reader picks as many as they like (「三本四本……十本，就是选择的
+ * 事」). The combination table generalises unchanged: a source is
+ * 'serializing' or 'finished', and ANY serializing source makes the
+ * product endless. The cast is every source's lead, in pick order.
+ */
+export const MERGE_SOURCE_LIMIT = 10
+
+const PROTAGONIST_FALLBACK_MARKS = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']
+
+/** The anonymous stand-in name for the protagonist at `index` （旅者甲/乙/丙…). */
+export const protagonistFallbackName = (index) => `旅者${PROTAGONIST_FALLBACK_MARKS[index] || `${index + 1}`}`
+
+/**
+ * Which source leads, as an index into the cast. The stored
+ * `config.merge.lead` keeps its historical shapes — 'a' = the first
+ * source, 'b' = the second — and gains the plain integer form for a
+ * lead picked deeper into a multi-source cast.
+ */
+export const mergeLeadIndexFor = (merge) => {
+  if (Number.isInteger(merge?.lead)) return Math.max(0, Math.min(MERGE_SOURCE_LIMIT - 1, merge.lead))
+  return merge?.lead === 'b' ? 1 : 0
+}
+
+const mergeLeadValueFor = (leadIndex) => (leadIndex === 0 ? 'a' : leadIndex === 1 ? 'b' : leadIndex)
+
+export const fusionProductModeFor = (...args) => {
+  const sources = args.length === 1 && Array.isArray(args[0]) ? args[0] : args
+  return sources.some((source) => fusionSourceStateFor(source) === 'serializing') ? 'endless' : 'short'
+}
 
 export function createMergedStory(a, b, options = {}) {
-  validateStory(a)
-  validateStory(b)
+  // Multi-source form (REQ-53): createMergedStory([line, line, …], options).
+  // The historical two-line form createMergedStory(a, b, options) keeps
+  // working unchanged — it is the same fusion with a cast of two.
+  const sources = Array.isArray(a) ? a : [a, b]
+  const opts = Array.isArray(a) ? (b && typeof b === 'object' ? b : {}) : (options || {})
+  for (const source of sources) validateStory(source)
   // 防自融 / 防套娃： a line never fuses with itself, and a fused line —
-  // already the crystal of two lines — never serves as a fusion source
+  // already the crystal of its sources — never serves as a fusion source
   // again. The merge UI filters both out before this point; the engine
   // refuses them outright so no caller can mint a nested line.
-  if (a.id === b.id) throw new RangeError('同一条故事线不能和自己合流。')
-  if (a.kind === 'merged' || b.kind === 'merged') {
-    throw new RangeError('合流故事是两条线合流的结晶，不能再作合流的来源。')
+  if (sources.length < 2) throw new RangeError('合流至少需要两条故事线。')
+  if (sources.length > MERGE_SOURCE_LIMIT) throw new RangeError(`合流最多 ${MERGE_SOURCE_LIMIT} 条故事线。`)
+  if (new Set(sources.map((source) => source.id)).size !== sources.length) {
+    throw new RangeError('同一条故事线不能和自己合流，也不能重复作为合流来源。')
   }
-  const rules = options.rules === 'separate' ? 'separate' : 'bridge'
-  const lead = options.lead === 'b' ? 'b' : 'a'
-  const bond = options.bond === 'rivals' ? 'rivals' : 'allies'
-  // Length is the reader's choice (owner ruling 2026-10-30): an explicit
-  // options.storyLengthMode (short / season / long / endless — the same
-  // menu as an ordinary forge) wins; only when no choice was made does
-  // the combination table decide (finished × finished → short, any
-  // serialising source → endless).
-  const chosenMode = ['short', 'season', 'long', 'endless'].includes(options.storyLengthMode)
-    ? options.storyLengthMode
+  if (sources.some((source) => source.kind === 'merged')) {
+    throw new RangeError('合流故事是多条线合流的结晶，不能再作合流的来源。')
+  }
+  const rules = opts.rules === 'separate' ? 'separate' : 'bridge'
+  const leadIndex = Number.isInteger(opts.lead) && opts.lead >= 0 && opts.lead < sources.length
+    ? opts.lead
+    : opts.lead === 'b' ? 1 : 0
+  const lead = mergeLeadValueFor(leadIndex)
+  const bond = opts.bond === 'rivals' ? 'rivals' : 'allies'
+  // Length is the reader's choice (owner ruling 2026-10-30, kept from
+  // main over the REQ-53 rewrite): an explicit opts.storyLengthMode
+  // (short / season / long / endless — the same menu as an ordinary
+  // forge) wins; only when no choice was made does the combination
+  // table decide (finished × finished → short, any serialising
+  // source → endless).
+  const chosenMode = ['short', 'season', 'long', 'endless'].includes(opts.storyLengthMode)
+    ? opts.storyLengthMode
     : null
-  const productMode = chosenMode || fusionProductModeFor(a, b)
-  const sourceA = publicConfigFor(a.config, protagonistName(a.config, '旅者甲'))
-  const sourceB = publicConfigFor(b.config, protagonistName(b.config, '旅者乙'))
-  const leadConfig = lead === 'b' ? sourceB : sourceA
-  const genreA = genreFor(a.genreId || a.config.genreId)
-  const genreB = genreFor(b.genreId || b.config.genreId)
+  const productMode = chosenMode || fusionProductModeFor(sources)
+  const sourceConfigs = sources.map((source, index) => publicConfigFor(source.config, protagonistName(source.config, protagonistFallbackName(index))))
+  const sourceGenres = sources.map((source) => genreFor(source.genreId || source.config.genreId))
+  const leadConfig = sourceConfigs[leadIndex]
+  const castNames = sourceConfigs.map((config) => config.name)
+  const pair = sources.length === 2
   const mergedConfig = {
     ...leadConfig,
     genreId: leadConfig.genreId,
@@ -3471,73 +3567,105 @@ export function createMergedStory(a, b, options = {}) {
     storyLengthMode: productMode,
     targetChapters: null,
     finishedAt: '',
-    name: `${sourceA.name} × ${sourceB.name}`,
-    trait: `${sourceA.trait} / ${sourceB.trait}`,
-    origin: `${sourceA.origin} & ${sourceB.origin}`,
-    ability: `${sourceA.ability} + ${sourceB.ability}`,
+    name: castNames.join(' × '),
+    trait: sourceConfigs.map((config) => config.trait).join(' / '),
+    origin: sourceConfigs.map((config) => config.origin).join(' & '),
+    ability: sourceConfigs.map((config) => config.ability).join(' + '),
     tone: leadConfig.tone,
     immersive: false,
     hometown: '',
     role: '',
     friend: '',
-    destination: `${genreA.location} ↔ ${genreB.location}`,
+    // 融合新世界 (REQ-61): the fused line's world is a NEW world woven
+    // from every source in parallel — never one source's world hosting
+    // the others. The lead source's own world NAME and SETTING TEXT
+    // therefore do not carry over: each source's world reaches
+    // generation through its own sourceWorlds entry and the fused
+    // bible, which names every world as a party to the meeting. (The
+    // spawn point is a different matter — an opening location, not a
+    // world identity: it keeps following the lead, as pinned by the
+    // spawn-point tests.)
+    customWorldName: '',
+    customWorldSetting: '',
+    destination: sourceGenres.map((genre) => genre.location).join(' ↔ '),
     step: 1,
-    protagonists: [
-      { name: sourceA.name, trait: sourceA.trait, origin: sourceA.origin, ability: sourceA.ability, genreId: sourceA.genreId, avatarId: sourceA.avatarId || '', appearance: sourceA.avatarAppearance || '' },
-      { name: sourceB.name, trait: sourceB.trait, origin: sourceB.origin, ability: sourceB.ability, genreId: sourceB.genreId, avatarId: sourceB.avatarId || '', appearance: sourceB.avatarAppearance || '' },
-    ],
-    sourceGenres: [genreA.id, genreB.id],
+    protagonists: sourceConfigs.map((config) => ({
+      name: config.name, trait: config.trait, origin: config.origin, ability: config.ability,
+      genreId: config.genreId, avatarId: config.avatarId || '', appearance: config.avatarAppearance || '',
+    })),
+    sourceGenres: sourceGenres.map((genre) => genre.id),
     merge: { rules, lead, bond },
   }
   const timestamp = now()
-  // The fused line is named from the two BOOKS it came from, not from
-  // their genre templates (FINAL-FIX, fusion item): the old
+  // The fused line is named from the BOOKS it came from, not from their
+  // genre templates (FINAL-FIX, fusion item): the old
   // 「合流：<题材> × <题材>」 put the template's sample name on the
   // cover, so two fusions of same-genre lines — and a fusion next to
   // its own sources on the shelf — were indistinguishable. The book
-  // titles are the identity; each side is clipped so the pair stays
-  // one cover line, and when both sources share one title the pair is
-  // told apart by their leads instead. Where each half came from
-  // stays on the record regardless (sourceTitles, below).
+  // titles are the identity; each side is clipped so the title stays
+  // one cover line, and when the sources cannot be told apart by title
+  // the pair is told apart by their leads instead. Where each part
+  // came from stays on the record regardless (sourceTitles, below).
   const clipSide = (text) => {
     const value = String(text || '').trim()
     return value.length > 12 ? `${value.slice(0, 12)}…` : value
   }
-  const sourceTitleA = typeof a.title === 'string' ? a.title.trim() : ''
-  const sourceTitleB = typeof b.title === 'string' ? b.title.trim() : ''
-  const mergedTitle = sourceTitleA && sourceTitleB && sourceTitleA !== sourceTitleB
-    ? `合流：${clipSide(sourceTitleA)} × ${clipSide(sourceTitleB)}`
-    : `合流：${clipSide(sourceA.name) || '一位主角'} × ${clipSide(sourceB.name) || '另一位主角'}`
+  const rawTitles = sources.map((source) => (typeof source.title === 'string' ? source.title.trim() : ''))
+  const titlesTellApart = new Set(rawTitles.filter(Boolean)).size >= 2
+  const mergedTitle = titlesTellApart
+    ? `合流：${rawTitles.map((title, index) => clipSide(title) || clipSide(castNames[index]) || '未命名故事').join(' × ')}`
+    : `合流：${castNames.map((name) => clipSide(name) || '一位主角').join(' × ')}`
+  const worldNames = sources.map((source, index) => worldNameOf(sourceGenres[index], source.config))
   const story = {
     id: makeId('merge'),
     title: mergedTitle,
     genreId: mergedConfig.genreId,
     config: mergedConfig,
     worldBible: {
-      premise: `${worldNameOf(genreA, a.config)}与${worldNameOf(genreB, b.config)}在一处新的合流点相遇，两位主角必须共同定义边界。`,
-      rules: rules === 'bridge'
-        ? ['两种世界规则可以互相翻译，但每次翻译都会消耗稳定度。', '双主角共同见证合流点的每一次扰动，任何一方都不能被静默抹去。', '合流后的新规则必须被两位主角共同见证。']
-        : ['两种世界规则保持各自边界，只在合流点短暂交叠。', '双主角可以同行，但不能替对方决定原世界的命运。', '任何跨界行动都必须留下可追溯的回声。'],
-      // A finite fusion closes: its anchor is the decision the pair
+      premise: pair
+        ? `${worldNames[0]}与${worldNames[1]}在一处新的合流点相遇，两位主角必须共同定义边界。`
+        : `${worldNames.join('、')}在一处新的合流点相遇，${castNames.length}位主角必须共同定义边界。`,
+      rules: pair
+        ? rules === 'bridge'
+          ? ['两种世界规则可以互相翻译，但每次翻译都会消耗稳定度。', '双主角共同见证合流点的每一次扰动，任何一方都不能被静默抹去。', '合流后的新规则必须被两位主角共同见证。']
+          : ['两种世界规则保持各自边界，只在合流点短暂交叠。', '双主角可以同行，但不能替对方决定原世界的命运。', '任何跨界行动都必须留下可追溯的回声。']
+        : rules === 'bridge'
+          ? ['各世界的规则可以互相翻译，但每次翻译都会消耗稳定度。', '全体主角共同见证合流点的每一次扰动，任何一方都不能被静默抹去。', '合流后的新规则必须被全体主角共同见证。']
+          : ['各世界的规则保持各自边界，只在合流点短暂交叠。', '主角们可以同行，但不能替对方决定原世界的命运。', '任何跨界行动都必须留下可追溯的回声。'],
+      // A finite fusion closes: its anchor is the decision the cast
       // owes the future. An endless fusion has no finale to anchor to —
       // the anchor is the open road itself: arcs settle one by one, and
-      // both source lines' unrecovered foreshadowing stays on this
+      // the source lines' unrecovered foreshadowing stays on this
       // line's books until it finds its resolution here.
       endingAnchor: productMode === 'endless'
-        ? '这条融合线没有预设的终点：每一弧结清一笔账，两位主角再一起决定下一弧往哪走；两条原线未回收的伏笔，都要在这条线上逐步有着落。'
-        : bond === 'rivals' ? '两位主角必须决定竞争是否值得牺牲共同的未来。' : '两位主角必须决定要把共同的未来交给哪一种规则。',
-      // The bespoke six-beat outline is the short shape; longer finite
-      // fusions and endless ones take the genre outline at their own
-      // total, like an ordinary forge of the same mode.
+        ? pair
+          ? '这条融合线没有预设的终点：每一弧结清一笔账，两位主角再一起决定下一弧往哪走；两条原线未回收的伏笔，都要在这条线上逐步有着落。'
+          : '这条融合线没有预设的终点：每一弧结清一笔账，主角们再一起决定下一弧往哪走；每条原线未回收的伏笔，都要在这条线上逐步有着落。'
+        : bond === 'rivals'
+          ? pair ? '两位主角必须决定竞争是否值得牺牲共同的未来。' : '主角们必须决定竞争是否值得牺牲共同的未来。'
+          : pair ? '两位主角必须决定要把共同的未来交给哪一种规则。' : '主角们必须决定要把共同的未来交给哪一种规则。',
+      // The bespoke six-beat outline is the short shape only (main's
+      // rule, kept over the REQ-53 draft): longer finite fusions
+      // (season / long) and endless ones take the genre outline at
+      // their own total, like an ordinary forge of the same mode.
       outline: productMode === 'short'
-        ? [
-          '两条世界线在合流点相撞，双主角同时收到信号。',
-          '他们决定暂时同行，第一条共同规则浮现。',
-          '新的敌人从旧世界的缝隙里出现。',
-          '规则冲突逼迫双主角选择翻译或分离。',
-          '合流点坍缩，他们为未来保留一条路。',
-          '两个世界找到共同呼吸，新的故事开始。',
-        ]
+        ? pair
+          ? [
+            '两条世界线在合流点相撞，双主角同时收到信号。',
+            '他们决定暂时同行，第一条共同规则浮现。',
+            '新的敌人从旧世界的缝隙里出现。',
+            '规则冲突逼迫双主角选择翻译或分离。',
+            '合流点坍缩，他们为未来保留一条路。',
+            '两个世界找到共同呼吸，新的故事开始。',
+          ]
+          : [
+            '多条世界线在合流点相撞，全体主角同时收到信号。',
+            '他们决定暂时同行，第一条共同规则浮现。',
+            '新的敌人从旧世界的缝隙里出现。',
+            '规则冲突逼迫主角们选择翻译或分离。',
+            '合流点坍缩，他们为未来保留一条路。',
+            '各个世界找到共同呼吸，新的故事开始。',
+          ]
         : outlineFor(genreFor(mergedConfig.genreId), mergedConfig),
     },
     chapterIndex: 0,
@@ -3545,13 +3673,29 @@ export function createMergedStory(a, b, options = {}) {
     choices: {},
     revision: 0,
     kind: 'merged',
-    sourceIds: [a.id, b.id],
+    sourceIds: sources.map((source) => source.id),
     // 来源标注 (FUSION2): where this line came from, kept on the story
     // itself so the settings book, the shelf and (via the snapshot) the
     // plaza can say 「由《A》×《B》融合而来」 without re-resolving the
     // sources — which may since have been renamed or deleted.
-    derivedFrom: [a.id, b.id],
-    sourceTitles: [cleanText(a.title, '未命名故事'), cleanText(b.title, '未命名故事')],
+    derivedFrom: sources.map((source) => source.id),
+    // 合流授权 (REQ-49): the publications each source line was entered
+    // from ('' for the owner's own originals). The ids stay on the
+    // local story and ride the publish request so the server can
+    // re-verify fusion consent at shelving time; the public snapshot
+    // never carries them (plazaSnapshot does not copy this field).
+    sourcePublicationIds: sources.map((source) => source.config?.sourcePublicationId || ''),
+    sourceTitles: sources.map((source) => cleanText(source.title, '未命名故事')),
+    // 来源清单 (REQ-53): the reader-facing provenance of the fused
+    // line, one entry per source in pick order — its book title, and
+    // the publication it was entered from when it has one ('' for the
+    // owner's own unpublished lines; those list by name only and never
+    // link anywhere). The plaza record resolves authors and liveness
+    // from its own side at publish/read time (server/plaza.js).
+    sources: sources.map((source) => ({
+      title: cleanText(source.title, '未命名故事'),
+      publicationId: source.config?.sourcePublicationId || '',
+    })),
     author: '我',
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -3561,10 +3705,7 @@ export function createMergedStory(a, b, options = {}) {
   // the factual local draft from both worlds and both leads; an
   // online opening overwrites them with the generated draft.
   const mergedIntro = localMergedIntroFor({
-    genreA,
-    genreB,
-    configA: sourceA,
-    configB: sourceB,
+    cast: sourceConfigs.map((config, index) => ({ genre: sourceGenres[index], config })),
     bible: story.worldBible,
     bond,
   })
@@ -3700,30 +3841,41 @@ export function publicSnapshot(story) {
   }
   if (story.engine === 'gemini') safe.engine = 'gemini'
   if (story.kind === 'merged') {
+    const castSize = Math.max(2, Math.min(MERGE_SOURCE_LIMIT, Array.isArray(story.config.protagonists) ? story.config.protagonists.length : 2))
+    const anonymousCast = Array.from({ length: castSize }, (_, index) => protagonistFallbackName(index))
     safe.config = {
-      ...redactedSnapshotConfig(story.config, '旅者甲 × 旅者乙'),
-      name: '旅者甲 × 旅者乙',
-      protagonists: [
-        { name: '旅者甲', trait: '匿名探索者', origin: '未知世界', ability: '未命名火种', genreId: genreFor(story.config.protagonists?.[0]?.genreId || sourceGenre.id).id },
-        { name: '旅者乙', trait: '匿名探索者', origin: '未知世界', ability: '未命名火种', genreId: genreFor(story.config.protagonists?.[1]?.genreId || sourceGenre.id).id },
-      ],
+      ...redactedSnapshotConfig(story.config, anonymousCast.join(' × ')),
+      name: anonymousCast.join(' × '),
+      protagonists: anonymousCast.map((name, index) => ({
+        name, trait: '匿名探索者', origin: '未知世界', ability: '未命名火种',
+        genreId: genreFor(story.config.protagonists?.[index]?.genreId || sourceGenre.id).id,
+      })),
       destination: '',
       merge: {
         rules: story.config.merge?.rules === 'separate' ? 'separate' : 'bridge',
-        lead: story.config.merge?.lead === 'b' ? 'b' : 'a',
+        lead: mergeLeadValueFor(mergeLeadIndexFor(story.config.merge)),
         bond: story.config.merge?.bond === 'rivals' ? 'rivals' : 'allies',
       },
-      sourceGenres: [0, 1].map(index => genreFor(story.config.protagonists?.[index]?.genreId || sourceGenre.id).id),
+      sourceGenres: anonymousCast.map((_, index) => genreFor(story.config.protagonists?.[index]?.genreId || sourceGenre.id).id),
     }
-    safe.title = '合流：两条匿名世界线'
-    safe.worldBible = {
-      premise: '两条匿名世界线在一处新的合流点相遇，两位旅者共同定义边界。',
-      rules: story.config.merge?.rules === 'separate'
-        ? ['两种世界规则保持各自边界，只在合流点短暂交叠。', '双主角可以同行，但不能替对方决定原世界的命运。', '跨界行动必须留下可追溯的回声。']
-        : ['两种世界规则可以互相翻译，但每次翻译都会消耗稳定度。', '双主角共同见证合流点的每一次扰动。', '新规则必须被两位旅者共同见证。'],
-      endingAnchor: '两位匿名旅者为未来保留一条可以继续选择的路。',
-      outline: ['两条匿名世界线相撞。', '旅者暂时同行。', '共同规则浮现。', '规则冲突升级。', '合流点坍缩。', '新的宇宙开始呼吸。'],
-    }
+    safe.title = castSize === 2 ? '合流：两条匿名世界线' : `合流：${castSize}条匿名世界线`
+    safe.worldBible = castSize === 2
+      ? {
+        premise: '两条匿名世界线在一处新的合流点相遇，两位旅者共同定义边界。',
+        rules: story.config.merge?.rules === 'separate'
+          ? ['两种世界规则保持各自边界，只在合流点短暂交叠。', '双主角可以同行，但不能替对方决定原世界的命运。', '跨界行动必须留下可追溯的回声。']
+          : ['两种世界规则可以互相翻译，但每次翻译都会消耗稳定度。', '双主角共同见证合流点的每一次扰动。', '新规则必须被两位旅者共同见证。'],
+        endingAnchor: '两位匿名旅者为未来保留一条可以继续选择的路。',
+        outline: ['两条匿名世界线相撞。', '旅者暂时同行。', '共同规则浮现。', '规则冲突升级。', '合流点坍缩。', '新的宇宙开始呼吸。'],
+      }
+      : {
+        premise: `${castSize}条匿名世界线在一处新的合流点相遇，诸位旅者共同定义边界。`,
+        rules: story.config.merge?.rules === 'separate'
+          ? ['各世界的规则保持各自边界，只在合流点短暂交叠。', '主角们可以同行，但不能替对方决定原世界的命运。', '跨界行动必须留下可追溯的回声。']
+          : ['各世界的规则可以互相翻译，但每次翻译都会消耗稳定度。', '全体主角共同见证合流点的每一次扰动。', '新规则必须被全体主角共同见证。'],
+        endingAnchor: '诸位匿名旅者为未来保留一条可以继续选择的路。',
+        outline: ['多条匿名世界线相撞。', '旅者暂时同行。', '共同规则浮现。', '规则冲突升级。', '合流点坍缩。', '新的宇宙开始呼吸。'],
+      }
   } else {
     safe.config = redactedSnapshotConfig(story.config, '匿名旅者')
     safe.title = `${sourceGenre.title} · 匿名旅者`
@@ -3812,28 +3964,30 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
   const displayName = cleanBounded(avatarName, 40) || '匿名旅者'
   const safeConfig = { ...redactedSnapshotConfig(story.config, displayName), name: displayName }
   if (mergedLine) {
-    // The fused line is NOT anonymous either: both leads keep their real
-    // names, traits, origins and abilities (BOOK-FACE-FIX: replacement
-    // redaction on the publish path is abolished — published text is the
-    // original text). Only structural identifiers stay home: avatar ids
-    // and appearances are not fields of this record at all. The source
-    // titles ride along (verbatim) so the detail page can label the
-    // line 「由《A》×《B》融合而来」.
-    const protagonists = [0, 1].map((index) => {
-      const person = story.config.protagonists?.[index] || {}
-      return {
-        name: cleanText(person.name, index === 0 ? '旅者甲' : '旅者乙'),
-        trait: typeof person.trait === 'string' ? person.trait : '',
-        origin: typeof person.origin === 'string' ? person.origin : '',
-        ability: typeof person.ability === 'string' ? person.ability : '',
-        genreId: genreFor(person.genreId || story.genreId).id,
-      }
-    })
+    // The fused line is NOT anonymous either: every lead keeps their
+    // real name, trait, origin and ability (BOOK-FACE-FIX: replacement
+    // redaction on the publish path is abolished — published text is
+    // the original text; REQ-53's N-slot cast rides on main's verbatim
+    // rule, NOT on the retired share-snapshot replacement this branch
+    // was drafted against). Only structural identifiers stay home:
+    // avatar ids and appearances are not fields of this record at all.
+    // The source titles ride along (verbatim) so the detail page can
+    // label the line 「由《A》×《B》融合而来」.
+    const castSource = Array.isArray(story.config.protagonists) && story.config.protagonists.length
+      ? story.config.protagonists.slice(0, MERGE_SOURCE_LIMIT)
+      : [{}, {}]
+    const protagonists = castSource.map((person, index) => ({
+      name: cleanText(person.name, protagonistFallbackName(index)),
+      trait: typeof person.trait === 'string' ? person.trait : '',
+      origin: typeof person.origin === 'string' ? person.origin : '',
+      ability: typeof person.ability === 'string' ? person.ability : '',
+      genreId: genreFor(person.genreId || story.genreId).id,
+    }))
     safeConfig.name = protagonists.map((person) => person.name).join(' × ')
     safeConfig.protagonists = protagonists
     safeConfig.merge = {
       rules: story.config.merge?.rules === 'separate' ? 'separate' : 'bridge',
-      lead: story.config.merge?.lead === 'b' ? 'b' : 'a',
+      lead: mergeLeadValueFor(mergeLeadIndexFor(story.config.merge)),
       bond: story.config.merge?.bond === 'rivals' ? 'rivals' : 'allies',
     }
     safeConfig.sourceGenres = protagonists.map((person) => person.genreId)
@@ -3860,6 +4014,32 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
     ? (Array.isArray(story.sourceTitles) ? story.sourceTitles : []).map((title) => verbatim(title)).filter(Boolean)
     : []
   if (mergedLine && safeConfig.merge) safeConfig.merge.sourceTitles = sourceTitles
+  // 来源清单 (REQ-53): the snapshot's public provenance — one entry per
+  // source, titles verbatim exactly like sourceTitles (integration
+  // ruling: main's no-replacement-redaction rule governs this path),
+  // each carrying
+  // the publication the source line was entered from ('' for the
+  // owner's own unpublished lines). REQ-49 kept the consent-check ids
+  // out of the snapshot; the owner ordering fusion sources to be
+  // listed AND linked on the detail page (REQ-53) supersedes that for
+  // these already-public publication ids — the local story ids
+  // (sourceIds/derivedFrom) still never leave the device. Older fused
+  // lines minted before story.sources existed rebuild the same list
+  // from the two parallel arrays they do carry.
+  const snapshotSources = mergedLine
+    ? (() => {
+      const listed = Array.isArray(story.sources) && story.sources.length
+        ? story.sources
+        : (Array.isArray(story.sourceTitles) ? story.sourceTitles : []).map((title, index) => ({
+          title,
+          publicationId: Array.isArray(story.sourcePublicationIds) ? story.sourcePublicationIds[index] || '' : '',
+        }))
+      return listed.slice(0, MERGE_SOURCE_LIMIT).map((entry) => ({
+        title: verbatim(typeof entry?.title === 'string' ? entry.title : '') || '未命名故事',
+        publicationId: typeof entry?.publicationId === 'string' ? entry.publicationId : '',
+      }))
+    })()
+    : []
   const worldBible = {
     premise: verbatim(bibleSource.premise),
     rules: (Array.isArray(bibleSource.rules) ? bibleSource.rules : []).map(verbatim),
@@ -3928,7 +4108,7 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
     seasonNumber: Number.isInteger(safeConfig.seasonNumber) ? safeConfig.seasonNumber : 1,
     totalChapters: total,
     lineStatus,
-    ...(mergedLine ? { merged: true, sourceTitles } : {}),
+    ...(mergedLine ? { merged: true, sourceTitles, sources: snapshotSources } : {}),
     ...(story.engine === 'gemini' ? { engine: 'gemini' } : {}),
     config: safeConfig,
     worldBible,

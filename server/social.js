@@ -12,6 +12,7 @@ import { normalizedStoredImage } from './portrait-image.js'
 import { createCoverStore } from './cover-store.js'
 import { createIdentityStore } from './identity-store.js'
 import { isOfficialUid, plazaSummaryOf } from './plaza.js'
+import { fusionPermissionOfRecord } from '../src/fusion-permission.js'
 
 /**
  * The social service: public profile pages, the follow graph, plaza
@@ -62,7 +63,7 @@ export const HANDLE_PATTERN = /^[a-z0-9_]{3,20}$/
  * never invented, never back-filled.
  */
 export const NOTIFY_CATEGORIES = ['activity', 'announcements', 'system']
-export const NOTIFY_ACTIVITY_KINDS = ['follow', 'like', 'comment', 'friend_request', 'friend_accepted', 'rating']
+export const NOTIFY_ACTIVITY_KINDS = ['follow', 'like', 'comment', 'friend_request', 'friend_accepted', 'rating', 'fusion_request']
 const NOTIFY_ITEM_CAP = 50
 
 /**
@@ -802,6 +803,9 @@ export function createSocialService({
           displayName: record?.displayName || '',
           handle: record?.handle || '',
           bio: record?.bio || '',
+          // 合流权限 (REQ-49): the owner's current setting, so the
+          // settings surface renders its saved state, never a guess.
+          fusionPermission: fusionPermissionOfRecord(record),
           pictureKind: record?.pictureKind ?? null,
           hasUpload: backend ? Boolean(await backend.getPicture(target).catch(() => null)) : false,
           hasBanner: backend ? Boolean(await backend.getBanner(target).catch(() => null)) : false,
@@ -874,6 +878,16 @@ export function createSocialService({
           pictureKind: existing?.pictureKind ?? null,
           pictureVersion: existing?.pictureVersion || 0,
           bannerVersion: existing?.bannerVersion || 0,
+          // 合流权限 (REQ-49): the account-level fusion consent,
+          // carried on the profile record so every surface resolves
+          // the same value from the same place. Absent = free.
+          fusionPermission: fusionPermissionOfRecord(existing),
+        }
+        if ('fusionPermission' in input) {
+          if (!['free', 'ask', 'forbidden'].includes(input.fusionPermission)) {
+            throw new ApiError(400, '合流权限选项不对。')
+          }
+          record.fusionPermission = input.fusionPermission
         }
         if ('displayName' in input) {
           const name = sanitizeSettingText(clip(input.displayName, 60)).trim()
@@ -969,6 +983,7 @@ export function createSocialService({
           pictureKind: 'upload',
           pictureVersion: (existing?.pictureVersion || 0) + 1,
           bannerVersion: existing?.bannerVersion || 0,
+          fusionPermission: fusionPermissionOfRecord(existing),
           updatedAt: new Date(now()).toISOString(),
         })
         return this.profile(identity, identity.uid)
@@ -1009,6 +1024,7 @@ export function createSocialService({
           pictureKind: existing?.pictureKind ?? null,
           pictureVersion: existing?.pictureVersion || 0,
           bannerVersion: (existing?.bannerVersion || 0) + 1,
+          fusionPermission: fusionPermissionOfRecord(existing),
           updatedAt: new Date(now()).toISOString(),
         })
         return this.profile(identity, identity.uid)
@@ -1029,6 +1045,7 @@ export function createSocialService({
           pictureKind: existing?.pictureKind ?? null,
           pictureVersion: existing?.pictureVersion || 0,
           bannerVersion: (existing?.bannerVersion || 0) + 1,
+          fusionPermission: fusionPermissionOfRecord(existing),
           updatedAt: new Date(now()).toISOString(),
         })
         return this.profile(identity, identity.uid)
@@ -1160,7 +1177,7 @@ export function createSocialService({
     async notifications(identity) {
       if (!backend) throw new ApiError(503, '消息服务尚未配置。')
       const byNewest = (a, b) => String(b.at || '').localeCompare(String(a.at || ''))
-      const [edges, announcementRecords, eventRecords, readMarks, incomingRequests, outgoingRequests, postLikes, postComments, bookRatings] = await Promise.all([
+      const [edges, announcementRecords, eventRecords, readMarks, incomingRequests, outgoingRequests, postLikes, postComments, bookRatings, fusionRequests] = await Promise.all([
         backend.listFollowsByFollowee(identity.uid),
         backend.listAnnouncements(),
         backend.listAccountEvents(identity.uid),
@@ -1170,6 +1187,13 @@ export function createSocialService({
         feedBackend ? feedBackend.listLikesByPostAuthor(identity.uid).catch(() => []) : [],
         feedBackend ? feedBackend.listCommentsByPostAuthor(identity.uid).catch(() => []) : [],
         ratingsBackend ? ratingsBackend.listRatingsByBookAuthor(identity.uid).catch(() => []) : [],
+        // 合流申请 (REQ-49): pending applications naming the caller as
+        // the book's author, read from the fusion service's own
+        // records. Stores predating the fusion collections simply
+        // contribute none.
+        typeof backend.listFusionRequestsByAuthor === 'function'
+          ? backend.listFusionRequestsByAuthor(identity.uid).catch(() => [])
+          : [],
       ])
       const followItems = await Promise.all([...edges]
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
@@ -1300,7 +1324,36 @@ export function createSocialService({
             at: record.createdAt || null,
           }
         }))
-      const activityItems = [...followItems, ...friendRequestItems, ...friendAcceptedItems, ...likeItems, ...commentItems, ...ratingItems]
+      // A pending fusion application is an 互动 item the author ACTS
+      // on (同意 / 拒绝 in the message centre): it exists exactly
+      // while the application record is pending — deciding it (either
+      // way) retracts the item, like an answered friend request, and
+      // the outcome reaches the applicant through their 系统 events.
+      const fusionRequestItems = await Promise.all(fusionRequests
+        .filter((record) => record.status === 'pending' && record.applicantUid && record.applicantUid !== identity.uid)
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        .slice(0, NOTIFY_ITEM_CAP)
+        .map(async (record) => {
+          const person = await resolvedPerson(record.applicantUid, identity)
+          return {
+            id: `fusion-request:${record.id}`,
+            kind: 'fusion_request',
+            requestId: record.id,
+            actorUid: record.applicantUid,
+            displayName: person.displayName,
+            handle: person.handle,
+            picture: person.picture,
+            target: {
+              type: 'book',
+              bookId: record.publicationId,
+              bookTitle: record.bookTitle || '',
+              storyTitle: record.storyTitle || '',
+              avatarName: record.avatarName || '',
+            },
+            at: record.createdAt || null,
+          }
+        }))
+      const activityItems = [...followItems, ...friendRequestItems, ...friendAcceptedItems, ...likeItems, ...commentItems, ...ratingItems, ...fusionRequestItems]
         .sort(byNewest)
         .slice(0, NOTIFY_ITEM_CAP)
       const announcementItems = [...announcementRecords]

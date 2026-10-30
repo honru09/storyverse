@@ -16,6 +16,7 @@ import { createSocialStore, pictureSourceFor } from './social-store.js'
 // from this module the same way, and neither side calls the other
 // during module evaluation.
 import { publicHandle } from './social.js'
+import { normalizeFusionPermission } from '../src/fusion-permission.js'
 
 /**
  * The bookstore service (the plaza service, renamed by BOOKSTORE-PLAZA:
@@ -245,6 +246,110 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
     const run = previous.then(task, task)
     tails.set(key, run.catch(() => {}))
     return run
+  }
+
+  /*
+   * 来源清单 (REQ-53). storedSourcesFor runs at shelving time: it takes
+   * the fused line's own provenance (story.sources, falling back to the
+   * two parallel arrays older lines carry) and enriches each entry that
+   * points at a publication with that publication's CURRENT title and
+   * author, so the stored record never depends on the local story again.
+   * Entries without a publication id are the publisher's own lines: the
+   * author identity is the fused book's own, resolved at read time.
+   */
+  async function storedSourcesFor(story) {
+    if (story?.kind !== 'merged') return []
+    const listed = Array.isArray(story.sources) && story.sources.length
+      ? story.sources
+      : (Array.isArray(story.sourceTitles) ? story.sourceTitles : []).map((title, index) => ({
+        title,
+        publicationId: Array.isArray(story.sourcePublicationIds) ? story.sourcePublicationIds[index] || '' : '',
+      }))
+    const resolved = []
+    for (const [index, entry] of listed.slice(0, 10).entries()) {
+      const publicationId = typeof entry?.publicationId === 'string' ? entry.publicationId : ''
+      const fallbackTitle = typeof entry?.title === 'string' && entry.title ? entry.title : '未命名故事'
+      const genreId = Array.isArray(story.config?.sourceGenres) ? story.config.sourceGenres[index] || '' : ''
+      if (!publicationId) {
+        resolved.push({ publicationId: '', title: fallbackTitle, authorName: '', authorHandle: '', genreId })
+        continue
+      }
+      const source = await backend.getPublication(publicationId).catch(() => null)
+      resolved.push(source
+        ? {
+          publicationId,
+          title: source.title || fallbackTitle,
+          authorName: source.authorName || '',
+          authorHandle: typeof source.authorHandle === 'string' ? source.authorHandle : '',
+          genreId: source.genreId || genreId,
+        }
+        : { publicationId, title: fallbackTitle, authorName: '', authorHandle: '', genreId })
+    }
+    return resolved
+  }
+
+  /*
+   * resolvedSourcesFor is the read side: every stored entry is checked
+   * against the live catalogue so the detail page can render the three
+   * states the product promises — 'live' (on the shelf, carries the
+   * current title/author/cover and is linkable), 'gone' (was shelved,
+   * now taken down or deleted: shown with the stored title, never a
+   * link) and 'own' (the publisher's own unshelved line: title plus the
+   * publisher's name, no link). Records shelved before sources existed
+   * fall back to sourceTitles — those entries cannot distinguish own
+   * lines from entered ones, so they list by title alone ('listed').
+   */
+  async function resolvedSourcesFor(record, detail) {
+    const hasStored = Array.isArray(record.sources) && record.sources.length > 0
+    const stored = hasStored
+      ? record.sources
+      : (Array.isArray(record.sourceTitles) ? record.sourceTitles : []).map((title, index) => ({
+        publicationId: '',
+        title,
+        authorName: '',
+        authorHandle: '',
+        genreId: Array.isArray(record.snapshot?.config?.sourceGenres) ? record.snapshot.config.sourceGenres[index] || '' : '',
+      }))
+    const resolved = []
+    for (const entry of stored.slice(0, 10)) {
+      const publicationId = typeof entry?.publicationId === 'string' ? entry.publicationId : ''
+      if (!publicationId) {
+        resolved.push({
+          publicationId: '',
+          title: entry.title || '未命名故事',
+          authorName: hasStored ? (detail.authorName || '') : '',
+          authorHandle: hasStored ? (detail.authorHandle || '') : '',
+          genreId: entry.genreId || '',
+          coverUrl: null,
+          state: hasStored ? 'own' : 'listed',
+        })
+        continue
+      }
+      const source = await backend.getPublication(publicationId).catch(() => null)
+      if (!source || source.status !== 'published') {
+        resolved.push({
+          publicationId,
+          title: entry.title || '未命名故事',
+          authorName: entry.authorName || '',
+          authorHandle: entry.authorHandle || '',
+          genreId: entry.genreId || '',
+          coverUrl: null,
+          state: 'gone',
+        })
+        continue
+      }
+      const enriched = await withAuthorIdentity(source)
+      resolved.push({
+        publicationId,
+        title: enriched.title || entry.title || '未命名故事',
+        authorName: enriched.authorName || '',
+        authorHandle: enriched.authorHandle || '',
+        genreId: enriched.genreId || entry.genreId || '',
+        coverUrl: enriched.coverUrl || null,
+        state: 'live',
+      })
+    }
+    return resolved
   }
 
   async function findOwnPublication(uid, sourceStoryId) {
@@ -500,7 +605,12 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
       if (!backend) throw NOT_FOUND()
       const record = await backend.getPublication(id)
       if (!record || record.status !== 'published') throw NOT_FOUND()
-      return detailOf(await withAuthorIdentity(record))
+      const detail = detailOf(await withAuthorIdentity(record))
+      // 来源 (REQ-53): a fused book's detail names where it came from —
+      // resolved live so a source that was taken down shows as such
+      // instead of linking into a dead page.
+      if (detail.merged) detail.sources = await resolvedSourcesFor(record, detail)
+      return detail
     },
 
     async publish(identity, body) {
@@ -548,6 +658,7 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
             worldName: '',
             merged: false,
             sourceTitles: [],
+            sources: [],
             storyLengthMode: snapshot.storyLengthMode,
             seasonNumber: 1,
             chapterCount: snapshot.chapters.length,
@@ -597,6 +708,29 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         if (!profile) {
           throw new ApiError(400, '这条故事线不是用你的化身走完的，无法发布。')
         }
+        // 合流授权复检 (REQ-49): a fused book built on someone else's
+        // publication may only shelve while the fusion is allowed —
+        // the source author's CURRENT setting is free, or a durable
+        // grant from an approved application covers this publisher.
+        // The merged story names its outside sources itself
+        // (sourcePublicationIds, pinned at creation); a source whose
+        // publication is gone has no author left to consult and does
+        // not block. Fused lines minted before the field existed
+        // carry no source ids and pass unchecked — the boundary is
+        // stated in FUSION-PERMISSION.md, not hidden.
+        if (story.kind === 'merged' && socialBackend && typeof socialBackend.getFusionGrant === 'function') {
+          const sourceIds = Array.isArray(story.sourcePublicationIds)
+            ? [...new Set(story.sourcePublicationIds.filter((id) => typeof id === 'string' && id))]
+            : []
+          for (const publicationId of sourceIds) {
+            const source = await backend.getPublication(publicationId).catch(() => null)
+            if (!source || source.status !== 'published' || source.authorUid === identity.uid) continue
+            if (await socialBackend.getFusionGrant(identity.uid, publicationId)) continue
+            const authorRecord = await socialBackend.getProfileRecord(source.authorUid).catch(() => null)
+            if (normalizeFusionPermission(authorRecord?.fusionPermission) === 'free') continue
+            throw new ApiError(403, '这本合流书里有一本别人的书还没拿到合流授权，暂时不能发布。先向对方申请合流，或等对方把合流权限设为自由。')
+          }
+        }
         const violation = redLineViolation(story)
         if (violation) throw new ApiError(400, violation)
         // Snapshot-source guard (DESIGN §27): a story carrying real
@@ -617,6 +751,7 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           : rawSnapshot
         const timestamp = now().toISOString()
         const existing = await findOwnPublication(identity.uid, story.id)
+        const sources = await storedSourcesFor(story)
         const record = {
           id: existing?.id || `pub-${randomUUID().slice(0, 12)}`,
           authorUid: identity.uid,
@@ -635,6 +770,9 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           worldName: snapshot.worldName,
           merged: snapshot.merged === true,
           sourceTitles: Array.isArray(snapshot.sourceTitles) ? snapshot.sourceTitles : [],
+          // The fused book's public provenance (REQ-53), enriched from
+          // the catalogue at shelving time by storedSourcesFor.
+          sources,
           storyLengthMode: snapshot.storyLengthMode,
           seasonNumber: snapshot.seasonNumber,
           chapterCount: snapshot.chapters.length,
