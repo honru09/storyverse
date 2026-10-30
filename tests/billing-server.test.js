@@ -8,20 +8,21 @@ import { createUsernameAuthService } from '../server/username-auth.js'
 import { createEmailCodeService } from '../server/email-code.js'
 import { createMemoryIdentityStore } from '../server/identity-store.js'
 import {
-  createBillingService, createMemoryBillingStore, summarizeCostRecords,
-  summarizePregeneration, textCostCny, textSceneFor, pregeneratedFor,
+  COIN, PRODUCTS, coinCostForText, createBillingService, createMemoryBillingStore,
+  summarizeCostRecords, summarizePregeneration, textCostCny, textSceneFor, pregeneratedFor,
 } from '../server/billing.js'
 import { createStripeService } from '../server/stripe.js'
 import { ApiError } from '../server/gemini.js'
 
 /**
  * BILLING batch: cost metering on every generation, the entitlement
- * engine (free ceiling → member ceiling → chapter credits, in that
- * order), redemption codes (one generic failure, per-account
- * throttling, one-time use), image credits past the painting caps,
- * and the env-gated Stripe facade (checkout shape + webhook
- * signature + idempotent fulfilment). Prices and caps in this file
- * are fixture values where noted; the catalog itself is production.
+ * engine (daily coin top-up → coin settlement per generation → the
+ * anti-abuse token ceiling, which only legacy chapter credits carry
+ * a reader past), redemption codes (one generic failure, per-account
+ * throttling, one-time use), coins past the painting caps, and the
+ * env-gated Stripe facade (checkout shape + webhook signature +
+ * idempotent fulfilment). Prices and caps in this file are fixture
+ * values where noted; the catalog itself is production (REQ-68).
  */
 
 const ORIGIN = { Origin: 'http://localhost:5173' }
@@ -123,14 +124,15 @@ test('scene classification and pre-generation inference read the request body on
   )
 })
 
-test('every generation lands a cost record with scene, tokens and price', async (t) => {
+test('every generation lands a cost record with scene, tokens, price and coins settled', async (t) => {
   const { base, billingStore } = await startBillingServer(t)
   const official = await register(base, 'storyweave')
   const token = await register(base, 'meter_reader')
   // One chapter exactly fills the fixture's free ceiling, so the
-  // remaining generations in this test ride on a redeemed pack.
-  const pack = await mint(base, official, 'pack-6')
-  assert.equal((await post(base, '/api/billing/redeem', token, { code: pack })).status, 200)
+  // remaining generations in this test ride on a membership (higher
+  // ceiling) and settle in coins like everything else.
+  const card = await mint(base, official, 'member-month')
+  assert.equal((await post(base, '/api/billing/redeem', token, { code: card })).status, 200)
   const story = { id: 'story-meter', kind: 'solo', readerIndex: 0, chapters: [] }
   assert.equal((await generate(base, token, story, 0)).status, 200)
   assert.equal((await generate(base, token, { ...story, readerIndex: 0 }, 1)).status, 200)
@@ -145,30 +147,65 @@ test('every generation lands a cost record with scene, tokens and price', async 
   assert.equal(opening.chapterId, 'ch-0')
   assert.equal(records.filter((record) => record.pregenerated).length, 1)
   assert.ok(records.some((record) => record.scene === 'fusion'))
+  // Coin settlement: the fixture chapter meters 1,000 units = 1 coin;
+  // the fusion chapter settles at the member fusion rate (×1.2 → 2).
+  assert.equal(opening.coinsSpent, 1)
+  assert.equal(records.find((record) => record.scene === 'fusion').coinsSpent, 2)
 })
 
-test('free ceiling blocks, a quota pack credit carries one more chapter, spent only on success', async (t) => {
+test('the daily ceiling blocks even with coins; only a legacy chapter credit carries past it', async (t) => {
   const { base, billingStore } = await startBillingServer(t)
-  const official = await register(base, 'storyweave')
-  const token = await register(base, 'pack_reader')
-  const story = { id: 'story-pack', kind: 'solo', readerIndex: 0, chapters: [] }
+  const token = await register(base, 'ceiling_reader')
+  const uid = 'username:ceiling_reader'
+  const story = { id: 'story-ceiling', kind: 'solo', readerIndex: 0, chapters: [] }
+
+  // A coin-rich reader holding one legacy chapter credit.
+  await billingStore.putEntitlement(uid, { uid, memberUntil: null, chapterCredits: 1, imageCredits: 0, coins: 500, coinGrantDay: null, failedRedeems: [] })
 
   assert.equal((await generate(base, token, story, 0)).status, 200) // 1000/1000 of the free ceiling
-  const blocked = await generate(base, token, story, 1)
-  assert.equal(blocked.status, 429)
-  assert.equal((await blocked.json()).code, 'quota-exceeded')
+  let me = await (await get(base, '/api/billing/me', token)).json()
+  assert.equal(me.coins, 499, 'the chapter under the ceiling settles 1 coin')
 
-  const code = await mint(base, official, 'pack-6')
-  const redeemed = await post(base, '/api/billing/redeem', token, { code })
+  assert.equal((await generate(base, token, story, 1)).status, 200, 'the legacy credit carries one chapter past the ceiling')
+  me = await (await get(base, '/api/billing/me', token)).json()
+  assert.equal(me.chapterCredits, 0)
+  assert.equal(me.coins, 499, 'a credit generation settles no coins')
+  const creditRecord = (await billingStore.listCostRecords()).find((record) => record.creditUsed)
+  assert.ok(creditRecord, 'the credit generation is marked in the ledger')
+  assert.equal(creditRecord.coinsSpent, 0)
+
+  const blocked = await generate(base, token, story, 2)
+  assert.equal(blocked.status, 429)
+  assert.equal((await blocked.json()).code, 'quota-exceeded', 'coins never bypass the anti-abuse ceiling')
+})
+
+test('coins gate generation: a drained balance blocks, a coin pack refills', async (t) => {
+  const { base, billingStore } = await startBillingServer(t)
+  const official = await register(base, 'storyweave')
+  const token = await register(base, 'coin_reader')
+  const uid = 'username:coin_reader'
+  const story = { id: 'story-coins', kind: 'solo', readerIndex: 0, chapters: [] }
+
+  // Membership lifts the fixture ceiling so the coin gate is what binds.
+  const card = await mint(base, official, 'member-month')
+  assert.equal((await post(base, '/api/billing/redeem', token, { code: card })).status, 200)
+  assert.equal((await generate(base, token, story, 0)).status, 200)
+
+  const stored = await billingStore.getEntitlement(uid)
+  await billingStore.putEntitlement(uid, { ...stored, coins: 0 })
+  const drained = await generate(base, token, story, 1)
+  assert.equal(drained.status, 429)
+  assert.equal((await drained.json()).code, 'coins-exhausted')
+
+  const pack = await mint(base, official, 'pack-6')
+  const redeemed = await post(base, '/api/billing/redeem', token, { code: pack })
   assert.equal(redeemed.status, 200)
-  assert.equal((await redeemed.json()).entitlements.chapterCredits, 20)
+  assert.equal((await redeemed.json()).entitlements.coins, 300)
 
   assert.equal((await generate(base, token, story, 1)).status, 200)
   const me = await (await get(base, '/api/billing/me', token)).json()
-  assert.equal(me.chapterCredits, 19)
-  assert.equal(me.member.active, false)
-  const creditRecord = (await billingStore.listCostRecords()).find((record) => record.creditUsed)
-  assert.ok(creditRecord, 'the credit generation is marked in the ledger')
+  assert.equal(me.coins, 299)
+  assert.equal(me.member.active, true)
 })
 
 test('membership raises the daily ceiling instead of spending credits', async (t) => {
@@ -190,6 +227,9 @@ test('membership raises the daily ceiling instead of spending credits', async (t
   assert.equal(me.member.active, true)
   assert.equal(me.chapterCredits, 0)
   assert.equal(me.stripeEnabled, false)
+  // Coin trail: the first chapter rode the free top-up (150 → 149),
+  // the card then granted 1,200, and the second chapter settled 1.
+  assert.equal(me.coins, 1348)
 })
 
 test('codes are one-time, failures share one message, and the account is throttled', async (t) => {
@@ -223,10 +263,11 @@ test('codes are one-time, failures share one message, and the account is throttl
   assert.equal(sixth.status, 429)
 })
 
-test('image credits paint past the daily caps for covers and portraits', async (t) => {
+test('coins paint past the daily caps for covers and portraits at the flat image price', async (t) => {
   const { base, billingStore } = await startBillingServer(t)
   const official = await register(base, 'storyweave')
   const token = await register(base, 'image_reader')
+  const uid = 'username:image_reader'
   const code = await mint(base, official, 'pack-6')
   assert.equal((await post(base, '/api/billing/redeem', token, { code })).status, 200)
 
@@ -237,12 +278,16 @@ test('image credits paint past the daily caps for covers and portraits', async (
 
   const me = await (await get(base, '/api/billing/me', token)).json()
   assert.equal(me.imageCredits, 0)
+  assert.equal(me.coins, 300 - 2 * COIN.imageCoinCost, 'two past-cap pictures settled at the flat coin price')
   const imageRecords = (await billingStore.listCostRecords()).filter((record) => record.kind === 'image')
   assert.equal(imageRecords.length, 4)
-  assert.equal(imageRecords.filter((record) => record.creditUsed).length, 2)
+  assert.equal(imageRecords.filter((record) => record.coinsSpent === COIN.imageCoinCost).length, 2)
+  assert.equal(imageRecords.filter((record) => record.creditUsed).length, 0)
   assert.deepEqual(new Set(imageRecords.map((record) => record.scene)), new Set(['cover', 'avatar']))
   assert.ok(imageRecords.every((record) => record.costCny === 0.28))
 
+  const stored = await billingStore.getEntitlement(uid)
+  await billingStore.putEntitlement(uid, { ...stored, coins: COIN.imageCoinCost - 1 })
   const drained = await post(base, '/api/cover', token, { storyId: 'story-img' })
   assert.equal(drained.status, 429)
 })
@@ -254,6 +299,9 @@ test('checkout stays closed without Stripe env; the member page says so', async 
   assert.equal(me.available, true)
   assert.equal(me.stripeEnabled, false)
   assert.equal(me.products.length, 6)
+  assert.ok(me.products.every((product) => product.coins > 0), 'every product grants coins under the REQ-68 catalog')
+  assert.equal(me.coin.name, '织币')
+  assert.equal(me.coins, 150, 'opening the member page lands the daily free top-up')
   const checkout = await post(base, '/api/billing/checkout', token, { productId: 'member-year' })
   assert.equal(checkout.status, 503)
   const anonymous = await get(base, '/api/billing/me', null)
@@ -309,6 +357,7 @@ test('stripe checkout carries alipay/wechat pay; the webhook grants once, on a v
   assert.deepEqual(granted, { received: true, granted: true })
   const after = await billing.entitlements('username:buyer')
   assert.ok(Date.parse(after.memberUntil) > Date.now() + 29 * 86_400_000)
+  assert.equal(after.coins, 1200, 'the month card grants its coins through the same grant')
 
   const replay = await stripe.handleWebhook(rawBody, header)
   assert.equal(replay.granted, false)
@@ -320,6 +369,50 @@ test('stripe checkout carries alipay/wechat pay; the webhook grants once, on a v
     () => stripe.handleWebhook(rawBody, `t=${timestamp},v1=${'0'.repeat(64)}`),
     (error) => error instanceof ApiError && error.status === 400,
   )
+})
+
+test('coin math: per-thousand settlement, fusion rates, and the pricing guardrail', () => {
+  assert.equal(COIN.name, '织币')
+  assert.equal(COIN.tokensPerCoin, 1000)
+  assert.equal(coinCostForText({ scene: 'chapter', totalTokens: 13_428 }), 14)
+  assert.equal(coinCostForText({ scene: 'chapter', totalTokens: 1000 }), 1)
+  assert.equal(coinCostForText({ scene: 'chapter', totalTokens: 0 }), 0)
+  assert.equal(coinCostForText({ scene: 'intervention', totalTokens: 15_000 }), 15)
+  assert.equal(coinCostForText({ scene: 'fusion', totalTokens: 13_316 }), 21)
+  assert.equal(coinCostForText({ scene: 'fusion', totalTokens: 13_316, member: true }), 17)
+  // Guardrail (PRICING.md): the worst measured text cost is ¥0.0065
+  // per coin of usage; every product's per-coin revenue must clear
+  // twice that, so the cheapest coin sold still pays for itself.
+  const perCoin = PRODUCTS.filter((product) => product.coins > 0)
+    .map((product) => product.priceCny / product.coins)
+  assert.ok(perCoin.length === PRODUCTS.length)
+  assert.ok(Math.min(...perCoin) >= 2 * 0.0065, `cheapest coin brings ¥${Math.min(...perCoin)}/coin`)
+})
+
+test('daily coin top-up: once a day, free and member ceilings, never a stockpile', async () => {
+  const store = createMemoryBillingStore()
+  let clock = new Date('2026-10-31T01:00:00.000Z')
+  const billing = createBillingService({ env: {}, store, now: () => clock, log: () => {} })
+
+  let state = await billing.applyDailyCoinTopUp('username:topup')
+  assert.equal(state.coins, COIN.dailyTopUpFree)
+  assert.equal(await billing.spendCoins('username:topup', 500), COIN.dailyTopUpFree, 'settlement clamps at the balance')
+  state = await billing.entitlements('username:topup')
+  assert.equal(state.coins, 0)
+  state = await billing.applyDailyCoinTopUp('username:topup')
+  assert.equal(state.coins, 0, 'the top-up lands once per day, not per call')
+
+  clock = new Date('2026-11-01T01:00:00.000Z')
+  state = await billing.applyDailyCoinTopUp('username:topup')
+  assert.equal(state.coins, COIN.dailyTopUpFree, 'a new day tops up again')
+
+  await billing.grantProduct('username:topup', 'member-month', 'test')
+  state = await billing.entitlements('username:topup')
+  assert.equal(state.coins, COIN.dailyTopUpFree + 1200)
+  await billing.spendCoins('username:topup', state.coins - 100)
+  clock = new Date('2026-11-02T01:00:00.000Z')
+  state = await billing.applyDailyCoinTopUp('username:topup')
+  assert.equal(state.coins, COIN.dailyTopUpMember, 'members top up to the member ceiling')
 })
 
 test('summaries aggregate by day/user/scene and judge pre-generation honestly', () => {

@@ -1023,6 +1023,11 @@ function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, dr
         <button type="button" className="small-link" onClick={onOpenHelp}>
           <Icon name="spark" size={15} /> 帮助与常见问题
         </button>
+        <span className="home-footer-legal">
+          <a className="small-link" href="/legal/terms.html" target="_blank" rel="noreferrer">用户协议</a>
+          <a className="small-link" href="/legal/privacy.html" target="_blank" rel="noreferrer">隐私政策</a>
+          <a className="small-link" href="/legal/member-rules.html" target="_blank" rel="noreferrer">会员服务规则</a>
+        </span>
       </footer>
     </div>
   );
