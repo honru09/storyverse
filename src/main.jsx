@@ -8013,53 +8013,6 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         </section>
       )}
 
-      {/* 来源 (REQ-53): a fused book names the lines it was fused from.
-          Live sources open their own detail; a source that left the
-          shelf shows 已下架 and never becomes a dead link; the
-          publisher's own unpublished lines list by title and author
-          only. Ordinary books never render this section. */}
-      {detail.merged && detailSourcesFor(detail).length > 0 && (
-        <section className="plaza-panel plaza-sources-panel">
-          <h2>来源</h2>
-          <p className="plaza-sources-note">这本书由下面这些故事线合流而成。</p>
-          <div className="plaza-sources-list">
-            {detailSourcesFor(detail).map((source) => {
-              const cover = (
-                <span className="plaza-source-thumb">
-                  <PublicationArtwork publication={source} genreId={source.genreId || detail.genreId} />
-                </span>
-              );
-              const copy = (
-                <span className="plaza-source-copy">
-                  <b>《{source.title}》</b>
-                  {source.authorName && (
-                    <small>{source.authorName}{source.authorHandle ? ` · @${source.authorHandle}` : ""}</small>
-                  )}
-                </span>
-              );
-              return source.state === "live" && onOpenBook ? (
-                <button
-                  type="button"
-                  key={source.publicationId}
-                  className="plaza-source-row is-link"
-                  onClick={() => onOpenBook(source.publicationId)}
-                >
-                  {cover}
-                  {copy}
-                  <Icon name="chevron" size={15} />
-                </button>
-              ) : (
-                <div key={source.publicationId || source.title} className="plaza-source-row">
-                  {cover}
-                  {copy}
-                  {source.state === "gone" && <span className="plaza-source-gone">已下架</span>}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
       {!detail.manual && (
       <section className="plaza-panel plaza-avatar-panel">
         {onOpenProfile && detail.authorUid ? (
@@ -8109,6 +8062,54 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         <h3 className="plaza-intro-head">主角与主线</h3>
         <p className="plaza-prose">{worldIntro.thread}</p>
       </section>
+
+      {/* 来源 (REQ-53): a fused book names the lines it was fused from.
+          Live sources open their own detail; a source that left the
+          shelf shows 已下架 and never becomes a dead link; the
+          publisher's own unpublished lines list by title and author
+          only. Ordinary books never render this section. Placement
+          follows the REQ-55 order: after 世界设定， before 主线节拍. */}
+      {detail.merged && detailSourcesFor(detail).length > 0 && (
+        <section className="plaza-panel plaza-sources-panel">
+          <h2>来源</h2>
+          <p className="plaza-sources-note">这本书由下面这些故事线合流而成。</p>
+          <div className="plaza-sources-list">
+            {detailSourcesFor(detail).map((source) => {
+              const cover = (
+                <span className="plaza-source-thumb">
+                  <PublicationArtwork publication={source} genreId={source.genreId || detail.genreId} />
+                </span>
+              );
+              const copy = (
+                <span className="plaza-source-copy">
+                  <b>《{source.title}》</b>
+                  {source.authorName && (
+                    <small>{source.authorName}{source.authorHandle ? ` · @${source.authorHandle}` : ""}</small>
+                  )}
+                </span>
+              );
+              return source.state === "live" && onOpenBook ? (
+                <button
+                  type="button"
+                  key={source.publicationId}
+                  className="plaza-source-row is-link"
+                  onClick={() => onOpenBook(source.publicationId)}
+                >
+                  {cover}
+                  {copy}
+                  <Icon name="chevron" size={15} />
+                </button>
+              ) : (
+                <div key={source.publicationId || source.title} className="plaza-source-row">
+                  {cover}
+                  {copy}
+                  {source.state === "gone" && <span className="plaza-source-gone">已下架</span>}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <section className="plaza-panel" id="plaza-detail-beats">
         <div className="plaza-panel-heading">
