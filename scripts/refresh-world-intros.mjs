@@ -36,6 +36,7 @@ export function worldIntroForRecord(record) {
     worldBible: record.snapshot?.worldBible,
     beats: record.snapshot?.beats,
     synopsis: record.snapshot?.synopsis,
+    intro: record.snapshot?.intro,
     chapterCount: record.chapterCount,
     lineStatus: record.lineStatus,
   }, plazaTemplateNameFor(record))

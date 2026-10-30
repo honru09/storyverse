@@ -1490,6 +1490,11 @@ export function createStory(draft = DEFAULT_DRAFT) {
   const config = normalizeDraft(draft)
   const genre = genreFor(config.genreId)
   const timestamp = now()
+  const bible = worldBibleFor(genre, config)
+  // 简介生成制 (REQ-56): every book is born with public words — the
+  // factual local draft here; an online opening overwrites both with
+  // the generated draft from the same call that writes chapter one.
+  const { intro, synopsis } = localIntroFor(genre, config, bible)
   return {
     id: makeId(),
     // The creator's own title wins; the derived suggestion is only the
@@ -1500,7 +1505,9 @@ export function createStory(draft = DEFAULT_DRAFT) {
     // it is only present when the draft pinned one explicitly.
     ...(config.genreTemplateId ? { genreTemplateId: config.genreTemplateId } : {}),
     config,
-    worldBible: worldBibleFor(genre, config),
+    worldBible: bible,
+    ...(synopsis ? { synopsis } : {}),
+    ...(intro ? { intro } : {}),
     chapterIndex: 0,
     chapters: [],
     choices: {},
@@ -1881,6 +1888,268 @@ export function updateSynopsis(story, text) {
   const next = { ...story, updatedAt: now() }
   if (cleaned) next.synopsis = cleaned
   else delete next.synopsis
+  return next
+}
+
+/*
+ * 简介生成制 (REQ-56, owner order 2026-10-30): a book's public words
+ * are written when the book is generated, not assembled at publish
+ * time. The opening generation call writes the synopsis and the
+ * three-part public intro （世界背景 / 核心规则 / 主角与主线） in the
+ * SAME call as the world bible — the generator knows this book best —
+ * and a locally forged book gets a factual fallback assembled from its
+ * own config at creation (localIntroFor below). The generated text is
+ * a draft, never a verdict: the owner may rewrite every public word
+ * (updateSynopsis / updateIntro); a local book takes the edit at once
+ * and a published book follows on the next re-publish.
+ *
+ * The intro lives on the story as { background, rules, thread } — the
+ * exact shape the plaza composer publishes (src/plaza.js
+ * plazaWorldIntroFor) — and, like the synopsis, generation never
+ * reads it back: it is display copy, not canon.
+ *
+ * Three bans govern every non-owner source of public intro copy
+ * (generated drafts and assembled fallbacks alike; the owner's own
+ * edits are the owner's words and are never policed):
+ *   - no chapter-title chaining (「从『首章名』开始，一路走到『末章名』」);
+ *   - no chapter-count broadcasting (「全 N 章」/「已更新到第 N 章」);
+ *   - no engine jargon, no one-size filler (「秘密只能通过具体行动被
+ *     唤醒」 fits every book and therefore describes none).
+ * introViolationFor is the single automated check; the plaza
+ * composer, the server-side output validator and the tests share it.
+ */
+export const INTRO_BACKGROUND_MAX = 600
+export const INTRO_THREAD_MAX = 600
+export const INTRO_RULE_MAX = 300
+export const INTRO_RULES_MAX = 3
+
+// Engine jargon that must never reach a public intro — internal
+// mechanics nouns from the bible/scaffold layer. The plaza composer's
+// sentence filter uses this same list (src/plaza.js imports it).
+export const INTRO_ENGINE_TERMS = [
+  '资产与负债', '因果账目', '制约', '稳定度', '数值', '参数', '提示词',
+  '回合制', '账目制', '世界线扰动值',
+]
+
+// Filler that says nothing about THIS book: the old template bible's
+// stamp-on rules and scaffold meta-language.
+export const INTRO_FILLER_MARKERS = [
+  '的秘密只能通过具体行动',
+  '已经发生的事会留下可追踪的',
+  '可追溯的回声',
+  '由创作者亲手写定',
+]
+
+const INTRO_BANNED_PATTERNS = [
+  /从「[^」]*」开始，一路走到/,
+  /一路走到「[^」]*」/,
+  /全\s*\d+\s*章/,
+  /已更新到第\s*\d+\s*章/,
+  /这条线(已经完结|还在连载)/,
+]
+
+/**
+ * The one automated ban check for public intro copy. Returns the
+ * matched pattern source / term / marker for diagnostics, or null
+ * when the text is clean. Empty (or non-string) text is clean.
+ */
+export function introViolationFor(value) {
+  const text = typeof value === 'string' ? value : ''
+  if (!text) return null
+  for (const pattern of INTRO_BANNED_PATTERNS) if (pattern.test(text)) return pattern.source
+  for (const term of INTRO_ENGINE_TERMS) if (text.includes(term)) return term
+  for (const marker of INTRO_FILLER_MARKERS) if (text.includes(marker)) return marker
+  return null
+}
+
+/**
+ * Shape-clean an intro value from any source (model output, owner
+ * edit, storage) into { background, rules, thread } — each part
+ * trimmed and bounded — or null when nothing usable remains. Ban
+ * enforcement is deliberately NOT done here: sources that must
+ * enforce it run introViolationFor over the parts themselves.
+ */
+export function sanitizeIntro(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const cleanText = (text, max) => (typeof text === 'string' ? text.trim().slice(0, max) : '')
+  const background = cleanText(value.background, INTRO_BACKGROUND_MAX)
+  const thread = cleanText(value.thread, INTRO_THREAD_MAX)
+  const rules = (Array.isArray(value.rules) ? value.rules : [])
+    .map((rule) => cleanText(rule, INTRO_RULE_MAX))
+    .filter(Boolean)
+    .slice(0, INTRO_RULES_MAX)
+  if (!background && !thread && rules.length === 0) return null
+  return { background, rules, thread }
+}
+
+export function introOf(story) {
+  return sanitizeIntro(story?.intro)
+}
+
+const introSentences = (text, limit = 1) => (typeof text === 'string' ? text : '')
+  .split(/(?<=[。！？])/)
+  .map((sentence) => sentence.trim())
+  .filter(Boolean)
+  .slice(0, limit)
+  .join('')
+
+const introFirstSentence = (text) => introSentences(text, 1)
+
+// The concrete rules a bible actually carries, with every stamped-on
+// filler and engine-jargon rule filtered out. May legitimately come
+// back empty — an empty rules part is honest, an invented one is not.
+const introRulesFromBible = (bible) => (Array.isArray(bible?.rules) ? bible.rules : [])
+  .map((rule) => (typeof rule === 'string' ? rule.trim() : ''))
+  .filter((rule) => rule && !introViolationFor(rule))
+  .slice(0, INTRO_RULES_MAX)
+
+/**
+ * The local forge's own intro draft for a solo line, assembled only
+ * from facts the book already carries: its world's catalogue copy
+ * (or the creator's own world text), the protagonist's origin,
+ * identity and ability, the opening outline beat and the bible's
+ * concrete rules. No sentence is interchangeable with another book's,
+ * and the ban list is applied to everything borrowed. This is the
+ * copy an offline-forged book shows until the owner rewrites it; an
+ * online opening overwrites it with the generated draft (see
+ * src/generation.js). Total: any missing fact simply drops its
+ * sentence rather than inventing one.
+ */
+export function localIntroFor(genre, config, bible) {
+  const name = protagonistName(config)
+  const origin = originPremisePhrase(genre, config)
+  const identity = displayIdentity(config, genre)
+  const ability = typeof config?.ability === 'string' ? config.ability.trim() : ''
+  // Only a destination the reader actually supplied counts — the
+  // genre's home location is where the story starts, not where the
+  // protagonist is headed, so it never poses as a goal here.
+  const destination = typeof config?.destination === 'string' ? config.destination.trim() : ''
+  const openingBeat = Array.isArray(bible?.outline) && typeof bible.outline[0] === 'string' ? bible.outline[0].trim() : ''
+  const lastBeat = Array.isArray(bible?.outline) && bible.outline.length > 1
+    ? bible.outline[bible.outline.length - 1].trim().replace(/^第\s*\d+\s*章[，、：:\s]*/, '')
+    : ''
+  const endless = storyLengthModeOf(config) === 'endless'
+
+  const backgroundParts = []
+  if (genre?.id === CUSTOM_GENRE_ID) {
+    const own = introSentences(customSettingOf(config), 2)
+    if (own) backgroundParts.push(own)
+  } else if (typeof genre?.description === 'string' && genre.description.trim()) {
+    backgroundParts.push(genre.description.trim())
+  }
+  if (name && identity) backgroundParts.push(`${name}在这里只是${identity}。`)
+  const background = backgroundParts.join('')
+
+  const threadParts = []
+  if (openingBeat) threadParts.push(openingBeat)
+  if (ability) threadParts.push(`他手里还攥着${ability}——这是他眼下唯一的本钱。`)
+  if (endless) threadParts.push('这条线没有预设的终点：每十二章清算一弧，再往前走。')
+  else if (lastBeat) threadParts.push(`走到最后，${lastBeat}`)
+  const thread = threadParts.join('')
+
+  const synopsisParts = []
+  if (name) synopsisParts.push(origin ? `${origin}${name}。` : identity ? `${name}，${identity}。` : `${name}。`)
+  if (openingBeat) synopsisParts.push(openingBeat)
+  if (!endless && destination) synopsisParts.push(`他要去的地方，是${destination}。`)
+  if (endless) synopsisParts.push('这是一个没有终点的故事，每十二章就是一弧新的命运。')
+  const synopsis = synopsisParts.join('')
+
+  return { intro: sanitizeIntro({ background, rules: introRulesFromBible(bible), thread }), synopsis }
+}
+
+/**
+ * The fused line's local intro draft: both worlds, both leads, the
+ * merge's concrete rules — the same factual-assembly discipline as
+ * localIntroFor, for a book whose cast is a pair.
+ */
+export function localMergedIntroFor({ genreA, genreB, configA, configB, bible, bond }) {
+  const nameA = protagonistName(configA, '旅者甲')
+  const nameB = protagonistName(configB, '旅者乙')
+  const worldA = worldNameOf(genreA, configA)
+  const worldB = worldNameOf(genreB, configB)
+  const backgroundParts = []
+  const descA = genreA?.id === CUSTOM_GENRE_ID ? introFirstSentence(customSettingOf(configA)) : introFirstSentence(genreA?.description)
+  const descB = genreB?.id === CUSTOM_GENRE_ID ? introFirstSentence(customSettingOf(configB)) : introFirstSentence(genreB?.description)
+  if (descA) backgroundParts.push(descA)
+  if (descB && descB !== descA) backgroundParts.push(descB)
+  backgroundParts.push(`${worldA}与${worldB}在一处合流点相遇，两个世界的规则在这里交叠。`)
+  const openingBeat = Array.isArray(bible?.outline) && typeof bible.outline[0] === 'string' ? bible.outline[0].trim() : ''
+  const threadParts = [`${nameA}来自${worldA}，${nameB}来自${worldB}。`]
+  if (openingBeat) threadParts.push(openingBeat)
+  threadParts.push(bond === 'rivals' ? '他们是对手，也是彼此唯一的同类。' : '他们必须学会信任对方，才能一起走下去。')
+  const intro = sanitizeIntro({
+    background: backgroundParts.join(''),
+    rules: introRulesFromBible(bible),
+    thread: threadParts.join(''),
+  })
+  const synopsis = `${nameA}与${nameB}，一个来自${worldA}，一个来自${worldB}。两个世界在一处合流点相撞，两人被迫同行：规则要互相翻译，代价要共同承担。这条线讲他们如何为两个世界找到共同的出路。`
+  return { intro, synopsis }
+}
+
+/**
+ * The public intro a surface should show for a story right now: the
+ * generated (or owner-edited) draft when the story carries one, else
+ * the factual local assembly — so pre-REQ-56 books and offline books
+ * alike always have compliant copy to show and to open the editor on.
+ */
+export function effectiveIntroFor(story) {
+  const own = introOf(story)
+  if (own) return own
+  if (!story || typeof story !== 'object') return null
+  if (story.kind === 'merged') {
+    const [configA, configB] = Array.isArray(story.config?.protagonists) ? story.config.protagonists : []
+    const genreA = genreFor(configA?.genreId || story.genreId)
+    const genreB = genreFor(configB?.genreId || story.genreId)
+    return localMergedIntroFor({
+      genreA,
+      genreB,
+      configA: { ...story.config, ...(configA || {}) },
+      configB: { ...story.config, ...(configB || {}) },
+      bible: story.worldBible,
+      bond: story.config?.merge?.bond,
+    }).intro
+  }
+  const genre = genreFor(story.genreId || story.config?.genreId)
+  return localIntroFor(genre, story.config || {}, story.worldBible).intro
+}
+
+/**
+ * 世界设定编辑 (REQ-56): the owner rewrites the public intro's three
+ * parts. The edit lands on the local book immediately; a published
+ * book follows on the next re-publish, like the synopsis. Rules are
+ * edited one per line in the settings book and arrive as an array.
+ * Saving all three parts empty clears the field back to the fallback
+ * assembly. Owner words are never ban-checked — the bans bind the
+ * generator and the assembler, not the book's owner.
+ */
+export function updateIntro(story, intro) {
+  validateStory(story)
+  const raw = intro && typeof intro === 'object' && !Array.isArray(intro) ? intro : {}
+  const background = typeof raw.background === 'string' ? raw.background.trim() : ''
+  const thread = typeof raw.thread === 'string' ? raw.thread.trim() : ''
+  const rules = (Array.isArray(raw.rules) ? raw.rules : [])
+    .map((rule) => (typeof rule === 'string' ? rule.trim() : ''))
+    .filter(Boolean)
+  if (background.length > INTRO_BACKGROUND_MAX) throw new RangeError(`世界背景最多 ${INTRO_BACKGROUND_MAX} 字。`)
+  if (thread.length > INTRO_THREAD_MAX) throw new RangeError(`主角与主线最多 ${INTRO_THREAD_MAX} 字。`)
+  if (rules.length > INTRO_RULES_MAX) throw new RangeError(`核心规则最多 ${INTRO_RULES_MAX} 条。`)
+  for (const rule of rules) {
+    if (rule.length > INTRO_RULE_MAX) throw new RangeError(`每条核心规则最多 ${INTRO_RULE_MAX} 字。`)
+  }
+  const cleaned = background || thread || rules.length ? { background, rules, thread } : null
+  const current = introOf(story)
+  const same = (left, right) => {
+    if (!left && !right) return true
+    if (!left || !right) return false
+    return left.background === right.background
+      && left.thread === right.thread
+      && left.rules.length === right.rules.length
+      && left.rules.every((rule, index) => rule === right.rules[index])
+  }
+  if (same(cleaned, current)) return story
+  const next = { ...story, updatedAt: now() }
+  if (cleaned) next.intro = cleaned
+  else delete next.intro
   return next
 }
 
@@ -3156,6 +3425,19 @@ export function createMergedStory(a, b, options = {}) {
     updatedAt: timestamp,
     bookmarked: false,
   }
+  // 简介生成制 (REQ-56): the fused line is born with public words too —
+  // the factual local draft from both worlds and both leads; an
+  // online opening overwrites them with the generated draft.
+  const mergedIntro = localMergedIntroFor({
+    genreA,
+    genreB,
+    configA: sourceA,
+    configB: sourceB,
+    bible: story.worldBible,
+    bond,
+  })
+  if (mergedIntro.synopsis) story.synopsis = mergedIntro.synopsis
+  if (mergedIntro.intro) story.intro = mergedIntro.intro
   return story
 }
 
@@ -3503,6 +3785,10 @@ export function plazaSnapshot(story, { avatarName = '' } = {}) {
     // absent when the owner never wrote one — the detail then falls
     // back to the premise, as it did before the field existed.
     ...(typeof story.synopsis === 'string' && story.synopsis.trim() ? { synopsis: verbatim(story.synopsis) } : {}),
+    // The generated public intro rides along verbatim too (REQ-56):
+    // the plaza composer prefers it over any assembly. Absent on
+    // books that predate the field — the composer falls back.
+    ...(sanitizeIntro(story.intro) ? { intro: sanitizeIntro(story.intro) } : {}),
     genreId: genre.id,
     genreTemplateId,
     worldName: worldNameOf(genre, safeConfig),

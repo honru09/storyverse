@@ -146,6 +146,10 @@ function detailOf(record) {
     // bare summary, and emails never appear anywhere.
     authorUid: record.authorUid,
     worldBible: record.snapshot.worldBible,
+    // The snapshot's generated intro (REQ-56), exposed so the client
+    // can recompose the same world intro the server baked — the two
+    // never drift because both run plazaWorldIntroFor on it.
+    intro: record.snapshot.intro || null,
     worldIntro: record.worldIntro || null,
     worldIntroVersion: record.worldIntroVersion || 0,
     beats: record.snapshot.beats,
@@ -660,6 +664,9 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
             worldBible: snapshot.worldBible,
             beats: snapshot.beats,
             synopsis: snapshot.synopsis,
+            // REQ-56: the snapshot's generated intro — the composer
+            // prefers it over assembly, part by part.
+            intro: snapshot.intro,
             chapterCount: snapshot.chapters.length,
             lineStatus: gate.lineStatus,
           }, plazaTemplateNameFor(snapshot)),
@@ -789,6 +796,7 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
               worldBible: record.snapshot.worldBible,
               beats: record.snapshot.beats,
               synopsis: record.snapshot.synopsis,
+              intro: record.snapshot.intro,
               chapterCount: record.chapterCount,
               lineStatus: record.lineStatus,
             }, plazaTemplateNameFor(snapshot)),

@@ -345,6 +345,33 @@ function validateStory(story, prefix) {
   if (typeof story.synopsis === 'string' && story.synopsis.length > 300) {
     errors.push(`${prefix}.synopsis must be at most 300 characters`)
   }
+  // 公开简介三段 (REQ-56): the generated / owner-edited public intro
+  // { background, rules, thread }. Absent on every pre-REQ-56 save.
+  // Bounds mirror INTRO_*_MAX in src/story-engine.js (this storage
+  // layer stays dependency-free, like the synopsis bound above).
+  if (story.intro !== undefined) {
+    if (!isRecord(story.intro)) errors.push(`${prefix}.intro must be an object`)
+    else {
+      if (story.intro.background !== undefined && (typeof story.intro.background !== 'string' || story.intro.background.length > 600)) {
+        errors.push(`${prefix}.intro.background must be a string of at most 600 characters`)
+      }
+      if (story.intro.thread !== undefined && (typeof story.intro.thread !== 'string' || story.intro.thread.length > 600)) {
+        errors.push(`${prefix}.intro.thread must be a string of at most 600 characters`)
+      }
+      if (story.intro.rules !== undefined) {
+        if (!Array.isArray(story.intro.rules) || story.intro.rules.length > 3) {
+          errors.push(`${prefix}.intro.rules must be an array of at most 3 strings`)
+        } else {
+          for (let ruleIndex = 0; ruleIndex < story.intro.rules.length; ruleIndex += 1) {
+            const rule = story.intro.rules[ruleIndex]
+            if (typeof rule !== 'string' || rule.length > 300) {
+              errors.push(`${prefix}.intro.rules[${ruleIndex}] must be a string of at most 300 characters`)
+            }
+          }
+        }
+      }
+    }
+  }
   validateOptionalFields(story, prefix, ['bookmarked', 'readOnly', 'isDemo'], 'boolean', errors)
   // Per-story generated cover: only the state and a version live on the
   // story; the image itself stays on the server under the owner's account.
