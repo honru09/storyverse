@@ -197,7 +197,7 @@ async function step(label, fn) {
       assert.match(detailText, /作者手写/, 'the detail notes the hand-written origin');
       assert.ok(!detailText.includes('带我的化身进入'), 'no avatar-enter entry for a manual book');
       assert.ok(!detailText.includes('与我的线合流'), 'no fusion entry for a manual book');
-      await page.locator('.plaza-entry-option', { hasText: '读原作线' }).click();
+      await page.locator('.plaza-entry-read').click();
       await waitFor(async () => page.url().includes('plaza-read'), 'the reader opens');
       await waitFor(async () => (await page.locator('.reader-article').innerText()).includes('守塔人听见了潮声里的回信'), 'chapter one prose');
       await page.locator('.sw-next-action button').click();

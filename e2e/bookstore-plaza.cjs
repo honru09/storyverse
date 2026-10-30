@@ -169,7 +169,8 @@ async function main() {
     await shot(page, '02-store-detail.png');
 
     // ——— C. Share to the plaza from the detail page ———
-    await page.getByRole('button', { name: '分享到广场' }).click();
+    // REQ-55: sharing is the entry group's quiet secondary action now.
+    await page.locator('.plaza-entry-action', { hasText: '分享' }).click();
     const dialog = page.locator('.reading-dialog');
     await waitFor(async () => (await dialog.count()) === 1, 'the share composer opens');
     await dialog.locator('textarea').fill(SHARE_NOTE);
