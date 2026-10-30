@@ -7560,24 +7560,6 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
   );
 }
 
-function PlazaEntryOption({ icon, title, note, muted = false, onClick }) {
-  return (
-    <button
-      type="button"
-      className={`plaza-entry-option${muted ? " is-muted" : ""}`}
-      aria-disabled={muted || undefined}
-      onClick={onClick}
-    >
-      <Icon name={icon} size={20} />
-      <span className="plaza-entry-copy">
-        <strong>{title}</strong>
-        <small>{note}</small>
-      </span>
-      <Icon name="chevron" size={16} className="plaza-entry-arrow" />
-    </button>
-  );
-}
-
 /** Display stars for a value: whole filled stars, the precise number always rides beside it as text. */
 function RatingStars({ value = 0 }) {
   const full = Math.round(Math.min(5, Math.max(0, Number(value) || 0)));
@@ -7823,6 +7805,27 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
     () => plazaFusionEntryFor({ stories, publicationId: id, mine: plazaMine() }),
     [stories, id],
   );
+  // REQ-55: this device's saved place in THIS book, read from the
+  // same reading-locations record the reader resumes from (keys are
+  // `public:plaza-line-<id>:<chapterIndex>:<hash>`). null = never
+  // opened here; otherwise the chapter index of the latest saved
+  // place. Storage trouble reads as "never opened", never as a crash.
+  // A hook, so it lives up here with the others — above the loading
+  // and error early returns below.
+  const readProgress = useMemo(() => {
+    try {
+      const raw = globalThis.localStorage?.getItem(READING_LOCATION_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      const locations = Array.isArray(parsed?.locations) ? parsed.locations : [];
+      const prefix = `public:plaza-line-${id}:`;
+      const mine = locations.filter(
+        (entry) => typeof entry?.key === "string" && entry.key.startsWith(prefix),
+      );
+      if (!mine.length) return null;
+      const chapterIndex = Number(mine[mine.length - 1].key.slice(prefix.length).split(":")[0]);
+      return Number.isInteger(chapterIndex) && chapterIndex >= 0 ? chapterIndex : 0;
+    } catch { return null; }
+  }, [id]);
   useEffect(() => {
     let live = true;
     setDetail(null);
@@ -7867,6 +7870,9 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
     ? detail.worldIntro
     : plazaWorldIntroFor(detail, templateName);
   const beats = Array.isArray(detail.beats) ? detail.beats : [];
+  const scrollToBeats = () => {
+    document.getElementById("plaza-detail-beats")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   const report = async () => {
     if (!account.user) { onOpenAccount(); return; }
     setBusy(true);
@@ -7932,18 +7938,80 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
             <span className="plaza-badge is-fused">由{detail.sourceTitles.map((title) => `《${title}》`).join("×")}融合而来</span>
           )}
           {detail.official && <span className="plaza-badge is-official">官方示例 · 织界官方走完的完整故事线</span>}
+          {/* REQ-55: the header carries the rating as ONE summary
+              line only — stars, the average, the count. The full
+              ratings section (form + list) lives at the foot of the
+              page: a first-time visitor meets the book first and
+              rates it after. The numbers ride the detail record
+              itself, so this line costs no extra request. */}
+          <p className="plaza-detail-rating">
+            {ratingAverageText(detail) ? (
+              <>
+                <RatingStars value={detail.ratingAverage} />
+                <strong>{ratingAverageText(detail)}</strong>
+                <span>{detail.ratingCount} 条评价</span>
+              </>
+            ) : (
+              <span>暂无评价</span>
+            )}
+          </p>
         </div>
       </section>
 
-      {/* Ratings (RATINGS): average + count + review list + the
-          viewer's own rating form, hung on the book. */}
-      <BookRatingsSection
-        bookId={detail.id}
-        account={account}
-        authClient={authClient}
-        onOpenAccount={onOpenAccount}
-        onOpenProfile={onOpenProfile}
-      />
+      {/* REQ-55: the reading entry group hugs the header — one
+          primary button, one row of quiet secondary actions. The
+          label follows this device's saved place in the book (the
+          same reading-locations record the reader resumes from), so
+          the detail and the reader's cover page agree on 开始/继续. */}
+      <section className="plaza-panel plaza-entry-panel" aria-label="阅读入口">
+        <Button variant="primary" className="plaza-entry-read" onClick={() => onReadLine(detail)}>
+          {readProgress === null
+            ? "开始阅读"
+            : readProgress > 0
+              ? `继续阅读 · 第 ${readProgress + 1} 章`
+              : "继续阅读"}
+        </Button>
+        <div className="plaza-entry-row">
+          {!detail.manual && beats.length > 0 && (
+            <button type="button" className="plaza-entry-action" onClick={scrollToBeats}>
+              <Icon name="menu" size={16} /> 目录
+            </button>
+          )}
+          {!detail.manual && (
+            <button type="button" className="plaza-entry-action" onClick={() => onEnter(detail)}>
+              <Icon name="user" size={16} /> 化身进入
+            </button>
+          )}
+          {!detail.manual && (
+            <button
+              type="button"
+              className={`plaza-entry-action${fusionEntry.state === "no-line" ? " is-muted" : ""}`}
+              onClick={() => (fusionEntry.state === "no-line"
+                ? onNavigate("forge")
+                : onNavigate("merge", { publicationId: detail.id }))}
+            >
+              <Icon name="git" size={16} /> 合流
+            </button>
+          )}
+          <button type="button" className="plaza-entry-action" onClick={openShare}>
+            <Icon name="share" size={16} /> 分享
+          </button>
+        </div>
+        {detail.manual ? (
+          <p className="plaza-note">这本书是作者自己写的，没有化身世界可以进入，也不能合流——它就是一本拿来读的书。</p>
+        ) : (
+          <p className="plaza-note">读原作不消耗你的生成额度 · 化身进入与合流的新章节会消耗你的生成额度</p>
+        )}
+      </section>
+
+      {detail.synopsis && (
+        <section className="plaza-panel">
+          <div className="plaza-panel-heading">
+            <h2>本书简介</h2>
+          </div>
+          <p className="plaza-prose">{detail.synopsis}</p>
+        </section>
+      )}
 
       {/* 来源 (REQ-53): a fused book names the lines it was fused from.
           Live sources open their own detail; a source that left the
@@ -8016,15 +8084,6 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
       </section>
       )}
 
-      {detail.synopsis && (
-        <section className="plaza-panel">
-          <div className="plaza-panel-heading">
-            <h2>本书简介</h2>
-          </div>
-          <p className="plaza-prose">{detail.synopsis}</p>
-        </section>
-      )}
-
       {!detail.manual && (
       <>
       <section className="plaza-panel plaza-world-intro">
@@ -8051,7 +8110,7 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         <p className="plaza-prose">{worldIntro.thread}</p>
       </section>
 
-      <section className="plaza-panel">
+      <section className="plaza-panel" id="plaza-detail-beats">
         <div className="plaza-panel-heading">
           <h2>主线节拍</h2>
         </div>
@@ -8072,57 +8131,17 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
       </>
       )}
 
-      <section className="plaza-panel plaza-cta-panel">
-        <h2>{detail.manual ? "读这本书" : "你想怎样走这条线？"}</h2>
-        {/* ENTRY-OPTIONS: the three ways in are one option-card family.
-            What each way costs rides in its own card's line — the yellow
-            fee box that used to float under the buttons is gone. */}
-        <div className="plaza-entry-options">
-          <PlazaEntryOption
-            icon="book"
-            title="读原作线"
-            note={detail.manual
-              ? "作者亲手写的版本，打开就能读 · 不消耗你的生成额度"
-              : "作者的化身走完的版本，打开就能读 · 不消耗你的生成额度"}
-            onClick={() => onReadLine(detail)}
-          />
-          {!detail.manual && (
-          <>
-          <PlazaEntryOption
-            icon="user"
-            title="带我的化身进入"
-            note="同一个世界，换你的化身从头走一遍 · 新章节会消耗你的生成额度"
-            onClick={() => onEnter(detail)}
-          />
-          <PlazaEntryOption
-            icon="git"
-            title="与我的线合流"
-            note={fusionEntry.state === "no-line"
-              ? "你还没有自己的故事线——先去造世开一条，就能回来合流"
-              : fusionEntry.state === "needs-enter"
-                ? "先带化身进入这条线，它进你的书架后，就能选它合流"
-                : "和你的一条线接在一起，两个主角共同往下写 · 新章节会消耗你的生成额度"}
-            muted={fusionEntry.state === "no-line"}
-            onClick={() => (fusionEntry.state === "no-line"
-              ? onNavigate("forge")
-              : onNavigate("merge", { publicationId: detail.id }))}
-          />
-          </>
-          )}
-        </div>
-        {detail.manual && (
-          <p className="plaza-note">这本书是作者自己写的，没有化身世界可以进入，也不能合流——它就是一本拿来读的书。</p>
-        )}
-        {/* Sharing is the plaza's door out of the detail (BOOKSTORE-
-            PLAZA): one tap opens the composer pre-set to this book;
-            the words are the reader's own. */}
-        <div className="plaza-share-row">
-          <Button variant="ghost" onClick={openShare}>
-            <Icon name="share" size={16} /> 分享到广场
-          </Button>
-          <span>把这本书推荐给广场上的其他人</span>
-        </div>
-      </section>
+      {/* Ratings (RATINGS, moved by REQ-55): average + count +
+          review list + the viewer's own rating form, hung on the
+          book — at the FOOT of the page, after the book has had its
+          say. The header above carries only the one-line summary. */}
+      <BookRatingsSection
+        bookId={detail.id}
+        account={account}
+        authClient={authClient}
+        onOpenAccount={onOpenAccount}
+        onOpenProfile={onOpenProfile}
+      />
 
       {shareOpen && (
         <ReadingDialog title="分享到广场" onClose={() => setShareOpen(false)}>

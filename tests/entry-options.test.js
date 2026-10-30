@@ -6,11 +6,13 @@ import { plazaFusionEntryFor } from '../src/fusion.js'
 import { createGeminiGenerator } from '../server/gemini.js'
 
 // ---------------------------------------------------------------------------
-// ENTRY-OPTIONS: the plaza detail page's three ways in become one
-// option-card family (quota stated inside each card, the yellow fee box
-// gone, the fusion card honest about its prerequisite), and bare-number
-// chapter titles stop printing as 「第 3 章 · 3」 — display falls back,
-// generation refuses them outright.
+// ENTRY-OPTIONS: the plaza detail page's ways in — originally one
+// option-card family at the foot of the page; REQ-55 superseded the
+// presentation (one primary read button under the header, the other
+// ways in as one quiet secondary row, quota facts stated once). The
+// fusion entry states and the bare-number chapter-title rules below
+// are unchanged. Bare-number titles stop printing as 「第 3 章 · 3」 —
+// display falls back, generation refuses them outright.
 // ---------------------------------------------------------------------------
 
 // ---- Display fallback: a bare number is not a title ------------------------
@@ -126,15 +128,27 @@ const detailSource = mainSource.slice(
   mainSource.indexOf('function formatProfileDate'),
 )
 
-test('detail page: the three ways in are one option-card family', () => {
-  assert.equal(detailSource.match(/<PlazaEntryOption/g)?.length, 3)
+test('detail page: one primary read button up top, quiet secondary actions in one row (REQ-55)', () => {
+  // The three-card family at the foot of the page is gone: a reader
+  // who wants in should not have to scroll past the whole page —
+  // and a first-time visitor should meet the book before the
+  // rating form (the order itself is pinned in detail-layout.test.js).
+  assert.ok(!detailSource.includes('PlazaEntryOption'))
   for (const title of ['读原作线', '带我的化身进入', '与我的线合流']) {
-    assert.ok(detailSource.includes(`title="${title}"`), `card present: ${title}`)
+    assert.ok(!detailSource.includes(title), `old card gone: ${title}`)
   }
-  // The quota fact rides inside the cards that spend it — and the read
-  // card says plainly that it spends nothing.
-  assert.ok(detailSource.includes('不消耗你的生成额度'))
-  assert.equal(detailSource.match(/新章节会消耗你的生成额度/g)?.length, 2)
+  // One primary read button, labelled by this device's saved place.
+  assert.equal(detailSource.match(/plaza-entry-read/g)?.length, 1)
+  assert.ok(detailSource.includes('开始阅读'))
+  assert.ok(detailSource.includes('继续阅读'))
+  // The other ways in survive as one concise row of short verbs.
+  for (const label of ['目录', '化身进入', '合流', '分享']) {
+    assert.ok(detailSource.includes(label), `secondary action present: ${label}`)
+  }
+  // Each quota fact is stated exactly once, in the entry group's
+  // single note line — no longer repeated inside every card.
+  assert.equal(detailSource.match(/不消耗你的生成额度/g)?.length, 1)
+  assert.equal(detailSource.match(/新章节会消耗你的生成额度/g)?.length, 1)
 })
 
 test('detail page: the yellow fee box is gone everywhere, styles included', () => {

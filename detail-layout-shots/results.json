@@ -1,0 +1,165 @@
+{
+  "engine": "chromium (webkit unavailable in this sandbox)",
+  "books": {
+    "normal": {
+      "id": "pub-7a3e058b-20a",
+      "title": "借火登天"
+    },
+    "merged": {
+      "id": "pub-ca96765b-e38",
+      "title": "合流：借火登天 · 沈砚 × 凌晨四点的长宁街 · 陆…"
+    }
+  },
+  "assertions": [
+    {
+      "name": "black/normal: ratings below world intro",
+      "ok": true,
+      "detail": "ratings=1291 world=818"
+    },
+    {
+      "name": "black/normal: ratings below beats",
+      "ok": true,
+      "detail": "ratings=1291 beats=1082"
+    },
+    {
+      "name": "black/normal: entry group above synopsis",
+      "ok": true,
+      "detail": "entry=438 synopsis=absent (empty synopsis)"
+    },
+    {
+      "name": "black/normal: read button inside first viewport",
+      "ok": true,
+      "detail": "{\"top\":454.5,\"bottom\":504.5}"
+    },
+    {
+      "name": "black/normal: header rating summary line present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "black/merged: ratings below world intro",
+      "ok": true,
+      "detail": "ratings=1408 world=818"
+    },
+    {
+      "name": "black/merged: ratings below beats",
+      "ok": true,
+      "detail": "ratings=1408 beats=1199"
+    },
+    {
+      "name": "black/merged: entry group above synopsis",
+      "ok": true,
+      "detail": "entry=438 synopsis=absent (empty synopsis)"
+    },
+    {
+      "name": "black/merged: read button inside first viewport",
+      "ok": true,
+      "detail": "{\"top\":454.5,\"bottom\":504.5}"
+    },
+    {
+      "name": "black/merged: header rating summary line present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "white/normal: ratings below world intro",
+      "ok": true,
+      "detail": "ratings=1291 world=818"
+    },
+    {
+      "name": "white/normal: ratings below beats",
+      "ok": true,
+      "detail": "ratings=1291 beats=1082"
+    },
+    {
+      "name": "white/normal: entry group above synopsis",
+      "ok": true,
+      "detail": "entry=438 synopsis=absent (empty synopsis)"
+    },
+    {
+      "name": "white/normal: read button inside first viewport",
+      "ok": true,
+      "detail": "{\"top\":454.5,\"bottom\":504.5}"
+    },
+    {
+      "name": "white/normal: header rating summary line present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "white/merged: ratings below world intro",
+      "ok": true,
+      "detail": "ratings=1408 world=818"
+    },
+    {
+      "name": "white/merged: ratings below beats",
+      "ok": true,
+      "detail": "ratings=1408 beats=1199"
+    },
+    {
+      "name": "white/merged: entry group above synopsis",
+      "ok": true,
+      "detail": "entry=438 synopsis=absent (empty synopsis)"
+    },
+    {
+      "name": "white/merged: read button inside first viewport",
+      "ok": true,
+      "detail": "{\"top\":454.5,\"bottom\":504.5}"
+    },
+    {
+      "name": "white/merged: header rating summary line present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "aurora/normal: ratings below world intro",
+      "ok": true,
+      "detail": "ratings=1291 world=818"
+    },
+    {
+      "name": "aurora/normal: ratings below beats",
+      "ok": true,
+      "detail": "ratings=1291 beats=1082"
+    },
+    {
+      "name": "aurora/normal: entry group above synopsis",
+      "ok": true,
+      "detail": "entry=438 synopsis=absent (empty synopsis)"
+    },
+    {
+      "name": "aurora/normal: read button inside first viewport",
+      "ok": true,
+      "detail": "{\"top\":454.5,\"bottom\":504.5}"
+    },
+    {
+      "name": "aurora/normal: header rating summary line present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "aurora/merged: ratings below world intro",
+      "ok": true,
+      "detail": "ratings=1408 world=818"
+    },
+    {
+      "name": "aurora/merged: ratings below beats",
+      "ok": true,
+      "detail": "ratings=1408 beats=1199"
+    },
+    {
+      "name": "aurora/merged: entry group above synopsis",
+      "ok": true,
+      "detail": "entry=438 synopsis=absent (empty synopsis)"
+    },
+    {
+      "name": "aurora/merged: read button inside first viewport",
+      "ok": true,
+      "detail": "{\"top\":454.5,\"bottom\":504.5}"
+    },
+    {
+      "name": "aurora/merged: header rating summary line present",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
