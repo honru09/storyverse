@@ -181,12 +181,16 @@ import {
   CUSTOM_LENGTH_MIN,
   CUSTOM_WORLD_NAME_MAX,
   CUSTOM_WORLD_SETTING_MAX,
+  PRESET_WORLD_SETTING_MAX,
+  worldDraftOf,
+  worldSettingOf,
   DEFAULT_DRAFT,
   FRIEND_BOOK,
   GENRES,
   GENRE_SHELVES,
   GENRE_TEMPLATES,
   ORIGIN_IDENTITIES,
+  START_POINT_HOOK_MAX,
   START_POINT_NAME_MAX,
   abilityCandidatesFor,
   abilityGroupsFor,
@@ -1729,7 +1733,10 @@ function WorldCard({ world, selected, onSelect }) {
       <span className="world-card-copy">
         <strong>{world.name}</strong>
         <em>{world.subtitle}</em>
-        <small>{world.description}</small>
+        {/* REQ-59: the card face carries name + one line of atmosphere
+            + artwork only. The world's setting text is the editable
+            draft inside the step (below the grid, once picked), not
+            fixed copy printed on the card. */}
       </span>
       {selected && (
         <span className="selected-mark">
@@ -1778,6 +1785,9 @@ function PreviewPanel({ world, template, draft, ability, spawn, onJump }) {
         <div><dt>出生点</dt><dd>{spawn ? spawn.name : "由设定决定"}</dd></div>
         {draft.genreId === CUSTOM_GENRE.id && (
           <div><dt>设定</dt><dd>{(draft.customWorldSetting || "").trim().slice(0, 80) || "尚未写下设定"}</dd></div>
+        )}
+        {draft.genreId !== CUSTOM_GENRE.id && (
+          <div><dt>设定</dt><dd>{worldSettingOf(genreById[draft.genreId] || GENRES[0], draft).slice(0, 80)}</dd></div>
         )}
         <div><dt>主角</dt><dd>{person}</dd></div>
         <div><dt>性格</dt><dd>{draft.avatarId ? "化身自带" : draft.trait}</dd></div>
@@ -2027,9 +2037,29 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
   // bare genreId default never counts as a choice.
   const worldChosen = draft.worldChosen === true;
   const customWorldName = (draft.customWorldName || "").trim();
+  // REQ-59: a preset world is a draft the creator may rename and
+  // rewrite. The effective world name shown everywhere in the flow is
+  // the draft's name when a draft exists; the setting text follows the
+  // same rule (worldSettingOf), falling back to the preset's own text.
+  const presetGenre = genreById[draft.genreId] || GENRES[0];
+  const activeWorldDraft = isCustom ? null : worldDraftOf(presetGenre, draft);
   const world = isCustom
     ? { ...toWorld(CUSTOM_GENRE), name: customWorldName || CUSTOM_GENRE.world, location: customWorldName || CUSTOM_GENRE.location }
-    : toWorld(genreById[draft.genreId] || GENRES[0]);
+    : { ...toWorld(presetGenre), ...(activeWorldDraft?.name ? { name: activeWorldDraft.name } : {}) };
+  const worldDraftName = activeWorldDraft ? activeWorldDraft.name : presetGenre.world;
+  const worldDraftSetting = activeWorldDraft ? activeWorldDraft.setting : (presetGenre.description || "");
+  // The first edit seeds the entry with the world's full effective text,
+  // so the stored draft is always a complete snapshot (name + setting),
+  // never a half-override the engine has to guess at.
+  const setWorldDraft = (patch) => {
+    const current = activeWorldDraft || { name: presetGenre.world, setting: presetGenre.description || "" };
+    set({ worldDrafts: { ...(draft.worldDrafts || {}), [presetGenre.id]: { ...current, ...patch } } });
+  };
+  const clearWorldDraft = () => {
+    const rest = { ...(draft.worldDrafts || {}) };
+    delete rest[presetGenre.id];
+    set({ worldDrafts: rest });
+  };
   const template =
     genreTemplateById(draft.genreTemplateId) ||
     (isCustom ? null : templateWall[0]);
@@ -2085,9 +2115,9 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
         : startPointByName(nextGenre, draft.startPointName))
       : null;
     if (kept) {
-      if (draft.startPointHook !== kept.hook) set({ startPointHook: kept.hook });
-    } else if (draft.startPointName || draft.startPointHook) {
-      set({ startPointName: "", startPointHook: "" });
+      if (draft.startPointHook !== kept.hook || draft.startPointCustom) set({ startPointHook: kept.hook, startPointCustom: false });
+    } else if (draft.startPointName || draft.startPointHook || draft.startPointCustom) {
+      set({ startPointName: "", startPointHook: "", startPointCustom: false });
     }
     // Only the world switch matters here; the draft fields are read fresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2097,7 +2127,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
   // identity's default.
   const selectIdentity = (identityId) => {
     if (identityId === draft.originIdentityId) return;
-    set({ originIdentityId: identityId, startPointName: "", startPointHook: "" });
+    set({ originIdentityId: identityId, startPointName: "", startPointHook: "", startPointCustom: false });
   };
   // The random card's roll, shared with next(): draw any identity other
   // than the current one and land it (the spawn choice resets with it, so
@@ -2116,7 +2146,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     const rolledIdentity = pool[Math.floor(Math.random() * pool.length)] || ORIGIN_IDENTITIES[0];
     if (!rolledIdentity) return;
     if (isCustom) {
-      set({ originIdentityId: rolledIdentity.id, startPointName: "", startPointHook: "" });
+      set({ originIdentityId: rolledIdentity.id, startPointName: "", startPointHook: "", startPointCustom: false });
       return;
     }
     const points = spawnPointsForIdentity(spawnGenre, rolledIdentity.id);
@@ -2125,6 +2155,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       originIdentityId: rolledIdentity.id,
       startPointName: point ? point.name : "",
       startPointHook: point ? point.hook : "",
+      startPointCustom: false,
     });
   };
   // 题材与世界彻底解耦：题材屏只写分类，世界屏只写世界，两边互不跟随。
@@ -2219,6 +2250,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       originIdentityId: nextIdentity.id,
       startPointName: point ? point.name : "",
       startPointHook: point ? point.hook : "",
+      startPointCustom: false,
     });
     setPickedTemplate(true);
     setRolledPath(null);
@@ -2347,6 +2379,13 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       const violation = findSettingViolation(draft.customWorldSetting);
       if (violation) { setError(violation); return; }
     }
+    // REQ-59: an edited preset-world draft passes the same hard
+    // pre-check as a god-mode setting, at the same moment (leaving the
+    // world step), never while typing.
+    if (step === 2 && !isCustom && activeWorldDraft) {
+      const violation = findSettingViolation(activeWorldDraft.setting);
+      if (violation) { setError(violation); return; }
+    }
     // Leaving the world step with no world picked rolls one and lands it,
     // exactly like the identity step below: the default world on the draft
     // is not a choice, and silently keeping it would re-couple the world
@@ -2402,6 +2441,10 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     if (operation.current) return;
     if (isCustom) {
       const violation = findSettingViolation(draft.customWorldSetting);
+      if (violation) { setError(violation); setStep(2); return; }
+    }
+    if (!isCustom && activeWorldDraft) {
+      const violation = findSettingViolation(activeWorldDraft.setting);
       if (violation) { setError(violation); setStep(2); return; }
     }
     const controller = new AbortController();
@@ -2723,6 +2766,48 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                     </label>
                   </details>
                   <p className="god-ip-note">请勿直接使用他人作品或 IP 的设定——换上你自己的世界，故事才真正属于你。</p>
+                  {/* REQ-59 (progressive disclosure): a picked preset is an
+                      editable draft. The fold stays shut for readers who
+                      just want to start; opening it lets them rename the
+                      world and rewrite its setting text — the edited text
+                      is what the story config and the world bible are
+                      built from. Untouched, the preset's own text is the
+                      draft and nothing extra is asked. */}
+                  {worldChosen && (
+                    <details className="forge-more world-draft-fold">
+                      <summary>改一改这个世界（名字和设定都能改）</summary>
+                      <div className="world-draft-form">
+                        <label className="field-label">
+                          世界的名字
+                          <input
+                            maxLength={CUSTOM_WORLD_NAME_MAX}
+                            autoComplete="off"
+                            value={worldDraftName}
+                            onChange={(event) => setWorldDraft({ name: clipToUnits(event.target.value, 12) })}
+                          />
+                        </label>
+                        <label className="field-label">
+                          这个世界的设定
+                          <textarea
+                            className="god-setting"
+                            rows={5}
+                            maxLength={PRESET_WORLD_SETTING_MAX}
+                            value={worldDraftSetting}
+                            onChange={(event) => setWorldDraft({ setting: event.target.value })}
+                          />
+                        </label>
+                        <div className="god-setting-meta">
+                          <span className="field-hint">不改也行，现在这样就能开书。改过的名字和设定会成为这本书的世界依据。</span>
+                          <span className="da-count">{worldDraftSetting.length} / {PRESET_WORLD_SETTING_MAX}</span>
+                        </div>
+                        {activeWorldDraft && (
+                          <button type="button" className="small-link" onClick={clearWorldDraft}>
+                            恢复这个世界的预设原文
+                          </button>
+                        )}
+                      </div>
+                    </details>
+                  )}
                 </>
               )}
             </>
@@ -2815,7 +2900,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                     <>
                       <div className="spawn-grid" role="group" aria-label="出生点">
                         {spawnPoints.map((point, pointIndex) => {
-                          const deliberate = draft.startPointName === point.name;
+                          const deliberate = !draft.startPointCustom && draft.startPointName === point.name;
                           const isDefault = !draft.startPointName && pointIndex === 0;
                           return (
                             <button
@@ -2823,7 +2908,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                               key={point.name}
                               className={`spawn-card ${deliberate ? "active" : ""}`}
                               aria-pressed={deliberate}
-                              onClick={() => set({ startPointName: point.name, startPointHook: point.hook })}
+                              onClick={() => set({ startPointName: point.name, startPointHook: point.hook, startPointCustom: false })}
                             >
                               <span className="spawn-card-head">
                                 <b>{point.name}</b>
@@ -2837,6 +2922,49 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                         })}
                       </div>
                       <p className="field-hint">这里只列「{identity.name}」在{world.name}能落脚的地方。不点也行——就从标着「默认」的「{spawnPoints[0]?.name}」开始。</p>
+                      {/* REQ-59 (progressive disclosure): preset spawn
+                          points are options, not a cage — the creator may
+                          rename one or write their own, with the same
+                          free-form fields god mode uses. The flag is what
+                          the engine resolves by (startPointCustom). */}
+                      {draft.startPointCustom && draft.startPointName ? (
+                        <p className="field-hint spawn-custom-status">
+                          这一本从你写的「{draft.startPointName}」开始。
+                          <button type="button" className="small-link" onClick={() => set({ startPointName: "", startPointHook: "", startPointCustom: false })}>
+                            改用预设出生点
+                          </button>
+                        </p>
+                      ) : null}
+                      <details className="forge-more spawn-custom-fold">
+                        <summary>没有合心意的？自己写一个出生点</summary>
+                        <div className="spawn-form">
+                          <label className="field-label">
+                            出生点的名字
+                            <input
+                              maxLength={START_POINT_NAME_MAX}
+                              autoComplete="off"
+                              value={draft.startPointCustom ? (draft.startPointName || "") : ""}
+                              onChange={(event) => set(draft.startPointCustom
+                                ? { startPointName: event.target.value, startPointCustom: true }
+                                : { startPointName: event.target.value, startPointHook: "", startPointCustom: true })}
+                              placeholder="例如：醒来的地方——一张草席、一间值班室、一段舰桥"
+                            />
+                          </label>
+                          <label className="field-label">
+                            开局处境（选填）
+                            <input
+                              maxLength={START_POINT_HOOK_MAX}
+                              autoComplete="off"
+                              value={draft.startPointCustom ? (draft.startPointHook || "") : ""}
+                              onChange={(event) => set(draft.startPointCustom
+                                ? { startPointHook: event.target.value, startPointCustom: true }
+                                : { startPointName: "", startPointHook: event.target.value, startPointCustom: true })}
+                              placeholder="睁开眼时，正在发生什么"
+                            />
+                          </label>
+                          <p className="field-hint">写一个小而具体的地方——主角睁开眼时，就在那里。只管这一本，不会改掉预设。</p>
+                        </div>
+                      </details>
                     </>
                   )}
                 </div>
@@ -11410,6 +11538,12 @@ function App() {
   const generate = async (payload, { engine, signal }) => {
       const settingViolation = findSettingViolation(payload.customWorldSetting);
       if (settingViolation) throw new Error(settingViolation);
+      // REQ-59: an edited preset-world draft is creator text too — same
+      // hard pre-check before it can become a story.
+      const worldDraftViolation = payload.genreId && payload.genreId !== CUSTOM_GENRE_ID
+        ? findSettingViolation(payload.worldDrafts?.[payload.genreId]?.setting)
+        : null;
+      if (worldDraftViolation) throw new Error(worldDraftViolation);
       const signature = JSON.stringify([payload, engine]);
       if (opening.current?.signature !== signature) opening.current = { signature, story:
         createStory({
@@ -11420,10 +11554,12 @@ function App() {
           originIdentityId: payload.originIdentityId,
           customWorldName: payload.customWorldName,
           customWorldSetting: payload.customWorldSetting,
+          worldDrafts: payload.worldDrafts,
           bookTitle: payload.bookTitle,
           lorebook: payload.lorebook,
           startPointName: payload.startPointName,
           startPointHook: payload.startPointHook,
+          startPointCustom: payload.startPointCustom,
           name: payload.name,
           persona: payload.persona,
           avatarId: payload.avatarId,

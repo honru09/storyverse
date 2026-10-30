@@ -38,6 +38,7 @@ import {
   manualTagsOf,
   storyLengthModeOf,
   totalChaptersFor,
+  isLocalTemplateBible,
   worldBibleFor,
 } from './story-engine.js'
 import { avatarAppearanceText } from './avatar.js'
@@ -104,12 +105,11 @@ export function snapshotSourceViolation(story) {
   let bibleIsLocalTemplate = false
   try {
     const genre = genreFor(story.genreId || story.config?.genreId)
-    const template = worldBibleFor(genre, story.config)
-    const bible = story.worldBible || {}
-    bibleIsLocalTemplate = bible.premise === template.premise
-      && bible.endingAnchor === template.endingAnchor
-      && JSON.stringify(bible.rules || []) === JSON.stringify(template.rules || [])
-      && JSON.stringify(bible.outline || []) === JSON.stringify(template.outline || [])
+    // REQ-59: the local template composition changed (preset bibles are
+    // composed from the world's draft text now); bibles stamped by the
+    // retired composition still count as local-template — see
+    // isLocalTemplateBible in the engine.
+    bibleIsLocalTemplate = isLocalTemplateBible(genre, story.config, story.worldBible || {})
   } catch { bibleIsLocalTemplate = false }
   if (bibleIsLocalTemplate) return ''
   return '这条故事线缺少生成来源标记，正文来源无法确认，已拦下发布（避免把错误正文发到广场）。请在生成它的设备上重新打开这条线后再发布。'
@@ -354,8 +354,12 @@ export function plazaWorldIntroFor(detail, templateName = '') {
   // 青岚宗 book — so the description is only borrowed when the
   // resolved genre IS the book's stated genre; otherwise no
   // description is borrowed at all.
+  // REQ-59: and only while the book's world still carries the preset's
+  // own name. A creator who renamed/rewrote their world draft retired
+  // that catalogue text for their book — borrowing it back here would
+  // print the old fixed world under the new name.
   const ownGenre = typeof detail?.genreId === 'string' && detail.genreId ? genreFor(detail.genreId) : null
-  const worldDescription = !backgroundBody && ownGenre && ownGenre.id === detail.genreId
+  const worldDescription = !backgroundBody && ownGenre && ownGenre.id === detail.genreId && world === ownGenre.world
     ? (ownGenre.description || '').trim()
     : ''
   const background = `「${world}」——${templateName ? `${templateName}题材的世界` : '一个自成一体的世界'}。`
@@ -562,6 +566,9 @@ export function enterDraftFor(detail, { avatar, identityId = '', startPointName 
     seasonNumber: Number.isInteger(template.seasonNumber) ? template.seasonNumber : 1,
     customWorldName: template.customWorldName || '',
     customWorldSetting: template.customWorldSetting || '',
+    // REQ-59: the published world's final draft (renamed/rewritten
+    // preset) is the world the entrant enters.
+    worldDrafts: template.worldDrafts || {},
     originIdentityId: identityId || '',
     startPointName: startPointName || '',
     startPointHook: startPointHook || '',
