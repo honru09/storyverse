@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
-import { createHmac } from 'node:crypto'
+import { createHmac, randomBytes, scryptSync } from 'node:crypto'
 import { createServer } from '../server/index.js'
 import { createAuthService } from '../server/auth.js'
 import { createUsernameAuthService } from '../server/username-auth.js'
@@ -30,8 +30,24 @@ const authed = (token) => ({ ...ORIGIN, Authorization: `Bearer ${token}`, 'Conte
 
 const USAGE = { promptTokenCount: 600, candidatesTokenCount: 300, thoughtsTokenCount: 100, totalTokenCount: 1000 }
 
+/**
+ * REQ-69: reserved names (storyweave & look-alikes) can no longer be
+ * registered over HTTP, so the official account is provisioned
+ * directly in the identity store — the same posture as production,
+ * where the official account predates the registration block — and
+ * the fixture signs in through the normal login route.
+ */
+async function seedOfficialUser(identityStore) {
+  const salt = randomBytes(16).toString('hex')
+  const passwordHash = scryptSync('password-123', Buffer.from(salt, 'hex'), 64, { N: 16384, r: 8, p: 1 }).toString('hex')
+  await identityStore.putUser('storyweave', {
+    username: 'storyweave', uid: 'username:storyweave', salt, passwordHash, recoveryEmail: null, createdAt: Date.now(),
+  })
+}
+
 async function startBillingServer(t) {
   const identityStore = createMemoryIdentityStore()
+  await seedOfficialUser(identityStore)
   const mailer = { configured: false, sendCode: async () => {}, sendRecoveryCode: async () => {} }
   const usernameAuth = createUsernameAuthService({ env: { AUTH_ENABLED: 'true' }, store: identityStore, mailer, log: () => {} })
   const emailCode = createEmailCodeService({ env: {}, store: identityStore, mailer, log: () => {} })
@@ -91,6 +107,17 @@ async function register(base, username) {
   return token
 }
 
+/** The seeded official account (see seedOfficialUser), signed in via the login route. */
+async function loginOfficial(base) {
+  const response = await fetch(`${base}/api/auth/username/login`, {
+    method: 'POST', headers: { ...ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'storyweave', password: 'password-123' }),
+  })
+  assert.equal(response.status, 200, 'official login')
+  const { token } = await response.json()
+  return token
+}
+
 const post = (base, path, token, body) => fetch(`${base}${path}`, {
   method: 'POST', headers: token ? authed(token) : { ...ORIGIN, 'Content-Type': 'application/json' },
   body: JSON.stringify(body ?? {}),
@@ -126,7 +153,7 @@ test('scene classification and pre-generation inference read the request body on
 
 test('every generation lands a cost record with scene, tokens, price and coins settled', async (t) => {
   const { base, billingStore } = await startBillingServer(t)
-  const official = await register(base, 'storyweave')
+  const official = await loginOfficial(base)
   const token = await register(base, 'meter_reader')
   // One chapter exactly fills the fixture's free ceiling, so the
   // remaining generations in this test ride on a membership (higher
@@ -181,7 +208,7 @@ test('the daily ceiling blocks even with coins; only a legacy chapter credit car
 
 test('coins gate generation: a drained balance blocks, a coin pack refills', async (t) => {
   const { base, billingStore } = await startBillingServer(t)
-  const official = await register(base, 'storyweave')
+  const official = await loginOfficial(base)
   const token = await register(base, 'coin_reader')
   const uid = 'username:coin_reader'
   const story = { id: 'story-coins', kind: 'solo', readerIndex: 0, chapters: [] }
@@ -210,7 +237,7 @@ test('coins gate generation: a drained balance blocks, a coin pack refills', asy
 
 test('a legacy chapter credit pays inside the ceiling when the coin balance is empty', async (t) => {
   const { base, billingStore } = await startBillingServer(t)
-  const official = await register(base, 'storyweave')
+  const official = await loginOfficial(base)
   const token = await register(base, 'credit_inside')
   const uid = 'username:credit_inside'
   const story = { id: 'story-credit-inside', kind: 'solo', readerIndex: 0, chapters: [] }
@@ -240,7 +267,7 @@ test('a legacy chapter credit pays inside the ceiling when the coin balance is e
 
 test('membership raises the daily ceiling instead of spending credits', async (t) => {
   const { base } = await startBillingServer(t)
-  const official = await register(base, 'storyweave')
+  const official = await loginOfficial(base)
   const token = await register(base, 'member_reader')
   const story = { id: 'story-member', kind: 'solo', readerIndex: 0, chapters: [] }
 
@@ -264,7 +291,7 @@ test('membership raises the daily ceiling instead of spending credits', async (t
 
 test('codes are one-time, failures share one message, and the account is throttled', async (t) => {
   const { base } = await startBillingServer(t)
-  const official = await register(base, 'storyweave')
+  const official = await loginOfficial(base)
   const token = await register(base, 'code_reader')
   const code = await mint(base, official, 'pack-30')
 
@@ -295,7 +322,7 @@ test('codes are one-time, failures share one message, and the account is throttl
 
 test('coins paint past the daily caps for covers and portraits at the flat image price', async (t) => {
   const { base, billingStore } = await startBillingServer(t)
-  const official = await register(base, 'storyweave')
+  const official = await loginOfficial(base)
   const token = await register(base, 'image_reader')
   const uid = 'username:image_reader'
   const code = await mint(base, official, 'pack-6')

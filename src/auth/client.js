@@ -192,7 +192,12 @@ export function createAuthClient({ fetchImpl = globalThis.fetch, loadSdk = defau
 
   async function revokeSiteSession(session) {
     try {
-      await request('/api/auth/email/signout', { method: 'POST', headers: { Authorization: `Bearer ${session.token}` } })
+      // Each site channel revokes through its own endpoint: the
+      // username channel's sessions are only deletable by the
+      // username sign-out (REQ-69) — posting them to the email
+      // channel's route left them alive server-side.
+      const path = session.provider === 'username' ? '/api/auth/username/signout' : '/api/auth/email/signout'
+      await request(path, { method: 'POST', headers: { Authorization: `Bearer ${session.token}` } })
     } catch { /* revocation is best effort; the local copy is cleared regardless */ }
   }
 

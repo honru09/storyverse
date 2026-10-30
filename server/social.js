@@ -4,6 +4,7 @@ import { avatarAppearanceText, normalizeAvatarAbility } from '../src/avatar.js'
 import { CUSTOM_GENRE_ID } from '../src/story-engine.js'
 import { createSocialStore, pictureSourceFor, bannerSourceFor, friendshipKeyFor } from './social-store.js'
 import { emailCodeUid, normalizeEmailAddress, validEmailAddress } from './email-code.js'
+import { isReservedUsername } from './username-auth.js'
 import { createPlazaStore } from './plaza-store.js'
 import { createPlazaFeedStore } from './plaza-feed-store.js'
 import { createBookRatingsStore } from './book-ratings-store.js'
@@ -397,6 +398,11 @@ export function createSocialService({
 
   async function handleProblem(identity, handle) {
     if (!HANDLE_PATTERN.test(handle)) return HANDLE_INVALID_MESSAGE
+    // Reserved names (REQ-69) can never be claimed as a @handle
+    // either — a handle must not impersonate the official account.
+    // The account that legitimately owns such a login name keeps it:
+    // for a username account the handle IS the uid's name part.
+    if (isReservedUsername(handle) && identity.uid !== `username:${handle}`) return HANDLE_TAKEN_MESSAGE
     if (!backend) return null
     const owner = await backend.getUidByHandle(handle)
     if (owner && owner !== identity.uid) return HANDLE_TAKEN_MESSAGE

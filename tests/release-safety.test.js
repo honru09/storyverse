@@ -7,6 +7,9 @@ import { join } from 'node:path'
 import { createServer } from '../server/index.js'
 
 const configuredStatus = { configured: true, provider: 'vertex-ai', model: 'fixture-model', location: 'global' }
+// REQ-69: an anonymous /api/status answer is availability only —
+// provider, model and location are stripped server-side.
+const anonymousStatus = { configured: true }
 const pausedStatus = {
   configured: false,
   reason: 'generation-disabled',
@@ -125,7 +128,7 @@ for (const [label, env] of [
     const { base, post, calls } = await serve(t, { env })
     const status = await fetch(`${base}/api/status`)
     assert.equal(status.status, 200)
-    assert.deepEqual(await status.json(), configuredStatus)
+    assert.deepEqual(await status.json(), anonymousStatus)
     const response = await post()
     assert.equal(response.status, 200)
     assert.deepEqual(await response.json(), { fixture: true, index: 0 })
