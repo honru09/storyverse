@@ -61,15 +61,21 @@ test('REQ-26: functional copy survives the sweep', () => {
   for (const line of kept) assert.ok(main.includes(line), `functional copy kept: ${line.slice(0, 16)}…`)
 })
 
-test('REQ-21 (format fixed by §54 slots since DEVICE-FIX3): the store card is a fixed format', () => {
+test('REQ-21 (fixed format: §54 slots, reshaped by STORE-DESIGN v3): the store card is a fixed format', () => {
   assert.match(css, /\.store-book-card\{[^}]*display:flex;flex-direction:column;height:100%/)
   assert.match(css, /\.store-book-body\{[^}]*display:flex;flex-direction:column;flex:1/)
-  assert.match(css, /\.store-book-intro\{[^}]*min-height:41\.6px/)
-  assert.match(css, /\.store-chips-block\{[^}]*flex-direction:column/)
-  assert.match(css, /\.store-chip-row\{[^}]*height:22px/)
-  const card = main.slice(main.indexOf('function StoreBookCard'), main.indexOf('function StoreSection'))
-  // The intro slot always renders, empty or not.
-  assert.match(card, /<p className="store-book-intro">\{intro\}<\/p>/)
+  // STORE-DESIGN v3 (user rule 2026-10-30 16:10): the intro slot and
+  // the chip rows left the card; the fixed format is now the title /
+  // name / handle slots plus the foot-pinned meta block.
+  assert.match(css, /\.store-slot-title\{height:22px\}/)
+  assert.match(css, /\.store-slot-name\{height:22px/)
+  assert.match(css, /\.store-slot-handle\{height:17px/)
+  assert.match(css, /\.store-meta-block\{margin-top:auto/)
+  assert.ok(!css.includes('.store-book-intro{'), 'intro slot styles removed')
+  assert.ok(!css.includes('.store-chips-block{'), 'chip block styles removed')
+  const card = main.slice(main.indexOf('function StoreBookCard'), main.indexOf('function Store('))
+  assert.match(card, /className="store-slot store-slot-title"/)
+  assert.ok(!card.includes('store-book-intro'), 'the card renders no intro')
 })
 
 test('REQ-22: hero cluster, ratings panel and avatar frame breathe', () => {

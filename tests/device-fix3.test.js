@@ -95,14 +95,20 @@ test('§54 intro excerpt: whole when it fits, clause-bounded when it does not, n
   assert.ok(long.synopsis.startsWith(out), 'excerpt is a true prefix')
 })
 
-test('§54 slots: the store card body is fixed slots, and no slot ellipsizes', () => {
-  const card = main.slice(main.indexOf('function StoreBookCard'), main.indexOf('function StoreSection'))
-  for (const slot of ['store-slot-name', 'store-slot-handle', 'store-chips-block']) {
+test('§54 slots (STORE-DESIGN v3 form): the store card body is fixed slots, and no slot ellipsizes', () => {
+  const card = main.slice(main.indexOf('function StoreBookCard'), main.indexOf('function Store('))
+  for (const slot of ['store-slot-title', 'store-slot-name', 'store-slot-handle']) {
     assert.ok(card.includes(slot), `${slot} present`)
   }
-  assert.equal(card.split('store-slot-meta').length - 1, 3, 'length / rating / shares own one meta slot each')
-  assert.ok(card.includes('cardIntroExcerptFor(book)'), 'intro is the §54 excerpt')
-  assert.ok(card.includes('countTextFor(book.ratingCount)') && card.includes('countTextFor(book.shareCount)'), 'counts use the §54 format')
+  assert.equal(card.split('store-slot-meta').length - 1, 2, 'status+length / rating own one meta slot each')
+  // STORE-DESIGN v3 (user rules 2026-10-30 15:54 + 16:10): the intro
+  // and the chips no longer ride the card (detail page only), and the
+  // share count moved to the detail page with them.
+  assert.ok(!card.includes('store-chips-block'), 'chip rows are gone')
+  assert.ok(!card.includes('cardIntroExcerptFor(book)'), 'no intro excerpt on the card')
+  assert.ok(!card.includes('shareCount'), 'no share count on the card')
+  assert.ok(card.includes('countTextFor(book.ratingCount)'), 'rating count uses the §54 format')
+  assert.ok(card.includes('暂无评价'), 'an unrated book says so instead of leaving a void')
   assert.ok(!card.includes('store-book-byline'), 'the squeezed byline is gone')
   // The store body rules must not resurrect ellipsis anywhere.
   const bodyCss = css.slice(css.indexOf('.store-book-body{'), css.indexOf('.store-card-status{'))

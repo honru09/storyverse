@@ -197,7 +197,7 @@ test('SALT §53 rulings: profile exempt from glass, bottom nav near-solid', () =
   assert.ok(css.includes("html[data-shell-theme='aurora'] .page-profile .profile-store-card{background:var(--profile-card,var(--profile-panel))"), 'aurora profile store card exempt from glass')
 })
 
-test('AURORA-ALIGN (REQ-41): the §53 salt rules include aurora in scope, store card excluded', () => {
+test('AURORA-ALIGN (REQ-41): the §53 salt rules include aurora in scope; the store card wears the shared glass face in every theme', () => {
   // User order 2026-10-30 16:21 「极光也向黑白看齐」: every salt rule
   // family that defines the §53 look — capsule nav, frosted topbar
   // with inset highlight, section labels, glass card faces, glass
@@ -217,11 +217,13 @@ test('AURORA-ALIGN (REQ-41): the §53 salt rules include aurora in scope, store 
     // §53 ruling ③ structure, aurora values: detail scope denser.
     "html[data-shell-theme='aurora'] .page-plaza:has(> .detail-ambience){--glass-card-bg:rgba(16,30,64,.64);--glass-card-line:rgba(168,196,255,.32)}",
   ]) assert.ok(css.includes(pin), `aurora salt scope ${pin}`)
-  // The store-book-card glass shell stays salt-scoped: the store
-  // card is the store-design batch's surface (its final form rules),
-  // this batch only aligns the shared chrome around it.
-  assert.ok(css.includes("[data-shell-theme='black'] .store-book-card,html:not(.is-lite-gpu)[data-shell-theme='white'] .store-book-card{background:var(--glass-card-bg)"), 'store card glass shell still exists for salt themes')
-  assert.ok(!css.includes("[data-shell-theme='aurora'] .store-book-card{background:var(--glass-card-bg)"), 'store card glass shell not extended to aurora')
+  // STORE-DESIGN merge (post-REQ-41): the store card's glass face is
+  // now one unconditional rule — every theme wears it, aurora
+  // resolving the glass group through its REQ-41 values; the lite
+  // path falls back to the solid surface, never to a faceless card.
+  assert.ok(css.includes('.store-book-card{background:var(--glass-card-bg);border:1px solid var(--glass-card-line);border-radius:var(--glass-card-radius)'), 'store card glass shell exists as the shared rule')
+  assert.ok(css.includes('html:not(.is-lite-gpu) .store-book-card{backdrop-filter:var(--glass-card-blur)'), 'store card blur is GPU-gated only')
+  assert.ok(css.includes('html.is-lite-gpu .store-book-card{background:var(--surface-solid)}'), 'lite path keeps a solid face')
 })
 
 test('CONTRAST-FIX: page-level titles are pinned to the L1 ink, clearing 7:1 in black and white', () => {

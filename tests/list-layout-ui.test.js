@@ -102,17 +102,24 @@ test('store sorts ride the server: latest / hot / completed, heat is real engage
   assert.match(storeBlock, /GENRE_SHELVES/)
   assert.match(storeBlock, /className="store-search"/)
   assert.doesNotMatch(storeBlock, /万人在读|rankStoreBooks/)
-  assert.match(storeBlock, /book\.shareCount > 0/, 'the share count prints only when it is real')
+  // User rule 2026-10-30 15:54: the share count is detail-page data;
+  // the store card never prints it (热门 heat still counts it server-side).
+  assert.doesNotMatch(storeBlock, /book\.shareCount/, 'the card prints no share count')
 })
 
-test('store grid cards: status on the cover, title only on the cover, byline below (BOOKSTORE-PLAZA)', () => {
-  assert.match(storeBlock, /className="store-card-status"/)
-  assert.match(storeBlock, /plaza-cover-title is-\$\{plazaTitleTierFor\(book\.title\)\}/)
-  assert.match(storeBlock, /className="store-book-intro"/)
+test('store grid cards: bare cover, title heads the body, status in the footer (BOOKSTORE-PLAZA)', () => {
+  // User rules 2026-10-30 15:54 + 16:10 (STORE-DESIGN v2/v3): the
+  // cover carries nothing; the title is the body's first row; the
+  // status rides the footer line with the length; no intro, no chips.
+  assert.match(storeBlock, /className="store-slot store-slot-title"/)
+  assert.match(storeBlock, /className="store-book-title"/)
+  assert.match(storeBlock, /lengthLine/)
   assert.match(storeBlock, /className="store-slot store-slot-name"/)
-  assert.match(storeBlock, /plazaLengthLabel\(book\)/)
+  assert.doesNotMatch(storeBlock, /className="store-card-status"/)
+  assert.doesNotMatch(storeBlock, /plaza-cover-title/)
+  assert.doesNotMatch(storeBlock, /className="store-book-intro"/)
   assert.match(css, /\.store-grid\{display:grid/)
-  assert.match(css, /\.store-card-status\{position:absolute/)
+  assert.match(css, /\.store-meta-block\{margin-top:auto/)
 })
 
 test('filter chips follow the chip spec: accent text on tint when active', () => {

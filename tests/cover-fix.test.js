@@ -57,18 +57,28 @@ test('card byline is the author’s place: no avatar thumb, no avatar name, @ID 
   assert.ok(!card.includes('plaza-badge is-official'), 'the meta row no longer duplicates the official signal')
 })
 
-test('store card introduction comes from plazaCardIntroFor (synopsis → intro thread)', () => {
+test('store card carries no introduction: the intro lives on the detail page only (STORE-DESIGN v3)', () => {
   const card = slice(main, 'function StoreBookCard', 'function Store(')
-  // DEVICE-FIX3 §54: the card renders the clause-bounded excerpt of
-  // plazaCardIntroFor's text (cardIntroExcerptFor wraps it).
-  assert.match(card, /cardIntroExcerptFor\(book\)/)
-  assert.match(card, /className="store-book-intro"/)
+  // User rule 2026-10-30 16:10: lengths that cannot be budgeted
+  // (简介/标签) do not ride a list card — the intro slot is gone from
+  // the card. The synopsis thread (plazaCardIntroFor /
+  // cardIntroExcerptFor) still feeds the book detail page.
+  assert.ok(!card.includes('cardIntroExcerptFor'), 'the card renders no intro excerpt')
+  assert.ok(!card.includes('store-book-intro'), 'the intro slot is gone')
+  assert.ok(!card.includes('store-chips-block'), 'the chip rows are gone')
 })
 
-test('the title lives on the cover only: the store card body never repeats it', () => {
+test('the title heads the card body; the cover is bare art (STORE-DESIGN v2)', () => {
   const card = slice(main, 'function StoreBookCard', 'function Store(')
-  assert.match(card, /plaza-cover-title/)
-  assert.ok(!card.includes('<h3'), 'no second title line under the cover')
+  // User rule 2026-10-30 15:54: nothing rides the cover — no shade,
+  // no printed title, no status capsule. The title is the body's
+  // first row instead.
+  assert.match(card, /className="store-slot store-slot-title"/)
+  assert.match(card, /className="store-book-title"/)
+  assert.ok(!card.includes('plaza-cover-title'), 'no title printed on the cover')
+  assert.ok(!card.includes('plaza-cover-shade'), 'no shade over the cover')
+  assert.ok(!card.includes('store-card-status'), 'no status capsule on the cover')
+  assert.ok(!card.includes('<h3'), 'the title is a fitted span, not a heading line')
   assert.ok(!card.includes('book.avatar.name'), 'the avatar name never prints as a pseudo-title')
 })
 
