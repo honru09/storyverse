@@ -1,0 +1,53 @@
+{
+  "checks": [
+    {
+      "name": "profile: settings row carries no subtitle small",
+      "ok": true,
+      "detail": "{\"settingsSmall\":0,\"settingsText\":\"设置\",\"hasAvatarName\":true,\"stagePresent\":true}"
+    },
+    {
+      "name": "profile: avatar listed on my profile (REQ-58 chain)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "genre step: free-creation entry present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "world step: preset draft editor expanded",
+      "ok": true,
+      "detail": "{\"textareas\":1,\"bodyHasDraft\":true}"
+    },
+    {
+      "name": "merge picker: all four length choices render",
+      "ok": true,
+      "detail": "{\"labels\":[\"短篇 · 6 章\",\"一季 · 24 章\",\"长线 · 100 章\",\"无限连载\"],\"count\":\"已选 1 / 10 条，至少选 2 条\",\"activeLength\":[\"短篇 · 6 章\"]}"
+    },
+    {
+      "name": "merge picker: fallback preselect is short for finished sources",
+      "ok": true,
+      "detail": "[\"短篇 · 6 章\"]"
+    },
+    {
+      "name": "detail: readonly note exactly once",
+      "ok": true,
+      "detail": "{\"readonlyCount\":1,\"entryTop\":437.5,\"worldTop\":988.75,\"sourcesTop\":1445.171875,\"beatsTop\":1702.171875,\"ratingsTop\":1911.421875,\"sourcesRows\":2,\"synopsisTop\":686}"
+    },
+    {
+      "name": "detail: order entry < world < sources < beats < ratings",
+      "ok": true,
+      "detail": "{\"readonlyCount\":1,\"entryTop\":437.5,\"worldTop\":988.75,\"sourcesTop\":1445.171875,\"beatsTop\":1702.171875,\"ratingsTop\":1911.421875,\"sourcesRows\":2,\"synopsisTop\":686}"
+    },
+    {
+      "name": "detail: sources list both source books",
+      "ok": true,
+      "detail": "rows=2"
+    }
+  ],
+  "mergedBook": {
+    "id": "pub-48394e14-335",
+    "title": "合流：从灵田杂役开始登天 × 凌晨四点的长宁街"
+  }
+}
