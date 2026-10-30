@@ -110,8 +110,11 @@ test('§54 slots (STORE-DESIGN v3 form): the store card body is fixed slots, and
   assert.ok(card.includes('countTextFor(book.ratingCount)'), 'rating count uses the §54 format')
   assert.ok(card.includes('暂无评价'), 'an unrated book says so instead of leaving a void')
   assert.ok(!card.includes('store-book-byline'), 'the squeezed byline is gone')
-  // The store body rules must not resurrect ellipsis anywhere.
-  const bodyCss = css.slice(css.indexOf('.store-book-body{'), css.indexOf('.store-card-status{'))
+  // The store body rules must not resurrect ellipsis anywhere. The
+  // slice is bounded by the ratings section that follows the card
+  // block (the old '.store-card-status{' end anchor moved far away
+  // in the STORE-DESIGN merge and would swallow plaza rules).
+  const bodyCss = css.slice(css.indexOf('.store-book-body{'), css.indexOf('/* Book ratings (RATINGS)'))
   assert.ok(!/text-overflow:\s*ellipsis/.test(bodyCss), 'no text-overflow:ellipsis in the store card body')
   assert.ok(!/-webkit-line-clamp/.test(bodyCss), 'no line-clamp rescue in the store card body')
 })
