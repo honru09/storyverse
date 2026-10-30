@@ -10992,6 +10992,14 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
   };
   const [rules, setRules] = useState("bridge");
   const [bond, setBond] = useState("allies");
+  // 合流篇幅 (owner ruling 2026-10-30, UI landed at integration): the
+  // reader picks the fused line's length — 短篇 6 章 / 一季 24 章 /
+  // 长线 100 章 / 无限连载. Untouched, the combination table preselects
+  // (every source finished → short; any source still serialising →
+  // endless), exactly fusionProductModeFor; an explicit pick is passed
+  // to the engine as storyLengthMode and wins over the table.
+  const [lengthChoice, setLengthChoice] = useState(null);
+  const lengthMode = lengthChoice || fusionProductModeFor(selectedStories);
   const [mergedStory, setMergedStory] = useState(null);
   const [error, setError] = useState("");
   const started = Boolean(mergedStory);
@@ -11033,9 +11041,9 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
     setBusy(true);
     setError("");
     try {
-      const signature = JSON.stringify([selectedStories, rules, leadIndex, bond, engine]);
+      const signature = JSON.stringify([selectedStories, rules, leadIndex, bond, lengthMode, engine]);
       if (candidate.current?.signature !== signature) candidate.current = { signature, story: {
-        ...createMergedStory(selectedStories, { rules, lead: leadIndex, bond }),
+        ...createMergedStory(selectedStories, { rules, lead: leadIndex, bond, storyLengthMode: lengthMode }),
         mergeContext: selectedStories.map((story) => mergeSourceContext(story)),
       } };
       let next = candidate.current.story;
@@ -11243,14 +11251,45 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
                   彼此试探
                 </button>
               </div>
+              <span
+                className="field-label sw-merge-subtitle"
+                id="merge-length-label"
+              >
+                篇幅
+              </span>
+              <div
+                className="priority-options"
+                role="group"
+                aria-labelledby="merge-length-label"
+              >
+                {[
+                  ["short", "短篇 · 6 章"],
+                  ["season", "一季 · 24 章"],
+                  ["long", "长线 · 100 章"],
+                  ["endless", "无限连载"],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    aria-pressed={lengthMode === value}
+                    className={lengthMode === value ? "active" : ""}
+                    onClick={() => setLengthChoice(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </section>
           {!started && (
             <p className="merge-product-note">
-              {fusionProductModeFor(selectedStories) === "endless"
-                ? "有一条线还在连载中：融合出的新线会继承无限连载——没有预设终章，每 12 章一弧小升格，直到你亲手为它完结；各条原线未回收的伏笔，都会记到新线的账上。"
-                : "融合出的新线是一本 6 章的短篇，走完即止——只有连载中的无限长线参与时，新线才会继承无限连载。"}
+              {lengthMode === "endless"
+                ? "无限连载：没有预设终章，每 12 章一弧小升格，直到你亲手为它完结；各条原线未回收的伏笔，都会记到新线的账上。"
+                : lengthMode === "season"
+                  ? "一季 24 章：分 4 幕推进，走到季终收束全线。"
+                  : lengthMode === "long"
+                    ? "长线 100 章：分 4 弧推进，弧末是大节点。"
+                    : "短篇 6 章：走完即止。"}
             </p>
           )}
           {!started && (
