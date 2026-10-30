@@ -41,4 +41,6 @@
 
 ## 推送
 
-（推送后回填：推前 fetch 复核 origin/main 仍为 c3cd883；integrate-oct31 HEAD 推为 origin/main；回读远程哈希确认。）
+- 推前 fetch 复核：origin/main 仍为 `c3cd88384d29093cb3975f8489305ccd89053239`，与开工基线一致。
+- `git push origin HEAD:main` 成功：`c3cd883..8267d22`，回读 origin/main = `8267d22087b502c923675cf279465b9cc285aa5a`（含四合并 + 复核修复 + 本笔记首版）。
+- 本节回填以一个收尾提交随后推送，最终 main 哈希以回读为准（见回报）。
