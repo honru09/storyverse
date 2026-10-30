@@ -659,6 +659,7 @@ select{appearance:auto}
 .store-heading h1,.merge-heading h1{margin:0;font-size:clamp(2rem,7vw,2.5rem);font-weight:800;letter-spacing:-.02em;color:var(--ink)}
 .store-heading h1{font-size:var(--type-page-tab);font-weight:700;letter-spacing:0}
 .store-toolbar{margin-top:24px}
+.store-divisions{margin-top:14px}
 .store-filters{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
 .store-filters::-webkit-scrollbar{display:none}
 .store-filters button{flex-shrink:0;min-height:40px;padding:8px 15px;border:1px solid transparent;border-radius:999px;background:rgba(148,178,255,.10);color:var(--ink);font-size:var(--type-chip);font-weight:500;position:relative;overflow:hidden;transition:transform var(--dur-press) var(--ease-press),background-color var(--dur-state) var(--ease-out),color var(--dur-state) var(--ease-out),border-color var(--dur-state) var(--ease-out)}

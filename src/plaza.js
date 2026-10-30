@@ -12,9 +12,11 @@
 //   publication marked 连载中 whose content follows the line as new
 //   chapters land, flipping to 完结 when the owner finishes it by hand —
 //   but never at zero chapters. Short lines never publish. A fused
-//   （合流） line publishes only when the fusion itself inherited endless
-//   mode (FUSION2) — it then follows the endless rule exactly; a short
-//   fused line never publishes.
+//   （合流） line whose fusion inherited endless mode follows the
+//   endless rule exactly; a finite fused line (short / season / long /
+//   custom) publishes once it is complete (owner ruling 2026-10-30,
+//   superseding the FUSION2 never-publish rule for finished fused
+//   lines).
 // - Entering a line never touches the original: it seeds a brand-new local
 //   story from the publication's sanitized world template, with the
 //   entrant's own avatar as protagonist, and records where it came from
@@ -128,11 +130,21 @@ export function plazaGateFor(story) {
     }
     return { publishable: true, reason: '', lineStatus: isManuallyFinished(story) ? 'finished' : 'serializing' }
   }
-  // A short fused line never publishes. A fused line that inherited
-  // endless mode falls through to the ordinary endless rule below (the
-  // avatar check and the ≥1-chapter floor included).
+  // Fused lines (owner ruling 2026-10-30: a FINISHED finite fused
+  // line now publishes — this supersedes the FUSION2 never-publish
+  // rule for completed lines, at every finite length the fusion may
+  // have chosen: short / season / long / custom). A fused line in
+  // endless mode falls through to the ordinary endless rule below
+  // (the avatar check and the ≥1-chapter floor included). A finite
+  // fused line's cast is fixed at the merge and both sources were
+  // avatar-walked, so completion is its only gate: complete publishes
+  // as finished; anything less stays refused, with a
+  // 合流-identifiable reason.
   if (story.kind === 'merged' && storyLengthModeOf(story) !== 'endless') {
-    return { publishable: false, reason: '合流故事不能发布到广场。', lineStatus: 'finished' }
+    if (!isStoryComplete(story)) {
+      return { publishable: false, reason: '合流故事还没走完，完结后才能发布。', lineStatus: 'finished' }
+    }
+    return { publishable: true, reason: '', lineStatus: 'finished' }
   }
   if (typeof story.config?.avatarId !== 'string' || !story.config.avatarId) {
     // needsAvatar marks the ONE gate refusal with a remedy
@@ -668,9 +680,12 @@ async function plazaJson(response) {
  * shelves, honest rankings and search. `sort` is 'latest' | 'hot' |
  * 'complete', all computed from real fields server-side.
  */
-export async function fetchStoreBooks({ shelfId = '', sort = 'latest', q = '', limit = 50, fetchImpl = globalThis.fetch } = {}) {
+export async function fetchStoreBooks({ shelfId = '', kind = '', sort = 'latest', q = '', limit = 50, fetchImpl = globalThis.fetch } = {}) {
   const params = new URLSearchParams()
   if (shelfId) params.set('shelf', shelfId)
+  // First-level division （普通 / 合流）: only sent when the caller picks
+  // one — omitting it keeps the server's historical undivided list.
+  if (kind) params.set('kind', kind)
   if (sort && sort !== 'latest') params.set('sort', sort)
   if (q) params.set('q', q)
   if (limit) params.set('limit', String(limit))

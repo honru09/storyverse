@@ -16,6 +16,7 @@ import {
   createMergedStory,
   createStory,
   finishEndlessLine,
+  shelfForTemplate,
 } from '../src/story-engine.js'
 
 function tinyPng() {
@@ -316,16 +317,17 @@ test('publish rejects gated stories, another avatar’s line and red-line conten
   assert.equal(shortResponse.status, 400)
   assert.match((await shortResponse.json()).error, /一季、长线、自定义篇幅或无限连载/)
 
-  const merged = {
-    ...walkLocal(createMergedStory(
-      createStory({ genreId: 'mist', avatarId: avatar.id }),
-      createStory({ genreId: 'neon' }),
-    ), 6),
-    engine: 'gemini',
-  }
-  const mergedResponse = await publish(base, token, merged)
-  assert.equal(mergedResponse.status, 400)
-  assert.match((await mergedResponse.json()).error, /合流/)
+  const mergedSources = () => createMergedStory(
+    createStory({ genreId: 'mist', avatarId: avatar.id }),
+    createStory({ genreId: 'neon' }),
+  )
+  // An unfinished fused short is still refused at the gate.
+  const mergedRunning = { ...walkLocal(mergedSources(), 3), engine: 'gemini' }
+  const mergedRunningResponse = await publish(base, token, mergedRunning)
+  assert.equal(mergedRunningResponse.status, 400)
+  const mergedRunningError = (await mergedRunningResponse.json()).error
+  assert.match(mergedRunningError, /合流/)
+  assert.match(mergedRunningError, /还没走完/)
 
   const redLine = completedLine(avatar.id, { redLine: true })
   const redLineResponse = await publish(base, token, redLine)
@@ -335,6 +337,73 @@ test('publish rejects gated stories, another avatar’s line and red-line conten
   assert.equal((await plazaStore.listPublications()).length, 0, 'no rejected publish left a record behind')
   const feed = (await (await fetch(`${base}/api/store`)).json()).books
   assert.deepEqual(feed, [])
+})
+
+test('publish accepts a completed fused short line (owner ruling 2026-10-30)', async (t) => {
+  const { base, plazaStore } = await startPlazaServer(t)
+  const token = await register(base, 'plaza_author_merged')
+  const avatar = await makeAvatar(base, token)
+
+  const merged = {
+    ...walkLocal(createMergedStory(
+      createStory({ genreId: 'mist', avatarId: avatar.id }),
+      createStory({ genreId: 'neon' }),
+    ), 6),
+    engine: 'gemini',
+  }
+  const response = await publish(base, token, merged)
+  assert.equal(response.status, 200)
+  const { publication: book } = await response.json()
+  assert.equal(book.chapterCount, 6)
+  assert.equal(book.lineStatus, 'finished')
+  const stored = await plazaStore.listPublications()
+  assert.equal(stored.length, 1, 'the completed fused line left exactly one record')
+  assert.equal(stored[0].merged, true)
+})
+
+test('bookstore divisions: fused and ordinary books never mix, families apply within each (owner ruling 2026-10-30 23:11)', async (t) => {
+  const { base } = await startPlazaServer(t)
+  const token = await register(base, 'plaza_fusion_author')
+  const avatar = await makeAvatar(base, token)
+
+  // One ordinary book and one fused book whose lead template sits in
+  // the SAME genre family （玄幻修真）: only the division tells them
+  // apart, which is exactly the separation the ruling demands.
+  const ordinaryResponse = await publish(base, token, completedLine(avatar.id))
+  assert.equal(ordinaryResponse.status, 200)
+  const { publication: ordinary } = await ordinaryResponse.json()
+
+  const merged = {
+    ...walkLocal(createMergedStory(
+      createStory({ genreId: 'cultivation', genreTemplateId: 'xuanhuan', avatarId: avatar.id }),
+      createStory({ genreId: 'city', genreTemplateId: 'urban' }),
+    ), 6),
+    engine: 'gemini',
+  }
+  const mergedResponse = await publish(base, token, merged)
+  assert.equal(mergedResponse.status, 200)
+  const { publication: fused } = await mergedResponse.json()
+
+  const familyId = shelfForTemplate(fused.genreTemplateId)?.id
+  assert.ok(familyId, 'the fused book still derives a genre family')
+  assert.equal(fused.shelfId, familyId, 'inside its division the fused book files under its lead family')
+  assert.equal(ordinary.shelfId, familyId, 'both books share one family — the division is the only separator')
+
+  const ids = async (query) => (await (await fetch(`${base}/api/store${query}`)).json()).books.map((item) => item.id)
+  // Fusion division: the fused book is there, with and without its family.
+  assert.ok((await ids('?kind=fusion')).includes(fused.id), 'fusion 全部 lists the fused book')
+  assert.ok((await ids(`?kind=fusion&shelf=${familyId}`)).includes(fused.id), 'fusion + its family lists the fused book')
+  assert.ok(!(await ids('?kind=fusion')).includes(ordinary.id), 'fusion 全部 never lists an ordinary book')
+  assert.ok(!(await ids(`?kind=fusion&shelf=${familyId}`)).includes(ordinary.id), 'fusion + family never lists an ordinary book')
+  // Normal division: mirror image — the fused book is nowhere inside it.
+  assert.ok((await ids('?kind=normal')).includes(ordinary.id), 'normal 全部 lists the ordinary book')
+  assert.ok((await ids(`?kind=normal&shelf=${familyId}`)).includes(ordinary.id), 'normal + its family lists the ordinary book')
+  assert.ok(!(await ids('?kind=normal')).includes(fused.id), 'normal 全部 never lists a fused book')
+  assert.ok(!(await ids(`?kind=normal&shelf=${familyId}`)).includes(fused.id), 'normal + family never lists a fused book')
+  // No division asked: the historical undivided catalogue (back-compat).
+  assert.ok((await ids('')).includes(fused.id), 'undivided list still carries the fused book')
+  assert.ok((await ids('')).includes(ordinary.id), 'undivided list still carries the ordinary book')
+  assert.ok((await ids(`?shelf=${familyId}`)).includes(fused.id), 'family-only filtering is unchanged for legacy callers')
 })
 
 test('publish stops a story whose real prose lost its engine mark — never scaffold in its place (DESIGN §27)', async (t) => {

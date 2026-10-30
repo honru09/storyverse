@@ -5771,6 +5771,7 @@ const STORE_SORTS = [
  * one tap away in the heading.
  */
 function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
+  const [kind, setKind] = useState("normal");
   const [shelf, setShelf] = useState("");
   const [sort, setSort] = useState("latest");
   const [query, setQuery] = useState("");
@@ -5801,11 +5802,11 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
   useEffect(() => {
     let live = true;
     setError("");
-    fetchStoreBooks({ shelfId: shelf, sort, q: debouncedQuery, limit: 60 })
+    fetchStoreBooks({ shelfId: shelf, kind, sort, q: debouncedQuery, limit: 60 })
       .then((result) => { if (live) setData(result); })
       .catch(() => { if (live) { setData({ books: [], total: 0 }); setError("书城暂时没能打开，请稍后再试。"); } });
     return () => { live = false; };
-  }, [shelf, sort, debouncedQuery, retry]);
+  }, [shelf, kind, sort, debouncedQuery, retry]);
 
   const books = data?.books || [];
   const searching = debouncedQuery.length > 0;
@@ -5838,6 +5839,26 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
             <Icon name="x" size={15} />
           </button>
         )}
+      </div>
+
+      {/* First-level division （普通 / 合流）: two separate catalogues,
+          each with its own family shelves below — a fused book never
+          appears under 普通， an ordinary book never under 合流. */}
+      <div className="store-filters store-divisions" role="group" aria-label="书城大分类">
+        {[
+          { id: "normal", label: "普通" },
+          { id: "fusion", label: "合流" },
+        ].map((division) => (
+          <button
+            type="button"
+            key={division.id}
+            className={kind === division.id ? "active" : ""}
+            aria-pressed={kind === division.id}
+            onClick={() => { setKind(division.id); setShelf(""); }}
+          >
+            {division.label}
+          </button>
+        ))}
       </div>
 
       <div className="store-toolbar">

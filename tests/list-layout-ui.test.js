@@ -95,7 +95,7 @@ test('store sorts ride the server: latest / hot / completed, heat is real engage
   // The shelf is the server's catalogue now: family shelves, a title
   // search and three sorts — 热门 counts real shares and post likes
   // server-side; the client never ranks or invents heat locally.
-  assert.match(storeBlock, /fetchStoreBooks\(\{ shelfId: shelf, sort, q: debouncedQuery, limit: 60 \}\)/)
+  assert.match(storeBlock, /fetchStoreBooks\(\{ shelfId: shelf, kind, sort, q: debouncedQuery, limit: 60 \}\)/)
   assert.match(storeBlock, /label: "最新上架"/)
   assert.match(storeBlock, /label: "热门"/)
   assert.match(storeBlock, /label: "完本"/)

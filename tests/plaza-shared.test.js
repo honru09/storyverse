@@ -59,7 +59,7 @@ test('plaza gate accepts a finished avatar season line', () => {
   assert.equal(gate.reason, '')
 })
 
-test('plaza gate rejects unfinished, avatar-less, short and merged lines', () => {
+test('plaza gate rejects unfinished, avatar-less and short lines; a fused short gates on completion', () => {
   const unfinished = walkLocal(createStory({
     genreId: 'cultivation', genreTemplateId: 'xianxia', storyLengthMode: 'season', avatarId: AVATAR_ID,
   }), 5)
@@ -76,12 +76,22 @@ test('plaza gate rejects unfinished, avatar-less, short and merged lines', () =>
   assert.equal(plazaGateFor(short).publishable, false)
   assert.match(plazaGateFor(short).reason, /一季、长线、自定义篇幅或无限连载/)
 
-  const merged = walkLocal(createMergedStory(
+  const mergedSources = () => createMergedStory(
     createStory({ genreId: 'mist', avatarId: AVATAR_ID }),
     createStory({ genreId: 'neon' }),
-  ), 6)
-  assert.equal(plazaGateFor(merged).publishable, false)
-  assert.match(plazaGateFor(merged).reason, /合流/)
+  )
+  // An unfinished fused short is still refused, with a 合流 reason.
+  const mergedRunning = walkLocal(mergedSources(), 3)
+  assert.equal(plazaGateFor(mergedRunning).publishable, false)
+  assert.match(plazaGateFor(mergedRunning).reason, /合流/)
+  assert.match(plazaGateFor(mergedRunning).reason, /还没走完/)
+  // A completed fused short (6/6) publishes as a finished line
+  // (owner ruling 2026-10-30).
+  const mergedDone = walkLocal(mergedSources(), 6)
+  const mergedGate = plazaGateFor(mergedDone)
+  assert.equal(mergedGate.publishable, true)
+  assert.equal(mergedGate.reason, '')
+  assert.equal(mergedGate.lineStatus, 'finished')
 })
 
 test('an avatar-less line can take an avatar in and then passes the gate (FINAL-FIX R-06)', () => {
