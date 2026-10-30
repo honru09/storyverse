@@ -61,13 +61,12 @@ test('REQ-26: functional copy survives the sweep', () => {
   for (const line of kept) assert.ok(main.includes(line), `functional copy kept: ${line.slice(0, 16)}…`)
 })
 
-test('REQ-21: the store card is a fixed format', () => {
+test('REQ-21 (format fixed by §54 slots since DEVICE-FIX3): the store card is a fixed format', () => {
   assert.match(css, /\.store-book-card\{[^}]*display:flex;flex-direction:column;height:100%/)
   assert.match(css, /\.store-book-body\{[^}]*display:flex;flex-direction:column;flex:1/)
-  assert.match(css, /\.store-book-byline\{[^}]*flex-wrap:nowrap/)
-  assert.match(css, /\.store-book-intro\{[^}]*min-height:41\.6px[^}]*-webkit-line-clamp:2/)
-  assert.match(css, /\.store-book-chips\{[^}]*min-height:28px/)
-  assert.match(css, /\.store-book-meta\{[^}]*margin-top:auto/)
+  assert.match(css, /\.store-book-intro\{[^}]*min-height:41\.6px/)
+  assert.match(css, /\.store-chips-block\{[^}]*flex-direction:column/)
+  assert.match(css, /\.store-chip-row\{[^}]*height:22px/)
   const card = main.slice(main.indexOf('function StoreBookCard'), main.indexOf('function StoreSection'))
   // The intro slot always renders, empty or not.
   assert.match(card, /<p className="store-book-intro">\{intro\}<\/p>/)

@@ -47,16 +47,21 @@ test('card byline is the author’s place: no avatar thumb, no avatar name, @ID 
   assert.ok(!card.includes('plaza-avatar-row'), 'the old capsule row is gone')
   assert.ok(!card.includes('plaza-lead-appearance'), 'the appearance line is gone')
   assert.ok(!card.includes('publication.avatar?.appearance'), 'the card never reads the attribute string')
-  assert.match(card, /className="plaza-byline store-book-byline"/)
-  assert.match(card, /book\.authorName/, 'byline shows the author, not the avatar')
-  assert.match(card, /book\.authorHandle/, 'byline carries the author @ID')
-  assert.match(card, /plaza-byline-official/, 'official accounts carry the official mark in the byline')
+  // DEVICE-FIX3 §54: the byline became two fixed slots (name line,
+  // handle line) — the author signals live in the slots now.
+  assert.match(card, /className="store-slot store-slot-name"/)
+  assert.match(card, /className="store-slot store-slot-handle"/)
+  assert.match(card, /book\.authorName/, 'name slot shows the author, not the avatar')
+  assert.match(card, /book\.authorHandle/, 'handle slot carries the author @ID')
+  assert.match(card, /plaza-byline-official/, 'official accounts carry the official mark in the name slot')
   assert.ok(!card.includes('plaza-badge is-official'), 'the meta row no longer duplicates the official signal')
 })
 
 test('store card introduction comes from plazaCardIntroFor (synopsis → intro thread)', () => {
   const card = slice(main, 'function StoreBookCard', 'function Store(')
-  assert.match(card, /plazaCardIntroFor\(book\)/)
+  // DEVICE-FIX3 §54: the card renders the clause-bounded excerpt of
+  // plazaCardIntroFor's text (cardIntroExcerptFor wraps it).
+  assert.match(card, /cardIntroExcerptFor\(book\)/)
   assert.match(card, /className="store-book-intro"/)
 })
 

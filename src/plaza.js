@@ -383,6 +383,81 @@ export function plazaCardIntroFor(detail) {
     .trim()
 }
 
+/* ————————————————————————————————————————————————————————————————
+ * DEVICE-FIX3 §54: card text budgets. The rule the owner set is
+ * spec-first — every string a card can show has a budget fixed by
+ * its longest reachable form, the layout is built so the budget
+ * always fits whole, and over-long input is capped where it is
+ * written. Nothing on a card may be rescued by an ellipsis.
+ * Budgets are counted in wide units: a CJK / fullwidth glyph is 2
+ * units, anything else 1 (a unit ≈ half an em at the slot's size).
+ * ———————————————————————————————————————————————————————————————— */
+
+/** Wide-unit width of a string (CJK/fullwidth = 2, else 1). */
+export function textUnitsFor(value) {
+  let units = 0
+  for (const ch of String(value ?? '')) {
+    units += /[ᄀ-ᅟ⺀-꓏가-힣豈-﷏︰-﹯＀-｠￠-￦]/.test(ch) ? 2 : 1
+  }
+  return units
+}
+
+/** Longest whole-character prefix within a wide-unit budget. Never splits a character, never adds an ellipsis. */
+export function clipToUnits(value, budget) {
+  const text = String(value ?? '')
+  let units = 0
+  let out = ''
+  for (const ch of text) {
+    const next = units + (/[ᄀ-ᅟ⺀-꓏가-힣豈-﷏︰-﹯＀-｠￠-￦]/.test(ch) ? 2 : 1)
+    if (next > budget) break
+    units = next
+    out += ch
+  }
+  return out
+}
+
+/** §54 count format: plain digits below 10k, 万 with at most one decimal at and above it ('1.2万', '12万'). */
+export function countTextFor(count) {
+  const n = Number.isInteger(count) && count > 0 ? count : 0
+  if (n < 10000) return String(n)
+  const wan = n / 10000
+  return `${Number.isInteger(wan) ? wan : wan.toFixed(1)}万`
+}
+
+const SENTENCE_BREAKS = '。；！？.;!?'
+const CLAUSE_BREAKS = '，,'
+
+/**
+ * The store card's intro slot (§54): the intro text, whole, when it
+ * fits the budget (40 units = the slot's two lines at the narrowest
+ * supported card width, 20 units per line at 13px in a 132px slot);
+ * otherwise the longest prefix inside the budget that ends at a
+ * sentence break (。；！？), or failing that at a comma — a complete
+ * statement, never a mid-word cut and never an ellipsis. Colons and
+ * enumeration commas never terminate an excerpt: '摆渡人雾生的手记：'
+ * alone in the slot reads as a fragment, which is worse than the
+ * documented fallback — a whole-character clip at the budget (no
+ * partial glyph, no ellipsis) for texts with no usable break.
+ */
+export function cardIntroExcerptFor(detail, budgetUnits = 40) {
+  const full = plazaCardIntroFor(detail)
+  if (!full) return ''
+  if (textUnitsFor(full) <= budgetUnits) return full
+  let sentenceBest = ''
+  let clauseBest = ''
+  let units = 0
+  let current = ''
+  for (const ch of full) {
+    const next = units + (/[ᄀ-ᅟ⺀-꓏가-힣︰-﹯＀-｠￠-￦]/.test(ch) ? 2 : 1)
+    if (next > budgetUnits) break
+    units = next
+    current += ch
+    if (SENTENCE_BREAKS.includes(ch)) sentenceBest = current
+    else if (CLAUSE_BREAKS.includes(ch)) clauseBest = current
+  }
+  return sentenceBest || clauseBest || clipToUnits(full, budgetUnits)
+}
+
 /** The line's publication status: a running endless line serialises; everything else is finished. */
 export function plazaLineStatusFor(source) {
   if (source?.lineStatus === 'serializing' || source?.lineStatus === 'finished') return source.lineStatus

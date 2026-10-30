@@ -109,7 +109,7 @@ test('store grid cards: status on the cover, title only on the cover, byline bel
   assert.match(storeBlock, /className="store-card-status"/)
   assert.match(storeBlock, /plaza-cover-title is-\$\{plazaTitleTierFor\(book\.title\)\}/)
   assert.match(storeBlock, /className="store-book-intro"/)
-  assert.match(storeBlock, /className="plaza-byline store-book-byline"/)
+  assert.match(storeBlock, /className="store-slot store-slot-name"/)
   assert.match(storeBlock, /plazaLengthLabel\(book\)/)
   assert.match(css, /\.store-grid\{display:grid/)
   assert.match(css, /\.store-card-status\{position:absolute/)

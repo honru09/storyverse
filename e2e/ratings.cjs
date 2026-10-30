@@ -177,7 +177,10 @@ async function main() {
     const card = page.locator('.store-book-card', { hasText: BOOK_TITLE });
     await waitFor(async () => (await card.count()) === 1, 'back on the shelf');
     await waitFor(async () => {
-      const text = await card.locator('.plaza-meta').innerText().catch(() => '');
+      // DEVICE-FIX3 §54: the rating lives in its own fixed slot now
+      // (one of three .store-slot-meta slots), not the old shared
+      // .plaza-meta row — read all slots and join them.
+      const text = await card.locator('.store-slot-meta').allInnerTexts().then((parts) => parts.join(' ')).catch(() => '');
       return text.includes('★ 5.0');
     }, 'the card shows the average');
     await shot(page, '02-store-card.png');

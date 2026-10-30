@@ -73,6 +73,9 @@ import {
   fetchPostComments,
   fetchStoreBooks,
   plazaCardIntroFor,
+  cardIntroExcerptFor,
+  clipToUnits,
+  countTextFor,
   plazaTitleTierFor,
   plazaGateFor,
   bringAvatarIntoStory,
@@ -2662,7 +2665,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                       maxLength={CUSTOM_WORLD_NAME_MAX}
                       autoComplete="off"
                       value={draft.customWorldName || ""}
-                      onChange={(event) => set({ customWorldName: event.target.value })}
+                      onChange={(event) => set({ customWorldName: clipToUnits(event.target.value, 12) })}
                       placeholder="给你的世界起个名字"
                     />
                   </label>
@@ -5507,7 +5510,10 @@ function Reader({
 function StoreBookCard({ book, onOpen }) {
   const genre = genreById[book.genreId] || GENRES[0];
   const templateName = plazaTemplateNameFor(book) || genre.label;
-  const intro = plazaCardIntroFor(book);
+  // DEVICE-FIX3 §54: the intro slot shows the clause-bounded excerpt
+  // (a complete statement inside the slot's two lines), never the raw
+  // synopsis rescued by a line-clamp ellipsis.
+  const intro = cardIntroExcerptFor(book);
   const authorHandle = typeof book.authorHandle === "string" ? book.authorHandle.trim() : "";
   const showHandle = Boolean(authorHandle)
     && authorHandle.toLowerCase() !== String(book.authorName || "").toLowerCase();
@@ -5528,33 +5534,53 @@ function StoreBookCard({ book, onOpen }) {
         <span className="store-card-status">{plazaLineStatusFor(book) === "serializing" ? "连载中" : "已完结"}</span>
       </button>
       <div className="store-book-body">
-        {/* DEVICE-FIX REQ-21: every body row owns a fixed slot — the
-            byline never wraps, the intro always renders its 2-line
-            slot (empty when the book has none), chips and meta always
-            occupy their line — so two cards in a row share every
-            baseline. */}
-        <div className="plaza-byline store-book-byline">
-          <span className="plaza-byline-label">作者</span>
-          <span className="plaza-byline-name">{book.authorName}</span>
-          {showHandle && <span className="plaza-byline-handle">@{authorHandle}</span>}
+        {/* DEVICE-FIX3 (REQ-37, DESIGN §54): fixed slots, spec-first.
+            Every information item owns a slot sized by its budget —
+            name (18 units; the official badge spends from the same
+            line) on its own line, the
+            handle (≤20 chars by the username pattern) on its own
+            line, the intro excerpt in its 2-line slot, both chips on
+            one line, then one meta line each for length / rating /
+            shares. Slots render at full height whether or not their
+            item exists, so a row of cards shares every baseline and
+            no item ever competes with another for width. Nothing in
+            this body ellipsizes: over-budget legacy strings are
+            whole-character clipped by clipToUnits as a safety net,
+            and new input is capped at the source (§54). */}
+        <div className="store-slot store-slot-name">
+          {/* §54: the name LINE budget is 18 units; the official
+              badge (≈6 units measured) is spent from the same line,
+              so an official name renders at most 12 units here. */}
+          <span className="store-author-name">{clipToUnits(book.authorName, book.official ? 12 : 18)}</span>
           {book.official && <span className="plaza-byline-official">官方</span>}
         </div>
-        <p className="store-book-intro">{intro}</p>
-        <div className="plaza-chips store-book-chips">
-          <span className="plaza-chip">{book.manual ? (shelfById(book.shelfId)?.name || "作者手写") : templateName}</span>
-          {showWorld && (
-            <>
-              <span className="plaza-chip-x" aria-hidden="true">·</span>
-              <span className="plaza-chip">{book.worldName}</span>
-            </>
-          )}
+        <div className="store-slot store-slot-handle">
+          {showHandle ? <span>@{authorHandle}</span> : null}
         </div>
-        <div className="plaza-meta store-book-meta">
+        <p className="store-book-intro">{intro}</p>
+        {/* §54: template and world each own a chip ROW — measured,
+            the two chips side by side (fixed chip padding ×2 + both
+            texts at full budget) exceed the narrowest card slot, so
+            the spec gives each its own line instead of shrinking
+            either text. */}
+        <div className="store-chips-block">
+          <div className="store-chip-row">
+            <span className="plaza-chip">{book.manual ? (shelfById(book.shelfId)?.name || "作者手写") : templateName}</span>
+          </div>
+          <div className="store-chip-row">
+            {showWorld ? <span className="plaza-chip">{clipToUnits(book.worldName, 12)}</span> : null}
+          </div>
+        </div>
+        <div className="store-slot store-slot-meta">
           <span>{plazaLengthLabel(book)}</span>
-          {book.ratingCount > 0 && ratingAverageText(book) && (
-            <span className="store-card-rating">★ {ratingAverageText(book)} · {book.ratingCount} 条评价</span>
-          )}
-          {book.shareCount > 0 && <span>被分享 {book.shareCount} 次</span>}
+        </div>
+        <div className="store-slot store-slot-meta">
+          {book.ratingCount > 0 && ratingAverageText(book) ? (
+            <span className="store-card-rating">★ {ratingAverageText(book)} · {countTextFor(book.ratingCount)} 条评价</span>
+          ) : null}
+        </div>
+        <div className="store-slot store-slot-meta">
+          {book.shareCount > 0 ? <span>被分享 {countTextFor(book.shareCount)} 次</span> : null}
         </div>
       </div>
     </article>
@@ -6075,7 +6101,9 @@ function PlazaPostBookCard({ book, onOpenDetail, onReadLine, onEnter }) {
   }
   const genre = genreById[book.genreId] || GENRES[0];
   const templateName = plazaTemplateNameFor(book) || genre.label;
-  const intro = plazaCardIntroFor(book);
+  // DEVICE-FIX3 §54: the plaza book card shares the store card's
+  // intro spec — the clause-bounded excerpt, not the raw synopsis.
+  const intro = cardIntroExcerptFor(book);
   return (
     <div className="plaza-post-book">
       <button
@@ -7544,7 +7572,7 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
           <input
             value={displayName}
             maxLength={20}
-            onChange={(event) => setDisplayName(event.target.value)}
+            onChange={(event) => setDisplayName(clipToUnits(event.target.value, 18))}
             placeholder="给自己起个名字"
           />
         </label>

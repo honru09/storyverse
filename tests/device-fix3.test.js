@@ -1,0 +1,121 @@
+// DEVICE-FIX3 (REQ-35/36/37): guards for the avatar-stage verdict,
+// the aurora adaptation audit and the §54 card text spec. Evidence:
+// device-fix3-shots/ (real-portrait three-theme stage shots, the
+// slice reproduction, the aurora surface walk, the worst-case card
+// walk); write-up in DEVICE-FIX3.md.
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+
+import { textUnitsFor, clipToUnits, countTextFor, cardIntroExcerptFor } from '../src/plaza.js'
+
+const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
+const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
+const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8')
+const social = readFileSync(new URL('../server/social.js', import.meta.url), 'utf8')
+const design = readFileSync(new URL('../DESIGN.md', import.meta.url), 'utf8')
+
+const ruleBody = (selector) => {
+  const at = css.indexOf(selector)
+  assert.ok(at >= 0, `${selector} exists`)
+  return css.slice(at, css.indexOf('}', at))
+}
+
+/* ——— G1 (REQ-35): the stage itself was never the cropper ———————— */
+
+test('REQ-35: the stage still shows the whole figure (contain), in every theme', () => {
+  assert.match(ruleBody('.profile-stage-img{'), /object-fit:contain/)
+  // No theme-scoped rule may narrow the stage back to cover.
+  assert.ok(!css.includes("[data-shell-theme='aurora'] .profile-stage"), 'no aurora stage override')
+  assert.ok(!css.includes("[data-shell-theme='black'] .profile-stage img"), 'no black stage img override')
+})
+
+test('REQ-35: scroll landings park the profile sections below the sticky topbar', () => {
+  assert.match(ruleBody('.profile-sec{'), /scroll-margin-top:calc\(84px \+ env\(safe-area-inset-top\)\)/)
+  assert.match(ruleBody('.profile-stage{'), /scroll-margin-top:calc\(84px \+ env\(safe-area-inset-top\)\)/)
+})
+
+test('REQ-35: the service worker version moved, so installed clients retire v1 caches', () => {
+  assert.match(sw, /const VERSION = 'storyweave-v2'/)
+  assert.ok(!sw.includes("const VERSION = 'storyweave-v1'"), 'v1 is gone')
+})
+
+/* ——— G2 (REQ-36): aurora resolves the post-freeze detail tokens —— */
+
+test('REQ-36: the detail ambience stays a salt-scoped layer; aurora keeps its frozen detail look', () => {
+  // DEVICE-FIX3 audit finding, corrected on measurement: the §53
+  // ambience layer is display:none outside the salt themes (its
+  // display:block rule names black/white only), so the undefined
+  // --detail-amb-* tokens in aurora are inert — no bleed, no missing
+  // content; aurora's detail page is its pre-freeze design. The
+  // disposition is 冻结保留, pinned here so a future batch does not
+  // "fix" it by un-hiding a salt treatment inside the frozen theme.
+  const ambienceDisplay = ruleBody("html[data-shell-theme='black'] .detail-ambience,html[data-shell-theme='white'] .detail-ambience{")
+  assert.match(ambienceDisplay, /display:block/)
+  assert.ok(!css.includes("[data-shell-theme='aurora'] .detail-ambience{display:block"), 'aurora never un-hides the ambience')
+  const aurora = css.slice(css.indexOf(":root[data-shell-theme='aurora']"), css.indexOf(":root[data-shell-theme='black']"))
+  assert.ok(!aurora.includes('--detail-amb-'), 'aurora does not adopt the salt ambience tokens')
+  // The freeze itself is untouched: aurora's own values stand.
+  assert.match(aurora, /--bg:#060d1f/)
+  assert.match(aurora, /--nav-bg:rgba\(6,13,31,\.94\)/)
+})
+
+/* ——— G3 (REQ-37 / §54): spec-first card text ——————————————————— */
+
+test('§54 units: CJK counts 2, latin counts 1', () => {
+  assert.equal(textUnitsFor('织界官方'), 8)
+  assert.equal(textUnitsFor('regression_1029b'), 16)
+  assert.equal(textUnitsFor('疯狂的王兴润'), 12)
+  assert.equal(textUnitsFor('a汉b'), 4)
+  assert.equal(clipToUnits('疯狂的王兴润的奇妙大冒险世界', 12), '疯狂的王兴润')
+  assert.equal(clipToUnits('short', 20), 'short')
+})
+
+test('§54 counts: plain under 10k, 万 shorthand at and above it', () => {
+  assert.equal(countTextFor(0), '0')
+  assert.equal(countTextFor(9999), '9999')
+  assert.equal(countTextFor(10000), '1万')
+  assert.equal(countTextFor(12345), '1.2万')
+  assert.equal(countTextFor(123456), '12.3万')
+  assert.equal(countTextFor(200000), '20万')
+})
+
+test('§54 intro excerpt: whole when it fits, clause-bounded when it does not, never an ellipsis', () => {
+  const short = { synopsis: '短简介一句话。' }
+  assert.equal(cardIntroExcerptFor(short), '短简介一句话。')
+  const long = {
+    synopsis: '雾港的钟在午夜自己响起来，没有人敲它，听见的人都会忘记一件小事。第二天醒来，城里多了一扇昨天不存在的门，门后是海。守钟人说那是潮汐在数数，数错了，世界就要重来一遍，谁也不敢睡。',
+  }
+  const out = cardIntroExcerptFor(long)
+  assert.ok(textUnitsFor(out) <= 40, `excerpt fits the slot (${textUnitsFor(out)} units)`)
+  assert.ok(/[，。；！？、：]$/.test(out), 'excerpt ends at a clause boundary')
+  assert.ok(!out.includes('…') && !out.includes('...'), 'no ellipsis, ever')
+  assert.ok(long.synopsis.startsWith(out), 'excerpt is a true prefix')
+})
+
+test('§54 slots: the store card body is fixed slots, and no slot ellipsizes', () => {
+  const card = main.slice(main.indexOf('function StoreBookCard'), main.indexOf('function StoreSection'))
+  for (const slot of ['store-slot-name', 'store-slot-handle', 'store-chips-block']) {
+    assert.ok(card.includes(slot), `${slot} present`)
+  }
+  assert.equal(card.split('store-slot-meta').length - 1, 3, 'length / rating / shares own one meta slot each')
+  assert.ok(card.includes('cardIntroExcerptFor(book)'), 'intro is the §54 excerpt')
+  assert.ok(card.includes('countTextFor(book.ratingCount)') && card.includes('countTextFor(book.shareCount)'), 'counts use the §54 format')
+  assert.ok(!card.includes('store-book-byline'), 'the squeezed byline is gone')
+  // The store body rules must not resurrect ellipsis anywhere.
+  const bodyCss = css.slice(css.indexOf('.store-book-body{'), css.indexOf('.store-card-status{'))
+  assert.ok(!/text-overflow:\s*ellipsis/.test(bodyCss), 'no text-overflow:ellipsis in the store card body')
+  assert.ok(!/-webkit-line-clamp/.test(bodyCss), 'no line-clamp rescue in the store card body')
+})
+
+test('§54 source caps: display name is rejected over 18 units at the write path', () => {
+  assert.match(social, /textUnitsOf\(name\) > 18/)
+  assert.match(main, /setDisplayName\(clipToUnits\(event\.target\.value, 18\)\)/)
+  assert.match(main, /customWorldName: clipToUnits\(event\.target\.value, 12\)/)
+})
+
+test('§54: the spec lives in DESIGN.md', () => {
+  assert.match(design, /## §54 卡面文字规格/)
+  assert.match(design, /countTextFor/)
+  assert.match(design, /cardIntroExcerptFor/)
+})

@@ -12,7 +12,12 @@
  * - GET /api/library and the public plaza reads: network-first,
  *   falling back to the last good copy. Only 200 responses are stored.
  */
-const VERSION = 'storyweave-v1';
+/* DEVICE-FIX3 (REQ-35): v2 — the version had never moved since the
+ * shell shipped, so every installed client kept its first runtime
+ * caches forever. Bumping makes the activate handler retire the v1
+ * shell/data caches on next launch; asset URLs are content-hashed and
+ * navigations are network-first, so nothing honest is lost. */
+const VERSION = 'storyweave-v2';
 const SHELL_CACHE = `shell-${VERSION}`;
 const DATA_CACHE = `data-${VERSION}`;
 

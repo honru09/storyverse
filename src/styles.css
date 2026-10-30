@@ -84,6 +84,7 @@
   --shadow-glass-top:inset 0 0 0 transparent;
   --text-disabled:var(--dim-2);
   --blur-bar:blur(16px) saturate(1.35); --blur-card:blur(12px); --blur-modal:blur(12px); --blur-panel:blur(14px);
+
   --profile-bg:var(--bg); --profile-ink:var(--ink); --profile-ink-strong:var(--ink); --profile-ink-2:var(--ink); --profile-dim:var(--dim); --profile-dim-2:var(--dim); --profile-faint:var(--dim-2); --profile-placeholder:var(--dim-2); --medal-bg:var(--glass-2); --profile-panel:var(--surface-solid); --profile-chip:var(--glass-2); --profile-edge:var(--line); --profile-edge-2:var(--glass-edge); --profile-shadow:var(--shadow-flat); --profile-pill-bg:var(--ink); --profile-pill-ink:var(--bg); --profile-action-bg:var(--ink); --pill-ink:var(--bg); --profile-pill-off:var(--glass-2); --profile-collage-bg:var(--glass-dark); --profile-stack-bg:var(--glass-2); --sheet-bg:var(--surface-solid); --sheet-ink:var(--ink); --sheet-dim:var(--dim); --sheet-line:var(--line);
   color-scheme:dark;
 }
@@ -1742,7 +1743,14 @@ button.profile-stat{cursor:pointer}
 .profile-actions .btn-pill-white{flex:1}
 .profile-follow-btn:not(.is-following){background:linear-gradient(135deg,var(--violet),#5a49d6);color:#fff}
 .profile-share-btn{width:48px;height:48px;flex:0 0 auto;border-radius:999px;border:0;background:var(--profile-chip);color:var(--profile-ink-strong);display:grid;place-items:center;cursor:pointer}
-.profile-sec{margin-top:27px}
+.profile-sec{margin-top:27px;scroll-margin-top:calc(84px + env(safe-area-inset-top))}
+/* DEVICE-FIX3 (REQ-35): the stage is a 481px-tall card deep in a long
+   page; any scroll-into-view or anchor landing must park it fully
+   below the sticky topbar — without this margin the bar slices the
+   figure at whatever row the scroll stops on (the owner's "headless
+   avatar" report was exactly such a slice: a hard straight cut at the
+   bar's bottom edge, no rounded card corners above it). */
+.profile-stage{scroll-margin-top:calc(84px + env(safe-area-inset-top))}
 .profile-sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:13px}
 .profile-sec-title{margin:0;font-size:17px;font-weight:700;color:var(--profile-ink-strong);display:flex;align-items:baseline;gap:8px}
 .profile-sec-title small{font-size:12px;font-weight:400;color:var(--profile-faint)}
@@ -1974,31 +1982,28 @@ button.settings-row{cursor:pointer}
 .store-book-card{min-width:0;display:flex;flex-direction:column;height:100%;overflow:hidden}
 .store-book-card .plaza-card-cover{border-radius:var(--radius-card);aspect-ratio:4/3}
 .store-card-status{position:absolute;top:10px;right:10px;padding:3px 9px;border-radius:999px;background:rgba(6,13,31,.72);color:#fff;font-size:11px;font-weight:600;letter-spacing:.02em}
-.store-book-body{padding:11px 2px 0;display:flex;flex-direction:column;flex:1;min-width:0}
-.store-book-byline{flex-wrap:nowrap;height:21px;gap:8px}
-.store-book-byline .plaza-byline-name{line-height:1.4}
-/* DEVICE-FIX2 (REQ-30, REQ-21 relapse): on the owner's phone the
-   byline's fixed parties — label, a flex:none handle and the official
-   badge — refused to yield, so the display name (the only shrinkable
-   item) collapsed to a single glyph, and the meta row painted past
-   the card edge into its neighbour. The store card now runs a strict
-   shrink order on one line: the name holds a four-glyph floor, the
-   handle takes whatever is left (down to nothing), the meta segments
-   ellipsize inside the card, and the card clips at its own radius —
-   no pixel may leave the card. */
-.store-book-byline .plaza-byline-name{flex:0 1 auto;min-width:4em}
-.store-book-byline .plaza-byline-handle{flex:1 1 0%;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.store-book-card .store-book-meta{flex-wrap:nowrap;overflow:hidden}
-.store-book-card .store-book-meta>*{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.store-book-card .store-book-meta>*:first-child{flex:none}
-@media (max-width:380px){
-  .store-book-byline{gap:6px}
-  .store-book-byline .plaza-byline-name{min-width:3.5em}
-}
-.store-book-intro{margin:8px 0 0;color:var(--dim);font-size:13px;line-height:1.6;min-height:41.6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.store-book-chips{flex-wrap:nowrap;min-height:28px}
-.store-book-chips .plaza-chip{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.store-book-meta{margin-top:auto;padding-top:10px;min-height:19px;flex-wrap:nowrap}
+.store-book-body{padding:11px 2px 0;display:flex;flex-direction:column;flex:1;min-width:0;container-type:inline-size}
+/* DEVICE-FIX3 (REQ-37, DESIGN §54) — supersedes the DEVICE-FIX2
+   shrink-order rules that used to live here. The card body is a
+   stack of fixed slots; each slot is sized from its §54 budget so
+   its content fits whole at every card width in the support range.
+   No slot wraps, no slot ellipsizes, and slots keep their height
+   when their item is absent — baselines are shared by construction,
+   not by squeezing. */
+.store-slot{display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap;overflow:hidden}
+.store-slot-name{height:22px}
+.store-author-name{font-size:14px;font-weight:650;color:var(--ink);white-space:nowrap}
+/* §54: the handle is pattern-bounded to 21 glyphs ('@' + 20 latin),
+   so its size is a fit formula in the BH-06 style — the largest of
+   12px or whatever the slot width affords for 21 glyphs — never a
+   truncation. Divisor measured: ≈0.611em average advance × 21
+   glyphs, plus the small-size snap margin. */
+.store-slot-handle{height:17px;font-size:min(12px,calc(100cqw / 13.4));color:var(--dim-2)}
+.store-book-intro{margin:6px 0 0;color:var(--dim);font-size:13px;line-height:1.6;min-height:41.6px;overflow:hidden}
+.store-chips-block{margin-top:6px;display:flex;flex-direction:column;gap:4px}
+.store-chip-row{height:22px;display:flex;align-items:center;overflow:hidden}
+.store-chip-row .plaza-chip{flex:none;white-space:nowrap}
+.store-slot-meta{height:19px;font-size:12.5px;color:var(--dim)}
 .store-card-rating{color:var(--amber);font-weight:600;white-space:nowrap}
 
 /* Book ratings (RATINGS): summary, the reader's own form, the review list. */

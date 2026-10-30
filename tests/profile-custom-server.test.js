@@ -221,7 +221,17 @@ test('profile validation: name length, handle shape, login still required', asyn
   const user = await register(base, 'valid_user')
   assert.equal((await putProfile(base, user.token, { displayName: '' })).status, 400)
   assert.equal((await putProfile(base, user.token, { displayName: '一'.repeat(21) })).status, 400)
-  assert.equal((await putProfile(base, user.token, { displayName: '一'.repeat(20) })).status, 200)
+  // DEVICE-FIX3 §54: the cap is 18 wide units, not 20 characters —
+  // 10 CJK characters are 20 units and no longer fit the card name
+  // slot at the narrowest supported width, so they are refused at
+  // the write path; 9 CJK characters (exactly 18 units) and 18
+  // latin characters still pass.
+  assert.equal((await putProfile(base, user.token, { displayName: '一'.repeat(20) })).status, 400)
+  assert.equal((await putProfile(base, user.token, { displayName: '一'.repeat(10) })).status, 400)
+  assert.equal((await putProfile(base, user.token, { displayName: '一'.repeat(9) })).status, 200)
+  assert.equal((await putProfile(base, user.token, { displayName: 'a'.repeat(18) })).status, 200)
+  assert.equal((await putProfile(base, user.token, { displayName: 'a'.repeat(19) })).status, 400)
+  assert.equal((await putProfile(base, user.token, { displayName: 'a'.repeat(21) })).status, 400)
   assert.equal((await putProfile(base, user.token, { handle: 'Has Space' })).status, 400)
   assert.equal((await putProfile(base, user.token, { handle: 'ab' })).status, 400)
   // USERNAME-IMMUTABLE: 'valid_user' is a username account, so ANY

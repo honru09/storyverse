@@ -80,6 +80,16 @@ const EMAIL_SEARCH_MAX = 10
 
 const WORLD_ART_IDS = new Set(['mist', 'cultivation', 'neon', 'city', 'court', 'frontier', CUSTOM_GENRE_ID])
 const clip = (value, length) => typeof value === 'string' ? value.trim().slice(0, length) : ''
+/* DEVICE-FIX3 (DESIGN §54): card-facing strings are budgeted in
+ * wide units (CJK/fullwidth = 2, else 1) — the same measure the
+ * client uses (src/plaza.js textUnitsFor). The display name's card
+ * budget is 18 units, so the write path enforces units, not just
+ * characters: 9 CJK characters or 18 latin ones, in any mix. */
+const textUnitsOf = (value) => {
+  let units = 0
+  for (const ch of String(value ?? '')) units += /[ᄀ-ᅟ⺀-꓏가-힣︰-﹯＀-｠￠-￦]/.test(ch) ? 2 : 1
+  return units
+}
 const charCount = (value) => [...value].length
 
 const NOT_FOUND = () => new ApiError(404, '这位用户还不存在。')
@@ -867,7 +877,11 @@ export function createSocialService({
         }
         if ('displayName' in input) {
           const name = sanitizeSettingText(clip(input.displayName, 60)).trim()
-          if (!name || charCount(name) > 20) throw new ApiError(400, '显示名要有 1–20 个字。')
+          // §54 source cap: the card name slot is budgeted at 18 wide
+          // units (measured against the narrowest supported card);
+          // reject over-budget names here instead of letting a card
+          // clip them later.
+          if (!name || charCount(name) > 20 || textUnitsOf(name) > 18) throw new ApiError(400, '显示名太长了：最多 9 个汉字或 18 个英文字母。')
           record.displayName = name
         }
         if ('bio' in input) {

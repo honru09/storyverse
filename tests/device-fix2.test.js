@@ -46,11 +46,11 @@ test('REQ-27: the edit-profile sheet writes only from its save path', () => {
   }
 })
 
-test('REQ-30: store cards hard-clip and the byline handle yields first', () => {
+test('REQ-30 (superseded by REQ-37/§54 in DEVICE-FIX3): the card itself still hard-clips at its border', () => {
+  // The byline shrink-order half of this pin was the owner's
+  // "fixed box + ellipsis" complaint; DEVICE-FIX3 replaced the
+  // byline/meta with fixed slots — see tests/device-fix3.test.js.
   assert.ok(anyRuleBody(css, '.store-book-card{', /overflow:hidden/))
-  assert.ok(anyRuleBody(css, '.plaza-byline-handle{', /flex:1 1 0%/))
-  assert.ok(anyRuleBody(css, '.plaza-byline-handle{', /min-width:0/))
-  assert.ok(anyRuleBody(css, '.plaza-byline-name{', /min-width:4em/))
 })
 
 test('REQ-31: the profile window grab handle overlays the hero, never a blank band', () => {
