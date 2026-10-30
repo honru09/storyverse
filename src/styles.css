@@ -838,6 +838,13 @@ html.is-lite-gpu[data-shell-theme='black'] .mobile-bottom-nav,html.is-lite-gpu[d
 html[data-shell-theme='black'] .topbar,html[data-shell-theme='white'] .topbar,html[data-shell-theme='aurora'] .topbar{backdrop-filter:blur(16px) saturate(1.3);-webkit-backdrop-filter:blur(16px) saturate(1.3);box-shadow:inset 0 1px 0 var(--card-top-hi)}
 html.is-lite-gpu[data-shell-theme='black'] .topbar,html.is-lite-gpu[data-shell-theme='white'] .topbar,html.is-lite-gpu[data-shell-theme='aurora'] .topbar{backdrop-filter:none;-webkit-backdrop-filter:none}
 html[data-shell-theme='black'] .page:not(.page-reader),html[data-shell-theme='white'] .page:not(.page-reader),html[data-shell-theme='aurora'] .page:not(.page-reader){padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+/* DEVICE-FIX4 (REQ-44-3): the bookstore's last row must clear not just
+   the floating capsule (~74px band) but the whole progressive-blur
+   band above it (148px) when scrolled to the very bottom — measured on
+   production, the last card's footer sat at y=756 of 852, inside the
+   blur band (top 704). 74 + 148 = 222px of bottom room puts the footer
+   fully above the band. Scoped to the store page only. */
+html[data-shell-theme='black'] .page.page-store:not(.page-reader),html[data-shell-theme='white'] .page.page-store:not(.page-reader),html[data-shell-theme='aurora'] .page.page-store:not(.page-reader){padding-bottom:calc(222px + env(safe-area-inset-bottom))}
 html[data-shell-theme='black'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card),html[data-shell-theme='white'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card),html[data-shell-theme='aurora'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card){box-shadow:var(--shadow-card),inset 0 1px 0 var(--card-top-hi);border-radius:var(--radius-surface)}
 /* STORE-DESIGN: the old black/white-only store cover shadow + radius
    override is gone — the framed card's cover now follows the one
@@ -1803,13 +1810,18 @@ button.profile-stat{cursor:pointer}
    20–30% of the painting's height and could take the head with it on
    non-contract compositions; the 8% top anchor stays as the guard when
    the cap bites on wide screens. */
+/* DEVICE-FIX4 (REQ-44-1): the stage div no longer carries the legacy
+   .profile-avatar-stand class — its width/margin rules (line ~1627,
+   width:min(300px,84%)) were a cascade landmine next to this rule, and
+   flex:none pins the aspect box so a flex-column ancestor can never
+   shrink it below its 3:4 height. */
 /* DEVICE-FIX2 (REQ-28): the cap moves from height to width. A
    max-height on an aspect-ratio frame silently flattens the frame
    toward landscape once the column runs wide (560px cap ÷ a wide
    column), and cover then takes the head exactly as the owner kept
    reporting; capping the WIDTH at 420px keeps the same 560px ceiling
    (420 × 4⁄3) while the frame can never stop being 3:4. */
-.profile-stage{position:relative;aspect-ratio:3/4;width:min(100%,420px);border-radius:24px;overflow:hidden;background:var(--profile-panel);margin:0 auto;text-align:left}
+.profile-stage{position:relative;flex:none;aspect-ratio:3/4;width:min(100%,420px);border-radius:24px;overflow:hidden;background:var(--profile-panel);margin:0 auto;text-align:left}
 /* Poster stage (POSTER-AVATAR): the fake light rig is retired — no
    spot wash, no floor ellipse, no brightened glow copy of the figure.
    Portraits are poster key visuals that carry their own backdrop,

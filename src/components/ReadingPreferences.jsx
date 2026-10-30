@@ -49,6 +49,13 @@ export default function ReadingPreferences({ value, onChange, storageWarning }) 
     onClickCapture={(event) => { if (event.detail === 0) markInput("keyboard"); }}>
     <p className="reading-preferences-intro">你的书页，你的阅读节奏。</p>
 
+    {/* DEVICE-FIX4 (REQ-45): the mode switch leads the sheet. On the
+        00046 build it sat below five other groups (~200px under the
+        fold at 852px tall) and a reader on the wrong mode never found
+        it; the primary reading choice is the first thing listed now. */}
+    {options("readingMode", "阅读方式", [{ value: "page", label: "逐屏阅读" }, { value: "scroll", label: "上下滚动" }])}
+    {settings.readingMode === "page" && <p className="reading-preference-hint reading-font-note">点页面左／右两侧逐屏翻页，保留少量内容重叠，也可以直接上下滚动。</p>}
+
     <fieldset className="reading-preferences-fieldset">
       <legend>文字大小</legend>
       <div className="reading-font-stepper">
@@ -92,8 +99,6 @@ export default function ReadingPreferences({ value, onChange, storageWarning }) 
     </section>
 
     {options("lineHeight", "行间距", [{ value: 1.6, label: "密集" }, { value: 1.8, label: "紧凑" }, { value: 1.9, label: "舒适" }, { value: 2.05, label: "宽松" }, { value: 2.3, label: "疏朗" }])}
-    {options("readingMode", "阅读方式", [{ value: "scroll", label: "上下滚动" }, { value: "page", label: "逐屏阅读" }])}
-    {settings.readingMode === "page" && <p className="reading-preference-hint reading-font-note">用上一屏／下一屏阅读，保留少量内容重叠，也可以直接上下滚动。</p>}
     <label className="reading-toggle-row">
       <span><strong>阅读时保持亮屏</strong><small>仅在此页阅读时生效，设备允许时启用。</small></span>
       <input type="checkbox" role="switch" checked={settings.keepAwake} onChange={(event) => change({ keepAwake: event.target.checked })} />

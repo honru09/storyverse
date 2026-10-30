@@ -36,9 +36,9 @@ export const DEFAULT_READING_PREFERENCES = Object.freeze({
   textAlign: "left",
   letterSpacing: 0,
   /* READER-PAGE (REQ-38): paged turning is the default reading mode.
-     Records written before version 5 cannot tell a frozen "scroll"
-     default from a deliberate choice, so the v5 migration below moves
-     them; a version-5 record's "scroll" is a real choice and stays. */
+     A stored "scroll" only counts as a deliberate choice when the
+     record carries the explicit marker (see the load migration);
+     unmarked "scroll" values follow this default. */
   readingMode: "page",
   keepAwake: false,
 });
@@ -85,14 +85,14 @@ function browserStorage() {
 
 function loadPreferences(storage) {
   try {
-    if (!storage?.getItem) return { settings: DEFAULT_READING_PREFERENCES, storageWarning: UNAVAILABLE_MESSAGE };
+    if (!storage?.getItem) return { settings: DEFAULT_READING_PREFERENCES, storageWarning: UNAVAILABLE_MESSAGE, readingModeExplicit: false };
     const raw = storage.getItem(READING_PREFERENCES_KEY);
     if (raw === null || raw === undefined) {
-      return { settings: DEFAULT_READING_PREFERENCES, storageWarning: null };
+      return { settings: DEFAULT_READING_PREFERENCES, storageWarning: null, readingModeExplicit: false };
     }
     const parsed = JSON.parse(raw);
-    if (!isRecord(parsed) || ![1, 2, 3, 4, 5].includes(parsed.version)) {
-      return { settings: DEFAULT_READING_PREFERENCES, storageWarning: INVALID_MESSAGE };
+    if (!isRecord(parsed) || ![1, 2, 3, 4, 5, 6].includes(parsed.version)) {
+      return { settings: DEFAULT_READING_PREFERENCES, storageWarning: INVALID_MESSAGE, readingModeExplicit: false };
     }
     /* Stored-settings rationalization (READER-FIX3 §31, fluid pass
        §32): records written by older builds froze the then-current
@@ -102,7 +102,7 @@ function loadPreferences(storage) {
        almost certainly frozen rather than chosen, so it follows the
        current default; deliberate non-default choices are never
        touched. Migration is in-memory only — the record on disk is
-       rewritten (as version 5) on the next explicit change, never on
+       rewritten (as version 6) on the next explicit change, never on
        mount. */
     const migrated = { ...parsed };
     if (parsed.version < 4) {
@@ -125,14 +125,21 @@ function loadPreferences(storage) {
       // The retired weight toggle migrates silently to the pinned 400.
       migrated.fontWeight = DEFAULT_READING_PREFERENCES.fontWeight;
     }
-    if (parsed.version < 5) {
-      /* READER-PAGE (REQ-38): paged turning becomes the default. A
-         pre-v5 record carrying "scroll" holds the frozen old default —
-         the record predates any way to mark the choice explicit — so
-         it follows the new default like every frozen default above.
-         Only a v5 record's "scroll" is a deliberate choice; it is
-         never rewritten here. */
-      if (migrated.readingMode === "scroll") migrated.readingMode = DEFAULT_READING_PREFERENCES.readingMode;
+    /* READER-PAGE (REQ-38) promised a v5 record's "scroll" would be
+       treated as deliberate — DEVICE-FIX4 (REQ-45) is the field proof
+       that promise was unsound: on the 00046 build the mode switch sat
+       ~200px below the settings sheet's fold (measured legend y=1050
+       in an 852px viewport), and a real reader landed on "scroll"
+       without ever finding it. A stray tap while hunting for the
+       switch, or any stray write, is indistinguishable from intent, so
+       a stored "scroll" is honoured ONLY when the record carries the
+       explicit-choice marker the store sets when the reader actually
+       picks a mode in the UI. Unmarked "scroll" (every pre-v6 record,
+       v5 included) follows the paged default once more; a marked
+       choice is never rewritten. */
+    const readingModeExplicit = parsed.readingModeExplicit === true;
+    if (migrated.readingMode === "scroll" && !readingModeExplicit) {
+      migrated.readingMode = DEFAULT_READING_PREFERENCES.readingMode;
     }
     const settings = normalizeReadingPreferences(migrated);
     // Version 1 only knew three fields. Upgrade in memory without a warning or
@@ -140,11 +147,12 @@ function loadPreferences(storage) {
     const requiredKeys = parsed.version === 1 ? ["fontScale", "lineHeight", "theme"] : Object.keys(settings);
     const valid = requiredKeys.every((key) => settings[key] === migrated[key])
       && Object.keys(settings).every((key) => !(key in migrated) || settings[key] === migrated[key]);
-    return { settings, storageWarning: valid ? null : INVALID_MESSAGE };
+    return { settings, storageWarning: valid ? null : INVALID_MESSAGE, readingModeExplicit };
   } catch (error) {
     return {
       settings: DEFAULT_READING_PREFERENCES,
       storageWarning: error instanceof SyntaxError ? INVALID_MESSAGE : UNAVAILABLE_MESSAGE,
+      readingModeExplicit: false,
     };
   }
 }
@@ -155,22 +163,29 @@ function loadPreferences(storage) {
  * update(patch, { inputMethod }) applies immediately, even when storage is denied.
  */
 export function createReadingPreferencesStore({ storage = browserStorage() } = {}) {
-  let state = Object.freeze({ ...loadPreferences(storage), inputMethod: "pointer" });
+  const loaded = loadPreferences(storage);
+  /* Whether the reader has ever deliberately picked a reading mode in
+     the UI (DEVICE-FIX4, REQ-45). Only a marked "scroll" survives a
+     load; the flag is set the moment an update names readingMode —
+     i. a real tap on the mode control — and then persists verbatim. */
+  let readingModeExplicit = loaded.readingModeExplicit === true;
+  let state = Object.freeze({ settings: loaded.settings, storageWarning: loaded.storageWarning, inputMethod: "pointer", readingModeExplicit });
   const listeners = new Set();
   const update = (patch, { inputMethod = "pointer" } = {}) => {
     const values = typeof patch === "function" ? patch(state.settings) : patch;
+    if (isRecord(values) && Object.hasOwn(values, "readingMode")) readingModeExplicit = true;
     const settings = normalizeReadingPreferences({ ...state.settings, ...(isRecord(values) ? values : {}) });
     const method = inputMethod === "keyboard" ? "keyboard" : "pointer";
     const unchanged = Object.keys(settings).every((key) => settings[key] === state.settings[key]);
-    if (unchanged && !state.storageWarning && method === state.inputMethod) return true;
+    if (unchanged && readingModeExplicit === state.readingModeExplicit && !state.storageWarning && method === state.inputMethod) return true;
     let storageWarning = null;
     try {
       if (!storage?.setItem) throw new Error("Storage unavailable");
-      storage.setItem(READING_PREFERENCES_KEY, JSON.stringify({ version: 5, ...settings }));
+      storage.setItem(READING_PREFERENCES_KEY, JSON.stringify({ version: 6, ...settings, readingModeExplicit }));
     } catch {
       storageWarning = UNAVAILABLE_MESSAGE;
     }
-    state = Object.freeze({ settings, storageWarning, inputMethod: method });
+    state = Object.freeze({ settings, storageWarning, inputMethod: method, readingModeExplicit });
     listeners.forEach((listener) => listener());
     return !storageWarning;
   };

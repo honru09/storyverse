@@ -136,9 +136,12 @@ test('face-anchor cropping: small round slots zoom portraits to the face', () =>
   assert.match(thumbBlock, /pictureKind === "avatar"/)
   assert.match(thumbBlock, /plaza-avatar-frame/)
   // The full figure has exactly one home: the profile's avatar stage
-  // (PROFILE-ENRICH §35 supersedes the §33 stand: same class name, new
-  // stage geometry — spotlight, atmosphere, name plate).
-  assert.match(profileBlock, /profile-avatar-stand/)
+  // (PROFILE-ENRICH §35). DEVICE-FIX4 (REQ-44-1) retires the §35
+  // "same class name" arrangement: the stage div carries ONLY
+  // .profile-stage — the legacy .profile-avatar-stand width/margin
+  // rules were a cascade landmine beside the stage rule.
+  assert.match(profileBlock, /className="profile-stage"/)
+  assert.doesNotMatch(profileBlock, /profile-stage profile-avatar-stand/)
   // BH-13 (2026-10-29) supersedes the fixed 384px band: the stage takes
   // the poster's own 3:4 frame (capped), so the face and upper body stay
   // in frame instead of losing 20–30% of the painting to cover-cropping.
@@ -149,6 +152,9 @@ test('face-anchor cropping: small round slots zoom portraits to the face', () =>
   assert.match(css, /\.profile-stage\{[^}]*aspect-ratio:3\/4/)
   assert.match(css, /\.profile-stage\{[^}]*width:min\(100%,420px\)/)
   assert.doesNotMatch(css, /\.profile-stage\{[^}]*max-height/)
+  // DEVICE-FIX4 (REQ-44-1): flex:none pins the aspect box against a
+  // flex-column ancestor shrinking it below its 3:4 height.
+  assert.match(css, /\.profile-stage\{[^}]*flex:none/)
   // BH-13: the avatar tiles join the face-anchor family (50% 12% + the
   // large-frame 2.05 zoom) instead of squeezing the whole figure into
   // the square, and selected+main collapses to a single ring.
@@ -312,4 +318,11 @@ test('following updates ride the self-only followingUids field (F-22)', () => {
   const social = readFileSync(new URL('../server/social.js', import.meta.url), 'utf8')
   assert.match(social, /payload\.followingUids = following\.map/)
   assert.match(feedBlock, /profile\?\.followingUids/)
+})
+
+test("DEVICE-FIX4 (REQ-44-3): the bookstore page bottom clears the capsule and the whole blur band", () => {
+  // Capsule band ~74px + progressive-blur band 148px = 222px of bottom
+  // room, store page only; the shared shell-page rule stays at 96px.
+  assert.match(css, /\.page\.page-store:not\(\.page-reader\)[^}]*padding-bottom:calc\(222px \+ env\(safe-area-inset-bottom\)\)/)
+  assert.match(css, /\.page:not\(\.page-reader\)[^}]*padding-bottom:calc\(96px \+ env\(safe-area-inset-bottom\)\)/)
 })

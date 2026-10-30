@@ -9157,7 +9157,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           </div>
           {stageAvatar ? (
             <>
-              <div className="profile-stage profile-avatar-stand">
+              <div className="profile-stage">
                 {stageAvatar.hasPortrait && stageAvatar.portraitUrl && stageFailedFor !== stageAvatar.id ? (
                   <>
                     {/* DEVICE-FIX2 (REQ-28): the painting itself, blurred
