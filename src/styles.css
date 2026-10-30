@@ -90,7 +90,9 @@
      deep-navy ground/hue identity is unchanged. Alpha discipline
      mirrors §53: card face .50 (the black theme's .48 floor, on
      aurora's own navy), detail scope denser still, nav .98 per
-     ruling ②'s legibility floor. */
+     ruling ②'s legibility floor. (Merge note: STORE-DESIGN's earlier
+     frozen-alias version of this group is superseded by this block —
+     the store card in aurora resolves through these values.) */
   --card-top-hi:rgba(190,214,255,.12);
   --glass-card-bg:rgba(13,24,52,.50); --glass-card-blur:blur(22px) saturate(1.45); --glass-card-line:rgba(168,196,255,.24); --glass-card-edge:rgba(168,196,255,.14); --glass-card-shadow:0 18px 44px -12px rgba(2,6,20,.55); --glass-card-radius:26px;
   --glass-chip-bg:rgba(148,178,255,.16); --glass-chip-blur:blur(14px) saturate(1.35); --glass-nav-bg:rgba(6,13,31,.98); --glass-modal-bg:rgba(13,24,52,.74); --glass-panel-pad:rgba(4,8,20,.30);
@@ -837,7 +839,9 @@ html[data-shell-theme='black'] .topbar,html[data-shell-theme='white'] .topbar,ht
 html.is-lite-gpu[data-shell-theme='black'] .topbar,html.is-lite-gpu[data-shell-theme='white'] .topbar,html.is-lite-gpu[data-shell-theme='aurora'] .topbar{backdrop-filter:none;-webkit-backdrop-filter:none}
 html[data-shell-theme='black'] .page:not(.page-reader),html[data-shell-theme='white'] .page:not(.page-reader),html[data-shell-theme='aurora'] .page:not(.page-reader){padding-bottom:calc(96px + env(safe-area-inset-bottom))}
 html[data-shell-theme='black'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card),html[data-shell-theme='white'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card),html[data-shell-theme='aurora'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card){box-shadow:var(--shadow-card),inset 0 1px 0 var(--card-top-hi);border-radius:var(--radius-surface)}
-html[data-shell-theme='black'] .store-book-card .plaza-card-cover,html[data-shell-theme='white'] .store-book-card .plaza-card-cover{box-shadow:var(--shadow-card);border-radius:var(--radius-surface)}
+/* STORE-DESIGN: the old black/white-only store cover shadow + radius
+   override is gone — the framed card's cover now follows the one
+   calc(var(--glass-card-radius) - 8px) rule in every theme. */
 html[data-shell-theme='black'] :is(.plaza-feed-heading h2,.plaza-section-title,.section-heading h2),html[data-shell-theme='white'] :is(.plaza-feed-heading h2,.plaza-section-title,.section-heading h2),html[data-shell-theme='aurora'] :is(.plaza-feed-heading h2,.plaza-section-title,.section-heading h2){font-size:11px;line-height:1.5;letter-spacing:.14em;color:var(--dim-2)}
 input[type="checkbox"]{accent-color:var(--cyan)}
 /* Hover (fine pointers only) */
@@ -1098,7 +1102,6 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .plaza-feed-list{display:grid;gap:18px}
 .plaza-card{border:1px solid var(--line);border-radius:var(--radius-card);background:var(--card-solid);overflow:hidden;box-shadow:var(--shadow-card);backdrop-filter:var(--card-backdrop);-webkit-backdrop-filter:var(--card-backdrop)}
 .plaza-card-cover{position:relative;display:block;width:100%;aspect-ratio:16/8;padding:0;border:0;background:#0a1430;text-align:left;overflow:hidden;container-type:inline-size;--title-fit-inset:32px}
-.store-book-card .plaza-card-cover{--title-fit-inset:24px}
 .plaza-card-cover .world-art{position:absolute;inset:0}
 .plaza-cover-shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(6,13,31,0) 30%,rgba(6,13,31,.78));pointer-events:none}
 /* The tier size is a CAP, not a promise (BUGHUNT-FIX, BH-06): the
@@ -1114,7 +1117,6 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .plaza-cover-title{position:absolute;left:16px;right:16px;bottom:12px;color:#fff;font-size:min(16.5px,calc((100cqw - var(--title-fit-inset)) / (var(--title-glyphs,12) * 1.07)));font-weight:700;text-shadow:0 2px 14px rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .plaza-cover-title.is-md{font-size:min(14px,calc((100cqw - var(--title-fit-inset)) / (var(--title-glyphs,12) * 1.07)))}
 .plaza-cover-title.is-sm{font-size:min(12px,calc((100cqw - var(--title-fit-inset)) / (var(--title-glyphs,12) * 1.07)))}
-.store-book-card .plaza-cover-title{left:12px;right:12px}
 .plaza-card-body{padding:14px 16px 16px}
 /* The card byline (COVER-FIX): the author's place — an editorial
    line, not a pill. Letterspaced label, the author's display name,
@@ -1989,16 +1991,15 @@ button.settings-row{cursor:pointer}
 .store-sorts button{flex-shrink:0;min-height:36px;padding:6px 14px;border:1px solid transparent;border-radius:999px;background:transparent;color:var(--dim);font-size:13.5px;font-weight:550;cursor:pointer;transition:transform var(--dur-press) var(--ease-press),color var(--dur-state) var(--ease-out),background-color var(--dur-state) var(--ease-out)}
 .store-sorts button:active{transform:scale(.96)}
 .store-sorts button.active{color:var(--selected-text);background:var(--selected-surface);font-weight:650}
-.store-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px 12px;margin-top:24px}
+.store-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 12px;margin-top:24px}
 @media (min-width:700px){.store-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:32px 20px}}
 @media (min-width:1050px){.store-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 /* DEVICE-FIX REQ-21: the store card is a fixed format — a flex column
    at full row height whose body rows own fixed slots, so every card in
-   a row shares the byline / intro / chips / meta baselines. */
+   a row shares the title / byline / handle / meta baselines. */
 .store-book-card{min-width:0;display:flex;flex-direction:column;height:100%;overflow:hidden}
-.store-book-card .plaza-card-cover{border-radius:var(--radius-card);aspect-ratio:4/3}
-.store-card-status{position:absolute;top:10px;right:10px;padding:3px 9px;border-radius:999px;background:rgba(6,13,31,.72);color:#fff;font-size:11px;font-weight:600;letter-spacing:.02em}
-.store-book-body{padding:11px 2px 0;display:flex;flex-direction:column;flex:1;min-width:0;container-type:inline-size}
+.store-book-card .plaza-card-cover{border-radius:calc(var(--glass-card-radius) - 8px);aspect-ratio:4/3;box-shadow:none}
+.store-book-body{padding:12px 2px 2px;display:flex;flex-direction:column;flex:1;min-width:0;container-type:inline-size}
 /* DEVICE-FIX3 (REQ-37, DESIGN §54) — supersedes the DEVICE-FIX2
    shrink-order rules that used to live here. The card body is a
    stack of fixed slots; each slot is sized from its §54 budget so
@@ -2007,20 +2008,40 @@ button.settings-row{cursor:pointer}
    when their item is absent — baselines are shared by construction,
    not by squeezing. */
 .store-slot{display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap;overflow:hidden}
-.store-slot-name{height:22px}
-.store-author-name{font-size:14px;font-weight:650;color:var(--ink);white-space:nowrap}
+/* STORE-DESIGN v2: the title row heads the body (the cover is bare
+   art now). It is the card's anchor text — 16px/700 --ink — sized by
+   the BH-06 fit formula (the same mechanism the cover title used:
+   --title-glyphs = title characters + the 《》 pair, ×1.07 snap
+   factor), so it fits whole on its one line at any card width and
+   never ellipsizes. The slot height stays 22px whatever size the
+   formula lands on. */
+.store-slot-title{height:22px}
+.store-book-title{font-size:min(16px,calc((100cqw - 4px) / (var(--title-glyphs,10) * 1.07)));font-weight:700;color:var(--ink);white-space:nowrap;line-height:1.375}
+.store-slot-name{height:22px;margin-top:4px}
+.store-author-name{font-size:14px;font-weight:600;color:var(--ink);white-space:nowrap}
 /* §54: the handle is pattern-bounded to 21 glyphs ('@' + 20 latin),
    so its size is a fit formula in the BH-06 style — the largest of
    12px or whatever the slot width affords for 21 glyphs — never a
    truncation. Divisor measured: ≈0.611em average advance × 21
    glyphs, plus the small-size snap margin. */
-.store-slot-handle{height:17px;font-size:min(12px,calc(100cqw / 13.4));color:var(--dim-2)}
-.store-book-intro{margin:6px 0 0;color:var(--dim);font-size:13px;line-height:1.6;min-height:41.6px;overflow:hidden}
-.store-chips-block{margin-top:6px;display:flex;flex-direction:column;gap:4px}
-.store-chip-row{height:22px;display:flex;align-items:center;overflow:hidden}
-.store-chip-row .plaza-chip{flex:none;white-space:nowrap}
+.store-slot-handle{height:17px;margin-top:2px;font-size:min(12px,calc(100cqw / 13.4));color:var(--dim-2)}
+/* STORE-DESIGN v3 (user rule, 2026-10-30): the intro slot
+   (.store-book-intro) and the chip rows (.store-chips-block /
+   .store-chip-row) are GONE from the store card — an introduction's
+   length cannot be budgeted and chips come in ones and twos, so
+   both live only on the book detail page. The body is now
+   title → name → handle → pinned footer, and its vertical rhythm
+   is drawn from one small scale: 12 (body top pad, cover→title),
+   4 (title→name), 2 (name→handle), 10 (footer min pad above the
+   pinned meta block, whose margin-top:auto joint absorbs the one
+   remaining variance — a hidden handle). No other gaps exist. */
+/* STORE-DESIGN (proposed): the meta block is the card's footer —
+   pinned to the card foot, so length / rating baselines align
+   across a row no matter how the blocks above them vary. */
+.store-meta-block{margin-top:auto;padding-top:10px}
 .store-slot-meta{height:19px;font-size:12.5px;color:var(--dim)}
 .store-card-rating{color:var(--amber);font-weight:600;white-space:nowrap}
+.store-book-card .store-rating-empty{color:var(--dim-2)}
 
 /* Book ratings (RATINGS): summary, the reader's own form, the review list. */
 .rating-stars{color:var(--amber);font-size:13px;letter-spacing:1px;white-space:nowrap}
@@ -2248,14 +2269,21 @@ html[data-shell-theme='aurora'] .salt-ambient{background:
 html:not(.is-lite-gpu)[data-shell-theme='black'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card),html:not(.is-lite-gpu)[data-shell-theme='white'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card),html:not(.is-lite-gpu)[data-shell-theme='aurora'] :is(.plaza-card,.plaza-panel,.plaza-continue-card,.profile-store-card){background:var(--glass-card-bg);backdrop-filter:var(--glass-card-blur);-webkit-backdrop-filter:var(--glass-card-blur);border:1px solid var(--glass-card-line);border-radius:var(--glass-card-radius);box-shadow:var(--glass-card-shadow),0 0 0 1px var(--glass-card-edge),inset 0 1px 0 var(--card-top-hi)}
 /* — Store grid card: the whole card is the glass shell, the cover an
    inset 18px piece inside it (the reference image's construction) — */
-html:not(.is-lite-gpu)[data-shell-theme='black'] .store-book-card,html:not(.is-lite-gpu)[data-shell-theme='white'] .store-book-card{background:var(--glass-card-bg);backdrop-filter:var(--glass-card-blur);-webkit-backdrop-filter:var(--glass-card-blur);border:1px solid var(--glass-card-line);border-radius:var(--glass-card-radius);box-shadow:var(--glass-card-shadow),0 0 0 1px var(--glass-card-edge),inset 0 1px 0 var(--card-top-hi);padding:10px 10px 12px}
-html[data-shell-theme='black'] .store-book-card .plaza-card-cover,html[data-shell-theme='white'] .store-book-card .plaza-card-cover{border-radius:18px;box-shadow:none}
-/* — Cover art melts into the glass at its lower edge (mask lives on
-   the artwork only; the shade + title stay crisp for legibility) — */
-html[data-shell-theme='black'] :is(.store-book-card,.plaza-card) .plaza-card-cover .world-art,html[data-shell-theme='white'] :is(.store-book-card,.plaza-card) .plaza-card-cover .world-art{-webkit-mask-image:linear-gradient(180deg,#000 76%,transparent 99%);mask-image:linear-gradient(180deg,#000 76%,transparent 99%)}
-/* AURORA-ALIGN: the plaza card's cover melt joins aurora too; the
-   store-book-card half of the rule above stays salt-scoped (the
-   store-design batch owns the store card's final form). */
+/* STORE-DESIGN: the framed glass face is no longer a black/white
+   privilege — every theme's store card wears it (aurora resolves
+   the glass group through its REQ-41 values). The face is
+   unconditional; only the blur is GPU-gated, and the lite path
+   falls back to the theme's solid surface (§53's low-end rule),
+   never to a faceless card. */
+.store-book-card{background:var(--glass-card-bg);border:1px solid var(--glass-card-line);border-radius:var(--glass-card-radius);box-shadow:var(--glass-card-shadow),0 0 0 1px var(--glass-card-edge),inset 0 1px 0 var(--card-top-hi,transparent);padding:10px 10px 12px}
+html:not(.is-lite-gpu) .store-book-card{backdrop-filter:var(--glass-card-blur);-webkit-backdrop-filter:var(--glass-card-blur)}
+html.is-lite-gpu .store-book-card{background:var(--surface-solid)}
+/* — Plaza cover art melts into the glass at its lower edge (mask
+   lives on the artwork only; the shade + title stay crisp for
+   legibility). STORE covers are NOT melted: STORE-DESIGN v2 makes
+   the store cover a complete bare rectangle, all four edges. — */
+html[data-shell-theme='black'] .plaza-card .plaza-card-cover .world-art,html[data-shell-theme='white'] .plaza-card .plaza-card-cover .world-art{-webkit-mask-image:linear-gradient(180deg,#000 76%,transparent 99%);mask-image:linear-gradient(180deg,#000 76%,transparent 99%)}
+/* AURORA-ALIGN: the plaza card's cover melt joins aurora too. */
 html[data-shell-theme='aurora'] .plaza-card .plaza-card-cover .world-art{-webkit-mask-image:linear-gradient(180deg,#000 76%,transparent 99%);mask-image:linear-gradient(180deg,#000 76%,transparent 99%)}
 /* — Chips on glass: a second, brighter glass layer with its own
    edge and top light. Cover status pill keeps its dark face (white
