@@ -6674,8 +6674,12 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
 
   const mine = data?.viewerRating || null;
   const draftLength = [...draftText].length;
+  // DETAIL-FIX2: the author's own empty state is two text lines and
+  // no form — the panel hugs that content (is-compact) instead of
+  // holding the full stage the rating form needs.
+  const idleEmpty = Boolean(data && data.ratingCount === 0 && data.viewerIsAuthor);
   return (
-    <section className="plaza-panel book-ratings" aria-label="读者评价">
+    <section className={`plaza-panel book-ratings${idleEmpty ? " is-compact" : ""}`} aria-label="读者评价">
       <div className="plaza-panel-heading">
         <h2>读者评价</h2>
         {data && data.ratingCount > 0 && <span className="book-ratings-count">{data.ratingCount} 条评价</span>}
@@ -6691,7 +6695,7 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
               <span className="book-ratings-summary-note">读者打分</span>
             </div>
           ) : (
-            <p className="book-ratings-empty"><img className="empty-row-art" src="/art/empty-ratings-512.webp" alt="" loading="lazy" />还没有人评价这本书——读过的话，来打第一个分吧。</p>
+            <p className="book-ratings-empty">还没有人评价这本书——读过的话，来打第一个分吧。</p>
           )}
 
           {data.viewerIsAuthor ? (
@@ -6888,13 +6892,6 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         <button type="button" className="back-link" onClick={goBack}>
           <Icon name="chevron" size={15} className="rotate-180" /> {backLabel}
         </button>
-        {onOpenProfile && detail.authorUid ? (
-          <button type="button" className="plaza-author plaza-author-button" onClick={() => onOpenProfile(detail.authorUid)}>
-            作者 · {detail.authorName}
-          </button>
-        ) : (
-          <span className="plaza-author">作者 · {detail.authorName}</span>
-        )}
         {detail.manual && <span className="plaza-manual-note">作者手写</span>}
       </div>
 
@@ -6904,8 +6901,8 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         <div className="plaza-detail-cover-copy">
           <h1 className={`is-${plazaTitleTierFor(detail.title)}`}>《{detail.title}》</h1>
           <p>{detail.manual
-            ? <>{shelfById(detail.shelfId)?.name ? `${shelfById(detail.shelfId).name} · ` : ""}作者手写 · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"}</>
-            : <>{detail.worldName} × {templateName} · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"}</>}</p>
+            ? <>{shelfById(detail.shelfId)?.name ? `${shelfById(detail.shelfId).name} · ` : ""}作者手写 · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"} · 作者 {detail.authorName}</>
+            : <>{detail.worldName} × {templateName} · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"} · 作者 {detail.authorName}</>}</p>
           {detail.merged && Array.isArray(detail.sourceTitles) && detail.sourceTitles.length === 2 && (
             <span className="plaza-badge is-fused">由《{detail.sourceTitles[0]}》×《{detail.sourceTitles[1]}》融合而来</span>
           )}

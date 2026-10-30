@@ -1119,7 +1119,6 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .plaza-byline-handle{flex:none;font-size:12.5px;color:var(--dim);white-space:nowrap}
 .plaza-byline-official{flex-shrink:0;padding:2px 7px;border-radius:999px;background:rgba(246,178,62,.18);color:#f6b23e;font-size:10.5px;font-weight:700;letter-spacing:.06em}
 .plaza-byline-chevron{flex-shrink:0;align-self:center;color:var(--dim)}
-.plaza-author{color:var(--dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .plaza-own-chip{margin-left:auto;flex-shrink:0;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--cyan);font-size:11px;font-weight:650}
 .plaza-chips{display:flex;align-items:center;gap:7px;margin-top:12px;flex-wrap:wrap}
 .plaza-chip{padding:4px 11px;border:1px solid var(--line);border-radius:999px;background:var(--glass-2);font-size:12px;font-weight:600;color:var(--ink)}
@@ -1543,6 +1542,12 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 /* Plaza avatar thumbs: the frame clips, the portrait zooms to the face. */
 .plaza-avatar-frame{display:inline-block;width:32px;height:32px;border-radius:50%;overflow:hidden;flex-shrink:0;background:transparent;vertical-align:middle}
 .plaza-avatar-frame.is-large{width:76px;height:76px;border-radius:20px}
+/* DETAIL-FIX2: the profile-link wrapper around the large thumb is a
+   bare frame, not a button — it carried no CSS rule at all, so the UA
+   button chrome (grey face, outset border, padding) boxed the thumb
+   in a grey matte with the picture floating inside it. The wrapper
+   now hugs the frame exactly, at the frame's own 20px radius. */
+.plaza-avatar-profile-link{display:block;flex-shrink:0;padding:0;border:0;background:none;border-radius:20px;line-height:0}
 /* DEVICE-FIX REQ-22: the face anchor belongs to PORTRAIT pictures
    only — uploads and the default asset sit centred, unscaled, and the
    frame carries no backing tint, so the image fills the frame. */
@@ -1823,7 +1828,6 @@ button.profile-stat{cursor:pointer}
 .lorebook-empty .field-hint{text-align:center}
 .empty-row-art{flex:none;width:44px;height:44px;object-fit:cover;border:1px solid var(--line);border-radius:12px}
 .plaza-thread-empty{display:flex;align-items:center;gap:10px}
-.book-ratings-empty{display:flex;align-items:center;gap:10px}
 /* Store banner (BUGHUNT-FIX asset wiring): the many-worlds painting
    heads the store; the page title rides its reserved darker band, so
    the heading moves onto the art and takes the on-art ink. */
@@ -1970,6 +1974,10 @@ button.settings-row{cursor:pointer}
 /* DEVICE-FIX REQ-22: the ratings panel breathes at 20px (scoped —
    the shared .plaza-panel padding stays 16px site-wide). */
 .plaza-panel.book-ratings{padding:20px}
+/* DETAIL-FIX2: the author's idle empty state (no ratings, no form)
+   hugs its two text lines — the vertical stage shrinks to content. */
+.plaza-panel.book-ratings.is-compact{padding-top:16px;padding-bottom:16px}
+.plaza-panel.book-ratings.is-compact .book-ratings-empty{margin-bottom:10px}
 .book-ratings-actions{display:flex;align-items:center;gap:12px}
 .book-ratings-list{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:14px}
 .book-ratings-row{display:flex;gap:10px;align-items:flex-start}
