@@ -185,9 +185,13 @@
   background-repeat:no-repeat; opacity:.85;
 }
 .da-frame-stars::after{
-  content:"✦"; position:absolute; top:-9px; left:50%; transform:translateX(-50%);
-  padding:0 8px; color:var(--da-star); font-size:13px; line-height:1;
-  background:transparent; text-shadow:0 0 12px color-mix(in srgb, var(--cyan) 55%, transparent);
+  /* 星形走 SVG mask（四瓣对称 path），不用 ✦ 字形——字形比例随字体回退走样。
+     颜色由 background-color 吃 --da-star token，mask 只管形状。 */
+  content:""; position:absolute; top:-8px; left:50%; transform:translateX(-50%);
+  width:14px; height:14px; background-color:var(--da-star);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  filter:drop-shadow(0 0 5px color-mix(in srgb, var(--cyan) 55%, transparent));
 }
 
 /* FRM-03 渐变描边框（织线渐变 1px 描边，内面走主题实面） */
@@ -255,6 +259,8 @@
 .da-hr--knot::after{background:linear-gradient(90deg, var(--line-2), transparent)}
 .da-hr--knot .da-knot-dot{width:4px; height:4px; border-radius:50%; background:var(--da-star); opacity:.7; flex:none}
 .da-hr--knot .da-knot-star{font-size:13px; line-height:1; flex:none; text-shadow:0 0 10px color-mix(in srgb, var(--cyan) 50%, transparent)}
+/* 星结槽放内嵌 SVG（四瓣对称 path）而非 ✦ 字形：1em 正方锁定，不随字体走样 */
+.da-hr--knot .da-knot-star svg{width:1em; height:1em; display:block; fill:currentColor}
 
 /* DIV-05 带标签的分区线 */
 .da-hr--label{display:flex; align-items:center; gap:12px}
@@ -349,6 +355,8 @@
     inset 0 0 18px color-mix(in srgb, var(--cyan) 10%, transparent);
   font-size:22px;
 }
+/* 环中央置星走内嵌 SVG（四瓣对称 path）而非 ✦ 字形：1em 正方锁定 */
+.da-halo > svg{width:1em; height:1em; fill:currentColor; flex:none}
 
 /* FX-03 星点尘（多层星点颗粒，星图母题） */
 .da-stardust{
@@ -570,9 +578,12 @@
   transition:width var(--da-dur-pop) var(--da-ease-spring);
 }
 .da-progress-fill::after{
-  content:"✦"; position:absolute; right:-7px; top:50%;
-  transform:translateY(-50%); font-size:12px; line-height:1; color:var(--da-star);
-  text-shadow:0 0 8px color-mix(in srgb, var(--cyan) 60%, transparent);
+  /* 星结走 SVG mask（四瓣对称 path），不用 ✦ 字形；颜色走 --da-star。 */
+  content:""; position:absolute; right:-7px; top:50%;
+  transform:translateY(-50%); width:13px; height:13px; background-color:var(--da-star);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  filter:drop-shadow(0 0 4px color-mix(in srgb, var(--cyan) 60%, transparent));
 }
 
 /* DTL-12 织线 loading spinner（线色转环 + 中央星点呼吸） */
@@ -586,7 +597,10 @@
   animation:da-spin .9s linear infinite;
 }
 .da-spinner::after{
-  content:"✦"; font-size:11px; color:var(--da-star);
+  /* 中央星走 SVG mask（四瓣对称 path），不用 ✦ 字形；颜色走 --da-star。 */
+  content:""; width:12px; height:12px; background-color:var(--da-star);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z'/%3E%3C/svg%3E") center / contain no-repeat;
   animation:da-star-pulse 1.8s var(--da-ease-out) infinite;
 }
 @keyframes da-spin{to{transform:rotate(360deg)}}
@@ -602,6 +616,8 @@
   width:56px; height:56px; border-radius:50%;
   border:1.5px dashed var(--line-2); color:var(--da-star); font-size:18px;
 }
+/* 空态星走内嵌 SVG（四瓣对称 path）而非 ✦ 字形：1em 正方锁定 */
+.da-empty-mark .da-empty-glyph > svg{width:1em; height:1em; fill:currentColor}
 .da-empty-mark .da-empty-text{font-size:11px; letter-spacing:.14em; color:var(--dim-2)}
 
 /* —— 动效总开关口径：减少动态时，循环动效停转/停扫，星点静态 —— */

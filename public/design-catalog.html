@@ -121,6 +121,13 @@ body{
 .txt{font-size:14px; line-height:1.65; color:var(--ink)}
 .txt-dim{font-size:13px; line-height:1.6; color:var(--dim)}
 .center{display:flex; flex-direction:column; align-items:center; gap:12px; text-align:center}
+/* 状态标注：并排展示不同状态时逐个挂小标签，禁用态发暗不再像坏了 */
+.cell{display:flex; flex-direction:column; align-items:center; gap:7px}
+.st{font-size:10px; font-weight:600; letter-spacing:.08em; line-height:1; color:var(--dim-2);
+  padding:3px 8px; border-radius:999px; border:1px solid var(--line); background:var(--glass); white-space:nowrap}
+/* 星形统一走内嵌 SVG（四瓣对称 path），1em 正方锁定，不用 ✦ 字形 */
+.star-ic{width:1em; height:1em; fill:currentColor; flex:none}
+#DIV-04 .star-ic{filter:drop-shadow(0 0 4px color-mix(in srgb, var(--cyan) 50%, transparent))}
 </style>
 </head>
 <body>
@@ -145,8 +152,8 @@ body{
   <div class="cat-item" id="BTN-01">
     <div class="cat-item-head"><span class="cat-code">BTN-01</span><span class="cat-name">主按钮 · 织线渐变</span></div>
     <div class="stage"><div class="stage-in row">
-      <button class="da-btn da-btn--weave">继续</button>
-      <button class="da-btn da-btn--weave" disabled>继续</button>
+      <span class="cell"><button class="da-btn da-btn--weave">继续</button><span class="st">默认</span></span>
+      <span class="cell"><button class="da-btn da-btn--weave" disabled>继续</button><span class="st">禁用</span></span>
     </div></div>
   </div>
 
@@ -173,8 +180,8 @@ body{
   <div class="cat-item" id="BTN-04">
     <div class="cat-item-head"><span class="cat-code">BTN-04</span><span class="cat-name">危险按钮</span></div>
     <div class="stage"><div class="stage-in row">
-      <button class="da-btn da-btn--danger">删除这条线</button>
-      <button class="da-btn da-btn--danger" disabled>删除</button>
+      <span class="cell"><button class="da-btn da-btn--danger">删除这条线</button><span class="st">默认</span></span>
+      <span class="cell"><button class="da-btn da-btn--danger" disabled>删除</button><span class="st">禁用</span></span>
     </div></div>
   </div>
 
@@ -188,19 +195,19 @@ body{
   <div class="cat-item" id="BTN-06">
     <div class="cat-item-head"><span class="cat-code">BTN-06</span><span class="cat-name">图标钮</span></div>
     <div class="stage"><div class="stage-in row">
-      <button class="da-icon-btn" aria-label="分享"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13"/><path d="m7 8 5-5 5 5"/><path d="M5 13v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></svg></button>
-      <button class="da-icon-btn" aria-label="收藏"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 14.6 9l6 .7-4.5 4.1 1.2 5.9L12 16.7l-5.3 3-1.2-5.9L1 9.7l6-.7z"/></svg></button>
-      <button class="da-icon-btn is-round" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-      <button class="da-icon-btn" aria-label="更多" disabled><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+      <span class="cell"><button class="da-icon-btn" aria-label="分享"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13"/><path d="m7 8 5-5 5 5"/><path d="M5 13v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></svg></button><span class="st">默认</span></span>
+      <span class="cell"><button class="da-icon-btn" aria-label="收藏"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5L14.23 8.93L21.03 9.06L15.61 13.17L17.58 19.69L12 15.8L6.42 19.69L8.39 13.17L2.97 9.06L9.77 8.93Z"/></svg></button><span class="st">默认</span></span>
+      <span class="cell"><button class="da-icon-btn is-round" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button><span class="st">默认 · 圆形</span></span>
+      <span class="cell"><button class="da-icon-btn" aria-label="更多" disabled><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button><span class="st">禁用</span></span>
     </div></div>
   </div>
 
   <div class="cat-item" id="BTN-07">
     <div class="cat-item-head"><span class="cat-code">BTN-07</span><span class="cat-name">悬浮动作胶囊</span></div>
-    <p class="cat-note">近实色面，压住正文不可辨笔画（SALT-3 裁定）；演示位为舞台右下角。</p>
-    <div class="stage" style="min-height:136px">
+    <p class="cat-note">近实色面压住正文（黑 .98 / 白 .99、极光回落 .94，均叠 blur），被盖住的字迹不可辨认（SALT-3 裁定）。演示里正文从胶囊背后流过，末两行正被胶囊压着。</p>
+    <div class="stage">
       <div class="stage-in">
-        <p class="txt-dim" style="margin:0">正文从胶囊下方流过，字迹不可辨认——胶囊只报自己的事。这一段话故意写长，让它一直流到胶囊背后去。</p>
+        <p class="txt" style="margin:0">雾起的时候，沉潮港的钟声总会比平时慢半拍。守塔人说，那是雾在替大海数潮汐：涨潮七分，退潮三分，剩下的，全留给那些没能回来的人。阿灿站在塔下，数到第九声，忽然发现自己的心跳正和钟声错开一拍。雾墙外有光在动，像谁提着灯，正一步一步朝他走来。他握紧了口袋里那把没有锁孔的钥匙。</p>
       </div>
       <button class="da-fab" style="position:absolute; right:16px; bottom:16px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>介入</button>
     </div>
@@ -289,7 +296,7 @@ body{
   <div class="cat-item" id="DIV-04">
     <div class="cat-item-head"><span class="cat-code">DIV-04</span><span class="cat-name">星点结分隔</span></div>
     <div class="stage"><div class="stage-in">
-      <div class="da-hr--knot"><span class="da-knot-dot"></span><span class="da-knot-star">✦</span><span class="da-knot-dot"></span></div>
+      <div class="da-hr--knot"><span class="da-knot-dot"></span><span class="da-knot-star"><svg class="star-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z"/></svg></span><span class="da-knot-dot"></span></div>
     </div></div>
   </div>
 
@@ -365,7 +372,7 @@ body{
         <div class="da-glass-panel">
           <div class="txt" style="font-weight:700; margin-bottom:8px">沉潮港纪事</div>
           <div class="row">
-            <span class="da-glass-chip">✦ 玄幻</span>
+            <span class="da-glass-chip"><svg class="star-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z"/></svg>玄幻</span>
             <span class="da-glass-chip">全 24 章</span>
             <span class="da-glass-chip">已完结</span>
           </div>
@@ -377,7 +384,7 @@ body{
   <div class="cat-item" id="FX-02">
     <div class="cat-item-head"><span class="cat-code">FX-02</span><span class="cat-name">光晕环</span></div>
     <div class="stage"><div class="stage-in center">
-      <div class="da-halo">✦</div>
+      <div class="da-halo"><svg class="star-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z"/></svg></div>
       <div class="txt-dim">化身 / 徽章位的星环底座</div>
     </div></div>
   </div>
@@ -431,7 +438,7 @@ body{
   <div class="cat-item" id="DTL-01">
     <div class="cat-item-head"><span class="cat-code">DTL-01</span><span class="cat-name">徽章组</span></div>
     <div class="stage"><div class="stage-in row">
-      <span class="da-badge da-badge--official">✦ 官方</span>
+      <span class="da-badge da-badge--official"><svg class="star-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z"/></svg>官方</span>
       <span class="da-badge da-badge--main">主化身</span>
       <span class="da-badge da-badge--serial">连载中</span>
       <span class="da-badge da-badge--done">已完结</span>
@@ -442,30 +449,30 @@ body{
     <div class="cat-item-head"><span class="cat-code">DTL-02</span><span class="cat-name">Chips</span></div>
     <p class="cat-note">点一点可切换选中（图鉴演示）；选中走 selected token 族。</p>
     <div class="stage"><div class="stage-in row">
-      <button class="da-chip" aria-pressed="true">全部</button>
-      <button class="da-chip" aria-pressed="false">玄幻修真</button>
-      <button class="da-chip" aria-pressed="false">都市现实</button>
-      <button class="da-chip" aria-pressed="false">恐怖</button>
-      <button class="da-chip" disabled>敬请期待</button>
+      <span class="cell"><button class="da-chip" aria-pressed="true">全部</button><span class="st">选中</span></span>
+      <span class="cell"><button class="da-chip" aria-pressed="false">玄幻修真</button><span class="st">未选中</span></span>
+      <span class="cell"><button class="da-chip" aria-pressed="false">都市现实</button><span class="st">未选中</span></span>
+      <span class="cell"><button class="da-chip" aria-pressed="false">恐怖</button><span class="st">未选中</span></span>
+      <span class="cell"><button class="da-chip" disabled>敬请期待</button><span class="st">禁用</span></span>
     </div></div>
   </div>
 
   <div class="cat-item" id="DTL-03">
     <div class="cat-item-head"><span class="cat-code">DTL-03</span><span class="cat-name">开关</span></div>
     <div class="stage"><div class="stage-in col" style="gap:16px">
-      <label class="da-switch"><input type="checkbox" checked><span class="da-switch-ui"></span><span class="da-switch-label">动效</span></label>
-      <label class="da-switch"><input type="checkbox"><span class="da-switch-ui"></span><span class="da-switch-label">消息提醒</span></label>
-      <label class="da-switch"><input type="checkbox" disabled><span class="da-switch-ui"></span><span class="da-switch-label">实验功能（未开放）</span></label>
+      <label class="da-switch"><input type="checkbox" checked><span class="da-switch-ui"></span><span class="da-switch-label">动效</span><span class="st">开</span></label>
+      <label class="da-switch"><input type="checkbox"><span class="da-switch-ui"></span><span class="da-switch-label">消息提醒</span><span class="st">关</span></label>
+      <label class="da-switch"><input type="checkbox" disabled><span class="da-switch-ui"></span><span class="da-switch-label">实验功能（未开放）</span><span class="st">禁用</span></label>
     </div></div>
   </div>
 
   <div class="cat-item" id="DTL-04">
     <div class="cat-item-head"><span class="cat-code">DTL-04</span><span class="cat-name">单选 / 勾选</span></div>
     <div class="stage"><div class="stage-in col" style="gap:14px">
-      <label class="da-radio"><input type="radio" name="cat-read" checked>上下滚动</label>
-      <label class="da-radio"><input type="radio" name="cat-read">逐屏翻页</label>
-      <label class="da-check"><input type="checkbox" checked>带入我的化身</label>
-      <label class="da-check"><input type="checkbox">完结后发布到广场</label>
+      <label class="da-radio"><input type="radio" name="cat-read" checked>上下滚动 <span class="st">选中</span></label>
+      <label class="da-radio"><input type="radio" name="cat-read">逐屏翻页 <span class="st">未选中</span></label>
+      <label class="da-check"><input type="checkbox" checked>带入我的化身 <span class="st">选中</span></label>
+      <label class="da-check"><input type="checkbox">完结后发布到广场 <span class="st">未选中</span></label>
     </div></div>
   </div>
 
@@ -473,12 +480,12 @@ body{
     <div class="cat-item-head"><span class="cat-code">DTL-05</span><span class="cat-name">输入 · 下划线式</span></div>
     <div class="stage"><div class="stage-in col" style="gap:18px">
       <div class="da-field">
-        <label class="da-field-label" for="cat-in-name">昵称</label>
+        <label class="da-field-label" for="cat-in-name">昵称 <span class="st">默认</span></label>
         <input class="da-input-under" id="cat-in-name" type="text" value="织界官方" autocomplete="off">
         <span class="da-field-hint">昵称可随时改，@用户名不可改。</span>
       </div>
       <div class="da-field is-error">
-        <label class="da-field-label" for="cat-in-mail">邮箱</label>
+        <label class="da-field-label" for="cat-in-mail">邮箱 <span class="st">错误</span></label>
         <input class="da-input-under" id="cat-in-mail" type="email" value="not-an-email" autocomplete="off">
         <span class="da-field-error">邮箱格式不对。</span>
       </div>
@@ -562,7 +569,7 @@ body{
     <div class="cat-item-head"><span class="cat-code">DTL-13</span><span class="cat-name">空态小标记</span></div>
     <div class="stage"><div class="stage-in center">
       <div class="da-empty-mark">
-        <span class="da-empty-glyph">✦</span>
+        <span class="da-empty-glyph"><svg class="star-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z"/></svg></span>
         <span class="da-empty-text">书架还空着</span>
       </div>
     </div></div>
