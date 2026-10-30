@@ -551,6 +551,18 @@ select{appearance:auto}
 .ability-radio{display:grid;place-items:center;width:24px;height:24px;flex-shrink:0;border:2px solid var(--line-2);border-radius:50%}
 .ability-radio i{width:12px;height:12px;border-radius:50%;background:linear-gradient(120deg,#38bdf8,#818cf8)}
 .ability-card.active .ability-radio{border-color:var(--cyan)}
+/* REQ-57: the three-way ability source cards (forge + plaza enter) and
+   the avatar page's signature-ability editor. The source list reuses
+   the ability-list container treatment so it reads as the same family. */
+.ability-source{margin-bottom:14px}
+.ability-source-list{display:grid;border:1px solid var(--line);border-radius:var(--radius-surface);background:var(--surface-card);backdrop-filter:var(--blur-card);-webkit-backdrop-filter:var(--blur-card);box-shadow:var(--shadow-card),var(--shadow-glass-top);overflow:hidden}
+.ability-card.is-unset{cursor:default}
+.avatar-ability-actions{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px}
+.avatar-ability-current{border:1px solid var(--line);border-radius:var(--radius-surface);background:var(--surface-card)}
+.avatar-ability-library{max-height:330px;overflow:auto;margin-top:12px}
+.avatar-ability-custom{display:grid;gap:12px;margin-top:12px}
+.avatar-card-ability{font-weight:600}
+.profile-stage-ability{margin:3px 0 0;font-size:12px;color:var(--profile-dim)}
 .opening-preview{display:grid;justify-items:center;text-align:center}
 .opening-art{width:min(240px,68vw);aspect-ratio:3/4;border:1px solid var(--line);border-radius:var(--radius-card);overflow:hidden;box-shadow:0 24px 50px -18px rgba(2,6,20,.8)}
 .opening-preview h3{margin:20px 0 0;font-size:24px;font-weight:800}

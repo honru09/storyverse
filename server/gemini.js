@@ -360,6 +360,10 @@ function compactConfig(config) {
   // character card): reader-authored data like the god-mode setting, so
   // it is sanitised the same way before it travels.
   result.persona = sanitizeSettingText(clip(config.persona, 600))
+  // The chosen ability's effect line (REQ-57): reader-authored on the
+  // custom / avatar-signature paths, so it is sanitised like the
+  // persona before it travels; the beat plan states it beside the name.
+  result.abilityDesc = sanitizeSettingText(clip(config.abilityDesc, 120))
   // Origin identity: only the concept id travels; the local title and the
   // identity-scoped spawn points are resolved by the shared engine (the beat
   // plan carries them), so the server never re-derives them.

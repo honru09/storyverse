@@ -606,7 +606,7 @@ export function plazaLengthLabel(source) {
  * (identity, spawn point, ability). story-engine's createStory consumes
  * exactly this shape.
  */
-export function enterDraftFor(detail, { avatar, identityId = '', startPointName = '', startPointHook = '', ability = '' } = {}) {
+export function enterDraftFor(detail, { avatar, identityId = '', startPointName = '', startPointHook = '', ability = '', abilityDesc = '' } = {}) {
   const template = detail?.enterTemplate?.config || {}
   return {
     genreId: template.genreId || detail?.genreId || 'mist',
@@ -628,6 +628,11 @@ export function enterDraftFor(detail, { avatar, identityId = '', startPointName 
     trait: '冷静观察者',
     origin: '',
     ability: ability || '',
+    // The picked ability's effect line (REQ-57): whichever of the
+    // three entry paths produced the name — the avatar's signature,
+    // a swapped candidate, a hand-written one — its effect lands in
+    // the new book's config beside the name.
+    abilityDesc: abilityDesc || '',
     tone: '诗性冒险',
     sourcePublicationId: detail?.id || '',
     // Bookkeeping only: the entrant's story is created directly from this

@@ -46,6 +46,7 @@ import { drawInspirationFragments } from "./inspiration-fragments.js";
 import {
   AVATAR_LIMIT,
   AVATAR_PRESETS,
+  avatarAbilityOf,
   avatarAppearanceText,
   avatarCollectionSignature,
   avatarDraftPatch,
@@ -57,6 +58,7 @@ import {
   fetchAvatars,
   generateAvatar,
   mainAvatarOf,
+  normalizeAvatarAbility,
   saveAvatar,
   setMainAvatar,
 } from "./avatar.js";
@@ -1332,6 +1334,12 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
   const [notice, setNotice] = useState("");
   const [showPrevious, setShowPrevious] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // REQ-57: the signature-ability editor's open panel (library grid or
+  // the hand-written form) and the hand-written form's own text. The
+  // chosen ability itself lives on the form; these are view state.
+  const [abilityEditMode, setAbilityEditMode] = useState(null);
+  const [abilityCustomName, setAbilityCustomName] = useState("");
+  const [abilityCustomDesc, setAbilityCustomDesc] = useState("");
   const getToken = useCallback(() => authClient.getAccessToken(), [authClient]);
   const signedIn = account?.status === "authenticated" && Boolean(account?.user);
 
@@ -1341,10 +1349,14 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
   const seedForm = (target) => {
     // The form is name + description only (AVATAR-TRIM): a stored
     // legacy `appearance` object is never seeded into the form, so it
-    // can neither render nor be submitted back.
+    // can neither render nor be submitted back. The signature ability
+    // (REQ-57) is the one further field: seeded normalised, and the
+    // key is ALWAYS present on the form (null = none set) so a save
+    // speaks tri-state — see validateAvatarProfile.
     setForm(target
-      ? { id: target.id, name: target.name, description: target.description || "" }
-      : { id: "", name: "", description: "" });
+      ? { id: target.id, name: target.name, description: target.description || "", ability: avatarAbilityOf(target) }
+      : { id: "", name: "", description: "", ability: null });
+    setAbilityEditMode(null);
     setConfirmDelete(false);
     setShowPrevious(false);
     setError("");
@@ -1395,7 +1407,11 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
     ? { ...selected, name: form.name || selected.name }
     : { id: form.id || "", name: form.name, portrait: { status: painting ? "pending" : "none", version: 0, hasPrevious: false } };
   const journeys = selected ? avatarJourneys(selected, stories) : [];
-  const profileDirty = Boolean(selected) && (form.name !== selected.name || form.description !== (selected.description || ""));
+  const profileDirty = Boolean(selected) && (
+    form.name !== selected.name
+    || form.description !== (selected.description || "")
+    || JSON.stringify(form.ability || null) !== JSON.stringify(avatarAbilityOf(selected) || null)
+  );
   const atLimit = avatars.length >= AVATAR_LIMIT;
   const quotaLine = quota ? `今天已用 ${quota.used} / ${quota.limit} 次` : "";
 
@@ -1447,7 +1463,26 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
     }
   };
   const adoptPreset = (preset) => {
-    setForm({ id: "", name: preset.name, description: preset.description });
+    setForm({ id: "", name: preset.name, description: preset.description, ability: avatarAbilityOf(preset) });
+    setAbilityEditMode(null);
+    setError("");
+  };
+  // REQ-57 editor actions: the library pick and the hand-written apply
+  // both land on the form (saved through the ordinary profile paths);
+  // opening the hand-written panel seeds it from a custom ability the
+  // form already carries, so re-editing starts from the current words.
+  const openAbilityCustom = () => {
+    const current = form.ability;
+    const isCustom = current && !ALL_ABILITIES.some((item) => item.id === current.id);
+    setAbilityCustomName(isCustom ? current.name : "");
+    setAbilityCustomDesc(isCustom ? current.desc : "");
+    setAbilityEditMode("custom");
+  };
+  const applyAbilityCustom = () => {
+    const name = abilityCustomName.trim();
+    if (!name) { setError("先给这个能力取个名字。"); return; }
+    setForm({ ...form, ability: normalizeAvatarAbility({ id: "custom", name, desc: abilityCustomDesc }) });
+    setAbilityEditMode(null);
     setError("");
   };
   const makeMain = async () => {
@@ -1515,6 +1550,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
                     {item.id === mainId && <span className="avatar-main-badge">主化身</span>}
                   </span>
                   <small>{avatarAppearanceText(item)}</small>
+                  {avatarAbilityOf(item) && <small className="avatar-card-ability">专属能力 · {avatarAbilityOf(item).name}</small>}
                 </span>
               </button>
             ))}
@@ -1601,6 +1637,106 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
               placeholder="写一两句：性格、气质、给人的感觉——立绘会照着画，故事也会记住。"
             />
           </label>
+          {/* REQ-57: the signature ability editor. The ability itself
+              is one { name, desc } — picked from the same library the
+              forge's ability step uses, or written by hand under the
+              same bounds. It presets HERE only; entering a world may
+              swap or rewrite it for that book without touching this. */}
+          <div className="form-block avatar-ability-editor">
+            <span className="field-label">专属能力（选填）</span>
+            {form.ability ? (
+              <div className="ability-card active avatar-ability-current">
+                <span>
+                  <b>{form.ability.name}</b>
+                  <small>{form.ability.desc || "还没有写效果"}</small>
+                </span>
+              </div>
+            ) : (
+              <p className="field-hint">还没设置。设好之后，带 TA 进任何世界，默认就用这个能力开局。</p>
+            )}
+            <div className="avatar-ability-actions">
+              <button
+                type="button"
+                className="small-link"
+                disabled={busy}
+                onClick={() => setAbilityEditMode(abilityEditMode === "library" ? null : "library")}
+              >
+                {form.ability ? "从能力库换一个" : "从能力库选"}
+              </button>
+              <button type="button" className="small-link" disabled={busy} onClick={openAbilityCustom}>
+                自己写一个
+              </button>
+              {form.ability && (
+                <button
+                  type="button"
+                  className="small-link"
+                  disabled={busy}
+                  onClick={() => { setForm({ ...form, ability: null }); setAbilityEditMode(null); }}
+                >
+                  清除
+                </button>
+              )}
+            </div>
+            {abilityEditMode === "library" && (
+              <div className="ability-list avatar-ability-library">
+                {ALL_ABILITIES.map((item) => (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className={`ability-card ${form.ability?.id === item.id ? "active" : ""}`}
+                    aria-pressed={form.ability?.id === item.id}
+                    disabled={busy}
+                    onClick={() => {
+                      setForm({ ...form, ability: { id: item.id, name: item.name, desc: item.desc } });
+                      setAbilityEditMode(null);
+                    }}
+                  >
+                    <span>
+                      <b>{item.name}</b>
+                      <small>{item.desc}</small>
+                    </span>
+                    <span className="ability-radio">
+                      {form.ability?.id === item.id && <i />}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {abilityEditMode === "custom" && (
+              <div className="avatar-ability-custom">
+                <label className="field-label">
+                  能力名
+                  <input
+                    maxLength={40}
+                    autoComplete="off"
+                    value={abilityCustomName}
+                    disabled={busy}
+                    onChange={(event) => setAbilityCustomName(event.target.value)}
+                    placeholder="给这个能力取个名字"
+                  />
+                </label>
+                <label className="field-label">
+                  它能做到什么
+                  <input
+                    maxLength={120}
+                    autoComplete="off"
+                    value={abilityCustomDesc}
+                    disabled={busy}
+                    onChange={(event) => setAbilityCustomDesc(event.target.value)}
+                    placeholder="一句话写清效果和边界"
+                  />
+                </label>
+                <div className="avatar-ability-actions">
+                  <button type="button" className="small-link" disabled={busy} onClick={applyAbilityCustom}>
+                    就用这个
+                  </button>
+                  <button type="button" className="small-link" disabled={busy} onClick={() => setAbilityEditMode(null)}>
+                    先不写了
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           {creating && avatars.length === 0 && (
             <div className="form-block">
               <span className="field-label">或者先选一位</span>
@@ -1639,7 +1775,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
             )}
             {profileDirty && (
               <button type="button" className="small-link" disabled={busy} onClick={() => void saveProfileOnly()}>
-                只保存名字与描述
+                只保存资料
               </button>
             )}
           </div>
@@ -2048,6 +2184,23 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     );
     return !known && initialDraft?.ability ? initialDraft.ability : "";
   });
+  // REQ-57: with an avatar brought in, the ability step asks WHERE this
+  // book's ability comes from — the avatar's own signature ability
+  // (the default), a swap from this world's candidates, or one the
+  // reader writes for this book only. The pick never writes back to
+  // the avatar profile. null = not chosen yet this visit; the
+  // effective source is derived below (a linked avatar with a
+  // signature ability defaults to "signature"). A restored draft's
+  // stored source wins; a pre-REQ-57 draft whose stored ability IS the
+  // linked avatar's signature reads as "signature" too.
+  const [abilitySource, setAbilitySource] = useState(() => {
+    const stored = initialDraft?.abilitySource;
+    if (stored === "signature" || stored === "swap" || stored === "custom") return stored;
+    const linked = (avatars || []).find((item) => item.id === initialDraft?.avatarId) || null;
+    const signature = (linked ? avatarAbilityOf(linked) : null) || normalizeAvatarAbility(initialDraft?.avatarAbility);
+    if (initialDraft?.avatarId && signature && initialDraft?.ability === signature.name) return "signature";
+    return null;
+  });
   const isCustom = draft.genreId === CUSTOM_GENRE.id;
   // True only once a world was deliberately picked, rolled or combo-rolled
   // (or the draft predates the world screen — see legacyDraftToDraft). The
@@ -2215,6 +2368,9 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     if (rolledAbility) {
       setCustomAbility("");
       setAbilityId(rolledAbility.id);
+      // A roll is a swap by definition (REQ-57): with an avatar linked
+      // it leaves the signature/custom source for the candidate list.
+      if (draft.avatarId) setAbilitySource("swap");
     }
   };
   const enterGodMode = () => {
@@ -2275,12 +2431,34 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     setShelfId(comboShelf && comboShelf.templateIds.length > 1 ? comboShelf.id : null);
     setRolled({ template: nextTemplate, world: stageGenre.world, identity: nextIdentity, point });
   };
+  // REQ-57: the avatar linked into this draft (when the collection has
+  // it) and its preset signature ability. A draft whose avatar is no
+  // longer in the collection falls back to the ability snapshot the
+  // bring-in patch recorded on the draft itself.
+  const linkedAvatar = draft.avatarId
+    ? (avatars.find((item) => item.id === draft.avatarId) || null)
+    : null;
+  const signatureAbility = linkedAvatar
+    ? avatarAbilityOf(linkedAvatar)
+    : normalizeAvatarAbility(draft.avatarAbility);
+  // The effective three-way source: only meaningful with an avatar
+  // linked. "signature" counts only while the avatar actually has one;
+  // an avatar without a preset opens on "swap" (today's behaviour).
+  const abilitySourceEff = !draft.avatarId
+    ? null
+    : abilitySource === "signature" && !signatureAbility
+      ? "swap"
+      : abilitySource || (signatureAbility ? "signature" : "swap");
   // A pick only counts while it belongs to the current candidate list (or
   // is the reader's own custom text): switching world or template retires
   // a stale pick instead of silently carrying another world's ability.
-  const abilityPick = abilityId === "custom"
-    ? (customAbility.trim() ? { id: "custom", name: customAbility.trim(), desc: "你亲手写下的能力" } : null)
-    : abilityCandidates.find((item) => item.id === abilityId) || null;
+  // The signature source stands outside that rule by design — the
+  // avatar's own ability is world-independent, like its character.
+  const abilityPick = abilitySourceEff === "signature" && signatureAbility
+    ? { id: signatureAbility.id || "signature", name: signatureAbility.name, desc: signatureAbility.desc }
+    : abilityId === "custom"
+      ? (customAbility.trim() ? { id: "custom", name: customAbility.trim(), desc: "你亲手写下的能力" } : null)
+      : abilityCandidates.find((item) => item.id === abilityId) || null;
   const abilityName = abilityPick?.name || "";
   const set = (patch) => setDraft((current) => ({ ...current, ...patch }));
   // 外部导入 (external import): a world book / world text lands as a
@@ -2385,7 +2563,8 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     const lorebook = bookEntries.length
       ? normalizeLorebookEntries([...(draft.lorebook || []), ...bookEntries])
       : draft.lorebook;
-    set({ name: cardPreview.name, persona: cardPreview.persona, avatarId: "", avatarAppearance: "", ...(bookEntries.length ? { lorebook } : {}) });
+    set({ name: cardPreview.name, persona: cardPreview.persona, avatarId: "", avatarAppearance: "", avatarAbility: null, ...(bookEntries.length ? { lorebook } : {}) });
+    setAbilitySource(null);
     setCardPreview(null);
   };
   const next = () => {
@@ -2436,6 +2615,12 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       ...draft,
       ability: abilityName,
       abilityId: abilityPick?.id || "",
+      // REQ-57: the picked ability's effect line and the three-way
+      // source ride the draft too, so a restored forge reopens on the
+      // same source with the same custom text (the custom text itself
+      // is the stored ability name, as before).
+      abilityDesc: abilityPick?.desc || "",
+      abilitySource: abilitySourceEff || "",
       step,
       // Whether the step-one template was EVER deliberately picked or
       // rolled in this draft's life (§37): the restore funnel reads it
@@ -2447,7 +2632,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       // migratedDraftStep) instead of folding them a second time.
       flowVersion: 5,
     });
-  }, [draft, abilityName, abilityPick?.id, step, pickedTemplate, onDraftChange]);
+  }, [draft, abilityName, abilityPick?.id, abilityPick?.desc, abilitySourceEff, step, pickedTemplate, onDraftChange]);
   useEffect(() => {
     scrollToTop();
     forgeRef.current
@@ -2471,6 +2656,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     try { await onGenerate({
       ...draft,
       ability: abilityName,
+      abilityDesc: abilityPick?.desc || "",
       world,
       abilityOption: abilityPick || { id: "", name: "", desc: "" },
     }, { engine, signal: controller.signal });
@@ -2527,6 +2713,134 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       set({ storyLengthMode: nextMode });
     }
   };
+  // REQ-57: the ability step's pieces, composed by source below. The
+  // candidate groups + random card are the 「换一个能力」 body (and,
+  // with no avatar linked, the whole step as before); the custom field
+  // is the 「自己编辑一个」 body (and the step's tail as before).
+  const abilityCandidatesUi = (
+    <>
+      {abilityGroups.map((group) => (
+        <div key={group.kind} className="ability-group">
+          <h4 className="ability-group-title">{abilityGroupTitle(group.kind)}</h4>
+          <div className="ability-list">
+            {group.items.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className={`ability-card ${abilityId === item.id ? "active" : ""}`}
+                aria-pressed={abilityId === item.id}
+                onClick={() => { setAbilityId(item.id); setCustomAbility(""); }}
+              >
+                <span>
+                  <b>{item.name}</b>
+                  <small>{item.desc}</small>
+                </span>
+                <span className="ability-radio">
+                  {abilityId === item.id && <i />}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div className="ability-list ability-list-tail">
+        <button
+          type="button"
+          className="ability-card ability-card-random"
+          onClick={rollAbility}
+        >
+          <span>
+            <b>随机能力</b>
+            <small>从上面的候选里抽一个，抽到就是它</small>
+          </span>
+          <span className="ability-radio" />
+        </button>
+      </div>
+    </>
+  );
+  const abilityCustomField = (
+    <label className="field-label ability-custom">
+      {abilitySourceEff === "custom" ? "写下这本书里用的能力" : "自定义能力（选填）"}
+      <input
+        maxLength={40}
+        autoComplete="off"
+        value={customAbility}
+        onChange={(event) => {
+          setCustomAbility(event.target.value);
+          setAbilityId(event.target.value.trim() ? "custom" : "");
+        }}
+        placeholder="也可以写一个只属于你的能力"
+      />
+    </label>
+  );
+  // The three-way source cards (REQ-57): shown only with an avatar
+  // linked. The signature card names the actual ability it would
+  // bring; an avatar without a preset shows the unset state with the
+  // way to fix it, never a dead option.
+  const abilitySourceUi = abilitySourceEff ? (
+    <div className="ability-source">
+      <div className="ability-source-list" role="radiogroup" aria-label="这本书的能力从哪来">
+        {signatureAbility ? (
+          <button
+            type="button"
+            role="radio"
+            aria-checked={abilitySourceEff === "signature"}
+            className={`ability-card ${abilitySourceEff === "signature" ? "active" : ""}`}
+            onClick={() => setAbilitySource("signature")}
+          >
+            <span>
+              <b>带{linkedAvatar?.name || "化身"}的专属能力进入</b>
+              <small>{signatureAbility.name}{signatureAbility.desc ? ` · ${signatureAbility.desc}` : ""}</small>
+            </span>
+            <span className="ability-radio">{abilitySourceEff === "signature" && <i />}</span>
+          </button>
+        ) : (
+          <div className="ability-card is-unset">
+            <span>
+              <b>专属能力还没设置</b>
+              <small>在化身页给{linkedAvatar?.name || "TA"}预设一个，进任何世界都能直接带上。</small>
+            </span>
+            <button type="button" className="small-link" onClick={onOpenAvatar}>去设置</button>
+          </div>
+        )}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={abilitySourceEff === "swap"}
+          className={`ability-card ${abilitySourceEff === "swap" ? "active" : ""}`}
+          onClick={() => {
+            setAbilitySource("swap");
+            if (abilityId === "custom") { setAbilityId(""); setCustomAbility(""); }
+          }}
+        >
+          <span>
+            <b>换一个能力</b>
+            <small>从这个世界的候选里挑，只用在这本书</small>
+          </span>
+          <span className="ability-radio">{abilitySourceEff === "swap" && <i />}</span>
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={abilitySourceEff === "custom"}
+          className={`ability-card ${abilitySourceEff === "custom" ? "active" : ""}`}
+          onClick={() => {
+            setAbilitySource("custom");
+            if (customAbility.trim()) setAbilityId("custom");
+          }}
+        >
+          <span>
+            <b>自己编辑一个</b>
+            <small>写一个只属于这本书的能力，不改化身的预设</small>
+          </span>
+          <span className="ability-radio">{abilitySourceEff === "custom" && <i />}</span>
+        </button>
+      </div>
+      {abilitySourceEff === "signature" && signatureAbility && (
+        <p className="field-hint">这本书就用「{signatureAbility.name}」开局。上面另两项随时能换，只影响这一本。</p>
+      )}
+    </div>
+  ) : null;
   if (manualOpen) {
     return (
       <div className="page page-forge page-enter">
@@ -3008,7 +3322,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                         <b>这一本由{item.name}来走</b>
                         <small>名字、样子和设定已带入，只改这本书，不动化身档案。</small>
                       </span>
-                      <button type="button" className="small-link" onClick={() => set({ avatarId: "", avatarAppearance: "" })}>
+                      <button type="button" className="small-link" onClick={() => { set({ avatarId: "", avatarAppearance: "", avatarAbility: null }); setAbilitySource(null); }}>
                         取消带入
                       </button>
                     </div>
@@ -3024,7 +3338,14 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                       <button
                         type="button"
                         className="small-link"
-                        onClick={() => { const patch = avatarDraftPatch(item); if (patch) set(patch); }}
+                        onClick={() => {
+                          const patch = avatarDraftPatch(item);
+                          if (patch) set({ avatarAbility: null, ...patch });
+                          // REQ-57: a fresh bring-in reopens the
+                          // ability source on this avatar's default —
+                          // its signature ability when it has one.
+                          setAbilitySource(avatarAbilityOf(item) ? "signature" : "swap");
+                        }}
                       >
                         用这个化身
                       </button>
@@ -3038,7 +3359,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                     <b>已带入化身</b>
                     <small>{draft.avatarAppearance}</small>
                   </span>
-                  <button type="button" className="small-link" onClick={() => set({ avatarId: "", avatarAppearance: "" })}>
+                  <button type="button" className="small-link" onClick={() => { set({ avatarId: "", avatarAppearance: "", avatarAbility: null }); setAbilitySource(null); }}>
                     取消带入
                   </button>
                 </div>
@@ -3246,61 +3567,20 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
               <div className="forge-section-heading mini ability-heading">
                 <div>
                   <h3>想拥有什么能力？</h3>
-                  <p className="field-hint">{isCustom
-                    ? "创世神世界没有现成的能力池：候选来自你选的写法（或通用池），也可以写一个自己的。不选直接继续，会从候选里随机落定一个。"
-                    : "候选分两组：上面是所选题材的招牌能力，下面是这个世界的本事。不选直接继续，会从候选里随机落定一个。"}</p>
+                  <p className="field-hint">{abilitySourceEff
+                    ? "化身带着自己的专属能力：默认就用它进这个世界，也可以换一个，或写一个只属于这本书的——换和写都不改化身的预设。"
+                    : isCustom
+                      ? "创世神世界没有现成的能力池：候选来自你选的写法（或通用池），也可以写一个自己的。不选直接继续，会从候选里随机落定一个。"
+                      : "候选分两组：上面是所选题材的招牌能力，下面是这个世界的本事。不选直接继续，会从候选里随机落定一个。"}</p>
                 </div>
               </div>
-              {abilityGroups.map((group) => (
-                <div key={group.kind} className="ability-group">
-                  <h4 className="ability-group-title">{abilityGroupTitle(group.kind)}</h4>
-                  <div className="ability-list">
-                    {group.items.map((item) => (
-                      <button
-                        type="button"
-                        key={item.id}
-                        className={`ability-card ${abilityId === item.id ? "active" : ""}`}
-                        aria-pressed={abilityId === item.id}
-                        onClick={() => { setAbilityId(item.id); setCustomAbility(""); }}
-                      >
-                        <span>
-                          <b>{item.name}</b>
-                          <small>{item.desc}</small>
-                        </span>
-                        <span className="ability-radio">
-                          {abilityId === item.id && <i />}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              <div className="ability-list ability-list-tail">
-                <button
-                  type="button"
-                  className="ability-card ability-card-random"
-                  onClick={rollAbility}
-                >
-                  <span>
-                    <b>随机能力</b>
-                    <small>从上面的候选里抽一个，抽到就是它</small>
-                  </span>
-                  <span className="ability-radio" />
-                </button>
-              </div>
-              <label className="field-label ability-custom">
-                自定义能力（选填）
-                <input
-                  maxLength={40}
-                  autoComplete="off"
-                  value={customAbility}
-                  onChange={(event) => {
-                    setCustomAbility(event.target.value);
-                    setAbilityId(event.target.value.trim() ? "custom" : "");
-                  }}
-                  placeholder="也可以写一个只属于你的能力"
-                />
-              </label>
+              {/* REQ-57: with an avatar linked, the three-way source
+                  cards come first; the candidate groups belong to
+                  「换一个能力」, the editor to 「自己编辑一个」. With
+                  no avatar, everything shows as it always did. */}
+              {abilitySourceUi}
+              {(!abilitySourceEff || abilitySourceEff === "swap") && abilityCandidatesUi}
+              {(!abilitySourceEff || abilitySourceEff === "custom") && abilityCustomField}
               {/* FORGE-TRIM: the 故事风格 cards are offline. The same
                   three cards hung off every category and read as noise;
                   the forge no longer asks. Stored tone values on older
@@ -3358,7 +3638,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                 {draft.immersive && (
                   <button disabled={busy} onClick={() => setStep(4)} aria-label="修改人生经历"><span>人生经历</span><b>已带入</b><Icon name="chevron" size={15} /></button>
                 )}
-                <button disabled={busy} onClick={() => setStep(4)} aria-label="修改能力"><span>能力</span><b>{abilityName || "未定"}</b><Icon name="chevron" size={15} /></button>
+                <button disabled={busy} onClick={() => setStep(4)} aria-label="修改能力"><span>能力</span><b>{abilityName || "未定"}{abilitySourceEff === "signature" && abilityName ? " · 化身专属" : ""}</b><Icon name="chevron" size={15} /></button>
 
               </div>
               {/* The shelf-requirement disclosure (FINAL-FIX R-06): a
@@ -9695,6 +9975,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
                       {stageAvatar.isMain && <span className="profile-main-badge">主化身</span>}
                     </p>
                     {stageAvatar.appearance ? <p className="profile-stage-desc">{stageAvatar.appearance}</p> : null}
+                    {stageAvatar.ability?.name ? <p className="profile-stage-ability">专属能力 · {stageAvatar.ability.name}</p> : null}
                   </div>
                   {stageAvatar.currentWorld ? <span className="profile-stage-world">现驻 · {stageAvatar.currentWorld}</span> : null}
                 </div>
@@ -9998,6 +10279,12 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
   const [spawnName, setSpawnName] = useState("");
   const [spawnHook, setSpawnHook] = useState("");
   const [abilityName, setAbilityName] = useState("");
+  // REQ-57: the same three-way ability source as the forge — the
+  // chosen avatar's signature ability by default, a swap from this
+  // book's candidates, or one written for this entry only. null = the
+  // derived default (signature when the avatar has one, else swap).
+  const [enterAbilitySource, setEnterAbilitySource] = useState(null);
+  const [enterCustomAbility, setEnterCustomAbility] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [enterAvatarId, setEnterAvatarId] = useState(null);
@@ -10046,7 +10333,8 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
         identityId,
         startPointName: spawnName,
         startPointHook: spawnHook,
-        ability: abilityName,
+        ability: enterAbilityName,
+        abilityDesc: enterAbilityDesc,
         avatarId: chosenAvatar?.id || "",
       }, { signal: controller.signal });
     } catch (failure) {
@@ -10059,6 +10347,30 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
   const chosenAvatar = avatars.find((item) => item.id === enterAvatarId)
     || mainAvatarOf(avatars, mainId)
     || avatar;
+  // REQ-57 derived ability state: the chosen avatar's signature, the
+  // effective source (signature only counts while one exists), and the
+  // ability this entry will actually carry — falling back to the
+  // book's first candidate exactly like the pre-REQ-57 default did.
+  const chosenSignature = chosenAvatar ? avatarAbilityOf(chosenAvatar) : null;
+  const enterSourceEff = !chosenAvatar
+    ? null
+    : enterAbilitySource === "signature" && !chosenSignature
+      ? "swap"
+      : enterAbilitySource || (chosenSignature ? "signature" : "swap");
+  const enterPickedAbility = (enterSourceEff === "signature" && chosenSignature
+    ? chosenSignature
+    : enterSourceEff === "custom"
+      ? (enterCustomAbility.trim() ? { id: "custom", name: enterCustomAbility.trim(), desc: "你亲手写下的能力" } : null)
+      : abilities.find((item) => item.name === abilityName) || null) || abilities[0] || null;
+  const enterAbilityName = enterPickedAbility?.name || "";
+  const enterAbilityDesc = enterPickedAbility?.desc || "";
+  // Switching the avatar reopens the source choice on the new avatar's
+  // own default; a half-typed custom ability does not follow across.
+  const chosenAvatarId = chosenAvatar?.id || "";
+  useEffect(() => {
+    setEnterAbilitySource(null);
+    setEnterCustomAbility("");
+  }, [chosenAvatarId]);
 
   if (loadError) {
     return (
@@ -10181,23 +10493,126 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
 
           <div className="form-block">
             <span className="field-label">带进这个世界的能力</span>
-            <div className="chip-grid" role="group" aria-label="能力">
-              {abilities.map((item) => (
-                <button
-                  type="button"
-                  key={item.id}
-                  className={`choice-chip ${abilityName === item.name ? "active" : ""}`}
-                  aria-pressed={abilityName === item.name}
-                  disabled={busy}
-                  onClick={() => setAbilityName(item.name)}
-                >
-                  {item.name}
-                  {abilityName === item.name && <Icon name="check" size={13} />}
-                </button>
-              ))}
-            </div>
-            {abilities.find((item) => item.name === abilityName) && (
-              <p className="field-hint">{abilities.find((item) => item.name === abilityName).desc}</p>
+            {/* REQ-57: with an avatar chosen, the source is asked out
+                loud — signature by default, swap and hand-written as
+                equals. Without an avatar (still loading) the plain
+                candidate chips show, as before. */}
+            {enterSourceEff ? (
+              <>
+                <div className="ability-source-list" role="radiogroup" aria-label="这本书的能力从哪来">
+                  {chosenSignature ? (
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={enterSourceEff === "signature"}
+                      className={`ability-card ${enterSourceEff === "signature" ? "active" : ""}`}
+                      disabled={busy}
+                      onClick={() => setEnterAbilitySource("signature")}
+                    >
+                      <span>
+                        <b>带{chosenAvatar?.name || "化身"}的专属能力进入</b>
+                        <small>{chosenSignature.name}{chosenSignature.desc ? ` · ${chosenSignature.desc}` : ""}</small>
+                      </span>
+                      <span className="ability-radio">{enterSourceEff === "signature" && <i />}</span>
+                    </button>
+                  ) : (
+                    <div className="ability-card is-unset">
+                      <span>
+                        <b>专属能力还没设置</b>
+                        <small>在化身页给{chosenAvatar?.name || "TA"}预设一个，进任何世界都能直接带上。</small>
+                      </span>
+                      <button type="button" className="small-link" onClick={onOpenAvatar}>去设置</button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={enterSourceEff === "swap"}
+                    className={`ability-card ${enterSourceEff === "swap" ? "active" : ""}`}
+                    disabled={busy}
+                    onClick={() => setEnterAbilitySource("swap")}
+                  >
+                    <span>
+                      <b>换一个能力</b>
+                      <small>从这本书的候选里挑，只用在这条新线</small>
+                    </span>
+                    <span className="ability-radio">{enterSourceEff === "swap" && <i />}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={enterSourceEff === "custom"}
+                    className={`ability-card ${enterSourceEff === "custom" ? "active" : ""}`}
+                    disabled={busy}
+                    onClick={() => setEnterAbilitySource("custom")}
+                  >
+                    <span>
+                      <b>自己编辑一个</b>
+                      <small>写一个只属于这条新线的能力，不改化身的预设</small>
+                    </span>
+                    <span className="ability-radio">{enterSourceEff === "custom" && <i />}</span>
+                  </button>
+                </div>
+                {enterSourceEff === "signature" && chosenSignature && (
+                  <p className="field-hint">这条新线就用「{chosenSignature.name}」开局。</p>
+                )}
+                {enterSourceEff === "swap" && (
+                  <>
+                    <div className="chip-grid" role="group" aria-label="能力">
+                      {abilities.map((item) => (
+                        <button
+                          type="button"
+                          key={item.id}
+                          className={`choice-chip ${abilityName === item.name ? "active" : ""}`}
+                          aria-pressed={abilityName === item.name}
+                          disabled={busy}
+                          onClick={() => setAbilityName(item.name)}
+                        >
+                          {item.name}
+                          {abilityName === item.name && <Icon name="check" size={13} />}
+                        </button>
+                      ))}
+                    </div>
+                    {abilities.find((item) => item.name === abilityName) && (
+                      <p className="field-hint">{abilities.find((item) => item.name === abilityName).desc}</p>
+                    )}
+                  </>
+                )}
+                {enterSourceEff === "custom" && (
+                  <label className="field-label ability-custom">
+                    写下这条新线里用的能力
+                    <input
+                      maxLength={40}
+                      autoComplete="off"
+                      value={enterCustomAbility}
+                      disabled={busy}
+                      onChange={(event) => setEnterCustomAbility(event.target.value)}
+                      placeholder="也可以写一个只属于你的能力"
+                    />
+                  </label>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="chip-grid" role="group" aria-label="能力">
+                  {abilities.map((item) => (
+                    <button
+                      type="button"
+                      key={item.id}
+                      className={`choice-chip ${abilityName === item.name ? "active" : ""}`}
+                      aria-pressed={abilityName === item.name}
+                      disabled={busy}
+                      onClick={() => setAbilityName(item.name)}
+                    >
+                      {item.name}
+                      {abilityName === item.name && <Icon name="check" size={13} />}
+                    </button>
+                  ))}
+                </div>
+                {abilities.find((item) => item.name === abilityName) && (
+                  <p className="field-hint">{abilities.find((item) => item.name === abilityName).desc}</p>
+                )}
+              </>
             )}
           </div>
 
@@ -11992,6 +12407,7 @@ function App() {
           trait: payload.trait,
           origin: payload.origin,
           ability: payload.ability,
+          abilityDesc: payload.abilityDesc,
           tone: payload.tone,
           immersive: payload.immersive,
           hometown: payload.hometown,
