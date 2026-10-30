@@ -1,4 +1,5 @@
 import { createServer as httpCreateServer } from 'node:http'
+import { createHash } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
@@ -32,6 +33,46 @@ function sendJson(response, status, payload) {
   if (response.destroyed || response.writableEnded) return
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...(status === 429 ? { 'Retry-After': '60' } : {}) })
   response.end(JSON.stringify(payload))
+}
+
+/* LOCAL-CACHE (REQ-50): layered HTTP caching. Bodies are already fully
+ * in memory at every image/static exit, so a strong content ETag costs
+ * one hash — and buys the 304 revalidation that stops the app from
+ * re-downloading the same picture on every open. */
+function contentEtag(bytes) {
+  return `"${createHash('sha256').update(bytes).digest('hex').slice(0, 16)}-${bytes.length}"`
+}
+
+function etagMatches(request, etag) {
+  const header = request.headers['if-none-match']
+  if (!header) return false
+  return header.split(',').map((part) => part.trim()).some((part) => part === '*' || part === etag || part === `W/${etag}`)
+}
+
+const PUBLIC_IMAGE_CACHE = 'public, max-age=86400'
+const PRIVATE_IMAGE_CACHE = 'private, max-age=86400'
+const VERSIONED_IMAGE_CACHE = 'public, max-age=31536000, immutable'
+
+/* One exit for every API image. Versioned public covers (the URL itself
+ * names the bytes via ?v=N) ride immutable year-long caching; everything
+ * else gets a day of freshness plus the ETag above, so an expired copy
+ * renews with a 304 instead of a second download. Private account
+ * images stay `private` — the browser's own cache only, never shared. */
+function sendImage(request, response, image, cacheControl) {
+  if (response.destroyed || response.writableEnded) return
+  const etag = contentEtag(image.buffer)
+  if (etagMatches(request, etag)) {
+    response.writeHead(304, { 'Cache-Control': cacheControl, ETag: etag })
+    response.end()
+    return
+  }
+  response.writeHead(200, {
+    'Content-Type': image.contentType,
+    'Content-Length': image.buffer.length,
+    'Cache-Control': cacheControl,
+    ETag: etag,
+  })
+  response.end(image.buffer)
 }
 
 /** Per-client key for auth throttling: the first forwarded hop when a proxy reports it, else the socket peer. */
@@ -187,7 +228,22 @@ async function serveStatic(request, response, pathname, distDir) {
   const type = MIME[path.extname(candidate)]
   if (!type || candidate.endsWith('.map')) throw new ApiError(404, '页面不存在。')
   const bytes = await readFile(candidate)
-  response.writeHead(200, { 'Content-Type': type, 'Content-Length': bytes.length, 'Cache-Control': candidate.endsWith('.html') ? 'no-cache' : 'public, max-age=3600' })
+  /* LOCAL-CACHE (REQ-50) tiers: the HTML shell and the worker script
+   * itself always revalidate, so a fresh deploy reaches installed
+   * clients on the next open; content-hashed build assets never change
+   * under one name, so they are immutable for a year; every other
+   * static file (world art, fonts, icons) gets a week plus the content
+   * ETag, so an expired copy renews as a 304 instead of re-downloading. */
+  const etag = contentEtag(bytes)
+  let cacheControl = 'public, max-age=604800'
+  if (candidate.endsWith('.html') || decoded === '/sw.js') cacheControl = 'no-cache'
+  else if (decoded.startsWith('/assets/')) cacheControl = 'public, max-age=31536000, immutable'
+  if (etagMatches(request, etag)) {
+    response.writeHead(304, { 'Cache-Control': cacheControl, ETag: etag })
+    response.end()
+    return
+  }
+  response.writeHead(200, { 'Content-Type': type, 'Content-Length': bytes.length, 'Cache-Control': cacheControl, ETag: etag })
   response.end(request.method === 'HEAD' ? undefined : bytes)
 }
 
@@ -492,14 +548,7 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         const storyId = new URL(request.url, 'http://localhost').searchParams.get('storyId') || ''
         const image = await cover.fetch(identity, storyId)
         if (!image) throw new ApiError(404, '这本书还没有专属封面。')
-        if (!response.destroyed && !response.writableEnded) {
-          response.writeHead(200, {
-            'Content-Type': image.contentType,
-            'Content-Length': image.buffer.length,
-            'Cache-Control': 'private, max-age=300',
-          })
-          response.end(image.buffer)
-        }
+        sendImage(request, response, image, PRIVATE_IMAGE_CACHE)
         return
       }
       if (pathname === '/api/avatar' && request.method === 'GET') {
@@ -580,14 +629,7 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         const which = params.get('which') || 'current'
         const image = await avatar.fetchImage(identity, which, params.get('avatarId') || null)
         if (!image) throw new ApiError(404, '还没有这张立绘。')
-        if (!response.destroyed && !response.writableEnded) {
-          response.writeHead(200, {
-            'Content-Type': image.contentType,
-            'Content-Length': image.buffer.length,
-            'Cache-Control': 'private, max-age=300',
-          })
-          response.end(image.buffer)
-        }
+        sendImage(request, response, image, PRIVATE_IMAGE_CACHE)
         return
       }
       // The cloud library is account property: every route resolves the
@@ -827,14 +869,7 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           const avatarParam = new URL(request.url, 'http://localhost').searchParams.get('avatar')
           const image = await social.portrait(uid, avatarParam || undefined)
           if (!image) throw new ApiError(404, '这位用户还没有立绘。')
-          if (!response.destroyed && !response.writableEnded) {
-            response.writeHead(200, {
-              'Content-Type': image.contentType,
-              'Content-Length': image.buffer.length,
-              'Cache-Control': 'public, max-age=300',
-            })
-            response.end(image.buffer)
-          }
+          sendImage(request, response, image, PUBLIC_IMAGE_CACHE)
           return
         }
         if (action === 'picture' && request.method === 'GET') {
@@ -842,14 +877,7 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           // default avatar is a static asset and never lands here.
           const image = await social.picture(uid)
           if (!image) throw new ApiError(404, '这位用户还没有自定义头像。')
-          if (!response.destroyed && !response.writableEnded) {
-            response.writeHead(200, {
-              'Content-Type': image.contentType,
-              'Content-Length': image.buffer.length,
-              'Cache-Control': 'public, max-age=300',
-            })
-            response.end(image.buffer)
-          }
+          sendImage(request, response, image, PUBLIC_IMAGE_CACHE)
           return
         }
         if (action === 'banner' && request.method === 'GET') {
@@ -858,14 +886,7 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           // the portrait route and a static asset respectively.
           const image = await social.banner(uid)
           if (!image) throw new ApiError(404, '这位用户还没有自定义头图。')
-          if (!response.destroyed && !response.writableEnded) {
-            response.writeHead(200, {
-              'Content-Type': image.contentType,
-              'Content-Length': image.buffer.length,
-              'Cache-Control': 'public, max-age=300',
-            })
-            response.end(image.buffer)
-          }
+          sendImage(request, response, image, PUBLIC_IMAGE_CACHE)
           return
         }
         if (action === 'profile' && request.method === 'GET') {
@@ -1032,27 +1053,14 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         if (action === 'cover' && request.method === 'GET') {
           const image = await plaza.cover(id)
           if (!image) throw new ApiError(404, '这本书还没有专属封面。')
-          if (!response.destroyed && !response.writableEnded) {
-            response.writeHead(200, {
-              'Content-Type': image.contentType,
-              'Content-Length': image.buffer.length,
-              'Cache-Control': 'public, max-age=300',
-            })
-            response.end(image.buffer)
-          }
+          const versioned = new URL(request.url, 'http://localhost').searchParams.has('v')
+          sendImage(request, response, image, versioned ? VERSIONED_IMAGE_CACHE : PUBLIC_IMAGE_CACHE)
           return
         }
         if (action === 'portrait' && request.method === 'GET') {
           const image = await plaza.portrait(id)
           if (!image) throw new ApiError(404, '这本书还没有立绘。')
-          if (!response.destroyed && !response.writableEnded) {
-            response.writeHead(200, {
-              'Content-Type': image.contentType,
-              'Content-Length': image.buffer.length,
-              'Cache-Control': 'public, max-age=300',
-            })
-            response.end(image.buffer)
-          }
+          sendImage(request, response, image, PUBLIC_IMAGE_CACHE)
           return
         }
         if ((action === 'report' || action === 'withdraw') && request.method === 'POST') {
@@ -1191,27 +1199,14 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           // id so the author's account id never appears in a URL.
           const image = await plaza.cover(id)
           if (!image) throw new ApiError(404, '这条故事线还没有专属封面。')
-          if (!response.destroyed && !response.writableEnded) {
-            response.writeHead(200, {
-              'Content-Type': image.contentType,
-              'Content-Length': image.buffer.length,
-              'Cache-Control': 'public, max-age=300',
-            })
-            response.end(image.buffer)
-          }
+          const versioned = new URL(request.url, 'http://localhost').searchParams.has('v')
+          sendImage(request, response, image, versioned ? VERSIONED_IMAGE_CACHE : PUBLIC_IMAGE_CACHE)
           return
         }
         if (action === 'portrait' && request.method === 'GET') {
           const image = await plaza.portrait(id)
           if (!image) throw new ApiError(404, '这条故事线还没有立绘。')
-          if (!response.destroyed && !response.writableEnded) {
-            response.writeHead(200, {
-              'Content-Type': image.contentType,
-              'Content-Length': image.buffer.length,
-              'Cache-Control': 'public, max-age=300',
-            })
-            response.end(image.buffer)
-          }
+          sendImage(request, response, image, PUBLIC_IMAGE_CACHE)
           return
         }
         if ((action === 'report' || action === 'withdraw') && request.method === 'POST') {

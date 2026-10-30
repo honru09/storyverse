@@ -36,8 +36,12 @@ test('REQ-35: scroll landings park the profile sections below the sticky topbar'
 })
 
 test('REQ-35: the service worker version moved, so installed clients retire v1 caches', () => {
-  assert.match(sw, /const VERSION = 'storyweave-v2'/)
+  /* LOCAL-CACHE (REQ-50) moved the shell to v3; the REQ-35 guard's
+   * intent stands — the version must keep advancing off v1/v2 so the
+   * activate handler retires the caches those shells wrote. */
+  assert.match(sw, /const VERSION = 'storyweave-v3'/)
   assert.ok(!sw.includes("const VERSION = 'storyweave-v1'"), 'v1 is gone')
+  assert.ok(!sw.includes("const VERSION = 'storyweave-v2'"), 'v2 is gone')
 })
 
 /* ——— G2 (REQ-36 → REQ-41): aurora and the detail ambience ——————— */
