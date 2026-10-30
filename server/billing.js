@@ -73,6 +73,43 @@ export function imageCostCny(model) {
 }
 
 // ---------------------------------------------------------------------
+// Fallback metering (REQ-69 audit F-14): some provider/model/region
+// combinations return no usageMetadata at all (gemini.js then reports
+// the usage as 'unknown'), and textCostCny honestly meters that as
+// 0 tokens — which used to settle the whole chapter for 0 coins.
+// When usage is missing or incomplete we bill a conservative estimate
+// instead: FALLBACK_TEXT_TOKENS is the measured single-chapter token
+// magnitude (typical chapter ≈12–20k total tokens; the cost model's
+// finished chapters run ≈13–15k), split at the typical input/output
+// ratio of a chapter call (context-heavy prompt ≈70%, candidates +
+// thoughts ≈30%). `estimated` flags the substitution so the ledger
+// can tell estimated settlements from measured ones.
+// ---------------------------------------------------------------------
+export const FALLBACK_TEXT_TOKENS = 16_000
+const FALLBACK_TEXT_SPLIT = Object.freeze({ prompt: 11_200, candidates: 3_600, thoughts: 1_200 })
+
+const usageFieldPresent = (usage, short, long) => count(usage[short]) > 0 || count(usage[long]) > 0
+
+/**
+ * Meter a text call for settlement. A complete provider usage passes
+ * through textCostCny untouched (estimated=false); a missing usage
+ * ('unknown', null, total 0) or a partial one (no prompt side, or no
+ * output side to price) bills the fallback estimate (estimated=true)
+ * so a chapter is never free just because the provider stayed silent.
+ */
+export function meteredTextCost(model, usage) {
+  const measured = textCostCny(model, usage)
+  const complete = usage !== null && typeof usage === 'object'
+    && measured.totalTokens > 0
+    && usageFieldPresent(usage, 'prompt', 'promptTokenCount')
+    && (usageFieldPresent(usage, 'candidates', 'candidatesTokenCount')
+      || usageFieldPresent(usage, 'thoughts', 'thoughtsTokenCount'))
+  if (complete) return { ...measured, estimated: false }
+  const fallback = textCostCny(model, { ...FALLBACK_TEXT_SPLIT, totalTokenCount: FALLBACK_TEXT_TOKENS })
+  return { ...fallback, estimated: true }
+}
+
+// ---------------------------------------------------------------------
 // The coin (REQ-68, priced 2026-10-31 from the measured cost model in
 // sw-prep/req67-book/COST-MODEL.md + PRICING.md). One platform currency:
 // 织币. Text generation settles by measured usage at 1 coin per 1,000
@@ -115,6 +152,29 @@ export function coinCostForText({ scene, totalTokens, member = false, merged = f
     return Math.ceil(base * (member ? COIN.fusionMemberMultiplier : COIN.fusionMultiplier))
   }
   return base
+}
+
+// ---------------------------------------------------------------------
+// Pre-authorisation freeze anchor (REQ-69 audit, high #2): the
+// generate gate used to check only "≥1 coin" and settlement clamped
+// to whatever balance remained, so a 1-coin account generated a full
+// chapter. The gate now freezes an estimate up front and settlement
+// charges against the freeze. Measured chapters run ≈12–20k total
+// tokens and settle 9–16 coins, with the observed ceiling ≈22 coins;
+// the 26,000-token anchor freezes 26 coins for an ordinary chapter
+// (39 for a fusion line at ×1.5) — above the ≈24-coin level the real
+// worst case demands, without locking up balances absurdly beyond
+// the most expensive chapter ever metered. The freeze never applies
+// the member fusion discount: members freeze at the full rate and
+// settle at their member rate, the difference releasing at settle
+// time (the same "discount lands at settlement" rule as before).
+// ---------------------------------------------------------------------
+export const TEXT_TOKEN_FREEZE_ANCHOR = 26_000
+export const COIN_HOLD_TTL_MS = 15 * 60_000
+
+/** Coins to freeze before a text generation, by scene/line shape. */
+export function coinFreezeForText({ scene, merged = false } = {}) {
+  return coinCostForText({ scene, totalTokens: TEXT_TOKEN_FREEZE_ANCHOR, merged, member: false })
 }
 
 // ---------------------------------------------------------------------
@@ -193,19 +253,29 @@ export function pregeneratedFor(body) {
 // Entitlement records
 // ---------------------------------------------------------------------
 export const ZERO_ENTITLEMENTS = Object.freeze({
-  memberUntil: null, chapterCredits: 0, imageCredits: 0, coins: 0, coinGrantDay: null,
+  memberUntil: null, chapterCredits: 0, imageCredits: 0, coins: 0, coinGrantDay: null, coinHolds: Object.freeze([]),
 })
 
 const count = (value) => typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
 
+const normalizeCoinHolds = (value) => (Array.isArray(value) ? value : [])
+  .filter((hold) => hold && typeof hold === 'object'
+    && typeof hold.id === 'string' && hold.id
+    && count(hold.amount) > 0
+    && typeof hold.expiresAt === 'string' && !Number.isNaN(Date.parse(hold.expiresAt)))
+  .map((hold) => ({ id: hold.id, amount: count(hold.amount), expiresAt: hold.expiresAt }))
+
 export function normalizeEntitlements(value) {
-  if (!value || typeof value !== 'object') return { ...ZERO_ENTITLEMENTS, failedRedeems: [] }
+  if (!value || typeof value !== 'object') return { ...ZERO_ENTITLEMENTS, coinHolds: [], failedRedeems: [] }
   return {
     memberUntil: typeof value.memberUntil === 'string' && !Number.isNaN(Date.parse(value.memberUntil)) ? value.memberUntil : null,
     chapterCredits: count(value.chapterCredits),
     imageCredits: count(value.imageCredits),
     coins: count(value.coins),
     coinGrantDay: typeof value.coinGrantDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.coinGrantDay) ? value.coinGrantDay : null,
+    // Pre-authorisation freezes (REQ-69). Records written before this
+    // field existed simply carry no holds — default is an empty list.
+    coinHolds: normalizeCoinHolds(value.coinHolds),
     failedRedeems: Array.isArray(value.failedRedeems)
       ? value.failedRedeems.filter((at) => typeof at === 'string' && !Number.isNaN(Date.parse(at)))
       : [],
@@ -253,6 +323,18 @@ export function createMemoryBillingStore() {
   const codes = new Map()
   const costRecords = new Map()
   const stripeEvents = new Map()
+  // One global mutex chain serialises every transaction: a
+  // transaction callback may await freely and no other transaction
+  // (any uid, either kind) interleaves with it. This is the memory
+  // store's stand-in for the Firestore transaction below — the
+  // service's correctness rests on these primitives, never on the
+  // per-uid serialise in the service itself.
+  let tail = Promise.resolve()
+  const withLock = (task) => {
+    const run = tail.then(task, task)
+    tail = run.catch(() => {})
+    return run
+  }
   return {
     kind: 'memory',
     async getEntitlement(uid) { return entitlements.get(uid) ?? null },
@@ -263,6 +345,23 @@ export function createMemoryBillingStore() {
     async listCostRecords() { return [...costRecords.values()] },
     async getStripeEvent(id) { return stripeEvents.get(id) ?? null },
     async putStripeEvent(id, record) { stripeEvents.set(id, record) },
+    async transactEntitlement(uid, fn) {
+      return withLock(async () => {
+        const current = entitlements.get(uid) ?? null
+        const next = await fn(current)
+        if (next === null || next === undefined) return current
+        entitlements.set(uid, next)
+        return next
+      })
+    },
+    async transactBilling(fn) {
+      return withLock(async () => fn({
+        getEntitlement: async (uid) => entitlements.get(uid) ?? null,
+        putEntitlement: async (uid, record) => { entitlements.set(uid, record) },
+        getCode: async (hash) => codes.get(hash) ?? null,
+        putCode: async (hash, record) => { codes.set(hash, record) },
+      }))
+    },
   }
 }
 
@@ -286,6 +385,41 @@ export function createFirestoreBillingStore(loadDb) {
     },
     getStripeEvent: (id) => read('stripe_events', id),
     async putStripeEvent(id, record) { await (await db()).collection('stripe_events').doc(id).set(record) },
+    // Firestore transactions: runTransaction re-runs the callback on
+    // contention and commits its writes atomically, so a callback
+    // must be free of side effects outside the transaction (callers
+    // capture outcomes in variables the final run overwrites) and
+    // must never throw to signal a business outcome that still has
+    // writes to keep — return the outcome and act on it afterwards.
+    async transactEntitlement(uid, fn) {
+      const database = await db()
+      const ref = database.collection('billing_entitlements').doc(uid)
+      return database.runTransaction(async (tx) => {
+        const snapshot = await tx.get(ref)
+        const current = snapshot.exists ? snapshot.data() : null
+        const next = await fn(current)
+        if (next === null || next === undefined) return current
+        tx.set(ref, next)
+        return next
+      })
+    },
+    async transactBilling(fn) {
+      const database = await db()
+      const entitlementRef = (uid) => database.collection('billing_entitlements').doc(uid)
+      const codeRef = (hash) => database.collection('billing_codes').doc(hash)
+      return database.runTransaction(async (tx) => fn({
+        getEntitlement: async (uid) => {
+          const snapshot = await tx.get(entitlementRef(uid))
+          return snapshot.exists ? snapshot.data() : null
+        },
+        putEntitlement: async (uid, record) => { tx.set(entitlementRef(uid), record) },
+        getCode: async (hash) => {
+          const snapshot = await tx.get(codeRef(hash))
+          return snapshot.exists ? snapshot.data() : null
+        },
+        putCode: async (hash, record) => { tx.set(codeRef(hash), record) },
+      }))
+    },
   }
 }
 
@@ -370,10 +504,75 @@ export function createBillingService({
     return run
   }
 
+  // Expired coin holds are cleaned opportunistically: reads filter
+  // them out of the reported state, and every transactional write
+  // starts from an already-pruned record so the cleanup persists.
+  const pruneExpiredHolds = (entitlements, nowMs) => ({
+    ...entitlements,
+    coinHolds: entitlements.coinHolds.filter((hold) => Date.parse(hold.expiresAt) > nowMs),
+  })
+  const heldCoins = (entitlements, nowMs) => entitlements.coinHolds
+    .filter((hold) => Date.parse(hold.expiresAt) > nowMs)
+    .reduce((sum, hold) => sum + hold.amount, 0)
+
+  /**
+   * One atomic entitlement read-modify-write through the store's
+   * transaction primitive. `mutator(current)` receives the normalised,
+   * hold-pruned record and returns the next normalised record, or null
+   * for "no change" (an expired-hold cleanup is still persisted).
+   * Outcome values travel via closure variables, Firestore-style:
+   * the mutator may run more than once and the last run wins.
+   * The fallback path (a store without the primitive) composes the
+   * plain accessors under the per-uid serialise — weaker, but only
+   * reachable with a hand-rolled store; both built-in stores transact.
+   */
+  const transactEntitlement = async (uid, mutator) => {
+    const run = async (getRaw, putRaw) => {
+      let outcome
+      const rawCurrent = await getRaw(uid)
+      const current = pruneExpiredHolds(normalizeEntitlements(rawCurrent), now().getTime())
+      const hadExpired = current.coinHolds.length !== normalizeEntitlements(rawCurrent).coinHolds.length
+      const next = await mutator(current, (value) => { outcome = value })
+      if (next === null || next === undefined) {
+        if (hadExpired) await putRaw(uid, current)
+        return { entitlements: current, outcome }
+      }
+      await putRaw(uid, next)
+      return { entitlements: next, outcome }
+    }
+    if (typeof backend.transactEntitlement === 'function') {
+      let captured
+      await backend.transactEntitlement(uid, async (raw) => {
+        let stored = null
+        captured = await run(
+          async () => raw,
+          async (_uid, record) => { stored = { uid, ...record, updatedAt: now().toISOString() } },
+        )
+        return stored
+      })
+      return captured
+    }
+    return serialise(uid, () => run(
+      (id) => backend.getEntitlement(id),
+      (id, record) => writeEntitlements(id, record),
+    ))
+  }
+
+  /** One atomic transaction spanning entitlements + codes (redeem). */
+  const transactBilling = async (fn) => {
+    if (typeof backend.transactBilling === 'function') return backend.transactBilling(fn)
+    return fn({
+      getEntitlement: (uid) => backend.getEntitlement(uid),
+      putEntitlement: (uid, record) => writeEntitlements(uid, record),
+      getCode: (hash) => backend.getCode(hash),
+      putCode: (hash, record) => backend.putCode(hash, record),
+    })
+  }
+
   const readEntitlements = async (uid) => {
     if (!backend || typeof uid !== 'string' || !uid) return normalizeEntitlements(null)
     try {
-      return normalizeEntitlements(await backend.getEntitlement(uid))
+      return pruneExpiredHolds(normalizeEntitlements(await backend.getEntitlement(uid)), now().getTime())
     } catch {
       log('billing: entitlement read failed; reporting the free state')
       return normalizeEntitlements(null)
@@ -398,32 +597,34 @@ export function createBillingService({
   async function applyDailyCoinTopUp(uid) {
     if (!backend || typeof uid !== 'string' || !uid) return normalizeEntitlements(null)
     try {
-      return await serialise(uid, async () => {
-        const current = normalizeEntitlements(await backend.getEntitlement(uid))
+      const { entitlements } = await transactEntitlement(uid, (current) => {
         const today = dayKeyFor(now())
-        if (current.coinGrantDay === today) return current
+        if (current.coinGrantDay === today) return null
         const ceiling = memberActiveFor(current, now().getTime()) ? COIN.dailyTopUpMember : COIN.dailyTopUpFree
         const next = { ...current, coinGrantDay: today }
         if (next.coins < ceiling) next.coins = ceiling
-        await writeEntitlements(uid, next)
         return next
       })
+      return entitlements
     } catch {
       log('billing: daily coin top-up failed; reporting the stored state')
       return readEntitlements(uid)
     }
   }
 
+  /** Spendable balance: the coin balance minus live (unexpired) freezes. */
+  async function availableCoins(uid) {
+    if (!backend || typeof uid !== 'string' || !uid) return 0
+    const entitlements = await readEntitlements(uid)
+    return Math.max(0, entitlements.coins - heldCoins(entitlements, now().getTime()))
+  }
+
   async function grantProduct(uid, productId, source) {
     const product = productById(productId)
     if (!product) throw new ApiError(400, '这个商品不存在。')
     if (!backend) throw new ApiError(503, '会员服务尚未配置。')
-    return serialise(uid, async () => {
-      const current = normalizeEntitlements(await backend.getEntitlement(uid))
-      const next = applyGrant(current, product, now().getTime())
-      await writeEntitlements(uid, next)
-      return { product, entitlements: next, source }
-    })
+    const { entitlements } = await transactEntitlement(uid, (current) => applyGrant(current, product, now().getTime()))
+    return { product, entitlements, source }
   }
 
   return {
@@ -492,17 +693,16 @@ export function createBillingService({
       return (await readEntitlements(uid)).imageCredits > 0
     },
 
-    // --- spends (serialised per account; false means "no balance") ---
+    // --- spends (atomic per account; false means "no balance") ---
     async consumeChapterCredit(uid) {
       if (!backend || typeof uid !== 'string' || !uid) return false
       try {
-        return await serialise(uid, async () => {
-          const current = normalizeEntitlements(await backend.getEntitlement(uid))
-          if (current.chapterCredits <= 0) return false
-          current.chapterCredits -= 1
-          await writeEntitlements(uid, current)
-          return true
+        const { outcome } = await transactEntitlement(uid, (current, setOutcome) => {
+          if (current.chapterCredits <= 0) { setOutcome(false); return null }
+          setOutcome(true)
+          return { ...current, chapterCredits: current.chapterCredits - 1 }
         })
+        return outcome === true
       } catch {
         log('billing: chapter credit spend failed')
         return false
@@ -511,13 +711,12 @@ export function createBillingService({
     async consumeImageCredit(uid) {
       if (!backend || typeof uid !== 'string' || !uid) return false
       try {
-        return await serialise(uid, async () => {
-          const current = normalizeEntitlements(await backend.getEntitlement(uid))
-          if (current.imageCredits <= 0) return false
-          current.imageCredits -= 1
-          await writeEntitlements(uid, current)
-          return true
+        const { outcome } = await transactEntitlement(uid, (current, setOutcome) => {
+          if (current.imageCredits <= 0) { setOutcome(false); return null }
+          setOutcome(true)
+          return { ...current, imageCredits: current.imageCredits - 1 }
         })
+        return outcome === true
       } catch {
         log('billing: image credit spend failed')
         return false
@@ -526,8 +725,10 @@ export function createBillingService({
 
     // --- coins (REQ-68): daily top-up, balance checks, settlement ---
     applyDailyCoinTopUp,
+    availableCoins,
+    coinFreezeForText,
     async hasCoins(uid, minimum = 1) {
-      return (await readEntitlements(uid)).coins >= Math.max(1, minimum)
+      return (await availableCoins(uid)) >= Math.max(1, minimum)
     },
     /** Settle a coin charge after the work landed; never goes negative. */
     async spendCoins(uid, amount) {
@@ -535,17 +736,89 @@ export function createBillingService({
       const due = count(amount)
       if (due <= 0) return 0
       try {
-        return await serialise(uid, async () => {
-          const current = normalizeEntitlements(await backend.getEntitlement(uid))
+        const { outcome } = await transactEntitlement(uid, (current, setOutcome) => {
           const spent = Math.min(current.coins, due)
-          if (spent <= 0) return 0
-          current.coins -= spent
-          await writeEntitlements(uid, current)
-          return spent
+          setOutcome(spent)
+          if (spent <= 0) return null
+          return { ...current, coins: current.coins - spent }
         })
+        return outcome || 0
       } catch {
         log('billing: coin spend failed')
         return 0
+      }
+    },
+
+    // --- pre-authorisation freezes (REQ-69; the generate gate in
+    // index.js reserves before generating and settles/releases after).
+    // A hold lives inside the entitlement record (coinHolds) so it
+    // survives a process restart and binds every instance sharing the
+    // store; the balance field itself is untouched until settlement.
+    async reserveCoins(uid, amount) {
+      if (!backend || typeof uid !== 'string' || !uid) return null
+      const due = count(amount)
+      if (due <= 0) return null
+      try {
+        const { outcome } = await transactEntitlement(uid, (current, setOutcome) => {
+          const available = current.coins - heldCoins(current, now().getTime())
+          if (available < due) { setOutcome(null); return null }
+          const hold = {
+            id: randomUUID(),
+            amount: due,
+            expiresAt: new Date(now().getTime() + COIN_HOLD_TTL_MS).toISOString(),
+          }
+          setOutcome(hold)
+          return { ...current, coinHolds: [...current.coinHolds, hold] }
+        })
+        return outcome ?? null
+      } catch {
+        log('billing: coin reserve failed')
+        return null
+      }
+    },
+    /**
+     * Settle against a freeze: the hold is removed and the actual
+     * charge is deducted from the balance. An actual above the frozen
+     * amount keeps drawing on the remaining balance; whatever cannot
+     * be drawn reports covered=false so the caller can refuse to
+     * deliver. A missing/expired hold settles nothing.
+     */
+    async settleReservation(uid, id, actualAmount) {
+      if (!backend || typeof uid !== 'string' || !uid || typeof id !== 'string' || !id) return { spent: 0, covered: false }
+      const due = count(actualAmount)
+      try {
+        const { outcome } = await transactEntitlement(uid, (current, setOutcome) => {
+          // `current` is already pruned of expired holds, so a hold
+          // that expired before settlement is simply absent here.
+          const hold = current.coinHolds.find((entry) => entry.id === id)
+          if (!hold) { setOutcome({ spent: 0, covered: false }); return null }
+          const spent = Math.min(current.coins, due)
+          setOutcome({ spent, covered: spent >= due })
+          return {
+            ...current,
+            coins: current.coins - spent,
+            coinHolds: current.coinHolds.filter((entry) => entry.id !== id),
+          }
+        })
+        return outcome ?? { spent: 0, covered: false }
+      } catch {
+        log('billing: reservation settle failed')
+        return { spent: 0, covered: false }
+      }
+    },
+    /** Release a freeze without charging. Idempotent. */
+    async releaseReservation(uid, id) {
+      if (!backend || typeof uid !== 'string' || !uid || typeof id !== 'string' || !id) return false
+      try {
+        const { outcome } = await transactEntitlement(uid, (current, setOutcome) => {
+          if (!current.coinHolds.some((entry) => entry.id === id)) { setOutcome(false); return null }
+          setOutcome(true)
+          return { ...current, coinHolds: current.coinHolds.filter((entry) => entry.id !== id) }
+        })
+        return outcome === true
+      } catch {
+        log('billing: reservation release failed')
+        return false
       }
     },
 
@@ -555,34 +828,52 @@ export function createBillingService({
     async redeem(uid, rawCode) {
       if (!backend) throw new ApiError(503, '会员服务尚未配置。')
       if (typeof uid !== 'string' || !uid) throw new ApiError(401, '请先登录，再兑换。', 'auth-required')
-      return serialise(uid, async () => {
-        const current = normalizeEntitlements(await backend.getEntitlement(uid))
+      // The whole check-and-grant runs inside ONE store transaction
+      // spanning the code record and the entitlement record: two
+      // accounts racing the same code can no longer both pass the
+      // "not yet redeemed" check, on either store. Business outcomes
+      // are returned, not thrown, inside the transaction — the
+      // failure-count write must commit even though the request then
+      // fails, and a thrown error would roll a Firestore transaction
+      // back. The ApiError is raised only after the commit lands.
+      const outcome = await transactBilling(async (tx) => {
         const nowMs = now().getTime()
+        const current = pruneExpiredHolds(normalizeEntitlements(await tx.getEntitlement(uid)), nowMs)
         const recentFailures = current.failedRedeems.filter((at) => nowMs - Date.parse(at) < REDEEM_FAILURE_WINDOW_MS)
-        if (recentFailures.length >= REDEEM_FAILURE_LIMIT) {
-          throw new ApiError(429, '兑换尝试太频繁了，请一小时后再试。')
-        }
+        if (recentFailures.length >= REDEEM_FAILURE_LIMIT) return { kind: 'throttled' }
         const fail = async () => {
-          await writeEntitlements(uid, { ...current, failedRedeems: [...recentFailures, now().toISOString()] })
-          // One message for every failure mode — unknown, malformed
-          // and already-used codes are indistinguishable from outside,
-          // so the endpoint cannot be used to enumerate live codes.
-          throw new ApiError(400, '兑换码无效或已使用。')
+          await tx.putEntitlement(uid, {
+            uid,
+            ...current,
+            failedRedeems: [...recentFailures, now().toISOString()],
+            updatedAt: now().toISOString(),
+          })
+          return { kind: 'invalid' }
         }
         const code = normalizeCode(rawCode)
         if (!CODE_SHAPE.test(code)) return fail()
-        const record = await backend.getCode(codeHashFor(code))
+        const hash = codeHashFor(code)
+        const record = await tx.getCode(hash)
         if (!record || record.redeemedBy) return fail()
         const product = productById(record.productId)
         if (!product) return fail()
         const next = applyGrant({ ...current, failedRedeems: [] }, product, nowMs)
-        await backend.putCode(codeHashFor(code), { ...record, redeemedBy: uid, redeemedAt: now().toISOString() })
-        await writeEntitlements(uid, next)
-        return {
-          product: { id: product.id, kind: product.kind, name: product.name },
-          entitlements: next,
-        }
+        await tx.putCode(hash, { ...record, redeemedBy: uid, redeemedAt: now().toISOString() })
+        await tx.putEntitlement(uid, { uid, ...next, updatedAt: now().toISOString() })
+        return { kind: 'redeemed', product, entitlements: next }
       })
+      if (outcome.kind === 'throttled') throw new ApiError(429, '兑换尝试太频繁了，请一小时后再试。')
+      if (outcome.kind === 'invalid') {
+        // One message for every failure mode — unknown, malformed
+        // and already-used codes are indistinguishable from outside,
+        // so the endpoint cannot be used to enumerate live codes.
+        throw new ApiError(400, '兑换码无效或已使用。')
+      }
+      const { product, entitlements } = outcome
+      return {
+        product: { id: product.id, kind: product.kind, name: product.name },
+        entitlements,
+      }
     },
 
     async mintCodes(identity, body) {
