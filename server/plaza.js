@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { ApiError, sanitizeSettingText } from './gemini.js'
 import { findSettingViolation } from '../src/setting-guard.js'
-import { isManualStory, plazaSnapshot, redactedTitleFor, shelfForTemplate } from '../src/story-engine.js'
+import { BOOK_TITLE_MAX, bookTitleWithinLimit, isManualStory, plazaSnapshot, redactedTitleFor, shelfForTemplate } from '../src/story-engine.js'
 import { cleanBookTitle, manualSnapshotFor, PLAZA_REPORT_THRESHOLD, plazaGateFor, plazaTemplateNameFor, plazaWorldIntroFor, snapshotSourceViolation, WORLD_INTRO_VERSION } from '../src/plaza.js'
 import { emptyLibrary, validateLibrary } from '../src/persistence.js'
 import { avatarAppearanceText } from '../src/avatar.js'
@@ -638,6 +638,12 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
           const violation = redLineViolation(story)
           if (violation) throw new ApiError(400, violation)
           const snapshot = manualSnapshotFor(story)
+          // 书名长度终检 (REQ-63): the hand-written branch shelves
+          // through here, so it takes the same final title check as
+          // the main branch below.
+          if (!bookTitleWithinLimit(snapshot.title)) {
+            throw new ApiError(400, `书名太长了，最多 ${BOOK_TITLE_MAX} 字。先在设定集里把书名改短一点，再发布。`)
+          }
           const timestamp = now().toISOString()
           const existing = await findOwnPublication(identity.uid, story.id)
           const authorName = authorNameFor(identity) || '织界旅人'
@@ -749,6 +755,13 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
         const snapshot = cleanTitle && cleanTitle !== rawSnapshot.title
           ? { ...rawSnapshot, title: cleanTitle }
           : rawSnapshot
+        // 书名长度终检 (REQ-63): the publish gate is the last word on
+        // title length — a title minted before the limit existed (or
+        // by any path that skipped the naming checks) is refused here
+        // in human words, never silently truncated onto the shelf.
+        if (!bookTitleWithinLimit(snapshot.title)) {
+          throw new ApiError(400, `书名太长了，最多 ${BOOK_TITLE_MAX} 字。先在设定集里把书名改短一点，再发布。`)
+        }
         const timestamp = now().toISOString()
         const existing = await findOwnPublication(identity.uid, story.id)
         const sources = await storedSourcesFor(story)

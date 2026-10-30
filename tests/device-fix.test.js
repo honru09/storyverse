@@ -67,7 +67,10 @@ test('REQ-21 (fixed format: §54 slots, reshaped by STORE-DESIGN v3): the store 
   // STORE-DESIGN v3 (user rule 2026-10-30 16:10): the intro slot and
   // the chip rows left the card; the fixed format is now the title /
   // name / handle slots plus the foot-pinned meta block.
-  assert.match(css, /\.store-slot-title\{height:22px\}/)
+  // REQ-63 (DESIGN §56) supersedes the one-line title slot: the title
+  // may wrap to two lines, so the slot is two lines tall (44px) and
+  // every other slot keeps its fixed height below it.
+  assert.match(css, /\.store-slot-title\{height:44px/)
   assert.match(css, /\.store-slot-name\{height:22px/)
   assert.match(css, /\.store-slot-handle\{height:17px/)
   assert.match(css, /\.store-meta-block\{margin-top:auto/)

@@ -75,7 +75,9 @@ test('createManualStory: shape, cleaned tags, no avatar semantics, library-valid
   assert.deepEqual(libraryErrors(story), [])
   assert.equal(createManualStory({ title: '无分类的书' }).config.manualShelfId, '')
   assert.throws(() => createManualStory({ title: '  ' }), /先给这本书起个名字/)
-  assert.throws(() => createManualStory({ title: '长'.repeat(31) }), /书名最多 30 字/)
+  // REQ-63 supersedes the old 30-character title cap: the platform
+  // limit is 20 字 in wide units (tests/title-length.test.js pins it).
+  assert.throws(() => createManualStory({ title: '长'.repeat(21) }), /书名最多 20 字/)
   assert.throws(() => createManualStory({ title: '好', synopsis: '长'.repeat(301) }), /简介最多 300 字/)
   assert.equal(isManualStory(createStory({ genreId: 'mist', name: '沈砚' })), false)
 })

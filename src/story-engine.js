@@ -209,12 +209,86 @@ export const CUSTOM_WORLD_SETTING_MAX = 600
 // of the world's effective text at edit time), and the setting text is
 // bounded exactly like the god-mode setting it now stands beside.
 export const PRESET_WORLD_SETTING_MAX = 600
-// A hand-typed book title caps at the same 30 characters as a hand-renamed
-// chapter title (EDIT-BOOK §29 set that rule for titles a reader edits).
-// Derived titles (the forge suggestion, a fused line's 合流：… name) are
-// engine-composed and are NOT retroactively capped — the cap governs what
-// a person may type, in the forge's 书名 field and in the settings book.
-export const BOOK_TITLE_MAX = 30
+// 书名长度立规 (REQ-63, DESIGN §56, supersedes the EDIT-BOOK §29 cap of
+// 30 plain characters): ONE platform-wide limit, fixed by measuring the
+// bookstore card — the smallest surface a title must survive. The card
+// (two-column grid) gives the title a 132px slot at the narrowest
+// supported width (360px) and 147px at 390px; the title may now wrap to
+// TWO lines there, and the limit is the largest title that still fills
+// exactly those two lines at a readable size on the primary 390px
+// width (≈12px bold for a maxed-out title — the size an ordinary
+// 10-character title already rendered at under the old one-line
+// shrink formula; typical titles ≤12 字 render at 14–16px).
+// The limit is counted in the §54 wide units the whole card system
+// already budgets in (CJK / fullwidth glyph = 2 units, anything else
+// = 1; a unit is half an em): BOOK_TITLE_MAX is quoted in 字 (one 字
+// = 2 units), so a pure-CJK title caps at 20 characters and a pure
+// Latin one at 40. EVERY title-producing path obeys it: a typed title
+// (forge field, settings book, hand-written book) is refused in human
+// words, derived titles (the forge suggestion, a fused line's
+// 合流：… name) are composed inside it by construction, and the
+// publish endpoint re-checks the snapshot title as the final gate.
+// Chapter titles keep their own 30-character cap — a different surface.
+export const BOOK_TITLE_MAX = 20
+export const BOOK_TITLE_MAX_UNITS = BOOK_TITLE_MAX * 2
+
+// The §54 wide-unit measure (the same glyph classes src/plaza.js and
+// server/social.js budget by), kept local so the engine stays the
+// single source for the title rule.
+const WIDE_GLYPH = /[ᄀ-ᅟ⺀-꓏가-힣豈-﷏︰-﹯＀-｠￠-￦]/
+const glyphUnits = (ch) => (WIDE_GLYPH.test(ch) ? 2 : 1)
+
+/** Wide-unit width of a book title (CJK/fullwidth = 2, else 1). */
+export function bookTitleUnitsFor(title) {
+  let units = 0
+  for (const ch of String(title ?? '')) units += glyphUnits(ch)
+  return units
+}
+
+export const bookTitleWithinLimit = (title) => bookTitleUnitsFor(title) <= BOOK_TITLE_MAX_UNITS
+
+/** Longest whole-character prefix of a title inside a unit budget. Never splits a character, never adds an ellipsis. */
+export function clipBookTitle(title, budgetUnits = BOOK_TITLE_MAX_UNITS) {
+  const text = String(title ?? '')
+  let units = 0
+  let out = ''
+  for (const ch of text) {
+    const next = units + glyphUnits(ch)
+    if (next > budgetUnits) break
+    units = next
+    out += ch
+  }
+  return out
+}
+
+const TITLE_TRAILING_STRIPPABLE = '，。、·：:；;—…·的了之 '
+
+/**
+ * Shorten a title fragment to a unit budget WITHOUT cutting a phrase in
+ * half (REQ-63): prefer the longest clause segment (split on sentence /
+ * clause punctuation) that fits and still carries at least half the
+ * budget; otherwise clip whole characters and strip a dangling tail
+ * (separators, then the light particles 的/了/之）, so the result always
+ * reads as a complete phrase. Used by derived titles only — a person's
+ * own typed title is refused, never silently shortened.
+ */
+export function shortenTitleText(text, budgetUnits) {
+  const value = String(text ?? '').trim()
+  if (!value) return ''
+  if (bookTitleUnitsFor(value) <= budgetUnits) return value
+  const segments = value.split(/[，。、·：:；;—…-]+/).map((part) => part.trim()).filter(Boolean)
+  let best = ''
+  for (const segment of segments) {
+    const units = bookTitleUnitsFor(segment)
+    if (units <= budgetUnits && units > bookTitleUnitsFor(best)) best = segment
+  }
+  if (best && bookTitleUnitsFor(best) >= Math.ceil(budgetUnits / 2)) return best
+  let clipped = clipBookTitle(value, budgetUnits)
+  while (clipped.length > 2 && TITLE_TRAILING_STRIPPABLE.includes(clipped.slice(-1))) {
+    clipped = clipped.slice(0, -1)
+  }
+  return clipped || clipBookTitle(value, budgetUnits)
+}
 export const START_POINT_NAME_MAX = 30
 export const START_POINT_HOOK_MAX = 120
 // The avatar （化身） a story was opened with: only the id and the one-line
@@ -1249,7 +1323,13 @@ const normalizeDraft = (draft = {}) => {
     customWorldName: cleanBounded(input.customWorldName, CUSTOM_WORLD_NAME_MAX),
     customWorldSetting: cleanBounded(input.customWorldSetting, CUSTOM_WORLD_SETTING_MAX),
     worldDrafts: normalizeWorldDrafts(input.worldDrafts),
-    bookTitle: cleanBounded(input.bookTitle, BOOK_TITLE_MAX),
+    // REQ-63: the config's title copy is storage, bounded by the same
+    // unit rule as every title surface (whole characters, no ellipsis).
+    // The loud, human-worded refusal for a typed title lives in the
+    // naming paths themselves (forge pre-check, renameBookTitle,
+    // createManualStory) — this clip only keeps a restored draft or a
+    // programmatic caller from parking an over-limit string here.
+    bookTitle: typeof input.bookTitle === 'string' ? clipBookTitle(input.bookTitle.trim(), BOOK_TITLE_MAX_UNITS) : '',
     lorebook: normalizeLorebookEntries(input.lorebook),
     stylePreset: stylePresetById(input.stylePreset)?.id || 'default',
     startPointName: cleanBounded(input.startPointName, START_POINT_NAME_MAX),
@@ -1308,12 +1388,16 @@ const realityDetail = (config) => {
 
 const titleFor = (config, genre) => {
   const name = protagonistName(config, '')
-  if (genre.id === CUSTOM_GENRE_ID) {
-    const world = worldNameOf(genre, config)
-    return name ? `${world} · ${name}` : world
-  }
-  if (name) return `${genre.title} · ${name}`
-  return genre.title
+  const base = genre.id === CUSTOM_GENRE_ID ? worldNameOf(genre, config) : genre.title
+  const composed = name ? `${base} · ${name}` : base
+  // REQ-63: a derived title is composed INSIDE the limit by
+  // construction — first by dropping the protagonist suffix (the pure
+  // title the bookstore shows anyway), then by shortening the base
+  // itself at a phrase boundary (a god-mode world may be named up to
+  // 40 characters, far beyond any book title).
+  if (bookTitleWithinLimit(composed)) return composed
+  if (name && bookTitleWithinLimit(base)) return base
+  return shortenTitleText(base, BOOK_TITLE_MAX_UNITS)
 }
 
 /**
@@ -2565,7 +2649,7 @@ export function renameBookTitle(story, title) {
   if (story.readOnly === true) return story
   const cleaned = typeof title === 'string' ? title.trim() : ''
   if (!cleaned) throw new RangeError('书名不能为空。')
-  if (cleaned.length > BOOK_TITLE_MAX) {
+  if (!bookTitleWithinLimit(cleaned)) {
     throw new RangeError(`书名最多 ${BOOK_TITLE_MAX} 字。`)
   }
   if (cleaned === story.title) return story
@@ -2629,7 +2713,7 @@ export const manualTagsOf = (story) => cleanManualTags(story?.config?.tags)
 export function createManualStory({ title = '', synopsis = '', shelfId = '', tags = [] } = {}) {
   const cleanedTitle = typeof title === 'string' ? title.trim() : ''
   if (!cleanedTitle) throw new RangeError('先给这本书起个名字。')
-  if (cleanedTitle.length > BOOK_TITLE_MAX) {
+  if (!bookTitleWithinLimit(cleanedTitle)) {
     throw new RangeError(`书名最多 ${BOOK_TITLE_MAX} 字。`)
   }
   const cleanedSynopsis = typeof synopsis === 'string' ? synopsis.trim() : ''
@@ -3804,19 +3888,39 @@ export function createMergedStory(a, b, options = {}) {
   // 「合流：<题材> × <题材>」 put the template's sample name on the
   // cover, so two fusions of same-genre lines — and a fusion next to
   // its own sources on the shelf — were indistinguishable. The book
-  // titles are the identity; each side is clipped so the title stays
-  // one cover line, and when the sources cannot be told apart by title
-  // the pair is told apart by their leads instead. Where each part
-  // came from stays on the record regardless (sourceTitles, below).
-  const clipSide = (text) => {
-    const value = String(text || '').trim()
-    return value.length > 12 ? `${value.slice(0, 12)}…` : value
+  // titles are the identity, and when the sources cannot be told
+  // apart by title the pair is told apart by their leads instead.
+  // Where each part came from stays on the record regardless
+  // (sourceTitles, below).
+  // REQ-63 (supersedes the FINAL-FIX clipSide rule): the fused name
+  // obeys the SAME platform title limit as every other book — the old
+  // per-side 12-character clip still produced 26-character names the
+  // bookstore card could only crush. Two sources split the budget
+  // evenly after the 合流： prefix and the joiner, each side shortened
+  // at a phrase boundary (no ellipsis, never half a word); three or
+  // more sources cannot all ride one name, so the lead side names the
+  // book and the rest are counted (the detail page's 来源区 lists
+  // every source in full).
+  const MERGE_TITLE_PREFIX = '合流：'
+  const MERGE_TITLE_JOINER = ' × '
+  const mergedTitleFor = (sides) => {
+    const full = `${MERGE_TITLE_PREFIX}${sides.join(MERGE_TITLE_JOINER)}`
+    if (bookTitleWithinLimit(full)) return full
+    if (sides.length === 2) {
+      const perSide = Math.floor(
+        (BOOK_TITLE_MAX_UNITS - bookTitleUnitsFor(MERGE_TITLE_PREFIX) - bookTitleUnitsFor(MERGE_TITLE_JOINER)) / 2,
+      )
+      return `${MERGE_TITLE_PREFIX}${sides.map((side) => shortenTitleText(side, perSide)).join(MERGE_TITLE_JOINER)}`
+    }
+    const tail = ` 等 ${sides.length} 条线`
+    const leadBudget = BOOK_TITLE_MAX_UNITS - bookTitleUnitsFor(MERGE_TITLE_PREFIX) - bookTitleUnitsFor(tail)
+    return `${MERGE_TITLE_PREFIX}${shortenTitleText(sides[0], leadBudget)}${tail}`
   }
   const rawTitles = sources.map((source) => (typeof source.title === 'string' ? source.title.trim() : ''))
   const titlesTellApart = new Set(rawTitles.filter(Boolean)).size >= 2
   const mergedTitle = titlesTellApart
-    ? `合流：${rawTitles.map((title, index) => clipSide(title) || clipSide(castNames[index]) || '未命名故事').join(' × ')}`
-    : `合流：${castNames.map((name) => clipSide(name) || '一位主角').join(' × ')}`
+    ? mergedTitleFor(rawTitles.map((title, index) => title || castNames[index] || '未命名故事'))
+    : mergedTitleFor(castNames.map((name) => name || '一位主角'))
   const worldNames = sources.map((source, index) => worldNameOf(sourceGenres[index], source.config))
   const story = {
     id: makeId('merge'),
