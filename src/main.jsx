@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import "./reader-flow.css";
 import "./aurora.css";
+import "./design-assets.css";
 import AuroraBackground from "./components/AuroraBackground.jsx";
 import StoryMap, { StoryMapMini, generationState } from "./components/StoryMap.jsx";
 import GenerationOverlay from "./components/GenerationOverlay.jsx";
@@ -2975,7 +2976,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                   <div className="form-block trait-editor">
                     <span className="field-label">性格{pickedTrait ? "" : "（默认）"}</span>
                     <input
-                      className="trait-input"
+                      className="trait-input da-input-under"
                       maxLength={80}
                       autoComplete="off"
                       value={draft.trait}
@@ -2997,7 +2998,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                       ))}
                       <button
                         type="button"
-                        className="trait-refresh"
+                        className="trait-refresh da-btn da-btn--ghost"
                         aria-label="换一批性格词条"
                         onClick={() => setTraitBatch(drawPersonalityTraits(3, traitBatch.map((entry) => entry.id)))}
                       >
@@ -3013,16 +3014,15 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                       <b>带入人生经历</b>
                       <small>你现实里的底子，会揉进主角的来历里</small>
                     </div>
-                    <button
-                      type="button"
-                      className={`toggle ${draft.immersive ? "on" : ""}`}
-                      onClick={() => set({ immersive: !draft.immersive })}
-                      role="switch"
-                      aria-checked={draft.immersive}
-                      aria-label="带入人生经历（选填）"
-                    >
-                      <i />
-                    </button>
+                    <label className="da-switch">
+                      <input
+                        type="checkbox"
+                        checked={draft.immersive}
+                        onChange={() => set({ immersive: !draft.immersive })}
+                        aria-label="带入人生经历（选填）"
+                      />
+                      <span className="da-switch-ui" aria-hidden="true" />
+                    </label>
                   </div>
                   {draft.immersive && (
                     <div className="life-fields">
@@ -6033,7 +6033,7 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
             ) : pickable.length === 0 ? (
               <p className="plaza-note">书城里还没有能分享的书。</p>
             ) : (
-              <ul className="plaza-composer-booklist">
+              <ul className="plaza-composer-booklist da-scroll">
                 {pickable.slice(0, 12).map((entry) => (
                   <li key={entry.id}>
                     <button type="button" onClick={() => setBook(entry)}>
@@ -8173,17 +8173,16 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
             <strong>动态效果</strong>
             <small>{systemPaused ? "系统已要求减少动态效果，动效保持关闭" : motionOn ? "界面动效开启中" : "界面动效已暂停"}</small>
           </span>
-          <button
-            type="button"
-            className={`settings-switch ${motionOn ? "is-on" : ""}`}
-            role="switch"
-            aria-checked={motionOn}
-            aria-label="动态效果"
-            disabled={systemPaused}
-            onClick={motion.toggle}
-          >
-            <span aria-hidden="true" />
-          </button>
+          <label className="da-switch">
+            <input
+              type="checkbox"
+              checked={motionOn}
+              disabled={systemPaused}
+              onChange={motion.toggle}
+              aria-label="动态效果"
+            />
+            <span className="da-switch-ui" aria-hidden="true" />
+          </label>
         </div>
       </div>
 
@@ -11724,7 +11723,7 @@ function App() {
         />
       )}
       {toast && (
-        <div className="sw-toast" role="status" aria-live="polite">
+        <div className="sw-toast da-toast" role="status" aria-live="polite">
           <Icon name="check" size={15} />
           {toast}
         </div>

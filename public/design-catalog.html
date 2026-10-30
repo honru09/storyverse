@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="zh-CN" data-shell-theme="black">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>织界 · 专属设计素材库图鉴（REQ-34 第一批）</title>
+<link rel="stylesheet" href="../src/design-assets.css">
+<style>
+/* 图鉴页专用：内联最小主题变量三套（值抄自 src/styles.css 的主题块，
+   只取素材库消费的 token；生产接入时由应用主题块提供同一批变量）。 */
+:root{
+  --radius-control:10px; --radius-selection:12px; --radius-card:16px; --radius-surface:20px; --radius-sheet:24px; --radius-nav:16px; --radius-media:8px;
+  --dur-press:120ms; --dur-state:180ms; --dur-pop:450ms; --dur-shimmer:1600ms;
+  --ease-out:cubic-bezier(.22,1,.36,1); --ease-pop:cubic-bezier(.25,1,.35,1); --ease-press:cubic-bezier(.2,.9,.3,1); --ease-spring:cubic-bezier(.3,1,.4,1);
+  --font-ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",sans-serif;
+}
+:root[data-shell-theme='aurora']{
+  --bg:#060d1f; --bg-2:#0a1430; --ink:#eaf1ff; --dim:#a9b9da; --dim-2:#8498bd;
+  --cyan:#6ee7ff; --violet:#a78bfa; --pink:#f0a6ff; --mint:#7dffce; --amber:#ffd166; --danger:#ff8f8f; --error:#ff8f8f; --success:#7dffce; --coral:#ff8fab; --rank-gold:#f5c451;
+  --glass:rgba(148,178,255,.08); --glass-2:rgba(148,178,255,.14); --glass-strong:rgba(148,178,255,.16); --glass-edge:rgba(168,196,255,.28); --glass-dark:#0a1430;
+  --line:rgba(168,196,255,.20); --line-2:rgba(168,196,255,.42); --line-strong:rgba(168,196,255,.42); --divider:rgba(168,196,255,.20);
+  --surface-solid:#0d1834; --surface:rgba(13,24,52,.82); --surface-card:var(--glass); --surface-glass:var(--surface); --surface-modal:var(--surface-solid); --surface-pill:var(--glass-2); --card-solid:var(--glass); --float-solid:var(--glass-dark); --card-top-hi:rgba(255,255,255,.07);
+  --action:#6ee7ff; --action-ink:#06122b; --selected-text:#a5ecff; --selected-surface:rgba(110,231,255,.14); --selected-border:#6ee7ff;
+  --thread:#f0a6ff; --thread-soft:rgba(240,166,255,.14); --thread-ink:#eaf1ff;
+  --surface-tide:rgba(125,255,206,.10); --surface-peach:rgba(240,166,255,.10); --soft-indigo:rgba(148,178,255,.13);
+  --shadow-flat:0 8px 28px rgba(2,6,20,.35); --shadow-raised:0 18px 48px rgba(2,6,20,.5); --shadow-card:var(--shadow-flat); --shadow-floating:var(--shadow-raised); --shadow-glass-top:inset 0 0 0 transparent;
+  --blur-bar:blur(16px) saturate(1.35); --blur-card:blur(12px); --blur-modal:blur(12px); --blur-panel:blur(14px);
+  --nav-bg:rgba(6,13,31,.94);
+  color-scheme:dark;
+}
+:root[data-shell-theme='black']{
+  --bg:#101012; --bg-2:#151619; --ink:#eae9e4; --dim:#9e9fa6; --dim-2:#878a92;
+  --cyan:#6ee7ff; --violet:#a78bfa; --pink:#f0a6ff; --mint:#7dffce; --amber:#ffd166; --danger:#ff8f8f; --error:#ff8f8f; --success:#7dffce; --coral:#ff8fab; --rank-gold:#f5c451;
+  --glass:rgba(255,255,255,.05); --glass-2:rgba(255,255,255,.09); --glass-strong:rgba(255,255,255,.11); --glass-edge:rgba(255,255,255,.16); --glass-dark:#17181b;
+  --line:rgba(255,255,255,.10); --line-2:rgba(255,255,255,.22); --line-strong:rgba(255,255,255,.22); --divider:rgba(255,255,255,.06);
+  --surface-solid:#1c1e22; --surface:rgba(28,30,35,.72); --surface-card:rgba(32,34,39,.78); --surface-glass:rgba(18,20,24,.85); --surface-modal:rgba(24,26,31,.88); --surface-pill:rgba(255,255,255,.07); --card-solid:#202227; --float-solid:rgba(18,19,22,.94); --card-top-hi:rgba(255,255,255,.07);
+  --action:#6ee7ff; --action-ink:#06122b; --selected-text:#a5ecff; --selected-surface:rgba(110,231,255,.13); --selected-border:#6ee7ff;
+  --thread:#f0a6ff; --thread-soft:rgba(240,166,255,.13); --thread-ink:#eae9e4;
+  --surface-tide:rgba(125,255,206,.09); --surface-peach:rgba(240,166,255,.09); --soft-indigo:rgba(255,255,255,.07);
+  --shadow-flat:0 1px 3px rgba(0,0,0,.28),0 8px 20px -4px rgba(0,0,0,.38); --shadow-raised:0 4px 12px rgba(0,0,0,.40),0 20px 40px -8px rgba(0,0,0,.56); --shadow-card:0 1px 2px rgba(0,0,0,.42),0 14px 34px -10px rgba(0,0,0,.55); --shadow-floating:0 4px 12px rgba(0,0,0,.40),0 20px 40px -8px rgba(0,0,0,.56); --shadow-glass-top:inset 0 1px 0 rgba(255,255,255,.12);
+  --glass-card-bg:rgba(24,27,33,.48); --glass-card-blur:blur(22px) saturate(1.45); --glass-card-line:rgba(255,255,255,.14); --glass-card-edge:rgba(255,255,255,.10); --glass-card-shadow:0 18px 44px -12px rgba(0,0,0,.55); --glass-card-radius:26px;
+  --glass-chip-bg:rgba(255,255,255,.10); --glass-chip-blur:blur(14px) saturate(1.35); --glass-nav-bg:rgba(19,20,23,.98); --glass-modal-bg:rgba(24,27,33,.66); --glass-panel-pad:rgba(10,12,16,.25);
+  --blur-bar:blur(12px) saturate(1.2); --blur-card:blur(10px) saturate(1.2); --blur-modal:blur(12px) saturate(1.25); --blur-panel:blur(10px) saturate(1.2);
+  --nav-bg:rgba(22,23,26,.72);
+  color-scheme:dark;
+}
+:root[data-shell-theme='white']{
+  --bg:#edeae3; --bg-2:#e6e2d9; --ink:#1f2124; --dim:#575b62; --dim-2:#64696f;
+  --cyan:#0891b2; --violet:#7c5cd6; --pink:#d154c9; --mint:#0d9668; --amber:#b97f10; --danger:#d43a3a; --error:#d43a3a; --success:#0d9668; --coral:#e0526e; --rank-gold:#b97f10;
+  --glass:rgba(23,24,28,.045); --glass-2:rgba(23,24,28,.08); --glass-strong:rgba(23,24,28,.09); --glass-edge:rgba(23,24,28,.16); --glass-dark:#efece6;
+  --line:rgba(24,25,27,.09); --line-2:rgba(23,24,28,.26); --line-strong:rgba(23,24,28,.26); --divider:rgba(24,25,27,.06);
+  --surface-solid:#faf9f6; --surface:rgba(255,255,255,.76); --surface-card:rgba(255,255,255,.82); --surface-glass:rgba(246,245,242,.88); --surface-modal:rgba(250,249,246,.92); --surface-pill:rgba(24,25,27,.05); --card-solid:#ffffff; --float-solid:rgba(248,249,251,.95); --card-top-hi:rgba(255,255,255,.9);
+  --action:#0891b2; --action-ink:#ffffff; --selected-text:#0e7490; --selected-surface:rgba(8,145,178,.12); --selected-border:#0891b2;
+  --thread:#b845ab; --thread-soft:rgba(213,84,201,.12); --thread-ink:#17181c;
+  --surface-tide:rgba(13,150,104,.10); --surface-peach:rgba(213,84,201,.08); --soft-indigo:rgba(23,24,28,.06);
+  --shadow-flat:0 1px 2px rgba(18,19,22,.03),0 6px 16px -4px rgba(18,19,22,.05); --shadow-raised:0 4px 12px rgba(18,19,22,.05),0 16px 36px -6px rgba(18,19,22,.08); --shadow-card:0 1px 2px rgba(30,27,20,.05),0 18px 44px -14px rgba(30,27,20,.16); --shadow-floating:0 4px 12px rgba(18,19,22,.05),0 16px 36px -6px rgba(18,19,22,.08); --shadow-glass-top:inset 0 1px 0 rgba(255,255,255,.65);
+  --glass-card-bg:rgba(255,255,255,.50); --glass-card-blur:blur(22px) saturate(1.45); --glass-card-line:rgba(255,255,255,.70); --glass-card-edge:rgba(24,25,27,.07); --glass-card-shadow:0 18px 44px -16px rgba(30,27,20,.18); --glass-card-radius:26px;
+  --glass-chip-bg:rgba(255,255,255,.55); --glass-chip-blur:blur(14px) saturate(1.35); --glass-nav-bg:rgba(252,252,249,.99); --glass-modal-bg:rgba(255,255,255,.68); --glass-panel-pad:rgba(255,255,255,.25);
+  --blur-bar:blur(12px) saturate(1.2); --blur-card:blur(10px) saturate(1.2); --blur-modal:blur(12px) saturate(1.25); --blur-panel:blur(10px) saturate(1.2);
+  --nav-bg:rgba(255,255,255,.66);
+  color-scheme:light;
+}
+
+/* —— 图鉴骨架 —— */
+*{box-sizing:border-box}
+html,body{margin:0; padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:var(--font-ui);
+  transition:background-color 180ms ease-out, color 180ms ease-out;
+}
+::selection{background:var(--selected-surface); color:var(--selected-text)}
+.cat-top{
+  position:sticky; top:0; z-index:50;
+  background:var(--float-solid); border-bottom:1px solid var(--line);
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+}
+.cat-top-in{max-width:430px; margin:0 auto; padding:14px 16px 12px}
+.cat-title{font-size:19px; font-weight:800; letter-spacing:.01em}
+.cat-sub{font-size:12px; color:var(--dim); margin-top:3px; line-height:1.5}
+.cat-themes{display:flex; gap:8px; margin-top:11px}
+.cat-theme-btn{
+  flex:1; padding:8px 0; border-radius:999px; cursor:pointer;
+  border:1px solid var(--line-2); background:transparent; color:var(--dim);
+  font-family:var(--font-ui); font-size:13px; font-weight:600;
+}
+.cat-theme-btn[aria-pressed="true"]{background:var(--selected-surface); border-color:var(--selected-border); color:var(--selected-text)}
+.cat-wrap{max-width:430px; margin:0 auto; padding:6px 16px 48px}
+.cat-sec{margin-top:30px}
+.cat-sec-head{display:flex; align-items:baseline; gap:10px; margin-bottom:4px}
+.cat-sec-title{font-size:16px; font-weight:800}
+.cat-sec-note{font-size:12px; color:var(--dim-2)}
+.cat-item{margin-top:18px}
+.cat-item-head{display:flex; align-items:center; gap:9px; margin-bottom:9px}
+.cat-code{
+  font-size:11px; font-weight:700; letter-spacing:.08em;
+  padding:3px 8px; border-radius:6px;
+  background:var(--glass-2); border:1px solid var(--line); color:var(--dim);
+  font-variant-numeric:tabular-nums;
+}
+.cat-name{font-size:14px; font-weight:600}
+.cat-note{font-size:12px; color:var(--dim-2); margin:-3px 0 9px; line-height:1.55}
+.stage{
+  position:relative; overflow:hidden;
+  border:1px solid var(--line); border-radius:20px;
+  background:var(--bg-2); padding:20px;
+}
+.stage::before{ /* 氛围底：给玻璃可折射的东西（页面氛围的微缩版） */
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:
+    radial-gradient(190px 120px at 8% -6%, color-mix(in srgb, var(--cyan) 17%, transparent), transparent 72%),
+    radial-gradient(210px 140px at 96% 22%, color-mix(in srgb, var(--violet) 16%, transparent), transparent 72%),
+    radial-gradient(230px 150px at 46% 112%, color-mix(in srgb, var(--mint) 10%, transparent), transparent 72%);
+  background-repeat:no-repeat;
+}
+.stage-in{position:relative}
+.stage-bg{position:absolute; inset:0}
+.stage-bg img{width:100%; height:100%; object-fit:cover; display:block}
+.row{display:flex; flex-wrap:wrap; gap:10px; align-items:center}
+.col{display:flex; flex-direction:column; gap:14px}
+.txt{font-size:14px; line-height:1.65; color:var(--ink)}
+.txt-dim{font-size:13px; line-height:1.6; color:var(--dim)}
+.center{display:flex; flex-direction:column; align-items:center; gap:12px; text-align:center}
+/* 状态标注：并排展示不同状态时逐个挂小标签，禁用态发暗不再像坏了 */
+.cell{display:flex; flex-direction:column; align-items:center; gap:7px}
+.st{font-size:10px; font-weight:600; letter-spacing:.08em; line-height:1; color:var(--dim-2);
+  padding:3px 8px; border-radius:999px; border:1px solid var(--line); background:var(--glass); white-space:nowrap}
+/* 星形统一走内嵌 SVG（四瓣对称 path），1em 正方锁定，不用 ✦ 字形 */
+.star-ic{width:1em; height:1em; fill:currentColor; flex:none}
+#DIV-04 .star-ic{filter:drop-shadow(0 0 4px color-mix(in srgb, var(--cyan) 50%, transparent))}
+</style>
+</head>
+<body>
+<header class="cat-top">
+  <div class="cat-top-in">
+    <div class="cat-title">织界 · 专属设计素材库</div>
+    <div class="cat-sub">REQ-34 第一批 · 41 件 —— 母题：织线 / 星点 / 书页。全部挂主题 token，切换主题整页换貌；骨架与数值守 §51/§53 纪律（blur 22/14/12 档、圆角阶梯、发丝线 alpha）。</div>
+    <div class="cat-themes" role="group" aria-label="主题切换">
+      <button class="cat-theme-btn" data-set-theme="black" aria-pressed="true">黑</button>
+      <button class="cat-theme-btn" data-set-theme="white" aria-pressed="false">白</button>
+      <button class="cat-theme-btn" data-set-theme="aurora" aria-pressed="false">极光</button>
+    </div>
+  </div>
+</header>
+
+<main class="cat-wrap">
+
+<!-- ================= BTN 按钮族 ================= -->
+<section class="cat-sec" id="sec-btn">
+  <div class="cat-sec-head"><span class="cat-sec-title">按钮族</span><span class="cat-sec-note">BTN · 7 件</span></div>
+
+  <div class="cat-item" id="BTN-01">
+    <div class="cat-item-head"><span class="cat-code">BTN-01</span><span class="cat-name">主按钮 · 织线渐变</span></div>
+    <div class="stage"><div class="stage-in row">
+      <span class="cell"><button class="da-btn da-btn--weave">继续</button><span class="st">默认</span></span>
+      <span class="cell"><button class="da-btn da-btn--weave" disabled>继续</button><span class="st">禁用</span></span>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="BTN-02">
+    <div class="cat-item-head"><span class="cat-code">BTN-02</span><span class="cat-name">玻璃次按钮</span></div>
+    <p class="cat-note">压在画作/氛围上用，玻璃面自带 blur 档（黑/白 22、极光回落 12）。</p>
+    <div class="stage">
+      <div class="stage-bg"><img src="./art/cultivation-640.webp" alt=""></div>
+      <div class="stage-in row">
+        <button class="da-btn da-btn--glass">保存草稿</button>
+        <button class="da-btn da-btn--glass">换个世界</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cat-item" id="BTN-03">
+    <div class="cat-item-head"><span class="cat-code">BTN-03</span><span class="cat-name">发丝线幽灵按钮</span></div>
+    <div class="stage"><div class="stage-in row">
+      <button class="da-btn da-btn--ghost">取消</button>
+      <button class="da-btn da-btn--ghost">查看详情</button>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="BTN-04">
+    <div class="cat-item-head"><span class="cat-code">BTN-04</span><span class="cat-name">危险按钮</span></div>
+    <div class="stage"><div class="stage-in row">
+      <span class="cell"><button class="da-btn da-btn--danger">删除这条线</button><span class="st">默认</span></span>
+      <span class="cell"><button class="da-btn da-btn--danger" disabled>删除</button><span class="st">禁用</span></span>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="BTN-05">
+    <div class="cat-item-head"><span class="cat-code">BTN-05</span><span class="cat-name">胶囊 CTA</span></div>
+    <div class="stage"><div class="stage-in">
+      <button class="da-btn da-btn--cta" style="width:100%">开始造世 <span class="da-cta-arrow">→</span></button>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="BTN-06">
+    <div class="cat-item-head"><span class="cat-code">BTN-06</span><span class="cat-name">图标钮</span></div>
+    <div class="stage"><div class="stage-in row">
+      <span class="cell"><button class="da-icon-btn" aria-label="分享"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13"/><path d="m7 8 5-5 5 5"/><path d="M5 13v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></svg></button><span class="st">默认</span></span>
+      <span class="cell"><button class="da-icon-btn" aria-label="收藏"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5L14.23 8.93L21.03 9.06L15.61 13.17L17.58 19.69L12 15.8L6.42 19.69L8.39 13.17L2.97 9.06L9.77 8.93Z"/></svg></button><span class="st">默认</span></span>
+      <span class="cell"><button class="da-icon-btn is-round" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button><span class="st">默认 · 圆形</span></span>
+      <span class="cell"><button class="da-icon-btn" aria-label="更多" disabled><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button><span class="st">禁用</span></span>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="BTN-07">
+    <div class="cat-item-head"><span class="cat-code">BTN-07</span><span class="cat-name">悬浮动作胶囊</span></div>
+    <p class="cat-note">近实色面压住正文（黑 .98 / 白 .99、极光回落 .94，均叠 blur），被盖住的字迹不可辨认（SALT-3 裁定）。演示里正文从胶囊背后流过，末两行正被胶囊压着。</p>
+    <div class="stage">
+      <div class="stage-in">
+        <p class="txt" style="margin:0">雾起的时候，沉潮港的钟声总会比平时慢半拍。守塔人说，那是雾在替大海数潮汐：涨潮七分，退潮三分，剩下的，全留给那些没能回来的人。阿灿站在塔下，数到第九声，忽然发现自己的心跳正和钟声错开一拍。雾墙外有光在动，像谁提着灯，正一步一步朝他走来。他握紧了口袋里那把没有锁孔的钥匙。</p>
+      </div>
+      <button class="da-fab" style="position:absolute; right:16px; bottom:16px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>介入</button>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FRM 窗口 / 边框 ================= -->
+<section class="cat-sec" id="sec-frm">
+  <div class="cat-sec-head"><span class="cat-sec-title">窗口 / 边框</span><span class="cat-sec-note">FRM · 5 件</span></div>
+
+  <div class="cat-item" id="FRM-01">
+    <div class="cat-item-head"><span class="cat-code">FRM-01</span><span class="cat-name">弹窗框 · 四角线角</span></div>
+    <div class="stage"><div class="stage-in">
+      <div class="da-frame-corners">
+        <div class="txt" style="font-weight:700; margin-bottom:6px">世界合流</div>
+        <div class="txt-dim">两条线的化身与世界将合流共演，已发生的章节不会被改动。</div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="FRM-02">
+    <div class="cat-item-head"><span class="cat-code">FRM-02</span><span class="cat-name">弹窗框 · 星点角</span></div>
+    <div class="stage"><div class="stage-in">
+      <div class="da-frame-stars">
+        <div class="txt" style="font-weight:700; margin-bottom:6px">第一季完结</div>
+        <div class="txt-dim">24 章织完。开启第二季后，化身与世界都会升格。</div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="FRM-03">
+    <div class="cat-item-head"><span class="cat-code">FRM-03</span><span class="cat-name">渐变描边框</span></div>
+    <div class="stage"><div class="stage-in">
+      <div class="da-grad-border"><div class="da-grad-border-in">
+        <div class="da-caps" style="margin-bottom:8px">WORLD BIBLE</div>
+        <div class="txt">沉潮港：雾墙之内的自由港，潮汐钟塔是全城唯一的时间。</div>
+      </div></div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="FRM-04">
+    <div class="cat-item-head"><span class="cat-code">FRM-04</span><span class="cat-name">双发丝线框</span></div>
+    <div class="stage"><div class="stage-in">
+      <div class="da-frame-double">
+        <div class="txt" style="font-family:var(--serif, serif)">「这一次，你是主角。」</div>
+        <div class="txt-dim" style="margin-top:6px">—— 织界开场白</div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="FRM-05">
+    <div class="cat-item-head"><span class="cat-code">FRM-05</span><span class="cat-name">书封框 · 角标 tick</span></div>
+    <div class="stage"><div class="stage-in row" style="align-items:flex-start">
+      <div class="da-book-frame" style="width:128px; height:170px"><img src="./art/cover-scifi-640.webp" alt="科幻封面"></div>
+      <div class="da-book-frame" style="width:128px; height:170px"><img src="./art/cover-xuanyi-640.webp" alt="悬疑封面"></div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ================= DIV 线条分隔 ================= -->
+<section class="cat-sec" id="sec-div">
+  <div class="cat-sec-head"><span class="cat-sec-title">线条分隔</span><span class="cat-sec-note">DIV · 5 件</span></div>
+
+  <div class="cat-item" id="DIV-01">
+    <div class="cat-item-head"><span class="cat-code">DIV-01</span><span class="cat-name">发丝线</span></div>
+    <div class="stage"><div class="stage-in col" style="gap:12px">
+      <div class="txt">上一段落</div><hr class="da-hr"><div class="txt">下一段落</div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DIV-02">
+    <div class="cat-item-head"><span class="cat-code">DIV-02</span><span class="cat-name">渐变隐线</span></div>
+    <div class="stage"><div class="stage-in col" style="gap:12px">
+      <div class="txt">上一段落</div><hr class="da-hr--fade"><div class="txt">下一段落</div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DIV-03">
+    <div class="cat-item-head"><span class="cat-code">DIV-03</span><span class="cat-name">缝线 · 针脚</span></div>
+    <p class="cat-note">织线粉针脚，针距 10px——把「织」缝进分隔里。</p>
+    <div class="stage"><div class="stage-in col" style="gap:12px">
+      <div class="txt">上一段落</div><hr class="da-hr--stitch"><div class="txt">下一段落</div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DIV-04">
+    <div class="cat-item-head"><span class="cat-code">DIV-04</span><span class="cat-name">星点结分隔</span></div>
+    <div class="stage"><div class="stage-in">
+      <div class="da-hr--knot"><span class="da-knot-dot"></span><span class="da-knot-star"><svg class="star-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z"/></svg></span><span class="da-knot-dot"></span></div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DIV-05">
+    <div class="cat-item-head"><span class="cat-code">DIV-05</span><span class="cat-name">带标签的分区线</span></div>
+    <div class="stage"><div class="stage-in">
+      <div class="da-hr--label"><span class="da-hr-label-text">世界设定</span></div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ================= TYP 字体效果 ================= -->
+<section class="cat-sec" id="sec-typ">
+  <div class="cat-sec-head"><span class="cat-sec-title">字体效果</span><span class="cat-sec-note">TYP · 5 件</span></div>
+
+  <div class="cat-item" id="TYP-01">
+    <div class="cat-item-head"><span class="cat-code">TYP-01</span><span class="cat-name">渐变标题字</span></div>
+    <div class="stage"><div class="stage-in">
+      <div class="da-title-grad" style="font-size:30px; line-height:1.3">这一次，你是主角。</div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="TYP-02">
+    <div class="cat-item-head"><span class="cat-code">TYP-02</span><span class="cat-name">章节大数字</span></div>
+    <div class="stage"><div class="stage-in">
+      <div class="da-caps" style="margin-bottom:6px">SEASON FINALE</div>
+      <div class="da-chapter-num">24 <span class="da-chapter-num-unit">/ 全 24 章</span></div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="TYP-03">
+    <div class="cat-item-head"><span class="cat-code">TYP-03</span><span class="cat-name">小灰 caps 分区标签</span></div>
+    <div class="stage"><div class="stage-in col" style="gap:8px">
+      <div class="da-caps">最新动态</div>
+      <div class="da-caps">我的书架 · READING NOW</div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="TYP-04">
+    <div class="cat-item-head"><span class="cat-code">TYP-04</span><span class="cat-name">统计大数字砖</span></div>
+    <div class="stage"><div class="stage-in row" style="align-items:stretch">
+      <div class="da-stat-brick" style="flex:1">
+        <div class="da-caps">总字数</div>
+        <div class="da-stat-num">128,400</div>
+        <div class="da-stat-sub">本月 <span class="da-stat-delta">▲ 12%</span></div>
+      </div>
+      <div class="da-stat-brick" style="flex:1">
+        <div class="da-caps">在读</div>
+        <div class="da-stat-num">3 条线</div>
+        <div class="da-stat-sub">1 条连载中</div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="TYP-05">
+    <div class="cat-item-head"><span class="cat-code">TYP-05</span><span class="cat-name">描边字</span></div>
+    <div class="stage"><div class="stage-in">
+      <div class="da-outline-text" style="font-size:34px; line-height:1.15">STORYWEAVE</div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ================= FX 显示效果 ================= -->
+<section class="cat-sec" id="sec-fx">
+  <div class="cat-sec-head"><span class="cat-sec-title">显示效果</span><span class="cat-sec-note">FX · 6 件</span></div>
+
+  <div class="cat-item" id="FX-01">
+    <div class="cat-item-head"><span class="cat-code">FX-01</span><span class="cat-name">玻璃面（+ 小玻璃片）</span></div>
+    <p class="cat-note">§53 配方：半透染色面 + 真 blur + 亮发丝边 + 外环；极光回落其自有玻璃档。</p>
+    <div class="stage">
+      <div class="stage-bg"><img src="./art/banner-store-1600.webp" alt=""></div>
+      <div class="stage-in">
+        <div class="da-glass-panel">
+          <div class="txt" style="font-weight:700; margin-bottom:8px">沉潮港纪事</div>
+          <div class="row">
+            <span class="da-glass-chip"><svg class="star-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z"/></svg>玄幻</span>
+            <span class="da-glass-chip">全 24 章</span>
+            <span class="da-glass-chip">已完结</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cat-item" id="FX-02">
+    <div class="cat-item-head"><span class="cat-code">FX-02</span><span class="cat-name">光晕环</span></div>
+    <div class="stage"><div class="stage-in center">
+      <div class="da-halo"><svg class="star-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z"/></svg></div>
+      <div class="txt-dim">化身 / 徽章位的星环底座</div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="FX-03">
+    <div class="cat-item-head"><span class="cat-code">FX-03</span><span class="cat-name">星点尘</span></div>
+    <div class="stage"><div class="stage-in">
+      <div class="da-stardust" style="padding:20px; min-height:96px">
+        <div class="txt">星尘落在卡面上——不多，够认出是织界。</div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="FX-04">
+    <div class="cat-item-head"><span class="cat-code">FX-04</span><span class="cat-name">细噪点</span></div>
+    <div class="stage"><div class="stage-in">
+      <div class="da-noise" style="border-radius:16px; border:1px solid var(--line); background:var(--surface-solid); padding:20px">
+        <div class="txt">哑光面加一层 5% 噪点，去塑料感。</div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="FX-05">
+    <div class="cat-item-head"><span class="cat-code">FX-05</span><span class="cat-name">微光扫过 · 骨架</span></div>
+    <div class="stage"><div class="stage-in col" style="gap:10px">
+      <div style="display:flex; gap:12px; align-items:center">
+        <div class="da-shimmer" style="width:52px; height:52px; border-radius:12px; flex:none"></div>
+        <div style="flex:1; display:flex; flex-direction:column; gap:10px">
+          <div class="da-shimmer" style="height:14px; width:72%"></div>
+          <div class="da-shimmer" style="height:14px; width:46%"></div>
+        </div>
+      </div>
+      <div class="da-shimmer" style="height:14px; width:100%"></div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="FX-06">
+    <div class="cat-item-head"><span class="cat-code">FX-06</span><span class="cat-name">氛围色晕</span></div>
+    <div class="stage"><div class="stage-in">
+      <div class="da-ambient" style="padding:20px; min-height:104px">
+        <div class="txt">页面氛围底的取色：青 / 紫 / 潮绿三晕，垫在玻璃之下。</div>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ================= DTL 角落细节 ================= -->
+<section class="cat-sec" id="sec-dtl">
+  <div class="cat-sec-head"><span class="cat-sec-title">角落细节</span><span class="cat-sec-note">DTL · 13 件</span></div>
+
+  <div class="cat-item" id="DTL-01">
+    <div class="cat-item-head"><span class="cat-code">DTL-01</span><span class="cat-name">徽章组</span></div>
+    <div class="stage"><div class="stage-in row">
+      <span class="da-badge da-badge--official"><svg class="star-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z"/></svg>官方</span>
+      <span class="da-badge da-badge--main">主化身</span>
+      <span class="da-badge da-badge--serial">连载中</span>
+      <span class="da-badge da-badge--done">已完结</span>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL-02">
+    <div class="cat-item-head"><span class="cat-code">DTL-02</span><span class="cat-name">Chips</span></div>
+    <p class="cat-note">点一点可切换选中（图鉴演示）；选中走 selected token 族。</p>
+    <div class="stage"><div class="stage-in row">
+      <span class="cell"><button class="da-chip" aria-pressed="true">全部</button><span class="st">选中</span></span>
+      <span class="cell"><button class="da-chip" aria-pressed="false">玄幻修真</button><span class="st">未选中</span></span>
+      <span class="cell"><button class="da-chip" aria-pressed="false">都市现实</button><span class="st">未选中</span></span>
+      <span class="cell"><button class="da-chip" aria-pressed="false">恐怖</button><span class="st">未选中</span></span>
+      <span class="cell"><button class="da-chip" disabled>敬请期待</button><span class="st">禁用</span></span>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL-03">
+    <div class="cat-item-head"><span class="cat-code">DTL-03</span><span class="cat-name">开关</span></div>
+    <div class="stage"><div class="stage-in col" style="gap:16px">
+      <label class="da-switch"><input type="checkbox" checked><span class="da-switch-ui"></span><span class="da-switch-label">动效</span><span class="st">开</span></label>
+      <label class="da-switch"><input type="checkbox"><span class="da-switch-ui"></span><span class="da-switch-label">消息提醒</span><span class="st">关</span></label>
+      <label class="da-switch"><input type="checkbox" disabled><span class="da-switch-ui"></span><span class="da-switch-label">实验功能（未开放）</span><span class="st">禁用</span></label>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL-04">
+    <div class="cat-item-head"><span class="cat-code">DTL-04</span><span class="cat-name">单选 / 勾选</span></div>
+    <div class="stage"><div class="stage-in col" style="gap:14px">
+      <label class="da-radio"><input type="radio" name="cat-read" checked>上下滚动 <span class="st">选中</span></label>
+      <label class="da-radio"><input type="radio" name="cat-read">逐屏翻页 <span class="st">未选中</span></label>
+      <label class="da-check"><input type="checkbox" checked>带入我的化身 <span class="st">选中</span></label>
+      <label class="da-check"><input type="checkbox">完结后发布到广场 <span class="st">未选中</span></label>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL-05">
+    <div class="cat-item-head"><span class="cat-code">DTL-05</span><span class="cat-name">输入 · 下划线式</span></div>
+    <div class="stage"><div class="stage-in col" style="gap:18px">
+      <div class="da-field">
+        <label class="da-field-label" for="cat-in-name">昵称 <span class="st">默认</span></label>
+        <input class="da-input-under" id="cat-in-name" type="text" value="织界官方" autocomplete="off">
+        <span class="da-field-hint">昵称可随时改，@用户名不可改。</span>
+      </div>
+      <div class="da-field is-error">
+        <label class="da-field-label" for="cat-in-mail">邮箱 <span class="st">错误</span></label>
+        <input class="da-input-under" id="cat-in-mail" type="email" value="not-an-email" autocomplete="off">
+        <span class="da-field-error">邮箱格式不对。</span>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL-06">
+    <div class="cat-item-head"><span class="cat-code">DTL-06</span><span class="cat-name">输入 · 框式</span></div>
+    <div class="stage"><div class="stage-in col" style="gap:14px">
+      <div class="da-field">
+        <label class="da-field-label" for="cat-in-search">搜书名、作者或世界</label>
+        <input class="da-input-box" id="cat-in-search" type="search" placeholder="沉潮港…" autocomplete="off">
+      </div>
+      <div class="da-field">
+        <label class="da-field-label" for="cat-in-bio">简介</label>
+        <textarea class="da-input-box" id="cat-in-bio" rows="2">别人不敢写的我来写。</textarea>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL-07">
+    <div class="cat-item-head"><span class="cat-code">DTL-07</span><span class="cat-name">焦点环</span></div>
+    <p class="cat-note">静态演示：与全库 :focus-visible 同一口径（青环 + 2px 间距）。</p>
+    <div class="stage"><div class="stage-in row">
+      <button class="da-btn da-btn--ghost da-focus-ring">聚焦中</button>
+      <input class="da-input-box da-focus-ring" style="width:150px" type="text" value="聚焦中" aria-label="焦点环演示输入">
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL-08">
+    <div class="cat-item-head"><span class="cat-code">DTL-08</span><span class="cat-name">滚动条</span></div>
+    <div class="stage"><div class="stage-in">
+      <div class="da-scroll" style="height:96px; overflow-y:auto; padding-right:8px">
+        <p class="txt" style="margin:0 0 10px">第一章 · 雾起沉潮港</p>
+        <p class="txt" style="margin:0 0 10px">第二章 · 钟塔守夜人</p>
+        <p class="txt" style="margin:0 0 10px">第三章 · 雾墙之外</p>
+        <p class="txt" style="margin:0 0 10px">第四章 · 退潮时分</p>
+        <p class="txt" style="margin:0">第五章 · 灯塔来信</p>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL-09">
+    <div class="cat-item-head"><span class="cat-code">DTL-09</span><span class="cat-name">选区色</span></div>
+    <div class="stage"><div class="stage-in">
+      <p class="da-selection-demo txt" style="margin:0">试着选中这段文字——选区底色与字色走 selected token 族，和 chips 的选中态是同一套语言。</p>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL-10">
+    <div class="cat-item-head"><span class="cat-code">DTL-10</span><span class="cat-name">Toast</span></div>
+    <div class="stage"><div class="stage-in col" style="gap:12px">
+      <div class="da-toast"><span class="da-toast-dot"></span>已保存到云端书库<span class="da-toast-action">撤销</span></div>
+      <div class="da-toast"><span class="da-toast-dot" style="background:var(--coral); box-shadow:0 0 10px color-mix(in srgb, var(--coral) 60%, transparent)"></span>同步失败，草稿留在本机<span class="da-toast-action">重试</span></div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL-11">
+    <div class="cat-item-head"><span class="cat-code">DTL-11</span><span class="cat-name">进度条 · 星结</span></div>
+    <div class="stage"><div class="stage-in col" style="gap:20px">
+      <div>
+        <div class="row" style="justify-content:space-between; margin-bottom:9px"><span class="txt-dim">沉潮港纪事</span><span class="txt-dim">第 6 / 24 章</span></div>
+        <div class="da-progress"><div class="da-progress-fill" style="width:25%"></div></div>
+      </div>
+      <div>
+        <div class="row" style="justify-content:space-between; margin-bottom:9px"><span class="txt-dim">泰安 · 阿灿</span><span class="txt-dim">第 19 / 24 章</span></div>
+        <div class="da-progress"><div class="da-progress-fill" style="width:79%"></div></div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL-12">
+    <div class="cat-item-head"><span class="cat-code">DTL-12</span><span class="cat-name">织线 loading spinner</span></div>
+    <div class="stage"><div class="stage-in row" style="gap:14px">
+      <span class="da-spinner" aria-hidden="true"></span>
+      <span class="txt-dim">正在织入下一章…</span>
+    </div></div>
+  </div>
+
+  <div class="cat-item" id="DTL-13">
+    <div class="cat-item-head"><span class="cat-code">DTL-13</span><span class="cat-name">空态小标记</span></div>
+    <div class="stage"><div class="stage-in center">
+      <div class="da-empty-mark">
+        <span class="da-empty-glyph"><svg class="star-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2Q13.5 10.5 22 12Q13.5 13.5 12 22Q10.5 13.5 2 12Q10.5 10.5 12 2Z"/></svg></span>
+        <span class="da-empty-text">书架还空着</span>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+</main>
+<script>
+// 图鉴页演示脚本：主题切换 + chips 选中切换（仅图鉴，不入库逻辑）。
+(function(){
+  var root = document.documentElement;
+  document.querySelectorAll('[data-set-theme]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      root.setAttribute('data-shell-theme', btn.getAttribute('data-set-theme'));
+      document.querySelectorAll('[data-set-theme]').forEach(function(b){
+        b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
+      });
+    });
+  });
+  document.querySelectorAll('.da-chip').forEach(function(chip){
+    chip.addEventListener('click', function(){
+      if (chip.disabled) return;
+      chip.setAttribute('aria-pressed', chip.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    });
+  });
+})();
+</script>
+</body>
+</html>
