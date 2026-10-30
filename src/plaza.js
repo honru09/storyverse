@@ -940,6 +940,16 @@ export async function deletePlazaPost({ id, getAccessToken, fetchImpl = globalTh
   return plazaJson(response)
 }
 
+/** Edit my own post's words. The server re-checks authorship and re-scans the text. */
+export async function updatePlazaPost({ id, content, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await plazaHeaders(getAccessToken)) }
+  const response = await fetchImpl(`/api/plaza/posts/${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers, body: JSON.stringify({ content }),
+  })
+  const result = await plazaJson(response)
+  return result?.post ?? null
+}
+
 /** Like / unlike toggle on a post. */
 export async function togglePlazaPostLike({ id, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
   const headers = { 'Content-Type': 'application/json', ...(await plazaHeaders(getAccessToken)) }

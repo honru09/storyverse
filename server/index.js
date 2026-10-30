@@ -1481,6 +1481,20 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           }
           return sendJson(response, 200, await plazaFeed.deletePost(identity, id))
         }
+        if (!action && request.method === 'PATCH') {
+          // Editing a post: the author rewrites their own words; the
+          // feed service re-checks authorship and re-scans the text
+          // with the same gate as publishing before anything is stored.
+          let identity
+          try {
+            identity = await auth.identity(request.headers.authorization)
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再编辑帖子。', 'auth-required')
+            throw error
+          }
+          const post = await plazaFeed.updatePost(identity, id, await readAuthJson(request))
+          return sendJson(response, 200, { post })
+        }
         if ((action === 'like' || action === 'report') && request.method === 'POST') {
           let identity
           try {

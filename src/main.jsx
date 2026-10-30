@@ -104,6 +104,7 @@ import {
   reportPostComment,
   reportPublication,
   togglePlazaPostLike,
+  updatePlazaPost,
   withdrawPublication,
 } from "./plaza.js";
 import {
@@ -7118,6 +7119,10 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
   const [threadOpen, setThreadOpen] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [content, setContent] = useState(post.content);
+  const [edited, setEdited] = useState(Boolean(post.updatedAt) && post.updatedAt !== post.createdAt);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
 
   const toggleLike = async () => {
     if (!account.user) { onOpenAccount(); return; }
@@ -7160,6 +7165,21 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
     }
   };
 
+  const saveEdit = async () => {
+    setBusy(true);
+    try {
+      const updated = await updatePlazaPost({ id: post.id, content: draft, getAccessToken: () => authClient.getAccessToken() });
+      if (updated) {
+        setContent(updated.content);
+        setEdited(Boolean(updated.updatedAt) && updated.updatedAt !== updated.createdAt);
+      }
+      setEditing(false);
+      onToast?.("帖子已更新。");
+    } catch (failure) {
+      setNote(failure?.message || "没能保存，请稍后再试。");
+    } finally { setBusy(false); }
+  };
+
   const shareLink = async () => {
     const url = `${window.location.origin}${window.location.pathname}#/plaza/post-${post.id}`;
     try {
@@ -7186,7 +7206,7 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
               {post.official && <span className="plaza-byline-official">官方</span>}
             </span>
             <small>
-              {post.authorHandle ? `@${post.authorHandle} · ` : ""}{postTimeFor(post.createdAt)}
+              {post.authorHandle ? `@${post.authorHandle} · ` : ""}{postTimeFor(post.createdAt)}{edited ? " · 已编辑" : ""}
             </small>
           </span>
         </button>
@@ -7203,9 +7223,14 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
           {menuOpen && (
             <div className="plaza-post-menu" role="menu">
               {own ? (
-                <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setConfirmingDelete(true); }}>
-                  删除该帖
-                </button>
+                <>
+                  <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setConfirmingDelete(false); setDraft(content); setEditing(true); }}>
+                    编辑该帖
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setEditing(false); setConfirmingDelete(true); }}>
+                    删除该帖
+                  </button>
+                </>
               ) : (
                 <button type="button" role="menuitem" disabled={busy} onClick={() => void report()}>
                   举报该帖
@@ -7222,7 +7247,24 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
           <Button variant="ghost" disabled={busy} onClick={() => setConfirmingDelete(false)}>再想想</Button>
         </div>
       )}
-      <p className="plaza-post-content">{post.content}</p>
+      {editing && (
+        <div className="plaza-post-edit">
+          <textarea
+            className="plaza-post-edit-input"
+            value={draft}
+            rows={4}
+            maxLength={600}
+            aria-label="编辑帖子正文"
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <div className="plaza-post-edit-actions">
+            <small>{[...draft].length}/500</small>
+            <Button variant="ghost" disabled={busy} onClick={() => setEditing(false)}>取消</Button>
+            <Button variant="secondary" disabled={busy || !draft.trim()} onClick={() => void saveEdit()}>保存</Button>
+          </div>
+        </div>
+      )}
+      <p className="plaza-post-content">{content}</p>
       {post.type === "book_share" && (
         <PlazaPostBookCard
           book={post.book}

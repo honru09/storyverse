@@ -264,6 +264,29 @@ export function createPlazaFeedService({ env = process.env, store, books, social
       })
     },
 
+    /**
+     * Edit my own post's words. Authorship is enforced here, never by
+     * the client: another reader's post is a 403, a post that is gone
+     * (or auto-hidden pending review) is a 404, and the new text goes
+     * through the exact cleanPostText gate publishing uses — sanitize,
+     * length cap, red-line scan. Only the body and updatedAt move;
+     * the shared book card, counts and thread are untouched.
+     */
+    async updatePost(identity, id, body) {
+      if (!backend) throw new ApiError(503, '广场服务尚未配置。')
+      return serialise(`post:${id}`, async () => {
+        const post = await backend.getPost(id)
+        if (!post || post.status !== 'active') throw POST_NOT_FOUND()
+        if (post.authorUid !== identity.uid) throw new ApiError(403, '只能编辑自己的帖子。')
+        const input = body && typeof body === 'object' ? body : {}
+        const cleaned = cleanPostText(input.content, POST_CONTENT_MAX)
+        if (cleaned.error) throw new ApiError(400, cleaned.error)
+        const next = { ...post, content: cleaned.text, updatedAt: now().toISOString() }
+        await backend.putPost(next)
+        return summaryOf(next, identity.uid)
+      })
+    },
+
     /** Like toggle: one record per (post, reader); the count follows the records. */
     async toggleLike(identity, id) {
       if (!backend) throw new ApiError(503, '广场服务尚未配置。')
