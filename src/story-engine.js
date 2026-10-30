@@ -304,6 +304,32 @@ export const AVATAR_APPEARANCE_MAX = 300
 // the chapter brief states it next to the name. Books opened before
 // this field existed simply have no desc; their brief is unchanged.
 export const ABILITY_DESC_MAX = 120
+// 金手指边界 (REQ-69 W5, READER-QA F3): beside desc, every ability now
+// carries `bounds` — what it CANNOT do. The story config stores it as
+// `abilityBounds` (parallel to abilityDesc); the avatar signature
+// ability stores it as ability.bounds; library entries carry a
+// conservative default each (see the pools below). The chapter brief
+// and SYSTEM_PROMPT state desc+bounds as a hard limit: a power may
+// only be used inside them, and any NEW power in the prose needs a
+// plot-granting event. Books opened before this field existed have
+// no bounds; their brief falls back to the library entry's default
+// when the name matches one, else stays as it was.
+export const ABILITY_BOUNDS_MAX = 120
+// 主角硬锚点 (REQ-69 W5, READER-QA F2): structured numeric/factual
+// anchors for the protagonist — age, key-event distances in years,
+// and identity facts. They live in three places with ONE shape:
+// the story config (`config.anchors`, solo lead; merged leads carry
+// theirs per person), the avatar profile (`avatar.anchors`, carried
+// into a book at bring-in like the signature ability), and the world
+// bible (`worldBible.anchors`, world-timeline facts set through
+// updateWorldBible). Every chapter brief restates them as hard
+// constraints, and accepted chapters are scanned for arithmetic
+// drift against them (chapterDriftWarningsFor). All fields optional:
+// a book with no anchors behaves exactly as before this batch.
+export const ANCHOR_EVENTS_MAX = 8
+export const ANCHOR_EVENT_LABEL_MAX = 40
+export const ANCHOR_FACT_MAX = 120
+export const ANCHOR_FACTS_MAX = 5
 // The protagonist persona text (typed, or composed from an imported
 // character card): who this person is, in free words, riding the config
 // into every generation brief.
@@ -312,6 +338,211 @@ export const PERSONA_MAX = 600
 // bringing the reader's own avatar into someone else's finished line.
 // Bookkeeping only — like the avatar id, it never reaches the model.
 export const SOURCE_PUBLICATION_ID_MAX = 80
+
+const anchorText = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '')
+const anchorInt = (value, min, max) => (Number.isInteger(value) && value >= min && value <= max ? value : null)
+
+/**
+ * Normalise a protagonist/world anchors value into the one stored
+ * shape, or null when nothing usable remains. Shape:
+ *   { age: int|null, events: [{ label, yearsAgo }], identityFacts: [string] }
+ * `age` is the protagonist's age at the story's present; each event's
+ * `yearsAgo` is its distance from that same present, so the age at
+ * the event is always age − yearsAgo — the arithmetic the drift scan
+ * and the brief's hard constraints both speak. Out-of-range numbers
+ * and empty labels/facts drop rather than clamp: a wrong anchor is
+ * worse than no anchor.
+ */
+export function normalizeProtagonistAnchors(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const age = anchorInt(value.age, 1, 999)
+  const events = []
+  for (const raw of Array.isArray(value.events) ? value.events : []) {
+    if (!raw || typeof raw !== 'object') continue
+    const label = anchorText(raw.label, ANCHOR_EVENT_LABEL_MAX)
+    const yearsAgo = anchorInt(raw.yearsAgo, 0, 9999)
+    if (!label || yearsAgo === null) continue
+    if (events.some((event) => event.label === label)) continue
+    events.push({ label, yearsAgo })
+    if (events.length >= ANCHOR_EVENTS_MAX) break
+  }
+  const identityFacts = []
+  for (const raw of Array.isArray(value.identityFacts) ? value.identityFacts : []) {
+    const fact = anchorText(raw, ANCHOR_FACT_MAX)
+    if (!fact || identityFacts.includes(fact)) continue
+    identityFacts.push(fact)
+    if (identityFacts.length >= ANCHOR_FACTS_MAX) break
+  }
+  if (age === null && !events.length && !identityFacts.length) return null
+  return { age, events, identityFacts }
+}
+
+/** Anchors wherever they may live: a config, a story, or a bible. */
+export function protagonistAnchorsOf(source) {
+  if (!source || typeof source !== 'object') return null
+  if (source.config && typeof source.config === 'object') return normalizeProtagonistAnchors(source.config.anchors)
+  if (source.worldBible && typeof source.worldBible === 'object' && source.anchors === undefined) {
+    return normalizeProtagonistAnchors(source.worldBible.anchors)
+  }
+  return normalizeProtagonistAnchors(source.anchors)
+}
+
+/** World-timeline anchors carried by a story's world bible. */
+export function worldAnchorsOf(story) {
+  return normalizeProtagonistAnchors(story?.worldBible?.anchors)
+}
+
+/**
+ * The hard-constraint lines a chapter brief restates for one anchors
+ * record. Derived ages are spelled out — including the impossible
+ * ones: an event older than the protagonist is stated as such, with
+ * the only readings that keep the arithmetic honest (someone else
+ * acted, a namesake, a forged record), never as the protagonist's
+ * own deed. `who` names the person ('主角' / a name / '世界').
+ */
+export function anchorConstraintLines(anchors, who = '主角') {
+  const normalized = normalizeProtagonistAnchors(anchors)
+  if (!normalized) return []
+  const lines = []
+  const isWorld = who === '世界'
+  if (normalized.age !== null && !isWorld) {
+    lines.push(`硬约束·锚点：${who}现年 ${normalized.age} 岁；正文写到${who}的年龄与年份时，必须与这个数字的算术一致，不得改动。`)
+  }
+  for (const event of normalized.events) {
+    if (normalized.age !== null && !isWorld) {
+      const atEvent = normalized.age - event.yearsAgo
+      if (atEvent < 0) {
+        lines.push(`硬约束·锚点：关键事件「${event.label}」发生在 ${event.yearsAgo} 年前，${who}当时尚未出生（现年 ${normalized.age} 岁）——不得写成${who}亲历或亲手所为；只能是他人所为、同名者、冒用其名号或档案记载，除非身份事实另有冻龄/转生类说明。`)
+      } else {
+        lines.push(`硬约束·锚点：关键事件「${event.label}」发生在 ${event.yearsAgo} 年前，${who}当时 ${atEvent} 岁；涉及此事的年龄与年份表述必须与此一致。`)
+      }
+    } else {
+      lines.push(`硬约束·锚点：关键事件「${event.label}」发生在 ${event.yearsAgo} 年前；涉及此事的年份表述必须与此一致，不得另报一个年数。`)
+    }
+  }
+  for (const fact of normalized.identityFacts) {
+    lines.push(`硬约束·锚点：身份事实——${fact}（不得与此矛盾，不得另编一套来历覆盖它）。`)
+  }
+  return lines
+}
+
+/*
+ * 数字事实漂移扫描 (REQ-69 W5): a post-acceptance WARNING pass, never
+ * a rejection — prose is the author's record, and a heuristic scan
+ * must not be able to eat a chapter. It compares the chapter text's
+ * own numeric claims against the anchors' arithmetic and records
+ * what conflicts (acceptChapter stamps the result onto the chapter
+ * as `driftWarnings`).
+ *
+ * Coverage (honest bounds — see CONTENT-CONSISTENCY.md):
+ * - 「N 年前」 and 「N 岁」 with Arabic digits or Chinese numerals
+ *   up to 千 (三十 / 三十二 / 一百二十…);
+ * - an age stated within 40 characters of the protagonist's name
+ *   that differs from the anchor age;
+ * - a 「N 年前」 stated within 60 characters of an anchored event's
+ *   label that differs from that event's yearsAgo;
+ * - a 「N 年前」 with N greater than the anchor age, stated within
+ *   60 characters of the protagonist's name (the F2 shape: a
+ *   29-year-old personally signing something 30 years ago).
+ * NOT covered: absolute calendar years (「1998 年」), ages of other
+ * characters stated away from the protagonist's name, events with
+ * no label nearby, numerals beyond 千， and any semantic judgement
+ * about who performed an action beyond name proximity.
+ */
+const CN_DIGITS = { 零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 }
+export function parseChineseNumber(text) {
+  const raw = typeof text === 'string' ? text.trim() : ''
+  if (!raw) return null
+  if (/^\d+$/.test(raw)) return Number.parseInt(raw, 10)
+  let total = 0
+  let section = 0
+  let digit = null
+  let saw = false
+  for (const char of raw) {
+    if (char in CN_DIGITS) { digit = CN_DIGITS[char]; saw = true; continue }
+    const unit = char === '十' ? 10 : char === '百' ? 100 : char === '千' ? 1000 : null
+    if (unit === null) return null
+    saw = true
+    section += (digit === null ? 1 : digit) * unit
+    digit = null
+    if (unit === 1000) { total += section; section = 0 }
+  }
+  if (!saw) return null
+  return total + section + (digit === null ? 0 : digit)
+}
+
+const NUMERAL_SOURCE = String.raw`(?:\d+|[零一二三四五六七八九十百千两]+)`
+const nearText = (text, index, length, radius) => text.slice(Math.max(0, index - radius), index + length + radius)
+
+/**
+ * Scan one chapter's text against a story's anchors. Returns an array
+ * of { kind, expected, found, excerpt } — empty when nothing the scan
+ * covers conflicts (including when the story carries no anchors).
+ * `story` supplies config.anchors (+ per-person merged anchors),
+ * worldBible.anchors and the protagonist name(s).
+ */
+export function chapterDriftWarningsFor(story, text) {
+  if (typeof text !== 'string' || !text) return []
+  const warnings = []
+  const push = (warning) => {
+    if (!warnings.some((item) => item.kind === warning.kind && item.found === warning.found && item.expected === warning.expected)) {
+      warnings.push(warning)
+    }
+  }
+  const anchorSets = []
+  const solo = protagonistAnchorsOf(story)
+  const soloName = typeof story?.config?.name === 'string' ? story.config.name.trim() : ''
+  if (solo) anchorSets.push({ anchors: solo, name: soloName })
+  if (Array.isArray(story?.config?.protagonists)) {
+    for (const person of story.config.protagonists) {
+      const anchors = normalizeProtagonistAnchors(person?.anchors)
+      if (anchors) anchorSets.push({ anchors, name: typeof person?.name === 'string' ? person.name.trim() : '' })
+    }
+  }
+  const world = worldAnchorsOf(story)
+  if (world) anchorSets.push({ anchors: world, name: '' })
+  if (!anchorSets.length) return []
+
+  const agePattern = new RegExp(`(${NUMERAL_SOURCE})\\s*岁`, 'g')
+  const yearsPattern = new RegExp(`(${NUMERAL_SOURCE})\\s*年前`, 'g')
+  for (const { anchors, name } of anchorSets) {
+    if (anchors.age !== null && name) {
+      for (const match of text.matchAll(agePattern)) {
+        const found = parseChineseNumber(match[1])
+        if (found === null || found === anchors.age) continue
+        if (!nearText(text, match.index, match[0].length, 40).includes(name)) continue
+        push({ kind: 'age-mismatch', expected: anchors.age, found, excerpt: nearText(text, match.index, match[0].length, 20).trim() })
+      }
+    }
+    // Event-label years: any anchored event named near a year count.
+    const eventYears = new Set()
+    for (const event of anchors.events) {
+      eventYears.add(event.yearsAgo)
+      for (const match of text.matchAll(yearsPattern)) {
+        const found = parseChineseNumber(match[1])
+        if (found === null || found === event.yearsAgo) continue
+        if (!nearText(text, match.index, match[0].length, 60).includes(event.label)) continue
+        push({ kind: 'event-years-mismatch', expected: event.yearsAgo, found, excerpt: nearText(text, match.index, match[0].length, 20).trim() })
+      }
+    }
+    // The F2 shape: a span longer than the protagonist has been alive,
+    // narrated next to the protagonist's own name. A passage that
+    // itself states the honest reading （尚未出生 / 冒用 / 同名者 /
+    // 不是他） is the anchor working as intended, not drift.
+    if (anchors.age !== null && name) {
+      for (const match of text.matchAll(yearsPattern)) {
+        const found = parseChineseNumber(match[1])
+        if (found === null || found <= anchors.age) continue
+        const near = nearText(text, match.index, match[0].length, 60)
+        if (!near.includes(name)) continue
+        if (/未出生|还没出生|尚未出生|没出生|冒用|同名者|他人所为|不是他|不是我/.test(near)) continue
+        push({ kind: 'years-before-birth', expected: anchors.age, found, excerpt: nearText(text, match.index, match[0].length, 20).trim() })
+      }
+    }
+  }
+  return warnings
+}
+
 export const CUSTOM_GENRE = {
   id: CUSTOM_GENRE_ID,
   label: '创世神',
@@ -579,158 +810,158 @@ const originBeatLine = (genre, config) => {
  */
 export const WORLD_ABILITY_POOLS = {
   mist: [
-    { id: 'tide', name: '听见潮汐', desc: '从水与回声里读取被隐藏的记忆' },
-    { id: 'mist-fogpath', name: '雾里认路', desc: '雾再大也认得回港的航线，走失的人会先找到你' },
-    { id: 'mist-salvage', name: '沉物打捞', desc: '能把沉进水底的东西，连同它的故事一起捞上来' },
-    { id: 'mist-tidemark', name: '潮痕预读', desc: '从退潮留下的痕迹里，读出昨夜发生过什么' },
+    { id: 'tide', name: '听见潮汐', desc: '从水与回声里读取被隐藏的记忆', bounds: '只能读与水、回声直接相连的记忆；离了水与回声就什么也听不见，读到的是碎片不是全貌，更读不到活人的心思' },
+    { id: 'mist-fogpath', name: '雾里认路', desc: '雾再大也认得回港的航线，走失的人会先找到你', bounds: '只认航线与归途，不预知危险也不辨人心；没走过、没灯塔标记的水域一样会迷路' },
+    { id: 'mist-salvage', name: '沉物打捞', desc: '能把沉进水底的东西，连同它的故事一起捞上来', bounds: '只能打捞真实沉底的实物，捞不出消息与人心；重物、深水都要付时间和体力的价' },
+    { id: 'mist-tidemark', name: '潮痕预读', desc: '从退潮留下的痕迹里，读出昨夜发生过什么', bounds: '只能从真实潮痕推断昨夜的水与物，推不出人的动机；痕迹被冲乱就会读错' },
   ],
   cultivation: [
-    { id: 'ember', name: '借火一瞬', desc: '让即将熄灭的事物再燃一次' },
-    { id: 'cult-windsword', name: '御剑听风', desc: '剑未出鞘，先听见三丈内的风声与杀意' },
-    { id: 'cult-lingxi', name: '灵息内视', desc: '闭上眼，能看见自己与旁人灵脉的走向' },
-    { id: 'cult-shadowmark', name: '云阶留影', desc: '在走过的地方留下一道只有自己看得见的影子标记' },
+    { id: 'ember', name: '借火一瞬', desc: '让即将熄灭的事物再燃一次', bounds: '只能让将熄之物再燃一次，不能无中生有造火，也不能让已成灰烬的东西复原；再燃的火更短更烈' },
+    { id: 'cult-windsword', name: '御剑听风', desc: '剑未出鞘，先听见三丈内的风声与杀意', bounds: '只听三丈内的风声与杀意，听不到人心与谋划；无风、乱风时就会失准' },
+    { id: 'cult-lingxi', name: '灵息内视', desc: '闭上眼，能看见自己与旁人灵脉的走向', bounds: '只能看见灵脉走向，看不见记忆与心思；看得越久越耗神，境界高出太多的人看不透' },
+    { id: 'cult-shadowmark', name: '云阶留影', desc: '在走过的地方留下一道只有自己看得见的影子标记', bounds: '只标记自己真正走过的地方，不能凭空定位没去过的位置，也不能监视标记处发生的事' },
   ],
   neon: [
-    { id: 'echo', name: '读取备份', desc: '从残留的声音里找回被删除的真相' },
-    { id: 'neon-ghost', name: '幽灵进程', desc: '在任何系统里留一个不被日志记录的分身' },
-    { id: 'neon-sniff', name: '信号嗅探', desc: '隔着三堵墙，也能闻到未加密数据的味道' },
-    { id: 'neon-blackout', name: '断电行走', desc: '全城断电时，你的义体照常运转' },
+    { id: 'echo', name: '读取备份', desc: '从残留的声音里找回被删除的真相', bounds: '只能找回有残留声音可依的片段，彻底删除、从未出声的真相找不回来；找回的也可能被剪辑过' },
+    { id: 'neon-ghost', name: '幽灵进程', desc: '在任何系统里留一个不被日志记录的分身', bounds: '分身只能潜伏与传递消息，不能战斗、不能实体干预；被系统专项清查时照样会暴露' },
+    { id: 'neon-sniff', name: '信号嗅探', desc: '隔着三堵墙，也能闻到未加密数据的味道', bounds: '只能闻到未加密数据的气味、判断有无与方向，读不到加密内容，也不能凭空入侵系统' },
+    { id: 'neon-blackout', name: '断电行走', desc: '全城断电时，你的义体照常运转', bounds: '只保自己的义体运转，救不了别人也不能给全城供电；长时间断电义体照样耗尽' },
   ],
   city: [
-    { id: 'city-ear', name: '街巷耳报', desc: '一条街的风吹草动，总比消息早一步到你耳朵里' },
-    { id: 'city-ledger', name: '人情账本', desc: '谁欠过谁的人情，你过目不忘，也从不记错' },
-    { id: 'city-oldshop', name: '老店直觉', desc: '走进任何一家老店，一眼看穿它真正的招牌' },
-    { id: 'city-keepsake', name: '旧物认主', desc: '经你手的旧物会「开口」，说出上一任主人的一个习惯' },
+    { id: 'city-ear', name: '街巷耳报', desc: '一条街的风吹草动，总比消息早一步到你耳朵里', bounds: '听来的都是街面传闻，真假各半，必须自己核实；听不到关起门来的密谋' },
+    { id: 'city-ledger', name: '人情账本', desc: '谁欠过谁的人情，你过目不忘，也从不记错', bounds: '只记得真实发生过的人情往来，记不出别人心里的打算；旧账要对方认才作数' },
+    { id: 'city-oldshop', name: '老店直觉', desc: '走进任何一家老店，一眼看穿它真正的招牌', bounds: '只看得穿老店的招牌与成色，看不穿店主的人心与账外的交易' },
+    { id: 'city-keepsake', name: '旧物认主', desc: '经你手的旧物会「开口」，说出上一任主人的一个习惯', bounds: '只说得出一个习惯，不是完整记忆更不是读心；物换过手、洗过气味就会失灵' },
   ],
   court: [
-    { id: 'court-readface', name: '察言观色', desc: '一句话没说完，你已经听出对方真正想要什么' },
-    { id: 'court-memory', name: '过目成诵', desc: '看过的诏令、名单与账册，一字不差刻在脑子里' },
-    { id: 'court-ritual', name: '礼制破局', desc: '任何规矩到了你手里，都能找到一条合礼的活路' },
-    { id: 'court-poison', name: '宴前知毒', desc: '杯盏未动，先知道哪一道菜不能碰' },
+    { id: 'court-readface', name: '察言观色', desc: '一句话没说完，你已经听出对方真正想要什么', bounds: '只能从言行神色推断，推断会错，老手能演给你看；听不到对方没表现出来的念头' },
+    { id: 'court-memory', name: '过目成诵', desc: '看过的诏令、名单与账册，一字不差刻在脑子里', bounds: '只记亲眼看过的文本，看过不等于懂，更不能凭空知道没呈上来的账' },
+    { id: 'court-ritual', name: '礼制破局', desc: '任何规矩到了你手里，都能找到一条合礼的活路', bounds: '找到的活路必须真的合礼，钻不了明文写死的空子；用一次就有人学一次，越用越窄' },
+    { id: 'court-poison', name: '宴前知毒', desc: '杯盏未动，先知道哪一道菜不能碰', bounds: '只能提前知道哪道菜不能碰，查不出下毒的人，也解不了已经入口的毒' },
   ],
   frontier: [
-    { id: 'thread', name: '缝合裂隙', desc: '把两个不相容的事物短暂地连在一起' },
-    { id: 'front-deepspace', name: '深空听噪', desc: '从宇宙背景噪声里，分辨出人工信号的节律' },
-    { id: 'front-revive', name: '废件复活', desc: '报废的设备在你手里，总能再撑一班岗' },
-    { id: 'front-gravity', name: '重力微调', desc: '在一臂之内，让轻的东西再轻一点、重的东西再慢一点' },
+    { id: 'thread', name: '缝合裂隙', desc: '把两个不相容的事物短暂地连在一起', bounds: '只能短暂连接，不能永久融合，也连不了活人的心与命运；连接期间两边都会被对方拖累' },
+    { id: 'front-deepspace', name: '深空听噪', desc: '从宇宙背景噪声里，分辨出人工信号的节律', bounds: '只能从真实噪声里辨节律，辨不出内容含义；信号太弱或被伪装就会认错' },
+    { id: 'front-revive', name: '废件复活', desc: '报废的设备在你手里，总能再撑一班岗', bounds: '只能让废件再撑一班岗，不能修成新的；核心烧毁的设备救不回来，撑完必彻底报废' },
+    { id: 'front-gravity', name: '重力微调', desc: '在一臂之内，让轻的东西再轻一点、重的东西再慢一点', bounds: '只在一臂之内、只对轻小物体微调，搬不动重物也改变不了大势；持续使用会反噬平衡感' },
   ],
 }
 
 export const TEMPLATE_SIGNATURE_ABILITIES = {
   xuanhuan: [
-    { id: 'sig-xuanhuan-1', name: '气运加身', desc: '机缘总先一步落到你头上，绝境里也留着一线生机' },
-    { id: 'sig-xuanhuan-2', name: '吞噬进化', desc: '吞下天材地宝与妖丹，直接化作自己的修为' },
+    { id: 'sig-xuanhuan-1', name: '气运加身', desc: '机缘总先一步落到你头上，绝境里也留着一线生机', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-xuanhuan-2', name: '吞噬进化', desc: '吞下天材地宝与妖丹，直接化作自己的修为', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   xianxia: [
-    { id: 'sig-xianxia-1', name: '丹火不熄', desc: '你炼的火永不无故熄灭，废丹也能回收三成' },
-    { id: 'sig-xianxia-2', name: '斩念', desc: '把一种执念暂时斩出体外，换片刻清明' },
+    { id: 'sig-xianxia-1', name: '丹火不熄', desc: '你炼的火永不无故熄灭，废丹也能回收三成', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-xianxia-2', name: '斩念', desc: '把一种执念暂时斩出体外，换片刻清明', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   gaowu: [
-    { id: 'sig-gaowu-1', name: '气血可视', desc: '一眼看穿对手的气血数值与最薄的那处破绽' },
-    { id: 'sig-gaowu-2', name: '越战越勇', desc: '伤得越重，出手越重，榜单为你实时跳动' },
+    { id: 'sig-gaowu-1', name: '气血可视', desc: '一眼看穿对手的气血数值与最薄的那处破绽', bounds: '只能看气血与肉体破绽，看不出招式意图与人心；对方收敛气血或境界高出太多就看不准' },
+    { id: 'sig-gaowu-2', name: '越战越勇', desc: '伤得越重，出手越重，榜单为你实时跳动', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   'romance-ancient': [
-    { id: 'sig-romance-ancient-1', name: '记账入心', desc: '府里每一笔人情与银钱往来，你都记得分毫不差' },
-    { id: 'sig-romance-ancient-2', name: '察色知心', desc: '从一个人的眉眼之间，读出他藏得最深的那件事' },
+    { id: 'sig-romance-ancient-1', name: '记账入心', desc: '府里每一笔人情与银钱往来，你都记得分毫不差', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-romance-ancient-2', name: '察色知心', desc: '从一个人的眉眼之间，读出他藏得最深的那件事', bounds: '只能从眉眼神色读出藏得最深的那件事的轮廓，读不出具体内容，也会被演技骗过' },
   ],
   scifi: [
-    { id: 'sig-scifi-1', name: '维度折叠', desc: '把一小段路程折起来，跨过去——只够一个人用' },
-    { id: 'sig-scifi-2', name: '熵减之手', desc: '被你碰过的东西，损坏的速度会慢下来' },
+    { id: 'sig-scifi-1', name: '维度折叠', desc: '把一小段路程折起来，跨过去——只够一个人用', bounds: '只折一小段路、只够一个人，带不了人也运不了货；落点必须是自己到过或看得见的地方' },
+    { id: 'sig-scifi-2', name: '熵减之手', desc: '被你碰过的东西，损坏的速度会慢下来', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   wuxianliu: [
-    { id: 'sig-wuxianliu-1', name: '点数嗅觉', desc: '能闻出哪个任务的奖励，被主神低估了' },
-    { id: 'sig-wuxianliu-2', name: '结算预知', desc: '结算之前，你先看见自己这一趟的评分' },
+    { id: 'sig-wuxianliu-1', name: '点数嗅觉', desc: '能闻出哪个任务的奖励，被主神低估了', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-wuxianliu-2', name: '结算预知', desc: '结算之前，你先看见自己这一趟的评分', bounds: '只能看见自己的评分，看不见别人的，也改不了评分本身；提前知道不等于拿得到' },
   ],
   'guize-guatan': [
-    { id: 'sig-guize-guatan-1', name: '规则显形', desc: '看过的规则会在你眼里标出自相矛盾的那一条' },
-    { id: 'sig-guize-guatan-2', name: '字缝求生', desc: '从规则的字缝里，找到没写出来的那个例外' },
+    { id: 'sig-guize-guatan-1', name: '规则显形', desc: '看过的规则会在你眼里标出自相矛盾的那一条', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-guize-guatan-2', name: '字缝求生', desc: '从规则的字缝里，找到没写出来的那个例外', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   horror: [
-    { id: 'sig-horror-1', name: '厉鬼标价', desc: '看任何一只鬼，你都能估出它值多少、怕什么' },
-    { id: 'sig-horror-2', name: '鬼市通行', desc: '在人和鬼都摆摊的地方，能谈成一笔买卖' },
+    { id: 'sig-horror-1', name: '厉鬼标价', desc: '看任何一只鬼，你都能估出它值多少、怕什么', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-horror-2', name: '鬼市通行', desc: '在人和鬼都摆摊的地方，能谈成一笔买卖', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   lishi: [
-    { id: 'sig-lishi-1', name: '大势预读', desc: '能看见一件事三年后的余波，先一步落子' },
-    { id: 'sig-lishi-2', name: '名将旧梦', desc: '睡梦里能旁观一场打过的仗，醒来记得每个细节' },
+    { id: 'sig-lishi-1', name: '大势预读', desc: '能看见一件事三年后的余波，先一步落子', bounds: '只能看见一件已在发生之事的余波方向，看不清细节、看不见还没起念的事；余波会被新的选择改写' },
+    { id: 'sig-lishi-2', name: '名将旧梦', desc: '睡梦里能旁观一场打过的仗，醒来记得每个细节', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   'romance-modern': [
-    { id: 'sig-romance-modern-1', name: '情绪听诊', desc: '听一个人说话，能听出他没说出口的那层意思' },
-    { id: 'sig-romance-modern-2', name: '体面收场', desc: '再难堪的场面，你都能留住双方的体面' },
+    { id: 'sig-romance-modern-1', name: '情绪听诊', desc: '听一个人说话，能听出他没说出口的那层意思', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-romance-modern-2', name: '体面收场', desc: '再难堪的场面，你都能留住双方的体面', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   'suspense-supernatural': [
-    { id: 'sig-suspense-supernatural-1', name: '阴阳半眼', desc: '能看见不该看见的东西，但只在天黑之后' },
-    { id: 'sig-suspense-supernatural-2', name: '寒意定位', desc: '寒意最重的地方，就是真相藏得最深的地方' },
+    { id: 'sig-suspense-supernatural-1', name: '阴阳半眼', desc: '能看见不该看见的东西，但只在天黑之后', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-suspense-supernatural-2', name: '寒意定位', desc: '寒意最重的地方，就是真相藏得最深的地方', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   campus: [
-    { id: 'sig-campus-1', name: '错题回声', desc: '做错的题会在梦里重播，直到你彻底搞懂' },
-    { id: 'sig-campus-2', name: '榜单在心', desc: '任何榜单看过一遍，名次与分数都刻在心里' },
+    { id: 'sig-campus-1', name: '错题回声', desc: '做错的题会在梦里重播，直到你彻底搞懂', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-campus-2', name: '榜单在心', desc: '任何榜单看过一遍，名次与分数都刻在心里', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   urban: [
-    { id: 'sig-urban-1', name: '城市嗅觉', desc: '能闻出一桩生意里，钱和风险各占几成' },
-    { id: 'sig-urban-2', name: '人脉活水', desc: '你帮过的人，总会在你需要时以意想不到的方式出现' },
+    { id: 'sig-urban-1', name: '城市嗅觉', desc: '能闻出一桩生意里，钱和风险各占几成', bounds: '只能闻出一桩生意的钱与风险占比，是直觉不是账本；对方做假账时照样会被骗' },
+    { id: 'sig-urban-2', name: '人脉活水', desc: '你帮过的人，总会在你需要时以意想不到的方式出现', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   'zhihu-short': [
-    { id: 'sig-zhihu-short-1', name: '反转直觉', desc: '一件事的走向，你总能提前一步猜到拐点' },
-    { id: 'sig-zhihu-short-2', name: '一句翻盘', desc: '在最关键的场合，你总能说出扭转局势的那句话' },
+    { id: 'sig-zhihu-short-1', name: '反转直觉', desc: '一件事的走向，你总能提前一步猜到拐点', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-zhihu-short-2', name: '一句翻盘', desc: '在最关键的场合，你总能说出扭转局势的那句话', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   'er-ren': [
-    { id: 'sig-er-ren-1', name: '恶名远播', desc: '你的名字先你三天到达下一座城，守门人听见就手抖' },
-    { id: 'sig-er-ren-2', name: '掠夺直觉', desc: '一眼看穿一处地方最值钱、又最守不住的东西是什么' },
+    { id: 'sig-er-ren-1', name: '恶名远播', desc: '你的名字先你三天到达下一座城，守门人听见就手抖', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-er-ren-2', name: '掠夺直觉', desc: '一眼看穿一处地方最值钱、又最守不住的东西是什么', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   // REQ-51 expansion templates: two signature abilities each, the same
   // contract every template signs (they travel with the category into
   // any world the reader pairs it with).
   wuxia: [
-    { id: 'sig-wuxia-1', name: '听风辨器', desc: '兵器破空的声音先到，你总能提前半招知道来路' },
-    { id: 'sig-wuxia-2', name: '人情嗅觉', desc: '一桌酒喝下来，谁欠谁的、谁要卖谁，你心里有一本账' },
+    { id: 'sig-wuxia-1', name: '听风辨器', desc: '兵器破空的声音先到，你总能提前半招知道来路', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-wuxia-2', name: '人情嗅觉', desc: '一桌酒喝下来，谁欠谁的、谁要卖谁，你心里有一本账', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   chuanyue: [
-    { id: 'sig-chuanyue-1', name: '超前眼光', desc: '别人看是废物的东西，你能看见它三年后的价钱' },
-    { id: 'sig-chuanyue-2', name: '图纸记忆', desc: '见过的器物结构过目不忘，拆过一遍就能仿着做出来' },
+    { id: 'sig-chuanyue-1', name: '超前眼光', desc: '别人看是废物的东西，你能看见它三年后的价钱', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-chuanyue-2', name: '图纸记忆', desc: '见过的器物结构过目不忘，拆过一遍就能仿着做出来', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   chongsheng: [
-    { id: 'sig-chongsheng-1', name: '前尘索引', desc: '上一世的重大日期与价位，你都记得分毫不差' },
-    { id: 'sig-chongsheng-2', name: '偏差预警', desc: '事情开始偏离上一世剧本时，你心里会先响一下警' },
+    { id: 'sig-chongsheng-1', name: '前尘索引', desc: '上一世的重大日期与价位，你都记得分毫不差', bounds: '只记得上一世真实发生过的日期与价位，这一世已偏离的行情照旧会错；没经历过的事一概不知' },
+    { id: 'sig-chongsheng-2', name: '偏差预警', desc: '事情开始偏离上一世剧本时，你心里会先响一下警', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   gongdou: [
-    { id: 'sig-gongdou-1', name: '赏罚过目', desc: '府里历年的赏罚与人事看过一遍，记得比账房还牢' },
-    { id: 'sig-gongdou-2', name: '话外听音', desc: '一句客套话里藏着几层意思，你总能听出最底下那层' },
+    { id: 'sig-gongdou-1', name: '赏罚过目', desc: '府里历年的赏罚与人事看过一遍，记得比账房还牢', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-gongdou-2', name: '话外听音', desc: '一句客套话里藏着几层意思，你总能听出最底下那层', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   yulequan: [
-    { id: 'sig-yulequan-1', name: '镜头直觉', desc: '镜头在哪里、光在哪里，你不用看监视器也知道' },
-    { id: 'sig-yulequan-2', name: '热度嗅觉', desc: '一个话题会不会火，你比热搜早半天闻到味道' },
+    { id: 'sig-yulequan-1', name: '镜头直觉', desc: '镜头在哪里、光在哪里，你不用看监视器也知道', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-yulequan-2', name: '热度嗅觉', desc: '一个话题会不会火，你比热搜早半天闻到味道', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   moshi: [
-    { id: 'sig-moshi-1', name: '存量心算', desc: '任何仓库扫一眼，存量与能撑的天数你心里有数' },
-    { id: 'sig-moshi-2', name: '废墟嗅觉', desc: '一片废墟里哪里还没被搜过，你走一圈就知道' },
+    { id: 'sig-moshi-1', name: '存量心算', desc: '任何仓库扫一眼，存量与能撑的天数你心里有数', bounds: '只能估算亲眼所见、有实物或账目可核的物资存量与消耗，算不了人心、历史真相与没见过的仓库；数字是估算会出错，且越算越伤眼耗神' },
+    { id: 'sig-moshi-2', name: '废墟嗅觉', desc: '一片废墟里哪里还没被搜过，你走一圈就知道', bounds: '只能判断哪里没被搜过，判断不了里面有什么、值多少；判断错了照样会扑空或撞上危险' },
   ],
   lingyi: [
-    { id: 'sig-lingyi-1', name: '阴阳耳', desc: '不该听见的声音，你总比别人早听见一息' },
-    { id: 'sig-lingyi-2', name: '规矩直觉', desc: '到一个陌生的地方，先犯哪条忌讳会出事，你心里有谱' },
+    { id: 'sig-lingyi-1', name: '阴阳耳', desc: '不该听见的声音，你总比别人早听见一息', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-lingyi-2', name: '规矩直觉', desc: '到一个陌生的地方，先犯哪条忌讳会出事，你心里有谱', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   dianjing: [
-    { id: 'sig-dianjing-1', name: '操作预读', desc: '对手的起手式一露，你能提前半秒看见他的下一步' },
-    { id: 'sig-dianjing-2', name: '版本嗅觉', desc: '版本公告看一遍，哪个打法要起飞、哪个要废，你心里有数' },
+    { id: 'sig-dianjing-1', name: '操作预读', desc: '对手的起手式一露，你能提前半秒看见他的下一步', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-dianjing-2', name: '版本嗅觉', desc: '版本公告看一遍，哪个打法要起飞、哪个要废，你心里有数', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   junshi: [
-    { id: 'sig-junshi-1', name: '地形烙印', desc: '走过一遍的地形连同射界与死角，全部刻在脑子里' },
-    { id: 'sig-junshi-2', name: '名单记忆', desc: '带过的人的姓名、籍贯与本事，你一个都不会记错' },
+    { id: 'sig-junshi-1', name: '地形烙印', desc: '走过一遍的地形连同射界与死角，全部刻在脑子里', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-junshi-2', name: '名单记忆', desc: '带过的人的姓名、籍贯与本事，你一个都不会记错', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   tiyu: [
-    { id: 'sig-tiyu-1', name: '肌肉记忆', desc: '一个动作练过千遍后，身体比脑子先做出反应' },
-    { id: 'sig-tiyu-2', name: '对手慢放', desc: '关键回合里，对手的动作在你眼里自动慢了半拍' },
+    { id: 'sig-tiyu-1', name: '肌肉记忆', desc: '一个动作练过千遍后，身体比脑子先做出反应', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-tiyu-2', name: '对手慢放', desc: '关键回合里，对手的动作在你眼里自动慢了半拍', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
   zhongtian: [
-    { id: 'sig-zhongtian-1', name: '节气感应', desc: '雨什么时候来、地什么时候冻，你比天气预报早一天知道' },
-    { id: 'sig-zhongtian-2', name: '粮价心算', desc: '一担粮从地头到集市的每个环节值多少钱，你张口就报得出' },
+    { id: 'sig-zhongtian-1', name: '节气感应', desc: '雨什么时候来、地什么时候冻，你比天气预报早一天知道', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
+    { id: 'sig-zhongtian-2', name: '粮价心算', desc: '一担粮从地头到集市的每个环节值多少钱，你张口就报得出', bounds: '只限这项能力本身所述的对象与场合，必须有亲历的媒介；不能延伸到未见之物、人心或未发生的真相，效果有误差、要付代价' },
   ],
 }
 
 export const GENERIC_ABILITY_POOL = [
-  { id: 'gen-verse', name: '言出法随', desc: '说出口的小事，总会以某种方式成真' },
-  { id: 'gen-halfbeat', name: '时间慢半拍', desc: '危险临头的那一瞬，你比别人多半秒' },
-  { id: 'gen-mindglimpse', name: '读心余光', desc: '与人对视时，能瞥见对方没说出口的半句话' },
-  { id: 'gen-luck', name: '逢凶化吉', desc: '坏事落到你身上时，总差最后临门一脚' },
+  { id: 'gen-verse', name: '言出法随', desc: '说出口的小事，总会以某种方式成真', bounds: '只对小事生效，大事、生死与他人意志一概推不动；成真的方式往往绕弯，不按字面兑现' },
+  { id: 'gen-halfbeat', name: '时间慢半拍', desc: '危险临头的那一瞬，你比别人多半秒', bounds: '只多半秒反应，不预知未来也不能让时间倒流；半秒救不了必死的局' },
+  { id: 'gen-mindglimpse', name: '读心余光', desc: '与人对视时，能瞥见对方没说出口的半句话', bounds: '只能瞥见半句没说出口的话，断章取义常有，不是完整读心；对方无话可说时什么也瞥不见' },
+  { id: 'gen-luck', name: '逢凶化吉', desc: '坏事落到你身上时，总差最后临门一脚', bounds: '只让坏事差临门一脚，不是逢凶必化；该付的代价迟早换个方式找回来' },
 ]
 
 export const ALL_ABILITIES = [
@@ -738,6 +969,32 @@ export const ALL_ABILITIES = [
   ...Object.values(TEMPLATE_SIGNATURE_ABILITIES).flat(),
   ...GENERIC_ABILITY_POOL,
 ]
+
+/** A library ability entry by name (the pick is stored by name). */
+export const abilityByName = (name) => ALL_ABILITIES.find((item) => item.name === name) || null
+
+/**
+ * The effective bounds for a story config's ability (REQ-69 W5): the
+ * book's own stored `abilityBounds` wins; a book opened before the
+ * field existed falls back to its library entry's default bounds
+ * when the ability name matches one; a hand-written power with no
+ * stored bounds has none (its desc is its only definition, exactly
+ * as before this batch — the forge now stores bounds at pick time).
+ */
+export function abilityBoundsFor(config) {
+  const own = typeof config?.abilityBounds === 'string' ? config.abilityBounds.trim() : ''
+  if (own) return own.slice(0, ABILITY_BOUNDS_MAX)
+  const name = typeof config?.ability === 'string' ? config.ability.trim() : ''
+  const entry = name ? abilityByName(name) : null
+  return entry?.bounds ? entry.bounds.slice(0, ABILITY_BOUNDS_MAX) : ''
+}
+
+/** The bounds line a chapter brief states for one ability, or ''. */
+export function abilityBoundsLine(ability, bounds) {
+  const cleanBounds = typeof bounds === 'string' ? bounds.trim() : ''
+  if (!ability || !cleanBounds) return ''
+  return `硬约束·能力边界：「${ability}」的边界是——${cleanBounds}。正文只能在这个边界内使用它，不得越界膨胀（不能从一种作用滑到另一种作用、不能无媒介全知）；正文里出现任何新能力，必须先有剧情里的授予事件（传承、交易、觉醒、缴获）把它交到主角手上。`
+}
 
 // The composed candidate list for the ability step. Preset worlds: the
 // pinned template's signatures first, then the world's own pool (a template
@@ -924,6 +1181,9 @@ export const DEFAULT_DRAFT = {
   avatarAppearance: '',
   sourcePublicationId: '',
   name: '',
+  // 主角硬锚点 (REQ-69 W5): null = none set. See
+  // normalizeProtagonistAnchors for the shape.
+  anchors: null,
   // Free-text persona (typed in the forge, or composed from an imported
   // character card's description/personality/scenario).
   persona: '',
@@ -934,6 +1194,9 @@ export const DEFAULT_DRAFT = {
   // story may still carry its own stored origin text; that stays readable.
   origin: '',
   ability: '',
+  abilityDesc: '',
+  // 金手指边界 (REQ-69 W5): what the picked ability cannot do.
+  abilityBounds: '',
   tone: '诗性冒险',
   immersive: false,
   hometown: '',
@@ -1342,11 +1605,13 @@ const normalizeDraft = (draft = {}) => {
     avatarAppearance: cleanBounded(input.avatarAppearance, AVATAR_APPEARANCE_MAX),
     sourcePublicationId: cleanBounded(input.sourcePublicationId, SOURCE_PUBLICATION_ID_MAX),
     name: cleanText(input.name, DEFAULT_DRAFT.name),
+    anchors: normalizeProtagonistAnchors(input.anchors),
     persona: cleanBounded(input.persona, PERSONA_MAX),
     trait: cleanText(input.trait, DEFAULT_DRAFT.trait),
     origin: cleanText(input.origin, DEFAULT_DRAFT.origin),
     ability: cleanText(input.ability, DEFAULT_DRAFT.ability),
     abilityDesc: cleanBounded(input.abilityDesc, ABILITY_DESC_MAX),
+    abilityBounds: cleanBounded(input.abilityBounds, ABILITY_BOUNDS_MAX),
     tone: cleanText(input.tone, DEFAULT_DRAFT.tone),
     immersive,
     hometown: lifeDetail('hometown'),
@@ -2213,7 +2478,7 @@ export function replaceChapter(story, chapter, key) {
   if (typeof key !== 'string' || key !== chapterKey(story, index)) return story
   if (chapter.id !== `${story.id}:chapter:${index}:r${story.revision}`) return story
   const next = clone(story)
-  next.chapters = [...story.chapters.slice(0, index).map((item) => clone(item)), clone(chapter)]
+  next.chapters = [...story.chapters.slice(0, index).map((item) => clone(item)), withDriftWarnings(story, chapter)]
   markInterventionsApplied(next, index)
   next.updatedAt = now()
   return next
@@ -2262,6 +2527,12 @@ export function updateWorldBible(story, patch = {}) {
       ? patch.rules.map((rule) => cleanBounded(rule, WORLD_BIBLE_RULE_MAX)).filter(Boolean).slice(0, WORLD_BIBLE_RULES_MAX)
       : [])
     : (Array.isArray(bible.rules) ? [...bible.rules] : [])
+  // 世界锚点 (REQ-69 W5): the bible's own timeline anchors, in the
+  // protagonist-anchors shape. A patch carrying the key replaces
+  // them (null clears); a patch without it carries them through.
+  const anchors = patch.anchors !== undefined
+    ? normalizeProtagonistAnchors(patch.anchors)
+    : normalizeProtagonistAnchors(bible.anchors)
   return {
     ...story,
     worldBible: {
@@ -2269,6 +2540,7 @@ export function updateWorldBible(story, patch = {}) {
       rules,
       endingAnchor: patch.endingAnchor !== undefined ? cleanBounded(patch.endingAnchor, WORLD_BIBLE_PREMISE_MAX) : (bible.endingAnchor || ''),
       outline: Array.isArray(bible.outline) ? [...bible.outline] : [],
+      ...(anchors ? { anchors } : {}),
     },
     updatedAt: now(),
   }
@@ -2645,6 +2917,189 @@ export function updateIntro(story, intro) {
  * included the old title anyway). The updatedAt bump is what the
  * cloud library sync keys on, so a rename propagates like any edit.
  */
+/*
+ * 完本简介对齐通道 (REQ-69 W5, READER-QA F5): the operator-triggered,
+ *正规 way to realign a finished (or about-to-publish) book's public
+ * words with what its chapters actually contain. The F5 failure was a
+ * blurb inventing a villain （赵凌霄）, a pact and an event that occur
+ * nowhere in the book — so beside the standing REQ-56/65 ban check
+ * this channel adds one hard rule of its own: every proper noun the
+ * candidate blurb names must be findable in the book's own text
+ * (chapter summaries + chapter prose + the config/bible names).
+ *
+ * Shape, following the existing owner-edit paths (updateSynopsis /
+ * updateIntro): buildSynopsisAlignmentDraft assembles a candidate
+ * from the chapter summaries (an operator or a model may equally
+ * supply their own candidate to the checker), synopsisAlignmentCheck
+ * validates a candidate without touching the story, and
+ * applySynopsisAlignment writes ONLY with an explicit confirm —
+ * and even then only a clean candidate lands, through the ordinary
+ * update paths. A book owner's hand-edited synopsis is never
+ * overwritten by the draft step.
+ *
+ * Proper-noun extraction is deliberately heuristic (see
+ * CONTENT-CONSISTENCY.md for the exact bounds): quoted spans, plus
+ * surname-led person names and organisation-suffixed names. It is a
+ * tripwire for invented names, not a full NER pass.
+ */
+const PROPER_NOUN_SURNAMES = '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏窦章苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳鲍史唐费岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫经房裘缪干解应宗丁宣贲邓单杭洪包左石崔吉龚程嵇邢滑裴荣翁荀羊於惠甄曲家封芮羿储靳汲邴糜松井段富巫乌焦巴弓牧隗山谷车侯宓蓬全郗班仰秋仲伊宫宁仇栾暴甘斜厉戎祖武符刘景詹束龙叶幸司韶郜黎蓟薄印宿白怀蒲台从鄂索咸籍赖卓蔺屠蒙池乔阴鬱胥能苍双闻莘党翟谭贡劳逄姬申扶堵冉宰郦雍郤璩桑桂濮牛寿通边扈燕冀郏浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庚终暨居衡步都耿满弘匡国文寇广禄阙东殴殳沃利蔚越夔隆师巩厍聂晁勾敖融冷訾辛阚那简饶空曾毋沙乜养鞠须丰巢关蒯相查后荆红游竺权逯盖益桓公万俟司马上官欧阳夏侯诸葛闻人东方赫连皇甫尉迟公羊澹台公冶宗政濮阳淳于单于太叔申屠公孙仲孙轩辕令狐钟离宇文长孙慕容鲜于闾丘司徒司空'
+const PROPER_NOUN_ORG_SUFFIXES = ['宗门', '公司', '集团', '学院', '门派', '宗', '门', '派', '阁', '宫', '殿', '楼', '会', '社', '盟', '教', '府', '署', '局', '堂', '帮', '谷', '岛', '城', '镇']
+const PROPER_NOUN_STOPLIST = new Set(['主角', '作者', '读者', '众人', '对方', '自己', '他们', '她们', '我们', '你们', '所有人', '任何人', '那个人', '这个人', '年轻人', '老年人', '中年人', '陌生人', '外门', '内门', '大门', '城门', '山门', '宫门', '房门', '车门', '石门', '铁门', '木门', '后门', '前门', '热门', '冷门', '部门', '专门', '过门', '名门', '豪门', '宗师', '宗旨', '社会', '大会', '小会', '晚会', '机会', '教会', '学会', '工会', '协会', '城市', '城镇', '小镇', '古镇', '全城', '全镇', '皇宫', '王宫', '地宫', '天宫', '冷宫', '东宫', '学宫', '京城', '进城', '出城', '回城', '县城', '老城', '古城', '海岛', '荒岛', '孤岛', '半岛', '全岛', '宫殿', '大殿', '正殿', '偏殿'])
+
+/**
+ * Candidate proper nouns in a blurb text: quoted spans (「」《》“”),
+ * surname-led names of 2–4 characters, and names ending in an
+ * organisation suffix. Deduped, stoplisted, order of appearance.
+ */
+export function extractProperNouns(text) {
+  const source = typeof text === 'string' ? text : ''
+  const found = []
+  const add = (name) => {
+    const clean = typeof name === 'string' ? name.trim() : ''
+    if (clean.length < 2 || clean.length > 6) return
+    if (PROPER_NOUN_STOPLIST.has(clean)) return
+    if (/[，。；、！？：\s·…—「」『』“”‘’（）《》]/.test(clean)) return
+    if (!found.includes(clean)) found.push(clean)
+  }
+  for (const match of source.matchAll(/[「『《“]([^」』》”]{2,6})[」』》”]/g)) add(match[1])
+  // Surname-led names: surname + 1–2 characters, closed by a boundary
+  // (punctuation, a particle, or a common action verb) — the boundary
+  // requirement is what keeps ordinary surname-initial words
+  // （时间 / 何尝 / 马上） out of the candidate list. A candidate with
+  // a negation adverb inside （经不多 / 何尝不是） is ordinary speech,
+  // never a name.
+  for (const match of source.matchAll(new RegExp(`([${PROPER_NOUN_SURNAMES}][\\u4e00-\\u9fa5]{1,2})(?=[，。；、！？：\\s「」『』“”‘’（）《》·…—]|的|了|着|过|是|在|就|被|把|向|与|和|及|对|为|以|从|当|给|让|叫|说|问|答|看|走|来|去|道|笑|哭|喊|打|杀|推|拉|拿|放|进|出|开|关|闭|转|抬|低|私|率|领|带|站|坐|点头|摇头|$)`, 'g'))) {
+    if (!/[不没未无非]/.test(match[1].slice(1))) add(match[1])
+  }
+  // Organisation names: a suffix （宗/门/堂/公司…) closed name. The
+  // prefix is tried longest-first, but a capture may not LEAD with a
+  // verb, a particle or another suffix character — that is what
+  // keeps 「逼刑堂」 reading as 刑堂 and 「闯进青冥宗」 as 青冥宗，
+  // and drops 「宗的大殿」 (generic 大殿， stoplisted) entirely.
+  const ORG_BAD_LEADING = new Set([...'逼闯进入去来打杀推拉拿放与和的了在是就被把向对为以从当给让叫说问答看走道笑哭喊站坐率领带私斩亮废立开合宗门派阁宫殿楼会社盟教府署局堂帮谷岛城镇'])
+  for (const suffix of PROPER_NOUN_ORG_SUFFIXES) {
+    for (const match of source.matchAll(new RegExp(`[\\u4e00-\\u9fa5]{1,3}${suffix}`, 'g'))) {
+      const whole = match[0]
+      let picked = ''
+      for (let prefix = Math.min(3, whole.length - suffix.length); prefix >= 1; prefix -= 1) {
+        const candidate = whole.slice(whole.length - suffix.length - prefix)
+        if (!ORG_BAD_LEADING.has(candidate[0])) { picked = candidate; break }
+        if (prefix === 1) picked = candidate
+      }
+      add(picked)
+    }
+  }
+  return found
+}
+
+/** Every text a blurb's names may legitimately come from. */
+export function storyCorpusFor(story) {
+  const parts = []
+  const config = story?.config || {}
+  for (const value of [config.name, config.ability, config.friend, config.destination, config.origin, config.trait]) {
+    if (typeof value === 'string' && value) parts.push(value)
+  }
+  for (const person of Array.isArray(config.protagonists) ? config.protagonists : []) {
+    for (const value of [person?.name, person?.ability, person?.origin]) {
+      if (typeof value === 'string' && value) parts.push(value)
+    }
+  }
+  const bible = story?.worldBible || {}
+  for (const value of [bible.premise, bible.endingAnchor, ...(Array.isArray(bible.rules) ? bible.rules : []), ...(Array.isArray(bible.outline) ? bible.outline : [])]) {
+    if (typeof value === 'string' && value) parts.push(value)
+  }
+  for (const chapter of Array.isArray(story?.chapters) ? story.chapters : []) {
+    if (typeof chapter?.title === 'string') parts.push(chapter.title)
+    if (typeof chapter?.summary === 'string') parts.push(chapter.summary)
+    if (Array.isArray(chapter?.paragraphs)) parts.push(chapter.paragraphs.join('\n'))
+    if (Array.isArray(chapter?.events)) parts.push(chapter.events.join('\n'))
+  }
+  if (typeof story?.title === 'string') parts.push(story.title)
+  return parts.join('\n')
+}
+
+/**
+ * Validate one alignment candidate ({ synopsis, intro }) against the
+ * standing bans and the proper-noun rule. Returns
+ * { ok, violations, unknownNames } — violations entries are
+ * { type: 'banned', detail } or { type: 'unknown-name', name }.
+ */
+export function synopsisAlignmentCheck(story, candidate = {}) {
+  const synopsis = typeof candidate?.synopsis === 'string' ? candidate.synopsis : ''
+  const intro = candidate?.intro && typeof candidate.intro === 'object' ? candidate.intro : {}
+  const texts = [synopsis, intro.background || '', intro.thread || '', ...(Array.isArray(intro.rules) ? intro.rules : [])]
+    .filter((text) => typeof text === 'string' && text)
+  const violations = []
+  for (const text of texts) {
+    const banned = introViolationFor(text)
+    if (banned) violations.push({ type: 'banned', detail: banned })
+  }
+  if (synopsis.length > SYNOPSIS_MAX) violations.push({ type: 'banned', detail: `synopsis>${SYNOPSIS_MAX}` })
+  const corpus = storyCorpusFor(story)
+  const unknownNames = []
+  for (const text of texts) {
+    for (const name of extractProperNouns(text)) {
+      if (!corpus.includes(name) && !unknownNames.includes(name)) unknownNames.push(name)
+    }
+  }
+  for (const name of unknownNames) violations.push({ type: 'unknown-name', name })
+  return { ok: violations.length === 0, violations, unknownNames }
+}
+
+const firstSentences = (text, count = 1) => (typeof text === 'string' ? text : '')
+  .split(/(?<=[。！？])/)
+  .map((sentence) => sentence.trim())
+  .filter(Boolean)
+  .slice(0, count)
+  .join('')
+
+/**
+ * Assemble an alignment candidate from the book's own chapter
+ * summaries (the full-book view: opening, one middle beat, the
+ * closing beat) and its bible — never from the old blurb. Pure: the
+ * story is not modified, and the returned check says whether the
+ * assembly itself is clean enough to apply.
+ */
+export function buildSynopsisAlignmentDraft(story) {
+  validateStory(story)
+  const summaries = (Array.isArray(story?.chapters) ? story.chapters : [])
+    .map((chapter) => (typeof chapter?.summary === 'string' ? chapter.summary.trim() : ''))
+    .filter(Boolean)
+  const opening = firstSentences(summaries[0] || '', 2)
+  const middle = summaries.length > 2 ? firstSentences(summaries[Math.floor(summaries.length / 2)], 1) : ''
+  const closing = summaries.length > 1 ? firstSentences(summaries[summaries.length - 1], 1) : ''
+  const synopsis = [opening, closing].filter(Boolean).join('').slice(0, SYNOPSIS_MAX)
+  const intro = sanitizeIntro({
+    background: firstSentences(story?.worldBible?.premise || '', 2),
+    rules: introRulesFromBible(story?.worldBible),
+    thread: [opening, middle, closing].filter(Boolean).join('').slice(0, INTRO_THREAD_MAX),
+  })
+  const candidate = { synopsis, intro }
+  return { ...candidate, check: synopsisAlignmentCheck(story, candidate) }
+}
+
+/**
+ * Write an alignment candidate back — ONLY with an explicit
+ * `confirm: true`, and only when the candidate passes the check.
+ * Without confirm this returns the story untouched (with the check),
+ * so a draft can be reviewed first; a dirty candidate refuses with
+ * the violations named, confirm or not.
+ */
+export function applySynopsisAlignment(story, candidate = {}, { confirm = false } = {}) {
+  validateStory(story)
+  const check = synopsisAlignmentCheck(story, candidate)
+  if (!confirm) return { story, applied: false, check }
+  if (!check.ok) {
+    const names = check.unknownNames.length ? `；检索不到的专名：${check.unknownNames.join('、')}` : ''
+    const banned = check.violations.filter((item) => item.type === 'banned').map((item) => item.detail).join('、')
+    throw new RangeError(`这份简介没有通过对齐校验${banned ? `；命中禁令：${banned}` : ''}${names}。`)
+  }
+  let next = story
+  if (typeof candidate?.synopsis === 'string') next = updateSynopsis(next, candidate.synopsis)
+  if (candidate?.intro && typeof candidate.intro === 'object') next = updateIntro(next, candidate.intro)
+  return { story: next, applied: next !== story, check }
+}
+
 export const CHAPTER_TITLE_MAX = 30
 
 export function renameChapterTitle(story, index, title) {
@@ -3068,7 +3523,7 @@ export function replaceFrontierChapter(story, chapter, key) {
   if (typeof key !== 'string' || key !== chapterKey(story, index)) return story
   if (chapter.id !== `${story.id}:chapter:${index}:r${story.revision}`) return story
   const next = clone(story)
-  next.chapters = [...story.chapters.slice(0, index).map((item) => clone(item)), clone(chapter)]
+  next.chapters = [...story.chapters.slice(0, index).map((item) => clone(item)), withDriftWarnings(story, chapter)]
   markInterventionsApplied(next, index)
   // The swap rebuilds the record up to the slot: a copy of the next
   // chapter that landed mid-pass (FRONTIER-FIX) drops out with it, so
@@ -3518,6 +3973,27 @@ export function storyBeatPlan(story, index) {
     // and a library pick means its printed effect too. The bible's
     // generic cost rule still governs every path alike.
     config.abilityDesc ? `能力：${ability}（${cleanText(config.abilityDesc, '')}）` : `能力：${ability}`,
+    // 主角硬锚点 (REQ-69 W5): the protagonist's (and, for a fused
+    // cast, each lead's) numeric/factual anchors restated as hard
+    // constraints, plus the world bible's timeline anchors. Absent
+    // anchors add no lines — a pre-batch book's brief is unchanged.
+    ...(merged
+      ? (config.protagonists || []).flatMap((person) => anchorConstraintLines(person?.anchors, protagonistName(person, '主角')))
+      : anchorConstraintLines(config.anchors, name)),
+    ...anchorConstraintLines(story.worldBible?.anchors, '世界'),
+    // 金手指边界 (REQ-69 W5): the ability's bounds as a hard
+    // constraint, from the book's OWN stored bounds (the forge and
+    // the enter path now store the pick's/library default at pick
+    // time). A book opened before the field existed carries none and
+    // its brief is unchanged — the same conservatism as REQ-57's
+    // abilityDesc. A fused cast states each lead's bounds
+    // separately; the story-level slot is the solo lead's (REQ-61).
+    ...(merged
+      ? (config.protagonists || []).map((person) => abilityBoundsLine(
+        cleanText(person?.ability, ''),
+        cleanText(person?.abilityBounds, ''),
+      )).filter(Boolean)
+      : [abilityBoundsLine(ability, cleanText(config.abilityBounds, ''))].filter(Boolean)),
     structureLine,
   ]
   if (lived && !merged) prerequisites.push(`现实背景：${lived}`)
@@ -4023,6 +4499,23 @@ export function chooseBranch(story, index, choiceId) {
   return next
 }
 
+/*
+ * 章后漂移告警的落点 (REQ-69 W5): when a chapter lands (accept, or a
+ * revise/reroll swap), its prose is scanned once against the story's
+ * anchors and any warnings ride the chapter record as
+ * `driftWarnings`. A clean scan leaves NO field — pre-batch chapters
+ * and anchor-less books stay byte-identical. Warnings never block:
+ * they are the运营/作者's repair list, not a gate.
+ */
+const withDriftWarnings = (story, chapter) => {
+  const text = [...(Array.isArray(chapter?.paragraphs) ? chapter.paragraphs : []), chapter?.summary || ''].join('\n')
+  const warnings = chapterDriftWarningsFor(story, text)
+  const stamped = clone(chapter)
+  if (warnings.length) stamped.driftWarnings = warnings
+  else delete stamped.driftWarnings
+  return stamped
+}
+
 export function acceptChapter(story, chapter, key) {
   validateStory(story)
   if (story.readOnly === true) return story
@@ -4035,7 +4528,7 @@ export function acceptChapter(story, chapter, key) {
   if (chapter.id !== expectedId) return story
   // No decision gate remains: the previous chapter never blocks this one.
   const next = clone(story)
-  next.chapters = [...story.chapters.map((item) => clone(item)), clone(chapter)]
+  next.chapters = [...story.chapters.map((item) => clone(item)), withDriftWarnings(story, chapter)]
   // The chapter's interventions have landed: flip them to applied so the
   // ledger, the beat plans and later sync all see them as history.
   markInterventionsApplied(next, index)
@@ -4091,6 +4584,13 @@ const redactedSnapshotConfig = (config, name) => ({
   // public snapshot is anonymous and keeps neither the id nor the look.
   avatarId: '',
   avatarAppearance: '',
+  // REQ-69 W5: the protagonist's anchors carry identity facts in the
+  // owner's own words — private stock like the persona, never part of
+  // a public snapshot. (A fused line re-derives each lead's anchors
+  // from their own book when it is actually created, not from a
+  // snapshot.)
+  anchors: null,
+  abilityBounds: '',
   // Where an entered line came from is the entrant's own bookkeeping; a
   // snapshot never points back at another reader's publication.
   sourcePublicationId: '',
@@ -4239,10 +4739,18 @@ export function createMergedStory(a, b, options = {}) {
     // protagonists + sourceWorlds, so the lead's own description must
     // not ride along as if it described the whole cast (REQ-61).
     abilityDesc: '',
+    // Same ruling for the REQ-69 W5 slots: anchors and bounds are
+    // per-lead facts on a fused line, never the whole cast's.
+    abilityBounds: '',
+    anchors: null,
     destination: sourceGenres.map((genre) => genre.location).join(' ↔ '),
     step: 1,
     protagonists: sourceConfigs.map((config) => ({
       name: config.name, trait: config.trait, origin: config.origin, ability: config.ability,
+      // REQ-69 W5: each lead keeps their own anchors and ability
+      // bounds, so the fused brief can hold every lead to their own
+      // arithmetic and their own power's limits.
+      anchors: config.anchors || null, abilityBounds: config.abilityBounds || '',
       genreId: config.genreId, avatarId: config.avatarId || '', appearance: config.avatarAppearance || '',
     })),
     sourceGenres: sourceGenres.map((genre) => genre.id),
