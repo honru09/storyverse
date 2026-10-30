@@ -18,8 +18,9 @@ export default function AuroraBackground() {
       </div>
       {/* SALT-3: the black/white themes sit on a flat token ground, so
           their frosted glass has nothing to refract. This layer paints
-          the soft colour halos those themes blur against. CSS keeps it
-          display:none outside black/white, so aurora never sees it. */}
+          the soft colour halos those themes blur against.
+          AURORA-ALIGN (REQ-41, 2026-10-30): aurora renders it too,
+          with blue-violet halos over its own .aurora-bg drift. */}
       <div className="salt-ambient" aria-hidden="true" />
     </>
   );
