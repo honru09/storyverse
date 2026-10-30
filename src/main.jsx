@@ -90,6 +90,7 @@ import {
   plazaWorldIntroFor,
   WORLD_INTRO_VERSION,
   plazaReaderStory,
+  detailSourcesFor,
   plazaTemplateNameFor,
   publishToPlaza,
   rateBook,
@@ -191,6 +192,7 @@ import {
   CUSTOM_WORLD_SETTING_MAX,
   DEFAULT_DRAFT,
   FRIEND_BOOK,
+  MERGE_SOURCE_LIMIT,
   GENRES,
   GENRE_SHELVES,
   GENRE_TEMPLATES,
@@ -4321,21 +4323,21 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
         <div className="settings-section settings-fusion">
           <h3>这本书的来历</h3>
           <p className="settings-fusion-line">
-            {Array.isArray(story.sourceTitles) && story.sourceTitles.length === 2
-              ? <>由《{story.sourceTitles[0]}》×《{story.sourceTitles[1]}》融合而来，两位主角共同走这条线。</>
-              : <>由两条故事线融合而来，两位主角共同走这条线。</>}
+            {Array.isArray(story.sourceTitles) && story.sourceTitles.length >= 2
+              ? <>由{story.sourceTitles.map((title) => `《${title}》`).join("×")}融合而来，{story.sourceTitles.length} 位主角共同走这条线。</>
+              : <>由多条故事线融合而来，主角们共同走这条线。</>}
           </p>
           <p className="field-hint">
             {storyLengthModeOf(story) === "endless"
               ? "这条线继承了无限连载：没有预设终章，每 12 章一弧，直到你亲手为它完结。"
               : "这是一本 6 章的合流短篇，走完即止。"}
-            合流故事是两条线的结晶，不能再作合流的来源。
+            合流故事是多条线合流的结晶，不能再作合流的来源。
           </p>
         </div>
       ) : !manual && onFuse ? (
         <div className="settings-section settings-fusion">
           <h3>合流</h3>
-          <p className="field-hint">让这条线与另一条线相遇，融合成一本双主角的新书——原书保留。如果另一条线还在连载中（无限连载），新线会继承无限连载继续往下写。</p>
+          <p className="field-hint">让这条线与其它线相遇（2–10 条），融合成一本多主角的新书——原书保留。如果有线还在连载中（无限连载），新线会继承无限连载继续往下写。</p>
           <Button variant="secondary" icon="git" onClick={onFuse}>
             与另一条线合流
           </Button>
@@ -7148,7 +7150,7 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
   );
 }
 
-function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack, backLabel = "返回广场", onReadLine, onEnter, onOpenAccount, onToast, onOpenProfile }) {
+function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack, backLabel = "返回广场", onReadLine, onEnter, onOpenAccount, onToast, onOpenProfile, onOpenBook }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
@@ -7263,8 +7265,8 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
           <p>{detail.manual
             ? <>{shelfById(detail.shelfId)?.name ? `${shelfById(detail.shelfId).name} · ` : ""}作者手写 · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"} · 作者 {detail.authorName}</>
             : <>{detail.worldName} × {templateName} · {plazaLengthLabel(detail)} · {plazaLineStatusFor(detail) === "serializing" ? "连载中" : "已完结"} · 作者 {detail.authorName}</>} · 阅读量 {countTextFor(detail.readCount)}</p>
-          {detail.merged && Array.isArray(detail.sourceTitles) && detail.sourceTitles.length === 2 && (
-            <span className="plaza-badge is-fused">由《{detail.sourceTitles[0]}》×《{detail.sourceTitles[1]}》融合而来</span>
+          {detail.merged && Array.isArray(detail.sourceTitles) && detail.sourceTitles.length >= 2 && (
+            <span className="plaza-badge is-fused">由{detail.sourceTitles.map((title) => `《${title}》`).join("×")}融合而来</span>
           )}
           {detail.official && <span className="plaza-badge is-official">官方示例 · 织界官方走完的完整故事线</span>}
         </div>
@@ -7279,6 +7281,53 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         onOpenAccount={onOpenAccount}
         onOpenProfile={onOpenProfile}
       />
+
+      {/* 来源 (REQ-53): a fused book names the lines it was fused from.
+          Live sources open their own detail; a source that left the
+          shelf shows 已下架 and never becomes a dead link; the
+          publisher's own unpublished lines list by title and author
+          only. Ordinary books never render this section. */}
+      {detail.merged && detailSourcesFor(detail).length > 0 && (
+        <section className="plaza-panel plaza-sources-panel">
+          <h2>来源</h2>
+          <p className="plaza-sources-note">这本书由下面这些故事线合流而成。</p>
+          <div className="plaza-sources-list">
+            {detailSourcesFor(detail).map((source) => {
+              const cover = (
+                <span className="plaza-source-thumb">
+                  <PublicationArtwork publication={source} genreId={source.genreId || detail.genreId} />
+                </span>
+              );
+              const copy = (
+                <span className="plaza-source-copy">
+                  <b>《{source.title}》</b>
+                  {source.authorName && (
+                    <small>{source.authorName}{source.authorHandle ? ` · @${source.authorHandle}` : ""}</small>
+                  )}
+                </span>
+              );
+              return source.state === "live" && onOpenBook ? (
+                <button
+                  type="button"
+                  key={source.publicationId}
+                  className="plaza-source-row is-link"
+                  onClick={() => onOpenBook(source.publicationId)}
+                >
+                  {cover}
+                  {copy}
+                  <Icon name="chevron" size={15} />
+                </button>
+              ) : (
+                <div key={source.publicationId || source.title} className="plaza-source-row">
+                  {cover}
+                  {copy}
+                  {source.state === "gone" && <span className="plaza-source-gone">已下架</span>}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {!detail.manual && (
       <section className="plaza-panel plaza-avatar-panel">
@@ -9919,7 +9968,7 @@ function MergeLineCard({ book, selected, onSelect, badge = "", ambiguous = false
   return (
     <button
       type="button"
-      role="radio"
+      role="checkbox"
       aria-checked={selected}
       aria-disabled={locked || undefined}
       className={`merge-line-card ${selected ? "active" : ""} ${locked ? "is-locked" : ""}`}
@@ -9966,12 +10015,26 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
     }),
     [stories, preselect?.storyId, preselect?.publicationId],
   );
-  const initialSourceId = resolution.sourceId
-    || (activeStory?.kind !== "merged" ? activeStory?.id : originals[0]?.id);
-  const [sourceId, setSourceId] = useState(initialSourceId);
-  const [partnerId, setPartnerId] = useState(
-    () => resolution.partnerId || originals.find((story) => story.id !== initialSourceId)?.id || FRIEND_BOOK.id,
-  );
+  // 合流多源 (REQ-53): the picker is one multi-select list — two to ten
+  // lines, in pick order. The historical defaults seed it exactly as
+  // the old two-pickers did (preselected source, then preselected
+  // partner; else the active story, then the first other original;
+  // the sample line fills the second seat when only one original
+  // exists).
+  const seedSelection = () => {
+    const seeds = [];
+    const push = (id) => { if (id && !seeds.includes(id)) seeds.push(id); };
+    push(resolution.sourceId);
+    push(resolution.partnerId);
+    if (!seeds.length) {
+      push(activeStory?.kind !== "merged" ? activeStory?.id : originals[0]?.id);
+      push(originals.find((story) => story.id !== seeds[0])?.id);
+    }
+    if (seeds.length === 1 && originals.length <= 1) push(FRIEND_BOOK.id);
+    return seeds.slice(0, MERGE_SOURCE_LIMIT);
+  };
+  const [selectedIds, setSelectedIds] = useState(seedSelection);
+  const [leadId, setLeadId] = useState("");
   // A preselection that resolves after mount (the route changed while
   // the flow was open) still lands — once; afterwards the picks belong
   // to the reader.
@@ -9981,8 +10044,8 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
     if (!resolution.sourceId && !resolution.partnerId && !resolution.pendingPublication) return;
     if (appliedPreselect.current === key) return;
     appliedPreselect.current = key;
-    if (resolution.sourceId) setSourceId(resolution.sourceId);
-    if (resolution.partnerId) setPartnerId(resolution.partnerId);
+    const seeds = [resolution.sourceId, resolution.partnerId].filter(Boolean);
+    if (seeds.length) setSelectedIds([...new Set(seeds)].slice(0, MERGE_SOURCE_LIMIT));
   }, [resolution]);
   // The pending-publication notice reads better with the line's title;
   // the fetch is best-effort and the notice stands without it.
@@ -9995,14 +10058,19 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
       .catch(() => {});
     return () => { live = false; };
   }, [resolution.pendingPublication]);
-  const sourceStory = originals.find((story) => story.id === sourceId) || originals[0];
-  const partnerStory = originals.find((story) => story.id === partnerId && story.id !== sourceStory?.id) || FRIEND_BOOK;
-  // Each side's avatar is the one that lived the chosen story, resolved
-  // from the collection — any avatar, not only the main one. A deleted
-  // avatar resolves to nothing and the card falls back to the story's
-  // own protagonist (the config snapshot keeps the book intact).
-  const sourceAvatar = avatars.find((item) => item.id === sourceStory.config?.avatarId) || null;
-  const partnerAvatar = avatars.find((item) => item.id === partnerStory.config?.avatarId) || null;
+  // The picked lines, in pick order; the sample line resolves to the
+  // built-in demo book. Ids that stop resolving (a line deleted while
+  // the flow is open) drop out of the cast rather than breaking it.
+  const selectedStories = selectedIds
+    .map((id) => (id === FRIEND_BOOK.id ? FRIEND_BOOK : originals.find((story) => story.id === id)))
+    .filter(Boolean);
+  const leadStory = selectedStories.find((story) => story.id === leadId) || selectedStories[0] || null;
+  const leadIndex = Math.max(0, selectedStories.indexOf(leadStory));
+  // Each line's avatar is the one that lived it, resolved from the
+  // collection — any avatar, not only the main one. A deleted avatar
+  // resolves to nothing and the card falls back to the story's own
+  // protagonist (the config snapshot keeps the book intact).
+  const avatarForStory = (story) => avatars.find((item) => item.id === story?.config?.avatarId) || null;
   // 合流权限 (REQ-49): lines entered from someone else's published
   // book fuse under THAT author's account setting. The server answers
   // per publication (setting + my durable grant + my pending
@@ -10060,10 +10128,18 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
       } else setError(failure?.message || "申请没能提交，请稍后再试。");
     } finally { setApplyingId(""); }
   };
-  const pickLine = (book, side) => {
+  // Multi-select toggle (REQ-53): a gated line keeps the REQ-49
+  // behaviour — 需先申请 submits the application on tap, pending /
+  // forbidden explain instead of selecting. Picking past the ceiling
+  // is refused with the limit said out loud; un-picking is always free.
+  const toggleLine = (book) => {
+    if (selectedIds.includes(book.id)) {
+      setSelectedIds((current) => current.filter((id) => id !== book.id));
+      return;
+    }
     const gate = gateForStory(book);
     if (gate.state === "apply") {
-      void applyForLine(book, side === "source" ? partnerStory : sourceStory);
+      void applyForLine(book, selectedStories.find((story) => story.id !== book.id) || null);
       return;
     }
     if (!gate.canFuse) {
@@ -10072,18 +10148,19 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
         : `《${book.title}》的作者未开放合流，这条线不能用来合流。`);
       return;
     }
-    if (side === "source") {
-      setSourceId(book.id);
-      if (book.id === partnerId) setPartnerId(FRIEND_BOOK.id);
-    } else setPartnerId(book.id);
+    if (selectedIds.length >= MERGE_SOURCE_LIMIT) {
+      setError(`一次合流最多选择 ${MERGE_SOURCE_LIMIT} 条故事线。`);
+      return;
+    }
+    setError("");
+    setSelectedIds((current) => (current.includes(book.id) ? current : [...current, book.id]));
   };
   const [rules, setRules] = useState("bridge");
-  const [lead, setLead] = useState("a");
   const [bond, setBond] = useState("allies");
   const [mergedStory, setMergedStory] = useState(null);
   const [error, setError] = useState("");
   const started = Boolean(mergedStory);
-  if (!sourceStory)
+  if (!originals.length)
     return (
       <div className="page page-merge page-enter">
         <div className="sw-empty-page">
@@ -10096,14 +10173,16 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
         </div>
       </div>
     );
-  const mineGenre = genreOf(sourceStory);
-  const friendGenre = genreOf(partnerStory);
   const runMerge = async () => {
     if (operation.current) return;
-    // 合流权限 (REQ-49): neither side may be a line whose author has
-    // not consented — the pickers refuse the selection already, and
-    // this is the same check at the moment of fusion itself.
-    const blockedSide = [sourceStory, partnerStory]
+    if (selectedStories.length < 2) {
+      setError("至少选择两条故事线才能合流。");
+      return;
+    }
+    // 合流权限 (REQ-49): no picked line may be one whose author has
+    // not consented — the picker refuses the selection already, and
+    // this is the same check, per line, at the moment of fusion.
+    const blockedSide = selectedStories
       .map((story) => ({ story, gate: gateForStory(story) }))
       .find(({ gate }) => !gate.canFuse);
     if (blockedSide) {
@@ -10119,10 +10198,10 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
     setBusy(true);
     setError("");
     try {
-      const signature = JSON.stringify([sourceStory, partnerStory, rules, lead, bond, engine]);
+      const signature = JSON.stringify([selectedStories, rules, leadIndex, bond, engine]);
       if (candidate.current?.signature !== signature) candidate.current = { signature, story: {
-        ...createMergedStory(sourceStory, partnerStory, { rules, lead, bond }),
-        mergeContext: [mergeSourceContext(sourceStory), mergeSourceContext(partnerStory)],
+        ...createMergedStory(selectedStories, { rules, lead: leadIndex, bond }),
+        mergeContext: selectedStories.map((story) => mergeSourceContext(story)),
       } };
       let next = candidate.current.story;
       if (engine === "gemini") {
@@ -10146,7 +10225,7 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
       <div className="merge-heading">
         <div>
           <h1>世界合流</h1>
-          <p>两个主角，一本新故事。原书保留。</p>
+          <p>选 2–10 条故事线，一本新故事。原书保留。</p>
         </div>
       </div>
       {!started && resolution.pendingPublication && (
@@ -10163,100 +10242,66 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
       )}
       {!started && <div className="merge-book-selectors" inert={busy ? true : undefined}>
         <div className="merge-picker">
-          <span className="field-label" id="merge-source-label">你的故事</span>
-          <div className="merge-line-list" role="radiogroup" aria-labelledby="merge-source-label">
+          <span className="field-label" id="merge-lines-label">选择故事线</span>
+          <p className="merge-count" aria-live="polite">
+            已选 {selectedStories.length} / {MERGE_SOURCE_LIMIT} 条
+            {selectedStories.length < 2 ? "，至少选 2 条" : ""}
+          </p>
+          <div className="merge-line-list" role="group" aria-labelledby="merge-lines-label">
             {originals.map((book) => (
               <MergeLineCard
                 key={book.id}
                 book={book}
                 ambiguous={duplicateLineTitles.has(book.title)}
-                selected={sourceStory.id === book.id}
+                selected={selectedIds.includes(book.id)}
                 gate={gateForStory(book)}
-                onSelect={() => pickLine(book, "source")}
-              />
-            ))}
-          </div>
-        </div>
-        <div className="merge-picker">
-          <span className="field-label" id="merge-partner-label">相遇的故事</span>
-          <div className="merge-line-list" role="radiogroup" aria-labelledby="merge-partner-label">
-            {originals.filter((book) => book.id !== sourceStory.id).map((book) => (
-              <MergeLineCard
-                key={book.id}
-                book={book}
-                ambiguous={duplicateLineTitles.has(book.title)}
-                selected={partnerStory.id === book.id}
-                gate={gateForStory(book)}
-                onSelect={() => pickLine(book, "partner")}
+                onSelect={() => toggleLine(book)}
               />
             ))}
             <MergeLineCard
               book={FRIEND_BOOK}
               badge="示例"
-              selected={partnerStory.id === FRIEND_BOOK.id}
-              onSelect={() => setPartnerId(FRIEND_BOOK.id)}
+              selected={selectedIds.includes(FRIEND_BOOK.id)}
+              onSelect={() => toggleLine(FRIEND_BOOK)}
             />
           </div>
         </div>
       </div>}
-      <div className="merge-stage">
-        <div className="merge-world-card mine">
-          <div className="merge-art merge-art-coral">
-            <WorldArtwork genreId={mineGenre.id} eager />
-            <span className="merge-art-label">{mineGenre.world}</span>
-          </div>
-          <div className="merge-card-bottom">
-            {sourceAvatar ? (
-              <span className="avatar avatar-photo">
-                <AvatarPortrait avatar={sourceAvatar} getAccessToken={() => authClient.getAccessToken()} />
-              </span>
-            ) : (
-              <div className="avatar avatar-rose">
-                {displayName(sourceStory).slice(0, 1)}
-              </div>
-            )}
-            <div>
-              <b>{displayName(sourceStory)}</b>
-              <small>{sourceAvatar ? `化身 · ${sourceAvatar.name}` : "你的主角"}</small>
-              <span>
-                {mineGenre.label} · {sourceStory.config.ability}
-              </span>
-            </div>
-          </div>
-        </div>
+      <div className="merge-stage merge-stage-multi">
         <div className={`merge-center ${started ? "started" : ""}`}>
           <div className="merge-core">
             <Icon name={started ? "check" : "git"} size={25} />
           </div>
         </div>
-        <div className="merge-world-card friend">
-          <div className="merge-art merge-art-mint">
-            <WorldArtwork genreId={friendGenre.id} eager />
-            <span className="merge-art-label">{friendGenre.world}</span>
+        {selectedStories.length ? (
+          <div className="merge-stage-cast">
+            {selectedStories.map((story) => {
+              const storyGenre = genreOf(story);
+              const storyAvatar = avatarForStory(story);
+              return (
+                <div className="merge-stage-chip" key={story.id}>
+                  <span className="merge-stage-thumb">
+                    <WorldArtwork genreId={storyGenre.id} />
+                  </span>
+                  <span className="merge-stage-chip-copy">
+                    <b>{displayName(story)}</b>
+                    <small>
+                      {storyAvatar
+                        ? `化身 · ${storyAvatar.name}`
+                        : story.id === FRIEND_BOOK.id
+                          ? "示例角色"
+                          : "书架中的主角"}
+                      {" · "}{storyGenre.label}
+                    </small>
+                  </span>
+                  {leadStory?.id === story.id && <span className="merge-stage-lead">先开口</span>}
+                </div>
+              );
+            })}
           </div>
-          <div className="merge-card-bottom">
-            {partnerAvatar ? (
-              <span className="avatar avatar-photo">
-                <AvatarPortrait avatar={partnerAvatar} getAccessToken={() => authClient.getAccessToken()} />
-              </span>
-            ) : (
-              <div className="avatar avatar-mint">{displayName(partnerStory).slice(0, 1)}</div>
-            )}
-            <div>
-              <b>{displayName(partnerStory)}</b>
-              <small>
-                {partnerAvatar
-                  ? `化身 · ${partnerAvatar.name}`
-                  : partnerStory.id === FRIEND_BOOK.id
-                    ? "示例角色"
-                    : "书架中的主角"}
-              </small>
-              <span>
-                {friendGenre.label} · {partnerStory.config.ability}
-              </span>
-            </div>
-          </div>
-        </div>
+        ) : (
+          <p className="merge-stage-empty">还没有选中的故事线——在上面点选至少两条。</p>
+        )}
       </div>
       {error && (
         <div className="sw-inline-alert" role="alert">
@@ -10282,8 +10327,8 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
               </div>
               <div>
                 <b>{mergedStory.title}</b>
-                {Array.isArray(mergedStory.sourceTitles) && mergedStory.sourceTitles.length === 2 && (
-                  <small className="merge-result-source">由《{mergedStory.sourceTitles[0]}》×《{mergedStory.sourceTitles[1]}》融合而来</small>
+                {Array.isArray(mergedStory.sourceTitles) && mergedStory.sourceTitles.length >= 2 && (
+                  <small className="merge-result-source">由{mergedStory.sourceTitles.map((title) => `《${title}》`).join("×")}融合而来</small>
                 )}
               </div>
               <button onClick={() => onNavigate("reader", mergedStory.id)}>
@@ -10326,20 +10371,16 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
                 role="group"
                 aria-labelledby="merge-lead-label"
               >
-                <button
-                  aria-pressed={lead === "a"}
-                  className={lead === "a" ? "active" : ""}
-                  onClick={() => setLead("a")}
-                >
-                  {displayName(sourceStory)}
-                </button>
-                <button
-                  aria-pressed={lead === "b"}
-                  className={lead === "b" ? "active" : ""}
-                  onClick={() => setLead("b")}
-                >
-                  {displayName(partnerStory)}
-                </button>
+                {selectedStories.map((story) => (
+                  <button
+                    key={story.id}
+                    aria-pressed={leadStory?.id === story.id}
+                    className={leadStory?.id === story.id ? "active" : ""}
+                    onClick={() => setLeadId(story.id)}
+                  >
+                    {displayName(story)}
+                  </button>
+                ))}
               </div>
               <span
                 className="field-label sw-merge-subtitle"
@@ -10372,8 +10413,8 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
         </section>
           {!started && (
             <p className="merge-product-note">
-              {fusionProductModeFor(sourceStory, partnerStory) === "endless"
-                ? "有一条线还在连载中：融合出的新线会继承无限连载——没有预设终章，每 12 章一弧小升格，直到你亲手为它完结；两条原线未回收的伏笔，都会记到新线的账上。"
+              {fusionProductModeFor(selectedStories) === "endless"
+                ? "有一条线还在连载中：融合出的新线会继承无限连载——没有预设终章，每 12 章一弧小升格，直到你亲手为它完结；各条原线未回收的伏笔，都会记到新线的账上。"
                 : "融合出的新线是一本 6 章的短篇，走完即止——只有连载中的无限长线参与时，新线才会继承无限连载。"}
             </p>
           )}
@@ -10384,7 +10425,7 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
               {busy ? "正在翻开…" : "开启合流故事"}
             </Button>
             {busy && <button className="small-link" onClick={() => { operation.current?.abort(); operation.current = null; setBusy(false); }}>取消等待</button>}
-            <p className="experience-note">{partnerStory.id === FRIEND_BOOK.id ? "与示例角色相遇。也可以新建另一本书，再来合流。" : "两本原书保留，新故事单独存入书架。"}</p>
+            <p className="experience-note">{selectedStories.some((story) => story.id === FRIEND_BOOK.id) ? "包含示例角色。也可以新建另一本书，再来合流。" : "原书保留，新故事单独存入书架。"}</p>
           </div>
           )}
       </div>
@@ -12016,6 +12057,7 @@ function App() {
         onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
         onToast={setToast}
         onOpenProfile={openProfile}
+        onOpenBook={(publicationId) => openPlazaDetail({ id: publicationId }, detailOrigin)}
       />
     );
   else if (view === "plaza-publish")
