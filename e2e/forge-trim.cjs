@@ -8,9 +8,12 @@
 //    input and lands in the book's config.
 //  - God mode: no 写法 chips any more; the inspiration sparks are the
 //    new 100-hook library's, not the retired atmospheric lines.
-//  - Scroll geometry: at max scroll the docked action bar rests on its
-//    nav line (62px from the viewport bottom at this size), the status
-//    line renders before it, and the root scroller contains overscroll.
+//  - Scroll geometry (REQ-32 supersedes the docked bar): the action
+//    bar is a FIXED capsule floating over the bottom nav — its gap to
+//    the viewport bottom is the capsule offset (82px at this size:
+//    nav top edge 72px + 10px clearance) at EVERY scroll position,
+//    the status line renders before it, and the root scroller
+//    contains overscroll.
 // Fixture: the multi-avatar dev server (avatars-shots/dev-server.mjs)
 // for the forge walks, and a plain AUTH_ENABLED=false server for the
 // scroll pass. Screenshots land in forge-trim-shots/.
@@ -248,7 +251,7 @@ async function finishForge(page) {
     await scrollPage.goto(`${plainBase}/#/forge`, { waitUntil: 'domcontentloaded' });
     await scrollPage.locator('.page-forge').waitFor();
     await scrollPage.waitForTimeout(500);
-    await check('scroll: at max scroll the action bar rests on the nav line, no void below', async () => {
+    await check('scroll: the fixed action capsule holds its nav offset at max scroll', async () => {
       await scrollPage.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
       await scrollPage.waitForTimeout(400);
       const before = await scrollPage.evaluate(() => {
@@ -263,7 +266,7 @@ async function finishForge(page) {
           maxScroll: document.documentElement.scrollHeight - window.innerHeight,
         };
       });
-      assert.ok(before.gap <= 64, `gap below the bar is ${before.gap}px (was ~240 before the fix)`);
+      assert.ok(Math.abs(before.gap - 82) <= 1, `gap below the fixed capsule is ${before.gap}px (REQ-32 offset: nav top 72px + 10px clearance)`);
       assert.equal(before.order, true, 'the status line renders before the bar');
       assert.equal(before.overscroll, 'none', 'the root scroller contains overscroll');
       // Pulling further changes nothing: no ride-up, no blank band.

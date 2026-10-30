@@ -7271,16 +7271,41 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
       }
     }
   }, []);
+  // DEVICE-FIX2 (REQ-27): the sheet is a DRAFT. Picture kind picks,
+  // cropped uploads and the banner reset used to write through the
+  // moment they were tapped, so closing the sheet without 保存 still
+  // changed the profile. Now every control only stages a local value
+  // (a cropped upload waits as its processed payload, never sent);
+  // save() is the single write path and closing discards everything.
+  const [stagedPictureKind, setStagedPictureKind] = useState(null);
+  const [stagedPictureUpload, setStagedPictureUpload] = useState(null);
+  const [stagedBannerUpload, setStagedBannerUpload] = useState(null);
+  const [stagedBannerReset, setStagedBannerReset] = useState(false);
   const pictureKind = profile.picture?.kind || "default";
-  const pictureStateLabel = pictureKind === "upload" ? "自定义图片" : pictureKind === "avatar" ? "化身立绘" : "默认头像";
+  // What the preview must show: the staged state when there is one,
+  // the stored state otherwise.
+  const effectivePictureKind = stagedPictureUpload ? "upload" : (stagedPictureKind || pictureKind);
+  const pictureStateLabel = effectivePictureKind === "upload" ? "自定义图片" : effectivePictureKind === "avatar" ? "化身立绘" : "默认头像";
+  const picturePreviewUrl = stagedPictureUpload
+    ? `data:${stagedPictureUpload.contentType};base64,${stagedPictureUpload.image}`
+    : stagedPictureKind === "avatar"
+      ? (profile.avatar?.portraitUrl || profile.picture?.url || "/default-avatar.svg")
+      : stagedPictureKind === "default"
+        ? "/default-avatar.svg"
+        : (profile.picture?.url || "/default-avatar.svg");
   // The hero banner's resolved state (REQ-19): the preview mirrors
   // what the hero shows — the upload/default file itself, or the
   // portrait the blurred fallback borrows.
   const bannerKind = profile.banner?.kind || "default";
-  const bannerStateLabel = bannerKind === "upload" ? "自定义图片" : bannerKind === "avatar" ? "化身立绘" : "默认头图";
-  const bannerPreviewUrl = bannerKind === "avatar"
-    ? (profile.avatar?.portraitUrl || "")
-    : (profile.banner?.url || "");
+  const effectiveBannerKind = stagedBannerUpload ? "upload" : stagedBannerReset ? "default" : bannerKind;
+  const bannerStateLabel = effectiveBannerKind === "upload" ? "自定义图片" : effectiveBannerKind === "avatar" ? "化身立绘" : "默认头图";
+  const bannerPreviewUrl = stagedBannerUpload
+    ? `data:${stagedBannerUpload.contentType};base64,${stagedBannerUpload.image}`
+    : stagedBannerReset
+      ? "/art/banner-profile-1600.webp"
+      : bannerKind === "avatar"
+        ? (profile.avatar?.portraitUrl || "")
+        : (profile.banner?.url || "");
 
   const checkHandle = async () => {
     const value = handle.trim().toLowerCase();
@@ -7290,15 +7315,14 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
     } catch { setHandleState(null); }
   };
 
-  const pickKind = async (kind) => {
-    if (pictureBusy) return;
-    setPictureBusy(kind);
+  // REQ-27: a kind pick only stages the choice (and supersedes any
+  // staged upload, and vice versa) — nothing leaves the device until
+  // 保存 runs the staged writes.
+  const pickKind = (kind) => {
+    if (pictureBusy || busy) return;
     setError("");
-    try {
-      onSaved(await updateMyProfile({ patch: { pictureKind: kind }, getAccessToken: getToken }));
-    } catch (failure) {
-      setError(failure?.message || "头像没能切换，请稍后再试。");
-    } finally { setPictureBusy(""); }
+    setStagedPictureKind(kind);
+    setStagedPictureUpload(null);
   };
 
   const closeCrop = () => {
@@ -7328,12 +7352,14 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
     setPictureBusy("upload");
     setError("");
     try {
+      // REQ-27: the processed payload is STAGED, not uploaded — it
+      // rides to the server only when 保存 runs.
       const processed = await bitmapRegionToSquareJpeg(crop.bitmap, rect);
-      const next = await uploadMyPicture({ ...processed, getAccessToken: getToken });
+      setStagedPictureUpload(processed);
+      setStagedPictureKind(null);
       closeCrop();
-      onSaved(next);
     } catch (failure) {
-      setError(failure?.message || "图片没能上传，请换一张试试。");
+      setError(failure?.message || "图片没能处理，请换一张试试。");
     } finally { setPictureBusy(""); }
   };
 
@@ -7364,24 +7390,24 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
     setPictureBusy("banner-upload");
     setError("");
     try {
+      // REQ-27: staged like the picture — uploaded only on 保存.
       const processed = await bitmapRegionToBannerJpeg(bannerCrop.bitmap, rect);
-      const next = await uploadMyBanner({ ...processed, getAccessToken: getToken });
+      setStagedBannerUpload(processed);
+      setStagedBannerReset(false);
       closeBannerCrop();
-      onSaved(next);
     } catch (failure) {
-      setError(failure?.message || "头图没能上传，请换一张试试。");
+      setError(failure?.message || "头图没能处理，请换一张试试。");
     } finally { setPictureBusy(""); }
   };
 
-  const resetBanner = async () => {
-    if (pictureBusy) return;
-    setPictureBusy("banner-reset");
+  // REQ-27: restoring the default banner is a staged state too — it
+  // also cancels a staged upload — and only reaches the server (as a
+  // DELETE) when 保存 runs and a stored banner actually exists.
+  const resetBanner = () => {
+    if (pictureBusy || busy) return;
     setError("");
-    try {
-      onSaved(await deleteMyBanner({ getAccessToken: getToken }));
-    } catch (failure) {
-      setError(failure?.message || "头图没能恢复默认，请稍后再试。");
-    } finally { setPictureBusy(""); }
+    setStagedBannerUpload(null);
+    setStagedBannerReset(Boolean(editable.hasBanner));
   };
 
   const save = async () => {
@@ -7389,12 +7415,29 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
     setBusy(true);
     setError("");
     try {
+      // REQ-27: the sheet's single write path. Staged binary writes
+      // land first (a staged banner reset only fires when no staged
+      // upload supersedes it), then the field patch — which also
+      // carries a staged picture-kind pick — returns the final
+      // profile. If an early write succeeds and a later one fails the
+      // error surfaces and the sheet stays open; the landed part is
+      // simply the new stored state, never a hidden one.
+      let next = null;
+      if (stagedPictureUpload) {
+        next = await uploadMyPicture({ ...stagedPictureUpload, getAccessToken: getToken });
+      }
+      if (stagedBannerUpload) {
+        next = await uploadMyBanner({ ...stagedBannerUpload, getAccessToken: getToken });
+      } else if (stagedBannerReset) {
+        next = await deleteMyBanner({ getAccessToken: getToken });
+      }
       const patch = {
         displayName: displayName.trim(),
         bio: bio.trim(),
       };
       if (!idLocked) patch.handle = handle.trim().toLowerCase() || null;
-      const next = await updateMyProfile({
+      if (stagedPictureKind) patch.pictureKind = stagedPictureKind;
+      next = await updateMyProfile({
         patch,
         getAccessToken: getToken,
       });
@@ -7446,8 +7489,8 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
         ) : (
         <>
         <div className="profile-edit-picture">
-          <span className={`profile-edit-preview-frame${pictureKind === "avatar" ? " is-portrait" : ""}`}>
-            <img className="profile-edit-preview" src={profile.picture?.url || "/default-avatar.svg"} alt="" />
+          <span className={`profile-edit-preview-frame${effectivePictureKind === "avatar" ? " is-portrait" : ""}`}>
+            <img className="profile-edit-preview" src={picturePreviewUrl} alt="" />
           </span>
           <div className="profile-edit-picture-copy">
             <strong>头像</strong>
@@ -7455,18 +7498,18 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
           </div>
         </div>
         <div className="profile-edit-picture-actions">
-          <button type="button" disabled={Boolean(pictureBusy)} onClick={() => fileRef.current?.click()}>
-            {pictureBusy === "upload" ? "上传中…" : "上传图片"}
+          <button type="button" disabled={Boolean(pictureBusy) || busy} onClick={() => fileRef.current?.click()}>
+            {pictureBusy === "upload" ? "处理中…" : "上传图片"}
           </button>
           <button
             type="button"
-            disabled={Boolean(pictureBusy) || !editable.hasPortrait}
-            onClick={() => void pickKind("avatar")}
+            disabled={Boolean(pictureBusy) || busy || !editable.hasPortrait}
+            onClick={() => pickKind("avatar")}
             title={editable.hasPortrait ? "" : "还没有化身立绘"}
           >
             用化身立绘
           </button>
-          <button type="button" disabled={Boolean(pictureBusy)} onClick={() => void pickKind("default")}>
+          <button type="button" disabled={Boolean(pictureBusy) || busy} onClick={() => pickKind("default")}>
             恢复默认
           </button>
           <input ref={fileRef} type="file" accept="image/jpeg,image/png" hidden onChange={(event) => void onPickFile(event)} />
@@ -7482,14 +7525,14 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
           </div>
         </div>
         <div className="profile-edit-picture-actions">
-          <button type="button" disabled={Boolean(pictureBusy)} onClick={() => bannerFileRef.current?.click()}>
-            {pictureBusy === "banner-upload" ? "上传中…" : "上传图片"}
+          <button type="button" disabled={Boolean(pictureBusy) || busy} onClick={() => bannerFileRef.current?.click()}>
+            {pictureBusy === "banner-upload" ? "处理中…" : "上传图片"}
           </button>
           <button
             type="button"
-            disabled={Boolean(pictureBusy) || !editable.hasBanner}
-            onClick={() => void resetBanner()}
-            title={editable.hasBanner ? "" : "现在就是默认头图"}
+            disabled={Boolean(pictureBusy) || busy || (!editable.hasBanner && !stagedBannerUpload)}
+            onClick={() => resetBanner()}
+            title={editable.hasBanner || stagedBannerUpload ? "" : "现在就是默认头图"}
           >
             恢复默认
           </button>
@@ -8842,6 +8885,15 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
               <div className="profile-stage profile-avatar-stand">
                 {stageAvatar.hasPortrait && stageAvatar.portraitUrl && stageFailedFor !== stageAvatar.id ? (
                   <>
+                    {/* DEVICE-FIX2 (REQ-28): the painting itself, blurred
+                        and cover-fit, fills the frame behind the figure —
+                        the foreground copy is contain-fit, so the whole
+                        figure (head to shoes) is always in frame. */}
+                    <span
+                      className="profile-stage-backdrop"
+                      style={{ backgroundImage: `url("${stageAvatar.portraitUrl}")` }}
+                      aria-hidden="true"
+                    />
                     <img
                       className="profile-stage-img"
                       src={stageAvatar.portraitUrl}

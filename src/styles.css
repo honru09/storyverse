@@ -554,34 +554,27 @@ select{appearance:auto}
 .forge-actions .button{width:100%}
 @media(max-width:1049px){
   .page-home .home-hero{min-height:clamp(360px,calc(100dvh - 250px),580px)}
-  /* The forge action bar is a docked band, not a floating capsule
-     (§33 D): a translucent pill hovering mid-grid let brick text
-     bleed through its blur and peek out on both sides. The band is
-     opaque, full-bleed and edge-to-edge; the capsule survives as the
-     button inside it. Bricks scroll behind a solid surface, and the
-     page's bottom padding lets the last row clear the band entirely. */
-  .forge-actions{position:sticky;bottom:0;z-index:14;margin-inline:-16px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));border:0;border-top:1px solid var(--line);border-radius:0;background:var(--surface-solid);box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
-  .forge-main{padding-bottom:12px}
+  /* DEVICE-FIX2 (REQ-32, owner order) supersedes the §33 D docked
+     band: the bar is a FIXED floating capsule now. The sticky band
+     only ever pretended to dock — as the last in-flow element of the
+     column it had no travel room, so its screen position wandered
+     with each step's content height and scroll offset, at times
+     landing on the nav capsule itself. Fixed positioning pins one
+     bounding box for every step and scroll position: a solid pill
+     (no bleed-through — the §33 D objection was to translucency,
+     answered by the solid surface) floating a constant gap above
+     the bottom nav, and the column's bottom padding grows so the
+     last card can always scroll clear of it. The nav keeps its own
+     layer above (z-30 > z-25); nothing under the capsule needs a
+     tap. Bottom offsets track the nav geometry per theme family:
+     aurora's full-width bar tops out at 62px + safe area; the salt
+     capsule floats 10px higher, at 72px + safe area. */
+  .forge-actions{position:fixed;left:16px;right:16px;bottom:calc(72px + env(safe-area-inset-bottom));z-index:25;max-width:720px;margin-inline:auto;padding:8px;border:1px solid var(--line);border-radius:999px;background:var(--surface-solid);box-shadow:var(--shadow-floating)}
+  html[data-shell-theme='black'] .forge-actions,html[data-shell-theme='white'] .forge-actions{bottom:calc(82px + env(safe-area-inset-bottom))}
+  .forge-main{padding-bottom:calc(172px + env(safe-area-inset-bottom))}
 }
 @media(min-width:620px) and (max-width:1049px){
-  .forge-actions{margin-inline:-36px;padding-inline:36px}
-}
-@media(max-width:759px){
-  /* On phones the band docks onto the bottom nav's top edge. */
-  .forge-actions{bottom:calc(62px + env(safe-area-inset-bottom))}
-  /* The nav below the band is translucent by design, so forge content
-     scrolling underneath it ghosted through the blur — most visibly a
-     genre-brick label row showing through behind the band (FINAL-FIX,
-     designer walk). The band grows a solid skirt over exactly the nav
-     strip on this page only: the forge never trades under the nav,
-     and the nav's own buttons sit above the skirt (z-30 > z-14), so
-     nothing is covered that anyone needs to tap. */
-  .forge-actions::after{content:"";position:absolute;left:0;right:0;top:100%;height:calc(62px + env(safe-area-inset-bottom));background:var(--surface-solid)}
-}
-@media(max-width:360px){
-  /* The page inset drops to 16px here; the band's bleed follows it
-     or the bar sticks out 4px on both sides (visual e2e, 320px). */
-  .forge-actions{margin-inline:-16px;padding-inline:16px}
+  .forge-actions{left:36px;right:36px}
 }
 .back-button{padding-inline:5px;font-size:13px}
 .life-fields .field-hint{grid-column:1 / -1;margin:0}
@@ -1232,7 +1225,16 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
    scroller, and the page wears the shell's own padding rhythm. */
 .page-profile.is-page-form{position:relative;inset:auto;z-index:auto;width:min(100%,1240px);margin:0 auto;padding:16px 16px calc(84px + env(safe-area-inset-bottom));overflow:visible;height:auto;background:var(--bg)}
 .profile-window-grab{display:flex;justify-content:center;padding:10px 0 4px;touch-action:none;cursor:grab;flex:none}
+/* DEVICE-FIX2 (REQ-31): in the window the grab zone becomes an
+   overlay ON the hero instead of an in-flow strip above it. The
+   strip read as a meaningless blank band of sheet colour, and the
+   hero's top-bar buttons landed on the seam between that band and
+   the banner; now the banner runs flush to the sheet's top corners,
+   the grabber floats over it, and the buttons sit wholly inside the
+   banner area. */
+.profile-window-sheet .profile-window-grab{position:absolute;top:0;left:0;right:0;z-index:8;padding:10px 0 8px}
 .profile-window-grabber{width:38px;height:4.5px;border-radius:99px;background:var(--line-2)}
+.profile-window-sheet .profile-window-grabber{box-shadow:0 1px 6px rgba(2,6,20,.35)}
 @media(min-width:760px){.profile-window-grab{display:none}}
 .ryan-topbar{display:flex;align-items:center;justify-content:space-between;height:46px}
 /* Hero top-right pair (TOPBAR-POLISH, DESIGN §35): share / more move
@@ -1288,7 +1290,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .friend-request-block .profile-connection-row{border-bottom:0}
 .friend-request-message{margin:0 0 10px 62px;font-size:13.5px;line-height:1.5;color:var(--profile-dim)}
 .friend-compose{display:flex;align-items:center;gap:8px;margin-top:12px}
-.friend-compose input{flex:1;min-width:0;height:42px;padding:0 14px;border:1px solid var(--profile-edge);border-radius:999px;background:var(--profile-chip);color:var(--profile-ink-strong);font-size:14px;outline:none}
+.friend-compose input{flex:1;min-width:0;height:42px;padding:0 14px;border:1px solid var(--profile-edge);border-radius:999px;background:var(--profile-chip);color:var(--profile-ink-strong);font-size:16px;outline:none}
 .friend-compose input::placeholder{color:var(--profile-placeholder)}
 .friend-compose-send{flex:none;height:42px;padding:0 18px;border:0;border-radius:999px;background:var(--profile-action-bg);color:var(--pill-ink);font-size:14px;font-weight:700;cursor:pointer}
 .friend-compose-send:disabled{opacity:.6;cursor:default}
@@ -1296,7 +1298,7 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .friends-search-modes button{border:0;border-radius:999px;background:transparent;color:var(--profile-dim);font-size:13.5px;font-weight:600;padding:7px 16px;cursor:pointer}
 .friends-search-modes button.is-active{background:var(--profile-action-bg);color:var(--pill-ink)}
 .friends-search-bar{display:flex;align-items:center;gap:8px}
-.friends-search-bar input{flex:1;min-width:0;height:44px;padding:0 16px;border:1px solid var(--profile-edge);border-radius:999px;background:var(--profile-chip);color:var(--profile-ink-strong);font-size:15px;outline:none}
+.friends-search-bar input{flex:1;min-width:0;height:44px;padding:0 16px;border:1px solid var(--profile-edge);border-radius:999px;background:var(--profile-chip);color:var(--profile-ink-strong);font-size:16px;outline:none}
 .friends-search-bar input::placeholder{color:var(--profile-placeholder)}
 .friends-search-bar button{flex:none;display:inline-flex;align-items:center;gap:6px;height:44px;padding:0 18px;border:0;border-radius:999px;background:var(--profile-action-bg);color:var(--pill-ink);font-size:14.5px;font-weight:700;cursor:pointer}
 .friends-search-bar button:disabled{opacity:.55;cursor:default}
@@ -1396,9 +1398,9 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .profile-edit-banner-preview img{width:100%;height:100%;display:block;object-fit:cover}
 .profile-edit-field{display:block;margin-top:20px}
 .profile-edit-field>span{display:block;margin-bottom:8px;font-size:13px;font-weight:700;color:var(--sheet-ink)}
-.profile-edit-field input{width:100%;height:48px;padding:0 14px;border:1px solid var(--sheet-line);border-radius:14px;background:var(--bg);color:var(--sheet-ink);font-size:15px;outline:none}
+.profile-edit-field input{width:100%;height:48px;padding:0 14px;border:1px solid var(--sheet-line);border-radius:14px;background:var(--bg);color:var(--sheet-ink);font-size:16px;outline:none}
 .profile-edit-field input:focus{border-color:var(--sheet-ink);background:var(--sheet-bg)}
-.profile-edit-field textarea{width:100%;padding:12px 14px;border:1px solid var(--sheet-line);border-radius:14px;background:var(--bg);color:var(--sheet-ink);font-size:15px;line-height:1.55;outline:none;resize:none;font:inherit}
+.profile-edit-field textarea{width:100%;padding:12px 14px;border:1px solid var(--sheet-line);border-radius:14px;background:var(--bg);color:var(--sheet-ink);line-height:1.55;outline:none;resize:none;font:inherit;font-size:16px}
 .profile-edit-field textarea:focus{border-color:var(--sheet-ink);background:var(--sheet-bg)}
 .profile-edit-bio-count{display:block;margin-top:6px;font-size:12px;color:var(--sheet-dim);text-align:right}
 .profile-edit-bio-count.is-over{color:#c23a1e;font-weight:700}
@@ -1568,6 +1570,14 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .profile-window-backdrop{position:absolute;inset:0;width:100%;height:100%;border:0;background:rgba(0,0,0,.45);cursor:pointer;animation:profile-window-fade 240ms var(--ease-out) both}
 .profile-window-sheet{position:absolute;left:0;right:0;bottom:0;height:94dvh;border-radius:26px 26px 0 0;overflow:hidden;background:var(--profile-bg);box-shadow:var(--shadow-raised);animation:profile-window-up 320ms var(--ease-drawer) both}
 .profile-window-sheet .page-profile{position:absolute;inset:0}
+/* DEVICE-FIX2 (REQ-31): the windowed page gives its safe-area top
+   padding and the hero's compensating negative margin back — inside
+   a bottom sheet there is no notch to clear, and the pair only
+   manufactured the blank band above the banner. The hero starts at
+   the sheet's top edge; a small fixed inset keeps the top-bar
+   buttons clear of the floating grabber. */
+.profile-window-sheet .page-profile{padding-top:0}
+.profile-window-sheet .profile-hero{margin-top:0;padding-top:16px}
 /* Inside the fixed-height window the profile column scrolls; flex items
    with overflow:hidden (the clamped display name above all) would
    otherwise be shrunk to zero by the column's flex layout. */
@@ -1687,6 +1697,14 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .profile-hero{position:relative;min-height:348px;margin:calc(-8px - env(safe-area-inset-top)) -16px 0;padding:calc(8px + env(safe-area-inset-top)) 16px 0;display:flex;flex-direction:column;overflow:hidden;background:var(--profile-collage-bg)}
 .page-profile.is-page-form .profile-hero{margin:-16px -16px 0;padding:16px 16px 0}
 .profile-hero-bg{position:absolute;inset:-28px;background-size:cover;background-position:center 22%;filter:blur(26px) brightness(.52) saturate(1.08);transform:scale(1.06);z-index:0}
+/* DEVICE-FIX2 (REQ-31): the blurred portrait FALLBACK (never the
+   clear upload/default banner) washes toward the page ground on the
+   salt themes — on white, a dark portrait blurred at full strength
+   read as a dirty smudge floating mid-hero; at reduced opacity the
+   same painting tints the hero instead of staining it. Aurora keeps
+   its original full-strength ambience. */
+html[data-shell-theme='white'] .profile-hero-bg:not(.is-clear){opacity:.5}
+html[data-shell-theme='black'] .profile-hero-bg:not(.is-clear){opacity:.85}
 .profile-hero-tint{position:absolute;inset:0;z-index:1;background:radial-gradient(90% 60% at 16% 0%,rgba(139,124,240,.22),transparent 60%),radial-gradient(70% 55% at 88% 6%,rgba(29,158,116,.15),transparent 60%)}
 .profile-hero-shade{position:absolute;inset:0;z-index:2;background:linear-gradient(180deg,color-mix(in srgb,var(--bg) 36%,transparent) 0%,transparent 32%,color-mix(in srgb,var(--bg) 52%,transparent) 66%,var(--bg) 98%)}
 :root[data-shell-theme='white'] .profile-hero-bg{filter:blur(26px) brightness(1.05) saturate(1.02)}
@@ -1759,7 +1777,13 @@ button.profile-stat{cursor:pointer}
    20–30% of the painting's height and could take the head with it on
    non-contract compositions; the 8% top anchor stays as the guard when
    the cap bites on wide screens. */
-.profile-stage{position:relative;aspect-ratio:3/4;max-height:560px;border-radius:24px;overflow:hidden;background:var(--profile-panel);margin:0;width:auto;text-align:left}
+/* DEVICE-FIX2 (REQ-28): the cap moves from height to width. A
+   max-height on an aspect-ratio frame silently flattens the frame
+   toward landscape once the column runs wide (560px cap ÷ a wide
+   column), and cover then takes the head exactly as the owner kept
+   reporting; capping the WIDTH at 420px keeps the same 560px ceiling
+   (420 × 4⁄3) while the frame can never stop being 3:4. */
+.profile-stage{position:relative;aspect-ratio:3/4;width:min(100%,420px);border-radius:24px;overflow:hidden;background:var(--profile-panel);margin:0 auto;text-align:left}
 /* Poster stage (POSTER-AVATAR): the fake light rig is retired — no
    spot wash, no floor ellipse, no brightened glow copy of the figure.
    Portraits are poster key visuals that carry their own backdrop,
@@ -1771,7 +1795,15 @@ button.profile-stat{cursor:pointer}
    remain are legibility scrims for the name plate, not light. */
 .profile-stage::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(92% 72% at 50% 38%,transparent 36%,color-mix(in srgb,var(--bg) 76%,transparent) 100%)}
 :root[data-shell-theme='white'] .profile-stage::before{background:radial-gradient(92% 72% at 50% 38%,transparent 42%,color-mix(in srgb,var(--bg) 26%,transparent) 100%)}
-.profile-stage-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 8%;z-index:1}
+/* DEVICE-FIX2 (REQ-28): the figure is contain-fit over a blurred
+   cover copy of the same painting (.profile-stage-backdrop) — a
+   contract 3:4 poster still fills the 3:4 frame edge to edge, while
+   any other proportion (legacy portraits) letterboxes onto its own
+   blurred ambience instead of losing its head or feet to a cover
+   crop. The 8% anchor survives on the backdrop only. */
+.profile-stage-backdrop{position:absolute;inset:0;background-size:cover;background-position:50% 8%;filter:blur(26px) brightness(.55) saturate(1.1);transform:scale(1.08);z-index:0}
+:root[data-shell-theme='white'] .profile-stage-backdrop{filter:blur(26px) brightness(1.04) saturate(1.05)}
+.profile-stage-img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}
 .profile-stage::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(76% 68% at 50% 42%,transparent 58%,color-mix(in srgb,var(--bg) 55%,transparent) 100%),linear-gradient(180deg,transparent calc(100% - 112px),color-mix(in srgb,var(--bg) 48%,transparent))}
 :root[data-shell-theme='white'] .profile-stage::after{background:radial-gradient(76% 68% at 50% 42%,transparent 58%,color-mix(in srgb,var(--bg) 32%,transparent) 100%),linear-gradient(180deg,transparent calc(100% - 112px),color-mix(in srgb,var(--bg) 48%,transparent))}
 .profile-stage-noface{position:absolute;left:50%;bottom:118px;transform:translateX(-50%);font-size:120px;font-weight:700;line-height:1;color:color-mix(in srgb,var(--profile-ink) 15%,transparent);z-index:1}
@@ -1926,7 +1958,7 @@ button.settings-row{cursor:pointer}
 
 /* ——— BOOKSTORE-PLAZA: bookstore catalogue + social post stream ——— */
 .store-search{display:flex;align-items:center;gap:9px;margin-top:18px;padding:0 15px;min-height:46px;border:1px solid var(--line);border-radius:999px;background:var(--glass);color:var(--dim)}
-.store-search input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font-size:15px;outline:none}
+.store-search input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font-size:16px;outline:none}
 .store-search input::placeholder{color:var(--dim-2)}
 .store-search-clear{border:0;background:transparent;color:var(--dim);padding:4px;cursor:pointer}
 .store-sorts{display:flex;gap:8px;margin-top:12px}
@@ -1939,13 +1971,30 @@ button.settings-row{cursor:pointer}
 /* DEVICE-FIX REQ-21: the store card is a fixed format — a flex column
    at full row height whose body rows own fixed slots, so every card in
    a row shares the byline / intro / chips / meta baselines. */
-.store-book-card{min-width:0;display:flex;flex-direction:column;height:100%}
+.store-book-card{min-width:0;display:flex;flex-direction:column;height:100%;overflow:hidden}
 .store-book-card .plaza-card-cover{border-radius:var(--radius-card);aspect-ratio:4/3}
 .store-card-status{position:absolute;top:10px;right:10px;padding:3px 9px;border-radius:999px;background:rgba(6,13,31,.72);color:#fff;font-size:11px;font-weight:600;letter-spacing:.02em}
-.store-book-body{padding:11px 2px 0;display:flex;flex-direction:column;flex:1}
-.store-book-byline{flex-wrap:nowrap;height:21px}
+.store-book-body{padding:11px 2px 0;display:flex;flex-direction:column;flex:1;min-width:0}
+.store-book-byline{flex-wrap:nowrap;height:21px;gap:8px}
 .store-book-byline .plaza-byline-name{line-height:1.4}
-.store-book-byline .plaza-byline-handle{max-width:36%;overflow:hidden;text-overflow:ellipsis}
+/* DEVICE-FIX2 (REQ-30, REQ-21 relapse): on the owner's phone the
+   byline's fixed parties — label, a flex:none handle and the official
+   badge — refused to yield, so the display name (the only shrinkable
+   item) collapsed to a single glyph, and the meta row painted past
+   the card edge into its neighbour. The store card now runs a strict
+   shrink order on one line: the name holds a four-glyph floor, the
+   handle takes whatever is left (down to nothing), the meta segments
+   ellipsize inside the card, and the card clips at its own radius —
+   no pixel may leave the card. */
+.store-book-byline .plaza-byline-name{flex:0 1 auto;min-width:4em}
+.store-book-byline .plaza-byline-handle{flex:1 1 0%;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.store-book-card .store-book-meta{flex-wrap:nowrap;overflow:hidden}
+.store-book-card .store-book-meta>*{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.store-book-card .store-book-meta>*:first-child{flex:none}
+@media (max-width:380px){
+  .store-book-byline{gap:6px}
+  .store-book-byline .plaza-byline-name{min-width:3.5em}
+}
 .store-book-intro{margin:8px 0 0;color:var(--dim);font-size:13px;line-height:1.6;min-height:41.6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .store-book-chips{flex-wrap:nowrap;min-height:28px}
 .store-book-chips .plaza-chip{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1997,7 +2046,7 @@ button.settings-row{cursor:pointer}
 .plaza-composer-tabs{display:flex;gap:8px;margin-bottom:12px}
 .plaza-composer-tabs button{min-height:36px;padding:6px 16px;border:1px solid transparent;border-radius:999px;background:rgba(148,178,255,.08);color:var(--dim);font-size:13.5px;font-weight:550;cursor:pointer}
 .plaza-composer-tabs button.active{color:var(--selected-text);background:var(--selected-surface);font-weight:650}
-.plaza-composer-input{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:var(--radius-control);background:transparent;color:var(--ink);font-size:15px;line-height:1.6;padding:11px 13px;resize:vertical;outline:none;font-family:inherit}
+.plaza-composer-input{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:var(--radius-control);background:transparent;color:var(--ink);font-size:16px;line-height:1.6;padding:11px 13px;resize:vertical;outline:none;font-family:inherit}
 .plaza-composer-input:focus{border-color:var(--line-2)}
 .plaza-composer-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:11px}
 .plaza-composer-count{color:var(--dim-2);font-size:12.5px;font-variant-numeric:tabular-nums}
@@ -2065,7 +2114,7 @@ button.settings-row{cursor:pointer}
 .plaza-thread-copy p{margin:3px 0 0;font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
 .plaza-thread-error{margin:10px 0 0;color:var(--danger);font-size:13px}
 .plaza-thread-composer{display:flex;gap:9px;margin-top:13px}
-.plaza-thread-composer input{flex:1;min-width:0;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--ink);font-size:14px;padding:9px 15px;outline:none;font-family:inherit}
+.plaza-thread-composer input{flex:1;min-width:0;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--ink);font-size:16px;padding:9px 15px;outline:none;font-family:inherit}
 .plaza-thread-composer input:focus{border-color:var(--line-2)}
 @media (min-width:1050px){.plaza-post{padding:20px}}
 /* BILLING (§48): the member window — same card language as the
@@ -2080,7 +2129,7 @@ button.settings-row{cursor:pointer}
 .billing-state-note{margin:10px 0 0;font-size:12.5px;line-height:1.65;color:var(--profile-faint)}
 .billing-redeem-label{display:block;margin:0 0 8px;font-size:13px;font-weight:650;color:var(--profile-dim)}
 .billing-redeem-row{display:flex;gap:8px}
-.billing-redeem-row input{flex:1;min-width:0;min-height:44px;padding:8px 12px;border:1px solid var(--profile-edge);border-radius:12px;background:var(--profile-panel);color:var(--profile-ink-strong);font:inherit;font-size:14px;letter-spacing:.04em}
+.billing-redeem-row input{flex:1;min-width:0;min-height:44px;padding:8px 12px;border:1px solid var(--profile-edge);border-radius:12px;background:var(--profile-panel);color:var(--profile-ink-strong);font:inherit;font-size:16px;letter-spacing:.04em}
 .billing-redeem-row button{flex:0 0 auto;min-height:44px;padding:8px 18px;border:0;border-radius:12px;background:var(--profile-ink-strong);color:var(--profile-panel);font:inherit;font-size:14.5px;font-weight:600;cursor:pointer}
 .billing-redeem-row button:disabled{opacity:.45;cursor:not-allowed}
 .billing-note-ok{margin:10px 0 0;font-size:13.5px;color:var(--ok, #3da35d)}
@@ -2228,3 +2277,15 @@ html[data-shell-theme='black'] .page-profile .profile-hero-bg,html[data-shell-th
 html[data-shell-theme='black'] .page-profile .profile-store-card,html[data-shell-theme='white'] .page-profile .profile-store-card{background:var(--profile-card,var(--profile-panel));backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid var(--profile-edge);border-radius:18px;box-shadow:none}
 html[data-shell-theme='black'] .page-plaza:has(> .detail-ambience){--glass-card-bg:rgba(26,29,35,.60);--glass-card-line:rgba(255,255,255,.20)}
 html[data-shell-theme='white'] .page-plaza:has(> .detail-ambience){--glass-card-bg:rgba(255,255,255,.72);--glass-card-edge:rgba(24,25,27,.12)}
+
+/* DEVICE-FIX2 F7 (REQ-33): whole-app horizontal containment + the iOS
+   focus-zoom floor. The shell backstop clips any stray wide element at
+   the document edge; `clip` (not `hidden`) creates no scroll container,
+   so the sticky topbar keeps working. This is a backstop only — card
+   and row level containment stays asserted per surface (F4). */
+html,body,#root{overflow-x:clip}
+/* iOS Safari zooms into any focused text field that computes below
+   16px and leaves the page zoomed after sign-in. Every text entry in
+   the app computes at 16px or more; component rules carry their own
+   16px, this floor catches anything a component rule missed. */
+input[type="text"],input[type="search"],input[type="email"],input[type="password"],input[type="number"],input[type="tel"],input[type="url"],input:not([type]),textarea,select{font-size:16px}

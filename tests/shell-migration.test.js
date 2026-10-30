@@ -142,8 +142,13 @@ test('face-anchor cropping: small round slots zoom portraits to the face', () =>
   // BH-13 (2026-10-29) supersedes the fixed 384px band: the stage takes
   // the poster's own 3:4 frame (capped), so the face and upper body stay
   // in frame instead of losing 20–30% of the painting to cover-cropping.
+  // DEVICE-FIX2 (REQ-28) moves the cap from height to width: a
+  // max-height flattens the frame toward landscape on wide columns and
+  // cover then takes the head — the owner's recurring report. The
+  // 420px width cap keeps the same 560px ceiling (420 × 4⁄3).
   assert.match(css, /\.profile-stage\{[^}]*aspect-ratio:3\/4/)
-  assert.match(css, /\.profile-stage\{[^}]*max-height:560px/)
+  assert.match(css, /\.profile-stage\{[^}]*width:min\(100%,420px\)/)
+  assert.doesNotMatch(css, /\.profile-stage\{[^}]*max-height/)
   // BH-13: the avatar tiles join the face-anchor family (50% 12% + the
   // large-frame 2.05 zoom) instead of squeezing the whole figure into
   // the square, and selected+main collapses to a single ring.
@@ -155,8 +160,14 @@ test('face-anchor cropping: small round slots zoom portraits to the face', () =>
 test('poster stage (POSTER-AVATAR): the fake light rig is retired, the painting fills the stage', () => {
   assert.doesNotMatch(main, /profile-stage-spot|profile-stage-floor|profile-stage-glow|profile-stage-bg/)
   assert.doesNotMatch(css, /\.profile-stage-spot|\.profile-stage-floor|\.profile-stage-glow|\.profile-stage-bg/)
-  assert.match(css, /\.profile-stage-img\{[^}]*object-fit:cover/)
-  assert.match(css, /\.profile-stage-img\{[^}]*object-position:50% 8%/)
+  // DEVICE-FIX2 (REQ-28) supersedes the cover fit on the stage: the
+  // figure is contain-fit (head to shoes always in frame) over a
+  // blurred cover copy of the same painting, which keeps the old
+  // 50% 8% anchor. Contract 3:4 posters still fill the frame exactly.
+  assert.match(css, /\.profile-stage-img\{[^}]*object-fit:contain/)
+  assert.match(css, /\.profile-stage-backdrop\{[^}]*background-size:cover/)
+  assert.match(css, /\.profile-stage-backdrop\{[^}]*background-position:50% 8%/)
+  assert.match(profileBlock, /profile-stage-backdrop/)
 })
 
 test('boards retired (PROFILE-ENRICH §35): the fan collage gives way to shelf / store / stage sections', () => {
