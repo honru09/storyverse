@@ -4000,6 +4000,18 @@ export function storyBeatPlan(story, index) {
     // and a library pick means its printed effect too. The bible's
     // generic cost rule still governs every path alike.
     config.abilityDesc ? `能力：${ability}（${cleanText(config.abilityDesc, '')}）` : `能力：${ability}`,
+    // REQ-61×57 (00055 fix): on a fused line the story-level slot
+    // above is empty by ruling, so each lead's own effect description
+    // is restated per person — the fused brief otherwise knew the
+    // cast's power names and bounds, but never what each power does.
+    ...(merged
+      ? (config.protagonists || []).map((person) => {
+          const desc = cleanText(person?.abilityDesc, '')
+          if (!desc) return null
+          const personAbility = cleanText(person?.ability, '')
+          return `能力·${protagonistName(person, '主角')}：${personAbility ? `${personAbility}（${desc}）` : desc}`
+        }).filter(Boolean)
+      : []),
     // 主角硬锚点 (REQ-69 W5): the protagonist's (and, for a fused
     // cast, each lead's) numeric/factual anchors restated as hard
     // constraints, plus the world bible's timeline anchors. Absent
@@ -4744,7 +4756,7 @@ export function createMergedStory(a, b, options = {}) {
     name: castNames.join(' × '),
     trait: sourceConfigs.map((config) => config.trait).join(' / '),
     origin: sourceConfigs.map((config) => config.origin).join(' & '),
-    ability: sourceConfigs.map((config) => config.ability).join(' + '),
+    ability: sourceConfigs.map((config) => config.ability).filter(Boolean).join(' + '),
     tone: leadConfig.tone,
     immersive: false,
     hometown: '',
@@ -4778,6 +4790,11 @@ export function createMergedStory(a, b, options = {}) {
       // bounds, so the fused brief can hold every lead to their own
       // arithmetic and their own power's limits.
       anchors: config.anchors || null, abilityBounds: config.abilityBounds || '',
+      // REQ-61×57 (00055 fix): each lead also keeps their own ability
+      // EFFECT description — the story-level abilityDesc slot stays
+      // empty on a fused line by the REQ-61 ruling above, so without
+      // this the fused brief only ever saw the cast's power names.
+      abilityDesc: config.abilityDesc || '',
       genreId: config.genreId, avatarId: config.avatarId || '', appearance: config.avatarAppearance || '',
     })),
     sourceGenres: sourceGenres.map((genre) => genre.id),
