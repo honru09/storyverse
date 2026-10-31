@@ -2,11 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
+  coverFailureRetryable,
+  coverNeedsMetaReconcile,
   coverPayloadFor,
   coverStateOf,
   fallbackCoverVariantFor,
   fetchCoverMeta,
   fetchCoverObjectUrl,
+  fetchCoverReconcilePatch,
   requestCoverImage,
   shouldAutoRequestCover,
   withCoverState,
@@ -54,7 +57,53 @@ test('shouldAutoRequestCover fires only for a fresh Gemini story with a first ch
   const stale = new Date(Date.now() - 11 * 60 * 1000).toISOString()
   assert.equal(shouldAutoRequestCover(geminiStory({ cover: { status: 'pending', version: 0, updatedAt: stale } })), true, 'a pending stamp older than ten minutes is orphaned and may ask again')
   assert.equal(shouldAutoRequestCover(geminiStory({ cover: { status: 'ready', version: 1 } })), false)
-  assert.equal(shouldAutoRequestCover(geminiStory({ cover: { status: 'failed', version: 0 } })), false, 'failure waits for a manual re-roll')
+  assert.equal(shouldAutoRequestCover(geminiStory({ cover: { status: 'failed', version: 0 } })), true, 'a failed record with no stamp is legacy stock and counts as stale (COVER-RETRY-FIX)')
+})
+
+test('a failed cover retries only once the local day has moved past the failure (COVER-RETRY-FIX)', () => {
+  const now = new Date('2026-10-31T12:00:00').getTime()
+  const failedAt = (updatedAt) => geminiStory({ cover: { status: 'failed', version: 0, updatedAt } })
+  assert.equal(shouldAutoRequestCover(failedAt('2026-10-31T00:05:00'), now), false, 'same-day failure stays parked: the day that refused does not get re-billed')
+  assert.equal(shouldAutoRequestCover(failedAt('2026-10-31T11:59:00'), now), false, 'a failure an hour ago is still the same day')
+  assert.equal(shouldAutoRequestCover(failedAt('2026-10-30T23:59:00'), now), true, 'yesterday’s failure may ask again')
+  assert.equal(shouldAutoRequestCover(failedAt('2026-10-01T08:00:00'), now), true, 'an old failure may ask again')
+  assert.equal(shouldAutoRequestCover(failedAt('not-a-date'), now), true, 'an unparseable stamp counts as stale')
+  assert.equal(coverFailureRetryable(failedAt('2026-10-30T23:59:00'), now), true)
+  assert.equal(coverFailureRetryable(failedAt('2026-10-31T00:05:00'), now), false)
+  assert.equal(coverFailureRetryable(geminiStory({ cover: { status: 'ready', version: 1 } }), now), false, 'only failed records are retryable')
+  assert.equal(coverFailureRetryable(geminiStory(), now), false)
+})
+
+test('the engine gate: gemini passes, an unstamped account book passes, explicit non-gemini never does (COVER-RETRY-FIX)', () => {
+  const unstamped = (overrides = {}) => {
+    const story = geminiStory(overrides)
+    delete story.engine
+    return story
+  }
+  assert.equal(shouldAutoRequestCover(unstamped()), false, 'an unstamped book with no account proof stays parked')
+  assert.equal(shouldAutoRequestCover(unstamped(), Date.now(), { inAccountLibrary: true }), true, 'unstamped + synced into the account library + chapters → may ask')
+  assert.equal(shouldAutoRequestCover(unstamped({ chapters: [] }), Date.now(), { inAccountLibrary: true }), false, 'still needs a first chapter')
+  assert.equal(shouldAutoRequestCover(unstamped({ readOnly: true }), Date.now(), { inAccountLibrary: true }), false, 'read-only copies never ask')
+  assert.equal(shouldAutoRequestCover(geminiStory({ engine: 'local' }), Date.now(), { inAccountLibrary: true }), false, 'an explicit local stamp refuses even in the account library')
+  assert.equal(shouldAutoRequestCover(geminiStory({ engine: 'manual' }), Date.now(), { inAccountLibrary: true }), false, 'an explicit manual stamp refuses')
+  assert.equal(shouldAutoRequestCover(geminiStory({ engine: '' }), Date.now(), { inAccountLibrary: true }), true, 'an empty engine mark counts as unstamped')
+})
+
+test('cover meta reconciliation asks only for the needy states and adopts a ready painting (COVER-RETRY-FIX)', async () => {
+  const now = new Date('2026-10-31T12:00:00').getTime()
+  assert.equal(coverNeedsMetaReconcile(geminiStory(), now), true, 'none is needy')
+  assert.equal(coverNeedsMetaReconcile(geminiStory({ cover: { status: 'failed', version: 0 } }), now), true, 'failed is needy')
+  assert.equal(coverNeedsMetaReconcile(geminiStory({ cover: { status: 'pending', version: 0, updatedAt: '2026-10-31T11:00:00' } }), now), true, 'an orphaned pending stamp is needy')
+  assert.equal(coverNeedsMetaReconcile(geminiStory({ cover: { status: 'pending', version: 0, updatedAt: '2026-10-31T11:55:00' } }), now), false, 'a live pending request is left alone')
+  assert.equal(coverNeedsMetaReconcile(geminiStory({ cover: { status: 'ready', version: 2 } }), now), false, 'ready is never probed')
+  assert.equal(coverNeedsMetaReconcile(geminiStory({ readOnly: true }), now), false, 'read-only copies are out of this state machine')
+
+  const ready = async () => jsonResponse(200, { status: 'ready', version: 5 })
+  assert.deepEqual(await fetchCoverReconcilePatch({ story: geminiStory(), fetchImpl: ready }), { status: 'ready', version: 5 }, 'a server-side painting is adopted, not re-painted')
+  const none = async () => jsonResponse(200, { status: 'none', version: 0 })
+  assert.equal(await fetchCoverReconcilePatch({ story: geminiStory(), fetchImpl: none }), null, 'nothing server-side → nothing to adopt')
+  const down = async () => { throw new Error('offline') }
+  assert.equal(await fetchCoverReconcilePatch({ story: geminiStory(), fetchImpl: down }), null, 'a failed probe is silent')
 })
 
 test('coverPayloadFor sends a slim, chapter-free painting brief', () => {
@@ -119,6 +168,17 @@ test('cover requests wait for sign-in instead of racing the session restore', ()
   assert.match(main, /coverAttempts\.current\.delete\(id\)/)
   // …and cover displays re-fetch when the auth signal changes.
   assert.match(coverComponent, /\}, \[status, version, storyId, authSignal\]\);/)
+})
+
+test('cover retry wiring: failures carry their own date and the settled shelf reconciles (COVER-RETRY-FIX)', () => {
+  const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
+  // A failure is stamped at failure time (the per-day gate reads it)…
+  assert.match(main, /updateCoverState\(id, \{ status: "failed", updatedAt: new Date\(\)\.toISOString\(\) \}\)/)
+  // …the auto-paint effect passes account-library membership to the gate…
+  assert.match(main, /inAccountLibrary: syncedIds \? syncedIds\.has\(story\.id\) : false/)
+  // …and once the cloud merge settles, the needy books reconcile.
+  assert.match(main, /if \(!cancelled\) void reconcileCoverMetas\(\);/)
+  assert.match(main, /coverMetaChecks\.current\.has\(story\.id\)/, 'reconciliation is throttled to once per book per session')
 })
 
 test('fetchCoverObjectUrl caches per version and revokes the replaced painting', async () => {
