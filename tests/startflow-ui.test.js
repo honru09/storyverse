@@ -258,11 +258,16 @@ test('protagonist step has no origin picker: the identity step is the only origi
   assert.doesNotMatch(main, /<dt>出身<\/dt>/)
 })
 
-test('REQ-71: layered genesis hero, step motion wiring, same-name label fix', () => {
-  // The hero is layered generated art now, not a pure-CSS vortex.
+test('REQ-71 → HERO-FLATTEN: baked genesis hero, step motion wiring, same-name label fix', () => {
+  // The hero art is ONE offline-baked plate now (scripts/
+  // bake-hero-genesis.mjs): the three REQ-71 plates were rectangles
+  // whose unfeathered edges stepped mid-frame, so they must never
+  // come back as stacked runtime layers.
+  assert.ok(main.includes('hero-genesis-baked'), 'baked hero plate is wired')
   for (const layer of ['hero-genesis-nebula', 'hero-genesis-dust', 'hero-genesis-ring']) {
-    assert.ok(main.includes(layer), `hero layer ${layer} is wired`)
+    assert.ok(!main.includes(layer), `retired hero layer ${layer} stays retired`)
   }
+  assert.match(styles, /\.genre-hero-baked/)
   assert.match(styles, /\.genre-hero-orbit--a/)
   assert.match(styles, /sel-mark-pop/)
   // Step changes animate a keyed panel; rolls fire the settle flicker.

@@ -2154,38 +2154,36 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       gsap.set([panel, ...blocks], { clearProps: "transform,opacity" });
     };
   }, [step, forgeAnimate]);
-  // REQ-71: the free-creation hero breathes. Entrance is staggered by
-  // layer (the nebula settles out of a slow push-in, the ring scales
-  // up through a quarter-turn, the stardust fades in last); the
-  // ambient loop then breathes ring and glow on offset sine cycles
-  // and drifts the stardust sheet across the plate. Transform/opacity
-  // only; with the policy off nothing is set and the composed plate
-  // simply sits, complete.
+  // REQ-71 → HERO-FLATTEN: the free-creation hero breathes. The art
+  // is one baked plate now, so the token choreography retargets: the
+  // plate settles out of the old nebula push-in while the vortex
+  // (glow + orbit rings) still sweeps up through its quarter-turn;
+  // the ambient loop drifts the plate on the old nebula cycle and
+  // breathes it on the old ring cycle (the ring lives in the pixels,
+  // so its breathe is a whole-plate micro-scale around the 1.04
+  // rest — the same +5% the ring itself used to do). The stardust
+  // sheet is baked in and no longer drifts separately. Transform/
+  // opacity only; with the policy off nothing is set and the
+  // composed plate simply sits, complete.
   useEffect(() => {
     if (!forgeAnimate || step !== 1) return undefined;
     const root = forgeRef.current;
-    const nebula = root?.querySelector(".genre-hero-nebula");
-    const dust = root?.querySelector(".genre-hero-dust");
+    const baked = root?.querySelector(".genre-hero-baked");
     const vortex = root?.querySelector(".genre-hero-vortex");
-    const ring = root?.querySelector(".genre-hero-ring-img");
     const glow = root?.querySelector(".genre-hero-glow");
-    if (!nebula || !vortex || !ring) return undefined;
+    if (!baked || !vortex) return undefined;
     const tweens = [
-      gsap.fromTo(nebula, { scale: 1.12, opacity: 0 }, { scale: 1.04, opacity: 1, duration: 1.1, ease: "power2.out" }),
+      gsap.fromTo(baked, { scale: 1.12, opacity: 0 }, { scale: 1.04, opacity: 1, duration: 1.1, ease: "power2.out" }),
       gsap.fromTo(vortex, { scale: 0.82, opacity: 0, rotate: -10 }, { scale: 1, opacity: 1, rotate: 0, duration: 1.2, ease: "expo.out", delay: 0.1, clearProps: "transform,opacity" }),
-      gsap.to(ring, { scale: 1.05, duration: 7, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 1.3 }),
-      gsap.to(nebula, { xPercent: 1.2, duration: 30, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 1.2 }),
+      gsap.fromTo(baked, { scale: 1.04 }, { scale: 1.09, duration: 7, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 1.3 }),
+      gsap.to(baked, { xPercent: 1.2, duration: 30, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 1.2 }),
     ];
-    if (dust) {
-      tweens.push(gsap.fromTo(dust, { opacity: 0 }, { opacity: 0.85, duration: 1.4, delay: 0.25 }));
-      tweens.push(gsap.to(dust, { xPercent: -2.5, yPercent: 1.5, duration: 26, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 1.6 }));
-    }
     if (glow) {
       tweens.push(gsap.to(glow, { opacity: 0.62, scale: 1.12, duration: 5, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 1.3 }));
     }
     return () => {
       tweens.forEach((tween) => tween.kill());
-      gsap.set([nebula, dust, vortex, ring, glow].filter(Boolean), { clearProps: "transform,opacity" });
+      gsap.set([baked, vortex, glow].filter(Boolean), { clearProps: "transform,opacity" });
     };
   }, [step, forgeAnimate]);
   // REQ-71: a roll lands with a dice-settle — the result line flickers
@@ -3060,22 +3058,27 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                   open door is the hero of this step now — a large
                   black-hole visual region with the free-genre input
                   inside it, so creating is never gated by a category
-                  list. REQ-71: the visual is layered generated art —
-                  a nebula plate, a screen-blended stardust sheet and a
-                  black-backed accretion-ring plate inside the vortex
-                  frame, orbited by two thin CSS rings. GSAP breathes
-                  and drifts the layers (transform/opacity only, see
-                  the forge hero effect); the motion policy and
-                  prefers-reduced-motion still every layer, complete.
-                  Typing selects the custom genre; the example chips
-                  fill the field for readers who want a running start. */}
+                  list. REQ-71 made it layered generated art; the layers
+                  were three rectangles and their unfeathered edges
+                  stepped visibly wherever they landed mid-frame, so
+                  HERO-FLATTEN (2026-10-31) baked them offline into ONE
+                  full-frame plate (scripts/bake-hero-genesis.mjs: the
+                  ring's alpha is feathered to zero before the screen
+                  blend, so the baked image's edges are the nebula
+                  itself). Runtime shows the single cover image; the
+                  vortex keeps only the CSS glow and orbit rings —
+                  gradients and borders have no rectangle to leak.
+                  GSAP breathes and drifts the plate (transform/opacity
+                  only, see the forge hero effect); the motion policy
+                  and prefers-reduced-motion still every layer,
+                  complete. Typing selects the custom genre; the
+                  example chips fill the field for readers who want a
+                  running start. */}
               <div className={`genre-hero ${customGenreActive ? "selected" : ""}`}>
                 <div className="genre-hero-visual" aria-hidden="true">
-                  <img className="genre-hero-nebula" src="/art/hero-genesis-nebula-640.webp" srcSet="/art/hero-genesis-nebula-640.webp 640w, /art/hero-genesis-nebula-1122.webp 1122w" sizes="(min-width: 700px) 60vw, 100vw" alt="" decoding="async" />
-                  <img className="genre-hero-dust" src="/art/hero-genesis-dust-1122.webp" alt="" decoding="async" />
+                  <img className="genre-hero-baked" src="/art/hero-genesis-baked-640.webp" srcSet="/art/hero-genesis-baked-640.webp 640w, /art/hero-genesis-baked-1122.webp 1122w" sizes="(min-width: 700px) 60vw, 100vw" alt="" decoding="async" />
                   <div className="genre-hero-vortex">
                     <span className="genre-hero-glow" />
-                    <img className="genre-hero-ring-img" src="/art/hero-genesis-ring-640.webp" alt="" decoding="async" />
                     <span className="genre-hero-orbit genre-hero-orbit--a" />
                     <span className="genre-hero-orbit genre-hero-orbit--b" />
                   </div>
