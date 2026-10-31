@@ -432,6 +432,9 @@ function compactConfig(config, storyKind = '') {
         // as themselves.
         appearance: clip(person.appearance, 300),
         abilityBounds: sanitizeSettingText(clip(person.abilityBounds, 120)),
+        // REQ-61×57 (00055 fix): each lead's own ability effect
+        // description rides along, clipped like the solo lead's.
+        abilityDesc: sanitizeSettingText(clip(person.abilityDesc, 120)),
         ...(personAnchors ? {
           anchors: {
             age: personAnchors.age,
