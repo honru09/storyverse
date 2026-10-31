@@ -96,6 +96,16 @@
 .intervention-cancel{min-height:44px;margin-top:18px;padding:0 22px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--ink);font-size:14px;font-weight:650;cursor:pointer}
 .intervention-cancel-note{margin:8px 0 0;color:var(--dim);font-size:13px;line-height:1.6}
 
+/* PIXELFX-WAVE1 (§60): the vendored pixel effect rides each loading
+   surface's own main visual — ringing the waiting orb, bursting over
+   the intervention weave. Card content is lifted above the canvas so
+   effect pixels never sit on text; the canvas itself is inert. */
+.generation-fx{position:absolute;top:12px;left:50%;transform:translateX(-50%);display:block;height:96px;width:auto;z-index:0;pointer-events:none}
+.generation-card>*:not(.generation-fx){position:relative;z-index:1}
+.intervention-card{position:relative}
+.intervention-fx{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:block;height:148px;width:auto;z-index:0;pointer-events:none}
+.intervention-card>*:not(.intervention-fx){position:relative;z-index:1}
+
 /* ---- Story map ---- */
 .storymap{display:block;width:100%}
 .storymap-link{fill:none;stroke:rgba(168,196,255,.28);stroke-width:1.6}

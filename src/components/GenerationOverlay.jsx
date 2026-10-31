@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import ParticleField from "./ParticleField.jsx";
+import PixelfxCanvas from "../fx/PixelfxCanvas.jsx";
+import { pickFx, PIXELFX_SCENE } from "../fx/placements.js";
+import { useMotionSettings } from "../motion/MotionProvider.jsx";
 
 const STEP_SETS = {
   story: ["正在铺设这个世界的规则…", "正在唤醒你的主角…", "正在写下第一幕…"],
@@ -25,8 +28,15 @@ const SLOW_HINT_SECONDS = 30;
  * motion policy ([data-motion="off"] / prefers-reduced-motion) freezes
  * every animation here too; the stage labels and bar still advance.
  */
-export default function GenerationOverlay({ kind = "story", onCancel }) {
+export default function GenerationOverlay({ kind = "story", onCancel, family = null }) {
   const steps = STEP_SETS[kind] || STEP_SETS.story;
+  // PIXELFX-WAVE1 (§60): an ambient pixel effect keyed to the family of
+  // the book being written, ringing the orb inside the card. Mounted
+  // only while the global motion policy allows animation — motion off
+  // or reduced motion means the layer is never mounted at all.
+  const settings = useMotionSettings();
+  const motionOn = Boolean(settings?.enabled) && !settings?.reducedMotion && !settings?.saveData;
+  const fxPick = motionOn ? pickFx(PIXELFX_SCENE.WAITING, family) : null;
   const [stepIndex, setStepIndex] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -46,6 +56,15 @@ export default function GenerationOverlay({ kind = "story", onCancel }) {
       <span className="generation-bg" data-stage={stage} aria-hidden="true" />
       <ParticleField density="waiting" />
       <div className="generation-card">
+        {fxPick && (
+          <PixelfxCanvas
+            className="generation-fx"
+            fx={fxPick.fx}
+            palette={fxPick.palette}
+            seed={fxPick.seed}
+            loop
+          />
+        )}
         <div className="generation-orb" aria-hidden="true"><span className="generation-halo" /></div>
         <h2>{kind === "merge" ? "两个世界正在相遇" : "你的故事正在成形"}</h2>
         <p className="generation-step" key={stepIndex} role="status">{steps[stepIndex]}</p>
