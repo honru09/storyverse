@@ -157,7 +157,8 @@ import {
 import { acceptGeneratedChapter, acceptRerolledChapter, acceptRevisedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter, requestChapterReroll, requestChapterRevision } from "./generation.js";
 import InterventionOverlay from "./components/InterventionOverlay.jsx";
 import PixelfxCanvas from "./fx/PixelfxCanvas.jsx";
-import { pickFx, pickForgeAmbientFx, PIXELFX_SCENE } from "./fx/placements.js";
+import { pickFx, pickForgeAmbientFx, setPixelfxTheme, PIXELFX_SCENE } from "./fx/placements.js";
+import { prefetchPixelfx } from "./fx/prefetch.js";
 import WorldArtwork from "./components/WorldArtwork.jsx";
 import StoryCover from "./components/StoryCover.jsx";
 import AccountPanel, { ShellThemeSegments } from "./components/AccountPanel.jsx";
@@ -1643,8 +1644,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
               <PixelfxCanvas
                 key={revealFx.key}
                 className="avatar-reveal-fx"
-                fx={revealFx.pick.fx}
-                seed={revealFx.pick.seed}
+                pick={revealFx.pick}
                 loop={false}
                 onDone={() => setRevealFx(null)}
               />
@@ -3108,9 +3108,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
               <PixelfxCanvas
                 key={`${world?.id || "custom"}:${pick.fx}`}
                 className="forge-ambient-fx"
-                fx={pick.fx}
-                palette={pick.palette}
-                seed={pick.seed}
+                pick={pick}
                 loop
               />
             );
@@ -5660,6 +5658,23 @@ function Reader({
 
   useEffect(() => { celebratedRef.current = new Set(); }, [story?.id, readOnly]);
 
+  // PIXELFX-WAVE3 (§60): warm the chunks of the scenes this book can
+  // reach next — the intervene burst, the milestone celebrations and
+  // the cover reveal — while the reader is still reading. Idle-time
+  // only, primaries only, failures silent (prefetch.js).
+  useEffect(() => {
+    if (!story?.id || readOnly || !fxMotionOn) return;
+    const family = storyFamilyOf(story);
+    const ids = [
+      pickFx(PIXELFX_SCENE.INTERVENE, family),
+      pickFx(PIXELFX_SCENE.CHAPTER_UPGRADE, family),
+      pickFx(PIXELFX_SCENE.CHAPTER_UPGRADE, family, { grand: true }),
+      pickFx(PIXELFX_SCENE.COVER_REVEAL, family),
+    ].map((pick) => pick?.fx).filter(Boolean);
+    void prefetchPixelfx(ids);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story?.id, readOnly, fxMotionOn]);
+
   // Forge-open beat: consume the stamp App.generate left for this book
   // when its first chapter landed. Only a fresh stamp plays — a later
   // reopening from the shelf finds nothing (or an expired stamp) and
@@ -6647,9 +6662,7 @@ function Reader({
       {openFx && frontStage && (
         <div className="reader-open-fx" aria-hidden="true">
           <PixelfxCanvas
-            fx={openFx.fx}
-            palette={openFx.palette}
-            seed={openFx.seed}
+            pick={openFx}
             loop={false}
             onDone={() => setOpenFx(null)}
           />
@@ -6659,9 +6672,7 @@ function Reader({
         <div className="reader-open-fx" aria-hidden="true">
           <PixelfxCanvas
             key={milestoneFx.key}
-            fx={milestoneFx.pick.fx}
-            palette={milestoneFx.pick.palette}
-            seed={milestoneFx.pick.seed}
+            pick={milestoneFx.pick}
             loop={false}
             onDone={() => setMilestoneFx(null)}
           />
@@ -7564,8 +7575,7 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
             <PixelfxCanvas
               key={likeFx.key}
               className="plaza-like-fx"
-              fx={likeFx.pick.fx}
-              seed={likeFx.pick.seed}
+              pick={likeFx.pick}
               loop={false}
               onDone={() => setLikeFx(null)}
             />
@@ -8306,9 +8316,7 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
           return (
             <PixelfxCanvas
               className="detail-ambience-fx"
-              fx={pick.fx}
-              palette={pick.palette}
-              seed={pick.seed}
+              pick={pick}
               loop
             />
           );
@@ -9923,6 +9931,8 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   const [friendDraft, setFriendDraft] = useState("");
   const getToken = useCallback(() => authClient.getAccessToken(), [authClient]);
   const { animate } = useMotionPolicy("profile");
+  const fxSettings = useMotionSettings();
+  const fxMotionOn = pixelfxMotionOn(fxSettings);
   const pageRef = useRef(null);
   const enteredUidRef = useRef("");
   const dragRef = useRef(null);
@@ -10466,6 +10476,13 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           </>
         ) : (
           <div className="profile-empty">
+            {fxMotionOn && (
+              <PixelfxCanvas
+                className="profile-empty-fx"
+                pick={pickFx(PIXELFX_SCENE.EMPTY_SHELF, null)}
+                loop
+              />
+            )}
             <img className="profile-empty-art" src="/art/empty-shelf-512.webp" alt="" loading="lazy" />
             <div className="profile-empty-copy">
               <p>书架还是空的</p>
@@ -11549,9 +11566,7 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
           return (
             <PixelfxCanvas
               className="merge-fx"
-              fx={pick.fx}
-              palette={pick.palette}
-              seed={pick.seed}
+              pick={pick}
               loop={false}
               onDone={() => setFusionFxFor(mergedStory.id)}
             />
@@ -12279,6 +12294,13 @@ function App() {
       setAccountOpen(false);
       if (accountIntent === "forge") navigate("forge");
       setAccountIntent(null);
+      // PIXELFX-WAVE3 (§60): the sign-in / registration landing earns
+      // one soft welcome beat as the sheet closes — the session-
+      // restore path never passes through here, so a returning reader
+      // is not greeted on every cold start.
+      if (appFxMotionOn) {
+        setWelcomeFx({ key: Date.now(), pick: pickFx(PIXELFX_SCENE.LOGIN_WELCOME, null) });
+      }
     }
     if (!accountOpen) accountOpenedSignedOut.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -12401,6 +12423,15 @@ function App() {
     return () => cancelIdle(handle);
   }, [account.status, account.user?.uid, authClient]);
   const [shellTheme, setShellThemeState] = useState(() => readShellTheme());
+  // PIXELFX-WAVE3 (§60): placements shade their palettes per shell
+  // theme (white → ink/deep-gold, aurora → blue-violet); App is the
+  // one place that knows the theme, so it publishes it here —
+  // synchronously in the render body, NOT in an effect: children
+  // render (and call pickFx) in the same pass, and child effects run
+  // before App's, so an effect-timed publish would shade the first
+  // pass — and every theme switch — with the stale theme. The call
+  // is idempotent and side-effect-free beyond the module variable.
+  setPixelfxTheme(shellTheme);
   const [helpOpen, setHelpOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [shareRequest, setShareRequest] = useState(false);
@@ -12415,6 +12446,7 @@ function App() {
   const appFxSettings = useMotionSettings();
   const appFxMotionOn = pixelfxMotionOn(appFxSettings);
   const [toastFx, setToastFx] = useState(null);
+  const [welcomeFx, setWelcomeFx] = useState(null);
   const celebrateToast = (message) => {
     setToast(message);
     if (
@@ -13627,10 +13659,18 @@ function App() {
         <PixelfxCanvas
           key={toastFx.key}
           className="toast-fx"
-          fx={toastFx.pick.fx}
-          seed={toastFx.pick.seed}
+          pick={toastFx.pick}
           loop={false}
           onDone={() => setToastFx(null)}
+        />
+      )}
+      {welcomeFx && (
+        <PixelfxCanvas
+          key={welcomeFx.key}
+          className="login-welcome-fx"
+          pick={welcomeFx.pick}
+          loop={false}
+          onDone={() => setWelcomeFx(null)}
         />
       )}
     </div>

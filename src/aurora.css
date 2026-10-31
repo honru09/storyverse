@@ -122,6 +122,12 @@
 .plaza-like-fx{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;height:48px;width:auto;z-index:2;pointer-events:none}
 .toast-fx{position:fixed;left:50%;bottom:calc(148px + env(safe-area-inset-bottom));transform:translateX(-50%);display:block;height:104px;width:auto;z-index:41;pointer-events:none}
 .detail-ambience-fx{position:absolute;left:50%;top:290px;transform:translateX(-50%);display:block;height:104px;width:auto;pointer-events:none;opacity:.55}
+.story-cover{position:relative}
+.story-cover-fx{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;height:46%;width:auto;z-index:2;pointer-events:none}
+.profile-empty{position:relative;overflow:hidden}
+.profile-empty-fx{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;height:150%;width:auto;z-index:0;pointer-events:none;opacity:.45}
+.profile-empty>*:not(.profile-empty-fx){position:relative;z-index:1}
+.login-welcome-fx{position:fixed;left:50%;top:calc(56px + env(safe-area-inset-top));transform:translateX(-50%);display:block;height:150px;width:auto;z-index:42;pointer-events:none}
 
 /* ---- Story map ---- */
 .storymap{display:block;width:100%}

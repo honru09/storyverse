@@ -39,6 +39,26 @@ export function livePixelfxCount() {
 }
 
 /**
+ * Quality tiers (PIXELFX-WAVE3). Full tier: the authored 30 steps/s
+ * and the effect's native raster. Lite tier (MotionProvider's
+ * is-lite-gpu verdict: deviceMemory ≤ 4 or hardwareConcurrency ≤ 4):
+ * 20 steps/s — a third fewer full-frame draws per second, the step
+ * being where the CPU actually goes — and the visible canvas's
+ * backing store capped at 144px on the long edge (the internal pixel
+ * frame stays native; only the final blit raster shrinks, which is
+ * invisible at pixelated scaling on the small surfaces fx live on).
+ */
+export const PIXELFX_STEP_HZ = 30;
+export const PIXELFX_LITE_STEP_HZ = 20;
+export const PIXELFX_LITE_RASTER_CAP = 144;
+
+export function pixelfxQualityTier(lite) {
+  return lite
+    ? { stepHz: PIXELFX_LITE_STEP_HZ, rasterCap: PIXELFX_LITE_RASTER_CAP }
+    : { stepHz: PIXELFX_STEP_HZ, rasterCap: null };
+}
+
+/**
  * A steppable player for one effect module.
  * options: { seed, palette, light, repeat }
  * - repeat: when a one-shot finishes, respawn it (loop-feel for effects

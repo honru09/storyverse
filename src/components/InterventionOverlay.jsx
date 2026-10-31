@@ -76,9 +76,7 @@ export default function InterventionOverlay({
         {fxPick && !fxDone && (
           <PixelfxCanvas
             className="intervention-fx"
-            fx={fxPick.fx}
-            palette={fxPick.palette}
-            seed={fxPick.seed}
+            pick={fxPick}
             loop={false}
             onDone={() => setFxDone(true)}
           />
