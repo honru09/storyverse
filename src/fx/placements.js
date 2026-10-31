@@ -46,6 +46,12 @@ export const PIXELFX_SCENE = {
   COVER_REVEAL: "cover-reveal",
   EMPTY_SHELF: "empty-shelf",
   LOGIN_WELCOME: "login-welcome",
+  RATING_SUCCESS: "rating-success",
+  SHELF_COLLECT: "shelf-collect",
+  REDEEM_SUCCESS: "redeem-success",
+  SEASON_FINALE: "season-finale",
+  SEARCH_EMPTY: "search-empty",
+  FOLLOW_SUCCESS: "follow-success",
 };
 
 // A gold ramp in the arcane family's 8-step shape: 修仙/玄幻 reads gold,
@@ -251,6 +257,63 @@ const EMPTY_SHELF_DEFAULT = { fx: "critters/butterfly", seed: 120, alt: ["holy/s
 // it can block anything. Family-free (no book is in hand yet).
 const LOGIN_WELCOME_DEFAULT = { fx: "holy/feather-burst", seed: 130, alt: ["ui/quest-complete", "explosions/firework-burst"] };
 
+// ——— Wave 4 scenes (PIXELFX-WAVE4): the small human moments ———
+// Rating, collecting, redeeming, following: the reader did a small
+// deliberate thing and it landed. Each is one fingertip-sized beat on
+// the control that was used, family-free (the surface, not the book,
+// owns the moment) except where a palette carries the meaning.
+
+// Rating success: golden star-dust over the star picker — the house
+// glint burst wearing the gold ramp (white theme deepens it via
+// GOLD_THEMES, aurora violets it, exactly like the waiting circle).
+const RATING_SUCCESS_DEFAULT = { fx: "pickups/collect-burst", palette: GOLD_RAMP, themes: GOLD_THEMES, seed: 140, alt: ["ui/coin-collect", "holy/feather-burst"] };
+
+// Shelf collect: saving a book to the favourites shelf — one soft
+// feather beat inside the collect button (the login welcome's effect,
+// reused at button scale; the moment, not the pixels, is the point).
+const SHELF_COLLECT_DEFAULT = { fx: "holy/feather-burst", seed: 150, alt: ["pickups/collect-burst"] };
+
+// Redeem success: coins actually arriving — the coin-collect beat
+// over the redeem note, quest-complete as the wider alternate.
+const REDEEM_SUCCESS_DEFAULT = { fx: "ui/coin-collect", seed: 160, alt: ["ui/quest-complete", "pickups/collect-burst"] };
+
+// Season finale: a book's finished state is presented on a shelf for
+// the first time (the stamp/claim ledger lives in
+// fx/finish-celebration.js — App stamps the moment a line flips to
+// complete, whichever shelf surface presents it first claims it, and
+// it never plays twice). These are the chapter-upgrade GRAND effects
+// promoted to their own scene: same signatures, own seeds, because
+// the moment differs — the upgrade beat fires when the final chapter
+// OPENS; this one fires when the finished book is first SEEN done.
+const SEASON_FINALE_BY_FAMILY = {
+  xuanzhen: { fx: "holy/holy-pillar", seed: 171, alt: ["explosions/firework-burst", "arcane/star-fall"] },
+  fuben: { fx: "holy/holy-pillar", seed: 172, alt: ["explosions/firework-burst", "arcane/star-fall"] },
+  wuxia: { fx: "holy/smite", seed: 173, alt: ["holy/holy-pillar", "explosions/firework-burst"] },
+  kehuan: { fx: "scifi/emp-blast", seed: 174, alt: ["explosions/firework-burst"] },
+  dianjing: { fx: "scifi/emp-blast", seed: 175, alt: ["explosions/firework-burst"] },
+  moshi: { fx: "shadow/dark-explosion", seed: 176, alt: ["explosions/implosion", "arcane/star-fall"] },
+  lingyi: { fx: "shadow/dark-explosion", seed: 177, alt: ["arcane/star-fall"] },
+  xuanyi: { fx: "arcane/star-fall", seed: 178, alt: ["shadow/dark-explosion"] },
+  yanqing: { fx: "arcane/star-fall", seed: 179, alt: ["explosions/firework-burst"] },
+};
+
+const SEASON_FINALE_DEFAULT = { fx: "explosions/firework-burst", seed: 170, alt: ["holy/holy-pillar", "arcane/mana-burst"] };
+
+// Search empty: a store / shelf search that found nothing keeps the
+// same quiet company as the empty shelf — one butterfly drifting
+// behind the art and copy, never a full-frame weather scene.
+const SEARCH_EMPTY_DEFAULT = { fx: "critters/butterfly", seed: 180, alt: ["critters/wisp", "holy/sunburst"] };
+
+// Follow success: the profile follow button earns a rose spark — the
+// house glint burst in a rose ramp (deepened on white so it survives
+// the light ground; on aurora's navy the native rose reads as-is).
+// Unfollow stays silent, exactly like un-like.
+const ROSE_RAMP = ["#170510", "#38091f", "#6e1238", "#a81f55", "#e04a86", "#ff8fb5", "#ffc7da", "#ffffff"];
+const DEEP_ROSE_RAMP = ["#12030a", "#2b0716", "#4d0f27", "#701a3a", "#93284f", "#b03a64", "#c4527a", "#d4698f"];
+const ROSE_THEMES = { white: { palette: DEEP_ROSE_RAMP } };
+
+const FOLLOW_SUCCESS_DEFAULT = { fx: "pickups/collect-burst", palette: ROSE_RAMP, themes: ROSE_THEMES, seed: 190, alt: ["ui/coin-collect", "holy/feather-burst"] };
+
 const TABLES = {
   waiting: { byFamily: WAITING_BY_FAMILY, fallback: WAITING_DEFAULT },
   intervene: { byFamily: INTERVENE_BY_FAMILY, fallback: INTERVENE_DEFAULT },
@@ -265,6 +328,12 @@ const TABLES = {
   "cover-reveal": { byFamily: {}, fallback: COVER_REVEAL_DEFAULT },
   "empty-shelf": { byFamily: {}, fallback: EMPTY_SHELF_DEFAULT },
   "login-welcome": { byFamily: {}, fallback: LOGIN_WELCOME_DEFAULT },
+  "rating-success": { byFamily: {}, fallback: RATING_SUCCESS_DEFAULT },
+  "shelf-collect": { byFamily: {}, fallback: SHELF_COLLECT_DEFAULT },
+  "redeem-success": { byFamily: {}, fallback: REDEEM_SUCCESS_DEFAULT },
+  "season-finale": { byFamily: SEASON_FINALE_BY_FAMILY, fallback: SEASON_FINALE_DEFAULT },
+  "search-empty": { byFamily: {}, fallback: SEARCH_EMPTY_DEFAULT },
+  "follow-success": { byFamily: {}, fallback: FOLLOW_SUCCESS_DEFAULT },
 };
 
 /**
@@ -329,5 +398,7 @@ export function placementFxIds() {
 // note called it "merge-encounter"), avatar-reveal, forge-ambient
 // (+ forge-open), plaza-like + publish-celebration, detail-ambient;
 // wave 3 landed the last three — cover-reveal, empty-shelf,
-// login-welcome. Every scene in PIXELFX_SCENE is wired.
+// login-welcome. Wave 4 added the small-moment scenes —
+// rating-success, shelf-collect, redeem-success, season-finale,
+// search-empty, follow-success. Every scene in PIXELFX_SCENE is wired.
 export const PLANNED_SCENES = [];
