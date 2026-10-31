@@ -3664,21 +3664,51 @@ const CHAPTER_TITLE_BAND_BY_TEMPLATE = {
 
 export const chapterTitleBandIdFor = (templateId) => CHAPTER_TITLE_BAND_BY_TEMPLATE[templateId] || 'standard'
 
+/*
+ * The effective 字数 range of a title band for one chapter: the
+ * family's band, shifted one档 up at upgrade points. Single source
+ * for the edges — the prompt guidance, the fit checker and the
+ * server-side post-chapter check all read them from here, so the
+ * three can never disagree about which band applies.
+ */
+export function chapterTitleBandRangeFor(templateId, { upgrade = false } = {}) {
+  const band = CHAPTER_TITLE_BANDS[chapterTitleBandIdFor(templateId)]
+  return {
+    band: band.id,
+    label: band.label,
+    min: upgrade ? band.upgradeMin : band.min,
+    max: upgrade ? band.upgradeMax : band.max,
+  }
+}
+
+/*
+ * How far a title of this length sits outside its band, in 字： 0
+ * inside the band, otherwise the distance to the nearer edge. The
+ * post-chapter check compares two candidate titles by this measure
+ * and keeps the closer one.
+ */
+export const chapterTitleBandDistanceFor = (length, templateId, { upgrade = false } = {}) => {
+  const { min, max } = chapterTitleBandRangeFor(templateId, { upgrade })
+  return length < min ? min - length : length > max ? length - max : 0
+}
+
 export function chapterTitleGuidanceFor(templateId, { upgrade = false } = {}) {
   const band = CHAPTER_TITLE_BANDS[chapterTitleBandIdFor(templateId)]
-  const min = upgrade ? band.upgradeMin : band.min
-  const max = upgrade ? band.upgradeMax : band.max
+  const { min, max } = chapterTitleBandRangeFor(templateId, { upgrade })
   return `本章标题按「${band.label}」写：${min}–${max} 字，${band.shape}；${upgrade
     ? '本章是升格章，标题可以点明升格结果（突破、夺冠、揭露、登顶）——那是读者等着的兑现，不算剧透'
     : '不提前剧透本章结局'}`
 }
 
 /*
- * The fit checker for a stored or drafted chapter title (canon QA and
- * tests; generation itself keeps only the bare-number hard gate — a
- * length miss is a sampling outcome, not a format fact, and must never
- * stall a chapter). `fits` speaks of the band; the absolute storage
- * cap reports separately as 'over-absolute-max'.
+ * The fit checker for a stored or drafted chapter title (canon QA,
+ * tests, and the server-side post-chapter check). `fits` speaks of
+ * the band; the absolute storage cap reports separately as
+ * 'over-absolute-max'. A length miss is a sampling outcome, not a
+ * format fact: generation's hard gate stays the bare number alone,
+ * and the band check re-asks for the title once, inside the same
+ * request, without ever stalling the chapter (server/gemini.js,
+ * settleChapterTitle).
  */
 export function chapterTitleFitFor(title, templateId, { upgrade = false } = {}) {
   const text = typeof title === 'string' ? title.trim() : ''
@@ -3689,8 +3719,7 @@ export function chapterTitleFitFor(title, templateId, { upgrade = false } = {}) 
   else {
     if (/^[\d０-９]+$/.test(text)) issues.push('bare-number')
     if (length > CHAPTER_TITLE_MAX) issues.push('over-absolute-max')
-    const min = upgrade ? band.upgradeMin : band.min
-    const max = upgrade ? band.upgradeMax : band.max
+    const { min, max } = chapterTitleBandRangeFor(templateId, { upgrade })
     if (length < min) issues.push('below-band')
     if (length > max && length <= CHAPTER_TITLE_MAX) issues.push('above-band')
   }

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { acceptChapter, buildChapter, chapterKey, chapterTitleGuidanceFor, CUSTOM_GENRE_ID, CUSTOM_TEMPLATE_ID, customGenreAnchorTemplateId, genreFor, INTERVENTION_TEXT_MAX, introViolationFor, isFrontierChapter, normalizeProtagonistAnchors, openingPatternFor, outlineIndexFor, outlineLengthFor, queuedInterventionsFor, storyBeatPlan, storyLedgerFor, storyTemplateIdFor, stylePresetOf, totalChaptersFor, worldNameOf, worldSkeletonKbFor, worldSettingOf, WORLD_SKELETON_CROSS_LINE } from '../src/story-engine.js'
+import { acceptChapter, buildChapter, chapterKey, chapterTitleBandDistanceFor, chapterTitleBandRangeFor, chapterTitleFitFor, chapterTitleGuidanceFor, CUSTOM_GENRE_ID, CUSTOM_TEMPLATE_ID, customGenreAnchorTemplateId, genreFor, INTERVENTION_TEXT_MAX, introViolationFor, isFrontierChapter, normalizeProtagonistAnchors, openingPatternFor, outlineIndexFor, outlineLengthFor, queuedInterventionsFor, storyBeatPlan, storyLedgerFor, storyTemplateIdFor, stylePresetOf, totalChaptersFor, worldNameOf, worldSkeletonKbFor, worldSettingOf, WORLD_SKELETON_CROSS_LINE } from '../src/story-engine.js'
 import { LOREBOOK_ENTRY_CONTENT_MAX, selectLorebookEntries } from '../src/lorebook.js'
 import { emptyLibrary, validateLibrary } from '../src/persistence.js'
 
@@ -700,6 +700,21 @@ function extractUsage(metadata) {
   return Object.values(usage).some((value) => value !== null) ? usage : 'unknown'
 }
 
+/*
+ * Fold a follow-up call's usage into the chapter's: the provider was
+ * paid for both, so the ledger sees the sum. An unreported side
+ * ('unknown') defers to the reported one.
+ */
+function mergeUsage(base, extra) {
+  if (!record(extra)) return base
+  if (!record(base)) return extra
+  const merged = { ...base }
+  for (const key of Object.keys(extra)) {
+    if (typeof extra[key] === 'number') merged[key] = (typeof base[key] === 'number' ? base[key] : 0) + extra[key]
+  }
+  return merged
+}
+
 function contextFor({ story, index, skeleton }, resolvedTemplates = null, quality = null) {
   const last = story.chapters.at(-1)
   const bible = story.worldBible
@@ -1145,6 +1160,145 @@ export function createGeminiGenerator({
     return chapter
   }
 
+  const TITLE_RETRY_SCHEMA = {
+    type: 'object', additionalProperties: false,
+    properties: { title: { type: 'string', description: '只写新标题本身，不带书名号、引号或章节编号。' } },
+    required: ['title'],
+  }
+
+  // A re-asked title is held to the same hard facts as a generated one
+  // before it may land: non-empty, never a bare number, inside the
+  // validator's own length bound. Anything else is no candidate.
+  const cleanTitleCandidate = (value) => {
+    if (typeof value !== 'string') return ''
+    const text = value.trim().replace(/^[《「『"“‘]+/, '').replace(/[》」』"”’]+$/, '').trim()
+    if (!text || [...text].length > 80 || /^[\d０-９]+$/.test(text)) return ''
+    return text
+  }
+
+  /*
+   * The title-only re-ask: a small second call that carries the
+   * chapter's summary and opening, its offending title with its
+   * measured length, and the band restated as an explicit range (the
+   * same guidance string the chapter prompt carried). It returns a
+   * cleaned candidate title plus the call's usage; every transport or
+   * shape failure returns an empty candidate instead of throwing.
+   */
+  async function requestReplacementTitle(prepared, channel, signal, chapter, fit) {
+    const band = prepared.titleBand
+    const { min, max } = chapterTitleBandRangeFor(band.templateId, { upgrade: band.upgrade })
+    const systemInstruction = '你是织界的章节标题编辑。你只改标题，不写正文，不作任何解释。'
+    const input = JSON.stringify({
+      task: `下面这一章的标题是 ${fit.length} 字，不在它这一档的 ${min}–${max} 字带内。只输出一个新标题，格式 {"title":"新标题"}。`,
+      chapterTitleStyle: chapterTitleGuidanceFor(band.templateId, { upgrade: band.upgrade }),
+      currentTitle: chapter.title,
+      chapterSummary: clip(chapter.summary, 600),
+      chapterOpening: clip(Array.isArray(chapter.paragraphs) ? chapter.paragraphs[0] || '' : '', 300),
+    })
+    if (backend === 'vertex') {
+      const payload = await vertexGenerate({
+        project, location: channel.location, model: channel.model, signal,
+        contents: [{ role: 'user', parts: [{ text: input }] }],
+        config: {
+          abortSignal: signal,
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseJsonSchema: TITLE_RETRY_SCHEMA,
+          maxOutputTokens: 256,
+          candidateCount: 1,
+        },
+      })
+      const usage = extractUsage(payload?.usageMetadata)
+      if (payload?.blocked || payload?.finishReason !== 'STOP' || typeof payload?.text !== 'string') return { title: '', usage }
+      let parsed
+      try { parsed = JSON.parse(payload.text) } catch { return { title: '', usage } }
+      return { title: cleanTitleCandidate(parsed?.title), usage }
+    }
+    const response = await fetchImpl(`${ENDPOINT}${encodeURIComponent(channel.model)}:generateContent`, {
+      method: 'POST', signal,
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+        contents: [{ role: 'user', parts: [{ text: input }] }],
+        generationConfig: {
+          responseMimeType: 'application/json', responseJsonSchema: TITLE_RETRY_SCHEMA,
+          maxOutputTokens: 256, candidateCount: 1,
+        },
+      }),
+    })
+    if (!response.ok) {
+      await response.body?.cancel?.()
+      return { title: '', usage: 'unknown' }
+    }
+    const payload = JSON.parse(await readResponse(response))
+    const usage = extractUsage(payload?.usageMetadata)
+    const candidate = payload.candidates?.[0]
+    if (payload.promptFeedback?.blockReason || !candidate || candidate.finishReason !== 'STOP') return { title: '', usage }
+    const parts = candidate.content?.parts
+    if (!Array.isArray(parts) || parts.some((part) => part.functionCall)) return { title: '', usage }
+    const raw = parts.filter((part) => !part.thought && typeof part.text === 'string').map((part) => part.text).join('')
+    let parsed
+    try { parsed = JSON.parse(raw) } catch { return { title: '', usage } }
+    return { title: cleanTitleCandidate(parsed?.title), usage }
+  }
+
+  /*
+   * 章节标题分档校验 (REQ-66 band, enforcement after the REQ-69
+   * walkthrough measured 都市 titles landing at 19–20 字 against the
+   * long band's 16 ceiling): the prompt steers the title into its
+   * band, but steering is sampling. Once a chapter validates, its
+   * title is checked against the SAME band the prompt named —
+   * upgrade shift included, so a finale's longer title is never
+   * misjudged. A miss re-asks ONCE, inside this same request, for
+   * the title only; a fitting answer lands, and a still-missing one
+   * lands only when it sits closer to the band than the original
+   * (ties go to the re-ask, which was written knowing the range).
+   * The check can never fail the chapter: the re-ask is best-effort,
+   * the whole settle is wrapped, and every miss leaves a stderr
+   * record with lengths only — never title text. Returns the re-ask
+   * call's usage (or 'unknown') so the chapter meters both calls.
+   */
+  async function settleChapterTitle(prepared, channel, signal, validated) {
+    const band = prepared.titleBand
+    if (!band) return 'unknown'
+    try {
+      const fit = chapterTitleFitFor(validated.title, band.templateId, { upgrade: band.upgrade })
+      if (fit.fits) return 'unknown'
+      const originalTitle = validated.title
+      let candidate = ''
+      let usage = 'unknown'
+      try {
+        const retry = await requestReplacementTitle(prepared, channel, signal, validated, fit)
+        candidate = retry.title
+        usage = retry.usage
+      } catch { /* best-effort: the original title stands */ }
+      let outcome = 'kept-original'
+      if (candidate && candidate !== originalTitle) {
+        const options = { upgrade: band.upgrade }
+        const candidateDistance = chapterTitleBandDistanceFor([...candidate].length, band.templateId, options)
+        const originalDistance = chapterTitleBandDistanceFor(fit.length, band.templateId, options)
+        if (candidateDistance <= originalDistance) {
+          validated.title = candidate
+          outcome = candidateDistance === 0 ? 'reasked-fits' : 'reasked-closer'
+        }
+      }
+      try {
+        process.stderr.write(`${JSON.stringify({
+          type: 'chapter-title-band',
+          storyId: typeof prepared.story?.id === 'string' ? prepared.story.id : null,
+          chapter: prepared.index + 1,
+          band: fit.band,
+          upgrade: band.upgrade,
+          originalLength: fit.length,
+          candidateLength: candidate ? [...candidate].length : null,
+          chosenLength: [...validated.title].length,
+          outcome,
+        })}\n`)
+      } catch { /* logging is best-effort */ }
+      return usage
+    } catch { return 'unknown' }
+  }
+
   async function requestChapter(prepared, input, channel) {
     const controller = new AbortController()
     let timeout
@@ -1194,13 +1348,14 @@ export function createGeminiGenerator({
         let output
         try { output = JSON.parse(payload.text) } catch { throw retryableError(502, '这一章的格式不完整，请重试。') }
         const validated = validateOutput(output, prepared.index === 0, outlineLengthFor(prepared.story))
+        const titleRetryUsage = await settleChapterTitle(prepared, channel, controller.signal, validated)
         const { worldBible, synopsis, intro, ...prose } = validated
         return {
           chapter: assembleChapter(prepared, prose), key: prepared.key,
           ...(worldBible ? { worldBible } : {}),
           ...(synopsis ? { synopsis } : {}),
           ...(intro ? { intro } : {}),
-          usage: extractUsage(payload?.usageMetadata),
+          usage: mergeUsage(extractUsage(payload?.usageMetadata), titleRetryUsage),
           ...(prepared.genreTemplateId ? { genreTemplateId: prepared.genreTemplateId } : {}),
           ...(prepared.derivedProtagonistName ? { protagonistName: prepared.derivedProtagonistName } : {}),
         }
@@ -1246,13 +1401,14 @@ export function createGeminiGenerator({
       let output
       try { output = JSON.parse(raw) } catch { throw retryableError(502, '这一章的格式不完整，请重试。') }
       const validated = validateOutput(output, prepared.index === 0, outlineLengthFor(prepared.story))
+      const titleRetryUsage = await settleChapterTitle(prepared, channel, controller.signal, validated)
       const { worldBible, synopsis, intro, ...prose } = validated
       return {
         chapter: assembleChapter(prepared, prose), key: prepared.key,
         ...(worldBible ? { worldBible } : {}),
         ...(synopsis ? { synopsis } : {}),
         ...(intro ? { intro } : {}),
-        usage: extractUsage(payload?.usageMetadata),
+        usage: mergeUsage(extractUsage(payload?.usageMetadata), titleRetryUsage),
         ...(prepared.genreTemplateId ? { genreTemplateId: prepared.genreTemplateId } : {}),
         ...(prepared.derivedProtagonistName ? { protagonistName: prepared.derivedProtagonistName } : {}),
       }
@@ -1294,6 +1450,17 @@ export function createGeminiGenerator({
       // but stamping its id onto the story would silently re-pin the
       // book to a stock category it never chose.
       if (resolvedTemplates) prepared.genreTemplateId = resolvedTemplates.custom ? CUSTOM_TEMPLATE_ID : resolvedTemplates.primary.id
+      // The title band this chapter is checked against once written,
+      // computed exactly as the prompt's chapterTitleStyle is computed
+      // inside contextFor — same resolved writing template (the
+      // borrowed family for a free-genre pin), same beat-plan upgrade
+      // points — so the steering and the check can never disagree
+      // about which band applies.
+      const titleBeatPlan = storyBeatPlan(prepared.story, prepared.index)
+      prepared.titleBand = {
+        templateId: resolvedTemplates?.primary?.id || storyTemplateIdFor(prepared.story),
+        upgrade: Boolean(titleBeatPlan.structure.isUnitEnd || titleBeatPlan.structure.isFinale),
+      }
       const input = JSON.stringify(contextFor(prepared, resolvedTemplates, qualityData))
       // The style preset rides in the hash: the context JSON is unchanged
       // by it, but the instructions are not — a chapter cached under one
