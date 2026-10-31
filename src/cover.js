@@ -36,21 +36,68 @@ export function coverRequestInFlight(story, now = Date.now()) {
   return Number.isFinite(stamped) && now - stamped < COVER_PENDING_STALE_MS
 }
 
+const localDayNumber = (ts) => {
+  const d = new Date(ts)
+  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate()
+}
+
+/**
+ * A failed cover may be retried automatically once the local calendar
+ * day has moved past the failure (COVER-RETRY-FIX): the failure stamp
+ * is the cover state's updatedAt, written when the attempt failed.
+ * Same-day failures stay parked — the original protection stands, a
+ * background loop must never burn the daily cover allowance retrying
+ * inside the day that already refused. A failed record with NO stamp
+ * predates failure stamping (legacy stock): its failure day is
+ * unknowable, so it counts as stale and may ask again.
+ */
+export function coverFailureRetryable(story, now = Date.now()) {
+  const state = coverStateOf(story)
+  if (state.status !== 'failed') return false
+  const stamped = Date.parse(state.updatedAt || '')
+  if (!Number.isFinite(stamped)) return true
+  return localDayNumber(stamped) < localDayNumber(now)
+}
+
 /**
  * The automatic request fires once a Gemini-written story has its first
  * chapter: that is when a world bible premise exists to paint from. Demo
  * and locally seeded stories never ask (their worlds are the shared art's
- * home), read-only copies never ask, and a failed attempt stays failed
- * until the reader explicitly re-rolls — a background retry loop must
- * never burn the daily cover allowance on its own. An ORPHANED pending
- * stamp (older than COVER_PENDING_STALE_MS) asks again like `none`.
+ * home), read-only copies never ask, and a failed attempt stays parked
+ * for the rest of the local day it failed on — from the next day it may
+ * ask again (coverFailureRetryable). An ORPHANED pending stamp (older
+ * than COVER_PENDING_STALE_MS) asks again like `none`.
+ *
+ * The engine gate: Gemini-written books carry `engine: 'gemini'`. Books
+ * written before that stamp existed carry no engine mark at all; they
+ * may ask when the caller knows they already live in the reader's
+ * account library (`inAccountLibrary` — synced, not merely local),
+ * which is what separates them from seeded/demo stock. Any explicit
+ * non-Gemini stamp ('local', 'manual') still refuses.
  */
-export function shouldAutoRequestCover(story, now = Date.now()) {
+export function shouldAutoRequestCover(story, now = Date.now(), { inAccountLibrary = false } = {}) {
   if (!story || story.readOnly) return false
-  if (story.engine !== 'gemini') return false
+  const engine = story.engine
+  const unstamped = engine === undefined || engine === null || engine === ''
+  if (engine !== 'gemini' && !(unstamped && inAccountLibrary)) return false
   if (!Array.isArray(story.chapters) || story.chapters.length < 1) return false
   const status = coverStateOf(story).status
   if (status === 'none') return true
+  if (status === 'failed') return coverFailureRetryable(story, now)
+  return status === 'pending' && !coverRequestInFlight(story, now)
+}
+
+/**
+ * Whether the post-sync reconciliation should ask the server about this
+ * book's cover (COVER-RETRY-FIX): books whose local state says the
+ * painting is missing or failed — plus orphaned pending stamps — may
+ * already be painted server-side (a request that settled after its
+ * response was lost). Ready and live-pending books are never asked.
+ */
+export function coverNeedsMetaReconcile(story, now = Date.now()) {
+  if (!story || story.readOnly) return false
+  const status = coverStateOf(story).status
+  if (status === 'none' || status === 'failed') return true
   return status === 'pending' && !coverRequestInFlight(story, now)
 }
 
@@ -184,6 +231,20 @@ export async function fetchCoverMeta({ story, getAccessToken, fetchImpl = global
     status: result?.status === 'ready' ? 'ready' : 'none',
     version: Number.isInteger(result?.version) ? result.version : 0,
   }
+}
+
+/**
+ * One reconciliation probe (COVER-RETRY-FIX): resolves with the cover
+ * patch to adopt when the server already holds this book's painting, or
+ * null when it does not — or when the probe itself fails. Reconciliation
+ * is a background courtesy and is silent by design.
+ */
+export async function fetchCoverReconcilePatch({ story, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  try {
+    const meta = await fetchCoverMeta({ story, getAccessToken, fetchImpl })
+    if (meta?.status === 'ready') return { status: 'ready', version: meta.version }
+  } catch { /* the shelf never waits on a cover probe */ }
+  return null
 }
 
 const objectUrlCache = new Map()
