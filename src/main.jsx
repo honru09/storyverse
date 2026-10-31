@@ -2940,7 +2940,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
         <h1 className="sr-only">新故事</h1>
         <Stepper step={step} setStep={(value) => { if (!busy) setStep(value); }} />
       </div>
-      <div className="forge-layout">
+      <div className={`forge-layout${step === 5 ? " is-confirm" : ""}`}>
         <main className="forge-main">
           {step === 1 && (
             <>
@@ -3144,7 +3144,6 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                   <label className="field-label">
                     世界的名字（选填）
                     <input
-                      maxLength={CUSTOM_WORLD_NAME_MAX}
                       autoComplete="off"
                       value={draft.customWorldName || ""}
                       onChange={(event) => set({ customWorldName: clipToUnits(event.target.value, 12) })}
@@ -3153,7 +3152,12 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                   </label>
                   <div className="god-setting-meta">
                     <span className="field-hint">留空也行：故事会先以「未命名世界」开始，回到这一步随时能改名。</span>
-                    <span className="da-count">{(draft.customWorldName || "").length} / {CUSTOM_WORLD_NAME_MAX}</span>
+                    {/* BUGHUNT-20261031: the real bound is the 12-unit
+                        card budget (clipToUnits above), not the
+                        engine's 40-character world name — the counter
+                        used to read "x / 40" while typing already
+                        stopped at 12 units. Count units, like the clip. */}
+                    <span className="da-count">{textUnitsFor(draft.customWorldName || "")} / 12</span>
                   </div>
                   <label className="field-label">
                     背景设定
@@ -3267,7 +3271,6 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                         <label className="field-label">
                           世界的名字
                           <input
-                            maxLength={CUSTOM_WORLD_NAME_MAX}
                             autoComplete="off"
                             value={worldDraftName}
                             onChange={(event) => setWorldDraft({ name: clipToUnits(event.target.value, 12) })}
@@ -3285,6 +3288,10 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                         </label>
                         <div className="god-setting-meta">
                           <span className="field-hint">不改也行，现在这样就能开书。改过的名字和设定会成为这本书的世界依据。</span>
+                          {/* BUGHUNT-20261031: same 12-unit name budget as
+                              the god-mode field — show it, so the silent
+                              clip is no longer a mystery. */}
+                          <span className="da-count">名字 {textUnitsFor(worldDraftName || "")} / 12</span>
                           <span className="da-count">{worldDraftSetting.length} / {PRESET_WORLD_SETTING_MAX}</span>
                         </div>
                         {worldSkeletonHint && (
@@ -6208,9 +6215,12 @@ function Reader({
                 type="button"
                 className="reader-chrome-chapter-nav"
                 onClick={handleNext}
-                disabled={isFinal || (readOnly && !nextAvailable)}
+                disabled={isFinal || (readOnly && !nextAvailable) || (!readOnly && preparing && !nextAvailable)}
               >
-                下一章
+                {/* BUGHUNT-20261031: same preparing state as the
+                    chapter-end button — the chrome button used to
+                    stay live and swallow repeat taps in silence. */}
+                {preparing && !nextAvailable ? "下一章准备中…" : "下一章"}
               </button>
             </div>
             <div className="reader-chrome-grid" role="group" aria-label="阅读工具栏">
@@ -7253,14 +7263,13 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
             className="plaza-post-edit-input"
             value={draft}
             rows={4}
-            maxLength={600}
             aria-label="编辑帖子正文"
             onChange={(event) => setDraft(event.target.value)}
           />
           <div className="plaza-post-edit-actions">
-            <small>{[...draft].length}/500</small>
+            <small className={`plaza-composer-count ${[...draft].length > 500 ? "is-over" : [...draft].length >= 480 ? "is-near" : ""}`}>{[...draft].length}/500</small>
             <Button variant="ghost" disabled={busy} onClick={() => setEditing(false)}>取消</Button>
-            <Button variant="secondary" disabled={busy || !draft.trim()} onClick={() => void saveEdit()}>保存</Button>
+            <Button variant="secondary" disabled={busy || !draft.trim() || [...draft].length > 500} onClick={() => void saveEdit()}>保存</Button>
           </div>
         </div>
       )}
@@ -7662,6 +7671,8 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
   const [seededFor, setSeededFor] = useState("");
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [removeNote, setRemoveNote] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const token = () => authClient.getAccessToken();
 
@@ -7717,11 +7728,17 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
   const remove = async () => {
     setBusy(true);
     setFormError("");
+    setRemoveNote("");
     try {
       await deleteBookRating({ id: bookId, getAccessToken: token });
       setSeededFor("");
       setDraftStars(0);
       setDraftText("");
+      setConfirmingRemove(false);
+      // BUGHUNT-20261031: deleting a rating used to be one click,
+      // no confirm and no word afterwards — the button now asks
+      // first (like deleting a post), and success says so.
+      setRemoveNote("你的评价已删除。");
       await load();
     } catch (failure) {
       if (failure?.code === "auth-required") onOpenAccount();
@@ -7809,10 +7826,20 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
               <div className="book-ratings-form-foot">
                 <span className={`plaza-composer-count ${draftLength > 270 ? "is-near" : ""}`}>{draftLength} / 300</span>
                 <span className="book-ratings-actions">
-                  {mine && (
-                    <button type="button" className="plaza-thread-delete" disabled={busy} onClick={() => void remove()}>
+                  {mine && !confirmingRemove && (
+                    <button type="button" className="plaza-thread-delete" disabled={busy} onClick={() => setConfirmingRemove(true)}>
                       删除我的评价
                     </button>
+                  )}
+                  {mine && confirmingRemove && (
+                    <>
+                      <button type="button" className="plaza-thread-delete" disabled={busy} onClick={() => void remove()}>
+                        确认删除
+                      </button>
+                      <button type="button" className="plaza-thread-delete" disabled={busy} onClick={() => setConfirmingRemove(false)}>
+                        再想想
+                      </button>
+                    </>
                   )}
                   <Button variant="secondary" disabled={busy || !draftStars} onClick={() => void submit()}>
                     {mine ? "保存修改" : "发表评价"}
@@ -7820,6 +7847,7 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
                 </span>
               </div>
               {formError && <p className="plaza-thread-error" role="alert">{formError}</p>}
+              {removeNote && <p className="plaza-note" role="status">{removeNote}</p>}
             </div>
           )}
 
@@ -8491,6 +8519,33 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
     setStagedPictureUpload(null);
   };
 
+  // BUGHUNT-20261031: dialog housekeeping, mirroring AccountSceneDialog —
+  // Esc closes (the crop step first when one is open), a tap on the
+  // overlay outside the sheet closes, the page behind stops scrolling,
+  // and focus returns to the trigger. The document listener stops
+  // propagation so Esc here does not also close the profile window
+  // underneath; closing discards the draft exactly like the ✕ does.
+  useEffect(() => {
+    const trigger = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      if (cropRef.current) closeCrop();
+      else if (bannerCropRef.current) closeBannerCrop();
+      else onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    };
+    // Mount-once housekeeping; onClose is the sheet's stable close.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const closeCrop = () => {
     const current = cropRef.current;
     if (current) {
@@ -8619,7 +8674,7 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
   };
 
   return (
-    <div className="profile-edit-overlay" role="dialog" aria-modal="true" aria-label="编辑资料">
+    <div className="profile-edit-overlay" role="dialog" aria-modal="true" aria-label="编辑资料" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="profile-edit-sheet da-sheet-frame">
         <span className="ryan-sheet-handle" aria-hidden="true" />
         <div className="profile-edit-heading">
@@ -9220,6 +9275,8 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
   const [fusionLoaded, setFusionLoaded] = useState(false);
   const [fusionSaving, setFusionSaving] = useState(false);
   const [fusionError, setFusionError] = useState("");
+  const [fusionLoadFailed, setFusionLoadFailed] = useState(false);
+  const [fusionRetry, setFusionRetry] = useState(0);
   useEffect(() => {
     if (!ownUid) return undefined;
     let live = true;
@@ -9227,11 +9284,17 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
       .then((profile) => {
         if (!live) return;
         setFusionPermission(normalizeFusionPermission(profile?.editable?.fusionPermission));
+        setFusionLoadFailed(false);
         setFusionLoaded(true);
       })
-      .catch(() => { if (live) setFusionLoaded(true); });
+      // BUGHUNT-20261031: a failed read used to mark the control
+      // loaded anyway, presenting the "free" initial value as the
+      // reader's real setting. Now the control stays disabled and
+      // says the read failed, with a retry — nothing unverified shows
+      // as a setting.
+      .catch(() => { if (live) setFusionLoadFailed(true); });
     return () => { live = false; };
-  }, [ownUid, authClient]);
+  }, [ownUid, authClient, fusionRetry]);
   const changeFusionPermission = async (next) => {
     if (!fusionLoaded || fusionSaving || next === fusionPermission) return;
     const previous = fusionPermission;
@@ -9250,13 +9313,19 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
     } finally { setFusionSaving(false); }
   };
   const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState("");
   const signOut = async () => {
     if (signingOut) return;
     setSigningOut(true);
+    setSignOutError("");
     try {
       await authClient.signOut();
       onNavigate("plaza");
     } catch {
+      // BUGHUNT-20261031: a failed sign-out used to fall back to the
+      // idle button with no word at all, leaving the reader unsure
+      // whether they are still signed in — say so, and stay signed in.
+      setSignOutError("退出没能完成，你还处在登录状态，请稍后再试。");
       setSigningOut(false);
     }
   };
@@ -9317,6 +9386,7 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
             <strong>{signingOut ? "正在退出…" : "退出登录"}</strong>
           </span>
         </button>
+        {signOutError && <p className="fusion-permission-error" role="alert">{signOutError}</p>}
       </div>
 
       <h3 className="settings-group-title">社交</h3>
@@ -9334,15 +9404,16 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
               <button
                 key={option.id}
                 type="button"
-                aria-pressed={fusionPermission === option.id}
-                className={fusionPermission === option.id ? "is-active" : ""}
-                disabled={!fusionLoaded || fusionSaving}
+                aria-pressed={fusionPermission === option.id && !fusionLoadFailed}
+                className={fusionPermission === option.id && !fusionLoadFailed ? "is-active" : ""}
+                disabled={!fusionLoaded || fusionSaving || fusionLoadFailed}
                 onClick={() => void changeFusionPermission(option.id)}
               >
                 {option.label}
               </button>
             ))}
           </div>
+          {fusionLoadFailed && <p className="fusion-permission-error" role="alert">合流权限没能读取，这里显示的还不是你的实际设置。<button type="button" className="small-link" onClick={() => { setFusionLoadFailed(false); setFusionRetry((value) => value + 1); }}>再试一次</button></p>}
           {fusionError && <p className="fusion-permission-error" role="alert">{fusionError}</p>}
         </div>
       </div>
@@ -9422,6 +9493,25 @@ function profileShareText({ profile, isSelf, shownName, shownHandle, url }) {
 function ShareProfileSheet({ text, isSelf, onClose, onCopied, onCopyFailed }) {
   const [value, setValue] = useState(text);
   const [busy, setBusy] = useState(false);
+  // BUGHUNT-20261031: same dialog housekeeping as the edit sheet —
+  // Esc closes, overlay taps close, body scroll locks, focus returns.
+  useEffect(() => {
+    const trigger = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const canSystemShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
   const copy = async () => {
     if (busy) return;
@@ -9447,7 +9537,7 @@ function ShareProfileSheet({ text, isSelf, onClose, onCopied, onCopyFailed }) {
     }
   };
   return (
-    <div className="profile-edit-overlay" role="dialog" aria-modal="true" aria-label="分享主页">
+    <div className="profile-edit-overlay" role="dialog" aria-modal="true" aria-label="分享主页" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="profile-edit-sheet">
         <span className="ryan-sheet-handle" aria-hidden="true" />
         <div className="profile-edit-heading">
