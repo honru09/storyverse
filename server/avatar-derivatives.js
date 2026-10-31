@@ -549,15 +549,36 @@ function derivativeRecord(uid, sourceSlot, kind, built, stamp) {
  * the read path below. Returns the build, or null when the bytes
  * cannot be decoded.
  */
+// 00055 review fix (Gemini ISSUE 2-1): concurrent first reads of an
+// unheated painting used to each run a full bake. Builds are
+// single-flighted per (uid, slot, source stamp), and a build whose
+// source moved or vanished while it worked still answers its caller
+// but never writes back over the newer state (no stale overwrite,
+// no resurrected derivative slots for a deleted painting).
+const inflightDerivativeBuilds = new Map()
+
 export async function storeAvatarDerivatives(store, uid, sourceSlot, sourceRecord) {
   if (!store || !sourceRecord?.image) return null
-  const built = buildAvatarDerivatives(Buffer.from(sourceRecord.image, 'base64'))
-  if (!built) return null
   const stamp = derivativeSourceStamp(sourceRecord)
-  for (const each of DERIVATIVE_KINDS) {
-    await store.putImage(uid, derivativeSlotFor(sourceSlot, each), derivativeRecord(uid, sourceSlot, each, built, stamp))
+  const key = `${uid}|${sourceSlot}|${stamp}`
+  const pending = inflightDerivativeBuilds.get(key)
+  if (pending) return pending
+  const task = (async () => {
+    const built = buildAvatarDerivatives(Buffer.from(sourceRecord.image, 'base64'))
+    if (!built) return null
+    const fresh = await store.getImage(uid, sourceSlot).catch(() => null)
+    if (!fresh?.image || derivativeSourceStamp(fresh) !== stamp) return built
+    for (const each of DERIVATIVE_KINDS) {
+      await store.putImage(uid, derivativeSlotFor(sourceSlot, each), derivativeRecord(uid, sourceSlot, each, built, stamp))
+    }
+    return built
+  })()
+  inflightDerivativeBuilds.set(key, task)
+  try {
+    return await task
+  } finally {
+    inflightDerivativeBuilds.delete(key)
   }
-  return built
 }
 
 /**
@@ -587,6 +608,12 @@ export async function ensureAvatarDerivative(store, uid, sourceSlot, sourceRecor
  * The face derivative of an uploaded profile picture, over the
  * social store's picture-face record. Same contract as above.
  */
+// 00055 review fix (Gemini ISSUE 2-1, upload half): single-flight
+// the bake per (uid, upload stamp). Callers pass the picture record
+// they just read or wrote, and reads stay stamp-gated against the
+// current record, so no pre-write re-read is needed here.
+const inflightPictureFaceBuilds = new Map()
+
 export async function ensurePictureFaceDerivative(store, uid, pictureRecord) {
   if (!store || !pictureRecord?.image) return null
   const stamp = `upload|${pictureRecord.updatedAt ?? ''}|${pictureRecord.image.length}`
@@ -595,20 +622,31 @@ export async function ensurePictureFaceDerivative(store, uid, pictureRecord) {
     if (existing?.image && existing.sourceStamp === stamp) {
       return { buffer: Buffer.from(existing.image, 'base64'), contentType: existing.contentType || 'image/jpeg' }
     }
-    const built = buildFaceDerivative(Buffer.from(pictureRecord.image, 'base64'))
-    if (!built) return null
-    await store.putPictureFace(uid, {
-      uid,
-      kind: 'face',
-      sourceStamp: stamp,
-      contentType: built.contentType,
-      image: built.buffer.toString('base64'),
-      bytes: built.buffer.length,
-      width: built.width,
-      height: built.height,
-      updatedAt: new Date().toISOString(),
-    })
-    return { buffer: built.buffer, contentType: built.contentType }
+    const key = `${uid}|${stamp}`
+    const pending = inflightPictureFaceBuilds.get(key)
+    if (pending) return pending
+    const task = (async () => {
+      const built = buildFaceDerivative(Buffer.from(pictureRecord.image, 'base64'))
+      if (!built) return null
+      await store.putPictureFace(uid, {
+        uid,
+        kind: 'face',
+        sourceStamp: stamp,
+        contentType: built.contentType,
+        image: built.buffer.toString('base64'),
+        bytes: built.buffer.length,
+        width: built.width,
+        height: built.height,
+        updatedAt: new Date().toISOString(),
+      })
+      return { buffer: built.buffer, contentType: built.contentType }
+    })()
+    inflightPictureFaceBuilds.set(key, task)
+    try {
+      return await task
+    } finally {
+      inflightPictureFaceBuilds.delete(key)
+    }
   } catch {
     return null
   }
