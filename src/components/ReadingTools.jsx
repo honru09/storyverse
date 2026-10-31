@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
 import { estimateReadingMetrics, findInChapters } from '../reading-location.js';
 import { storyNarrativeDossier } from '../story-engine.js';
+import PixelfxCanvas from '../fx/PixelfxCanvas.jsx';
+import { pickFx, PIXELFX_SCENE } from '../fx/placements.js';
+import { useMotionSettings } from '../motion/MotionProvider.jsx';
 
 export default function ReadingTools({
   chapters,
@@ -17,6 +20,21 @@ export default function ReadingTools({
 }) {
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState('search');
+  // PIXELFX-WAVE4 (§60): collecting the book earns one soft beat
+  // inside the collect button — only on the way IN (uncollecting is
+  // silent, like un-liking), and only under the house motion gate
+  // (this component gates itself with the same predicate StoryCover
+  // uses, since the reader's sheet mounts it directly).
+  const fxSettings = useMotionSettings();
+  const fxMotionOn =
+    Boolean(fxSettings?.enabled) && !fxSettings?.reducedMotion && !fxSettings?.saveData;
+  const [collectFx, setCollectFx] = useState(null);
+  const handleToggleStoryBookmark = () => {
+    if (!storyBookmarked && fxMotionOn) {
+      setCollectFx({ key: Date.now(), pick: pickFx(PIXELFX_SCENE.SHELF_COLLECT, null) });
+    }
+    onToggleStoryBookmark?.();
+  };
   const results = useMemo(() => findInChapters(chapters, query, lastAccessible), [chapters, query, lastAccessible]);
   const currentChapter = chapters?.[currentChapterIndex];
   const metrics = useMemo(() => estimateReadingMetrics(currentChapter?.paragraphs || []), [currentChapter]);
@@ -50,8 +68,17 @@ export default function ReadingTools({
     </>}
     {tab === 'bookmarks' && <>
       {onToggleStoryBookmark && (
-        <button type="button" className="reading-bookmark-add" onClick={onToggleStoryBookmark} aria-pressed={storyBookmarked}>
+        <button type="button" className="reading-bookmark-add" onClick={handleToggleStoryBookmark} aria-pressed={storyBookmarked}>
           {storyBookmarked ? '取消收藏本书' : '收藏本书'}
+          {collectFx && (
+            <PixelfxCanvas
+              key={collectFx.key}
+              className="reading-bookmark-fx"
+              pick={collectFx.pick}
+              loop={false}
+              onDone={() => setCollectFx(null)}
+            />
+          )}
         </button>
       )}
       <button type="button" className="reading-bookmark-add" onClick={onBookmark}>标记／取消当前位置</button>

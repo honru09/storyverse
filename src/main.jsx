@@ -15,7 +15,7 @@ import "./design-assets.css";
 import AuroraBackground from "./components/AuroraBackground.jsx";
 import StoryMap, { StoryMapMini, generationState } from "./components/StoryMap.jsx";
 import GenerationOverlay from "./components/GenerationOverlay.jsx";
-import ParticleField, { burstFromElement, burstParticles } from "./components/ParticleField.jsx";
+import ParticleField, { burstParticles } from "./components/ParticleField.jsx";
 import { installRipple } from "./motion/ripple.js";
 import AnimatedContent from "./components/react-bits/AnimatedContent.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
@@ -159,6 +159,7 @@ import InterventionOverlay from "./components/InterventionOverlay.jsx";
 import PixelfxCanvas from "./fx/PixelfxCanvas.jsx";
 import { pickFx, pickForgeAmbientFx, setPixelfxTheme, PIXELFX_SCENE } from "./fx/placements.js";
 import { prefetchPixelfx } from "./fx/prefetch.js";
+import { finishStampEligible, stampFinishCelebration, peekFinishCelebration, claimFinishCelebration } from "./fx/finish-celebration.js";
 import WorldArtwork from "./components/WorldArtwork.jsx";
 import StoryCover from "./components/StoryCover.jsx";
 import AccountPanel, { ShellThemeSegments } from "./components/AccountPanel.jsx";
@@ -927,16 +928,52 @@ function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, dr
     };
   }, [activeStory?.id]);
 
+  // PIXELFX-WAVE4 (§60): the hero is the first surface presenting the
+  // just-finished ACTIVE story once the reader closes — the shelf
+  // switcher below deliberately excludes the active story, so without
+  // a claim here the most common finish path (read the last chapter,
+  // come home) would never play its beat on this page. Same ledger,
+  // same guards as the shelf claimants: motion gate, visible host
+  // only, one delayed retry for the parent-effect stamp ordering.
+  const fxSettings = useMotionSettings();
+  const fxMotionOn = pixelfxMotionOn(fxSettings);
+  const [heroFinaleFx, setHeroFinaleFx] = useState(null);
+  const heroSectionRef = useRef(null);
+  const heroStoryId = activeStory?.id || null;
+  const heroComplete = Boolean(activeStory) && storyComplete(activeStory);
+  useEffect(() => {
+    if (!heroStoryId || !heroComplete || !fxMotionOn || heroFinaleFx) return undefined;
+    const attempt = () => {
+      if (!fxHostVisible(heroSectionRef.current)) return;
+      if (claimFinishCelebration(heroStoryId)) {
+        setHeroFinaleFx({ key: heroStoryId, pick: pickFx(PIXELFX_SCENE.SEASON_FINALE, storyFamilyOf(activeStory)) });
+      }
+    };
+    attempt();
+    const retry = window.setTimeout(attempt, 600);
+    return () => window.clearTimeout(retry);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heroStoryId, heroComplete, fxMotionOn]);
+
   return (
     <div className="page page-home page-enter">
       <div className="home-heading">
         <p className="home-welcome">{activeStory ? "故事还在，等你回来。" : "你的世界，从这一页开始。"}</p>
         {!account.user && <button className="home-account-link" onClick={onOpenAccount}>登录 / 注册<Icon name="chevron" size={14}/></button>}
       </div>
-      <section className={`home-hero ${activeStory ? "has-story" : "first-story"}`}>
+      <section className={`home-hero ${activeStory ? "has-story" : "first-story"}`} ref={heroSectionRef}>
         <div className="hero-scene" ref={heroSceneRef}>
           <StoryCover story={activeStory} genreId={genre.id} sources={coverSources(activeStory)} eager sizes="(min-width: 1200px) 1050px, 100vw" getAccessToken={() => authClient.getAccessToken()} authSignal={account.status} />
         </div>
+        {heroFinaleFx && (
+          <PixelfxCanvas
+            key={heroFinaleFx.key}
+            className="home-hero-fx"
+            pick={heroFinaleFx.pick}
+            loop={false}
+            onDone={() => setHeroFinaleFx(null)}
+          />
+        )}
         <div className="hero-copy">
           <h1>
             {activeStory ? (
@@ -1133,6 +1170,22 @@ function DeleteBookDialog({ story, busy = false, error = "", onCancel, onConfirm
   );
 }
 
+// PIXELFX-WAVE4 review guard: a season-finale claim may only be spent
+// by a surface the reader can actually see. Keep-alive slots keep
+// visited views mounted under [hidden] (their cached pages still hear
+// motion-context changes), and the profile window floats over the home
+// slot — a claim spent in either place burns the one beat nobody saw,
+// so claimants check their host element first and leave the stamp
+// pending for a visible surface.
+function fxHostVisible(element) {
+  if (!element) return false;
+  if (element.closest("[hidden]")) return false;
+  if (element.getClientRects().length === 0) return false;
+  const shell = element.closest(".app-shell");
+  if (shell?.classList.contains("has-profile-window") && !element.closest(".profile-window")) return false;
+  return true;
+}
+
 function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onDeleteStory, authClient, authSignal = '' }) {
   const otherStories = stories.filter((story) => story.id !== activeStoryId);
   const capacity = useShelfCapacity();
@@ -1141,6 +1194,50 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
   const [shelfSort, setShelfSort] = useState("recent");
   const pullTimer = useRef(null);
   useEffect(() => () => { if (pullTimer.current) window.clearTimeout(pullTimer.current); }, []);
+  // PIXELFX-WAVE4 (§60): the wood shelf is a claiming surface for the
+  // season-finale ledger — the first pending finished book presented
+  // here plays its grand beat over its own cell (one at a time; the
+  // next pending book is claimed when the current beat leaves). The
+  // claim needs the motion gate, like every pixelfx mount.
+  const fxSettings = useMotionSettings();
+  const fxMotionOn = pixelfxMotionOn(fxSettings);
+  const [finaleFxId, setFinaleFxId] = useState(null);
+  const shelfRootRef = useRef(null);
+  useEffect(() => {
+    if (finaleFxId || !fxMotionOn) return undefined;
+    const attempt = () => {
+      if (!fxHostVisible(shelfRootRef.current)) return;
+      // Only a book the reader can see right now may be claimed — a
+      // search-filtered-out book has no cell to play over, and
+      // claiming it would spend the beat invisibly.
+      const q = shelfQuery.trim();
+      const target = otherStories.find((story) => {
+        if (!storyComplete(story) || !peekFinishCelebration(story.id)) return false;
+        if (!q) return true;
+        const genre = genreOf(story);
+        return story.title.includes(q)
+          || genre.label.includes(q)
+          || (genre.world || "").includes(q)
+          || (story.config?.customWorldName || "").includes(q);
+      });
+      if (target && claimFinishCelebration(target.id)) setFinaleFxId(target.id);
+    };
+    attempt();
+    // App's finish watcher stamps from the parent effect of the same
+    // commit — child effects run first, so a flip witnessed in this
+    // commit is only stamped after this attempt; one delayed retry
+    // covers that gap.
+    const retry = window.setTimeout(attempt, 600);
+    return () => window.clearTimeout(retry);
+  }, [otherStories, shelfQuery, fxMotionOn, finaleFxId]);
+  // Wedge release: if the claimed cell unmounts before the canvas can
+  // report onDone (the book is opened, deleted, or filtered away
+  // mid-beat), the slot must not stay latched for the mount's life.
+  useEffect(() => {
+    if (!finaleFxId) return undefined;
+    const release = window.setTimeout(() => setFinaleFxId(null), 6000);
+    return () => window.clearTimeout(release);
+  }, [finaleFxId]);
   if (otherStories.length === 0) return null;
 
   // F-24: a crowded shelf gets search + sort. Recent = last touched
@@ -1190,7 +1287,7 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
   };
 
   return (
-    <section className="sw-shelf sw-shelf-wood" aria-label="书架上的其他故事" style={{ "--shelf-cap": capacity }}>
+    <section className="sw-shelf sw-shelf-wood" aria-label="书架上的其他故事" style={{ "--shelf-cap": capacity }} ref={shelfRootRef}>
       {otherStories.length >= 4 && (
         <div className="shelf-controls">
           <label className="shelf-search">
@@ -1228,6 +1325,13 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
       )}
       {visibleStories.length === 0 && (
         <div className="shelf-empty-note" role="status">
+          {fxMotionOn && (
+            <PixelfxCanvas
+              className="shelf-empty-fx"
+              pick={pickFx(PIXELFX_SCENE.SEARCH_EMPTY, null)}
+              loop
+            />
+          )}
           <img className="empty-inline-art" src="/art/empty-search-512.webp" alt="" loading="lazy" />
           书架上没有找到「{query}」。
         </div>
@@ -1264,6 +1368,14 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
                         </span>
                       </span>
                     </button>
+                    {finaleFxId === story.id && (
+                      <PixelfxCanvas
+                        className="wood-book-fx"
+                        pick={pickFx(PIXELFX_SCENE.SEASON_FINALE, storyFamilyOf(story))}
+                        loop={false}
+                        onDone={() => setFinaleFxId(null)}
+                      />
+                    )}
                     {/* BH-14: fuse/delete live in an in-flow action row under
                         the cover (always rendered so cover bottoms align);
                         absolute pills used to overlap the face meta line. */}
@@ -6806,6 +6918,10 @@ const STORE_SORTS = [
  * one tap away in the heading.
  */
 function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
+  // PIXELFX-WAVE4 (§60): a search that found nothing gets the quiet
+  // search-empty ambience (below); the gate is the house predicate.
+  const fxSettings = useMotionSettings();
+  const fxMotionOn = pixelfxMotionOn(fxSettings);
   const [kind, setKind] = useState("normal");
   const [shelf, setShelf] = useState("");
   const [sort, setSort] = useState("latest");
@@ -6952,6 +7068,13 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
       )}
       {data !== null && !error && books.length === 0 && (
         <div className="store-empty" role="status">
+          {searching && fxMotionOn && (
+            <PixelfxCanvas
+              className="store-empty-fx"
+              pick={pickFx(PIXELFX_SCENE.SEARCH_EMPTY, null)}
+              loop
+            />
+          )}
           <img className="empty-art" src={searching ? "/art/empty-search-512.webp" : "/art/empty-store-512.webp"} alt="" loading="lazy" />
           <h3>{searching ? `没有搜到「${debouncedQuery}」` : "这个分类还没有上架的书"}</h3>
           <p>{searching ? "换个书名、作者名或世界名试试。" : "走完一条故事线，就能把它上架到书城。"}</p>
@@ -7962,6 +8085,17 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [removeNote, setRemoveNote] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
+  // PIXELFX-WAVE4 (§60): a landed rating earns one golden star-dust
+  // beat over the star picker; edits count too (the save landed), a
+  // failed save never fires.
+  const fxSettings = useMotionSettings();
+  const fxMotionOn = pixelfxMotionOn(fxSettings);
+  const [ratingFx, setRatingFx] = useState(null);
+  // The detail page is reused across books without a remount: a beat
+  // queued for one book must never land on another's picker.
+  const bookIdRef = useRef(bookId);
+  bookIdRef.current = bookId;
+  useEffect(() => { setRatingFx(null); }, [bookId]);
   const token = () => authClient.getAccessToken();
 
   const load = useCallback(async () => {
@@ -8006,7 +8140,13 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
     setFormError("");
     try {
       await rateBook({ id: bookId, stars: draftStars, text: draftText, getAccessToken: token });
-      await load();
+      const payload = await load();
+      // load() swallows its own failure into the error line and
+      // resolves null — celebrating over that error would be a false
+      // beat, and a book switch mid-flight must not inherit it.
+      if (payload && bookIdRef.current === bookId && fxMotionOn) {
+        setRatingFx({ key: Date.now(), pick: pickFx(PIXELFX_SCENE.RATING_SUCCESS, null) });
+      }
     } catch (failure) {
       if (failure?.code === "auth-required") onOpenAccount();
       else setFormError(failure?.message || "评价没能保存，请稍后再试。");
@@ -8088,6 +8228,15 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
           ) : (
             <div className="book-ratings-form">
               <div className="book-ratings-picker" role="group" aria-label="给这本书打分">
+                {ratingFx && (
+                  <PixelfxCanvas
+                    key={ratingFx.key}
+                    className="book-ratings-fx"
+                    pick={ratingFx.pick}
+                    loop={false}
+                    onDone={() => setRatingFx(null)}
+                  />
+                )}
                 {[1, 2, 3, 4, 5].map((value) => (
                   <button
                     key={value}
@@ -9493,8 +9642,39 @@ function FriendsPanel({ authClient, onOpenProfile }) {
 // home); other people's books are their public lines.
 function ProfileShelfStoryBook({ story, authClient, account, onOpen }) {
   const genre = genreOf(story);
+  // PIXELFX-WAVE4 (§60): the season-finale claim. If App's watcher
+  // stamped this book's finish and no shelf surface has claimed it
+  // yet, presenting the finished book here plays the grand beat once
+  // (fx/finish-celebration.js owns the once-ever ledger). The claim
+  // only happens under the motion gate — with motion off the stamp
+  // stays pending for a later, animated visit.
+  const fxSettings = useMotionSettings();
+  const fxMotionOn = pixelfxMotionOn(fxSettings);
+  const [finaleFx, setFinaleFx] = useState(null);
+  const bookRef = useRef(null);
+  const storyId = story.id;
+  const complete = storyComplete(story);
+  useEffect(() => {
+    if (!complete || !fxMotionOn || finaleFx) return undefined;
+    const attempt = () => {
+      // Never spend the claim from a surface the reader cannot see
+      // (a hidden keep-alive slot, a page under the profile window).
+      if (!fxHostVisible(bookRef.current)) return;
+      if (claimFinishCelebration(storyId)) {
+        setFinaleFx({ key: storyId, pick: pickFx(PIXELFX_SCENE.SEASON_FINALE, storyFamilyOf(story)) });
+      }
+    };
+    attempt();
+    // App's watcher stamps in the parent effect of the same commit,
+    // after this child effect — a flip witnessed this commit needs
+    // one delayed second look.
+    const retry = window.setTimeout(attempt, 600);
+    return () => window.clearTimeout(retry);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complete, fxMotionOn, storyId]);
   return (
     <button
+      ref={bookRef}
       type="button"
       className="profile-shelf-book"
       onClick={() => onOpen(story.id)}
@@ -9505,6 +9685,15 @@ function ProfileShelfStoryBook({ story, authClient, account, onOpen }) {
       </span>
       <span className="profile-shelf-name">{story.title || "未命名故事"}</span>
       <span className="profile-shelf-meta">{shelfMetaFor(story)}</span>
+      {finaleFx && (
+        <PixelfxCanvas
+          key={finaleFx.key}
+          className="profile-shelf-fx"
+          pick={finaleFx.pick}
+          loop={false}
+          onDone={() => setFinaleFx(null)}
+        />
+      )}
     </button>
   );
 }
@@ -9899,6 +10088,12 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  // PIXELFX-WAVE4 (§60): the follow button's rose spark state.
+  const [followFx, setFollowFx] = useState(null);
+  // The page is reused across uids without a remount, so an in-flight
+  // follow must check it still belongs to the profile on screen.
+  const uidRef = useRef(uid);
+  uidRef.current = uid;
   const [menuOpen, setMenuOpen] = useState(false);
   const [reported, setReported] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -9948,6 +10143,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
     setProfile(cached);
     setError("");
     setNote("");
+    setFollowFx(null);
     setMenuOpen(false);
     setReported(false);
     setEditOpen(false);
@@ -10088,9 +10284,10 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   const ownBooks = isSelf && Array.isArray(ownStories) ? ownStories : null;
   const worksCount = ownBooks ? ownBooks.length : (profile.counts?.works ?? publications.length);
 
-  const toggleFollow = async (fromElement = null) => {
+  const toggleFollow = async () => {
     if (busy) return;
     if (!account.user) { onOpenAccount(); return; }
+    const targetUid = uid;
     setBusy(true);
     setNote("");
     try {
@@ -10098,8 +10295,13 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
         ? await unfollowUser({ uid, getAccessToken: getToken })
         : await followUser({ uid, getAccessToken: getToken });
       // A follow landing is one of the three burst moments (§37 G3):
-      // a ≤1s sparkle from the button, only on follow, never on unfollow.
-      if (result.following) burstFromElement(fromElement);
+      // a ≤1s sparkle from the button, only on follow, never on
+      // unfollow. PIXELFX-WAVE4: the beat is the pixelfx rose spark
+      // now (placements' follow-success), replacing the §37 DOM burst
+      // at this one button — one moment, one effect.
+      if (result.following && fxMotionOn && uidRef.current === targetUid) {
+        setFollowFx({ key: Date.now(), pick: pickFx(PIXELFX_SCENE.FOLLOW_SUCCESS, null) });
+      }
       const next = {
         ...profile,
         counts: { ...profile.counts, followers: result.followers },
@@ -10335,9 +10537,18 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
               className={`btn-pill-white profile-follow-btn ${following ? "is-following" : ""}`}
               disabled={busy}
               aria-pressed={following}
-              onClick={(event) => void toggleFollow(event.currentTarget)}
+              onClick={() => void toggleFollow()}
             >
               {following ? "已关注" : "关注"}
+              {followFx && (
+                <PixelfxCanvas
+                  key={followFx.key}
+                  className="profile-follow-fx"
+                  pick={followFx.pick}
+                  loop={false}
+                  onDone={() => setFollowFx(null)}
+                />
+              )}
             </button>
             <button type="button" className="profile-share-btn" onClick={() => setShareOpen(true)} aria-label="分享主页">
               <Icon name="share" size={18} />
@@ -12323,6 +12534,31 @@ function App() {
   }, []);
   const { library, warning, unsaved } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const setLibrary = store.update;
+  // PIXELFX-WAVE4 (§60): the season-finale stamp. Watch the library
+  // for a line flipping to complete — the last chapter landing, an
+  // endless line's manual finish — and stamp its finale celebration
+  // into the fx ledger (fx/finish-celebration.js). A book first
+  // observed already-complete is only seeded, never stamped: its
+  // finish predates this witness, and the celebration belongs to the
+  // flip, not to the state. Whichever shelf surface presents the
+  // finished book first claims the stamp and plays the beat once.
+  const finishSeenRef = useRef(null);
+  useEffect(() => {
+    const stories = library?.stories || [];
+    if (!finishSeenRef.current) finishSeenRef.current = new Map();
+    const seen = finishSeenRef.current;
+    for (const story of stories) {
+      if (!story?.id) continue;
+      const done = storyComplete(story);
+      const prev = seen.get(story.id);
+      if (prev === undefined) {
+        seen.set(story.id, done);
+        continue;
+      }
+      if (!prev && done && finishStampEligible(story)) stampFinishCelebration(story.id);
+      if (prev !== done) seen.set(story.id, done);
+    }
+  }, [library?.stories]);
   const [route, setRoute] = useState(() => parseRoute(window.location.hash));
   // Profile forms (PROFILE-FIX, DESIGN §33; user order 2026-10-28):
   // MY profile is a first-class PAGE — a bottom-nav tab like the other

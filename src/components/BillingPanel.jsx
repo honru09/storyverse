@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchBillingState, invalidateBillingGate, redeemBillingCode, startBillingCheckout } from "../billing.js";
+import PixelfxCanvas from "../fx/PixelfxCanvas.jsx";
+import { pickFx, PIXELFX_SCENE } from "../fx/placements.js";
+import { useMotionSettings } from "../motion/MotionProvider.jsx";
 
 /**
  * 会员与额度 (BILLING): the one entitlement surface. Progressive
@@ -18,6 +21,15 @@ export default function BillingPanel({ getToken }) {
   const [redeemNote, setRedeemNote] = useState(null);
   const [buyingId, setBuyingId] = useState("");
   const [buyError, setBuyError] = useState("");
+  // PIXELFX-WAVE4 (§60): a landed redemption earns one coin beat
+  // over the redeem section — an independent mount here (the panel
+  // reports through its inline note, not the App toast channel, so
+  // celebrateToast never sees it). Same self-gating predicate the
+  // other standalone panels use.
+  const fxSettings = useMotionSettings();
+  const fxMotionOn =
+    Boolean(fxSettings?.enabled) && !fxSettings?.reducedMotion && !fxSettings?.saveData;
+  const [redeemFx, setRedeemFx] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -40,6 +52,9 @@ export default function BillingPanel({ getToken }) {
       setCode("");
       invalidateBillingGate();
       setRedeemNote({ ok: true, text: `兑换成功：${result?.product?.name || "权益"}已到账。` });
+      if (fxMotionOn) {
+        setRedeemFx({ key: Date.now(), pick: pickFx(PIXELFX_SCENE.REDEEM_SUCCESS, null) });
+      }
       await load();
     } catch (error) {
       setRedeemNote({ ok: false, text: error?.message || "兑换没能完成，请稍后再试。" });
@@ -109,6 +124,15 @@ export default function BillingPanel({ getToken }) {
       </section>
 
       <section className="billing-redeem" aria-label="兑换码">
+        {redeemFx && (
+          <PixelfxCanvas
+            key={redeemFx.key}
+            className="billing-redeem-fx"
+            pick={redeemFx.pick}
+            loop={false}
+            onDone={() => setRedeemFx(null)}
+          />
+        )}
         <label className="billing-redeem-label" htmlFor="billing-code-input">有兑换码？</label>
         <div className="billing-redeem-row">
           <input
