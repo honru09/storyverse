@@ -1,6 +1,17 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import WorldArtwork from "./WorldArtwork.jsx";
 import { coverStateOf, fallbackCoverVariantFor, fetchCoverObjectUrl } from "../cover.js";
+import { shelfForTemplate } from "../story-engine.js";
+import { pickFx, PIXELFX_SCENE } from "../fx/placements.js";
+import { useMotionSettings } from "../motion/MotionProvider.jsx";
+import PixelfxCanvas from "../fx/PixelfxCanvas.jsx";
+
+// PIXELFX-WAVE3 (§60): one reveal per cover version per session,
+// claimed by whichever StoryCover instance first shows the painting
+// landing — the same book can be on the shelf, in a detail page and
+// in the reader at once, and the beat belongs to the surface the
+// reader is actually looking at, exactly once.
+const revealedCoverKeys = new Set();
 
 /**
  * A story's own painting when one exists, the shared world artwork
@@ -17,12 +28,13 @@ export default function StoryCover({ story, genreId = "mist", sources, eager = f
   useEffect(() => {
     if (status !== "ready" || !storyId) {
       setUrl(null);
+      urlStoryRef.current = null;
       return undefined;
     }
     let cancelled = false;
     fetchCoverObjectUrl({ story, getAccessToken })
-      .then((next) => { if (!cancelled) setUrl(next); })
-      .catch(() => { if (!cancelled) setUrl(null); });
+      .then((next) => { if (!cancelled) { urlStoryRef.current = storyId; setUrl(next); } })
+      .catch(() => { if (!cancelled) { urlStoryRef.current = null; setUrl(null); } });
     return () => { cancelled = true; };
     // story identity is keyed by id+version; the object itself is rebuilt
     // on every library write and must not retrigger the fetch. authSignal
@@ -42,6 +54,46 @@ export default function StoryCover({ story, genreId = "mist", sources, eager = f
   const publicCoverUrl = typeof story?.coverUrl === "string" ? story.coverUrl : "";
   const [publicCoverFailed, setPublicCoverFailed] = useState(false);
   useEffect(() => { setPublicCoverFailed(false); }, [publicCoverUrl]);
+
+  // Cover reveal (PIXELFX-WAVE3): when THIS mount watched the cover
+  // be non-ready and the painting then lands (url resolves), play one
+  // glint over the frame. A cover that was already ready when the
+  // surface mounted stays quiet — library loads are not reveals.
+  const fxSettings = useMotionSettings();
+  const fxMotionOn =
+    Boolean(fxSettings?.enabled) && !fxSettings?.reducedMotion && !fxSettings?.saveData;
+  const witnessedNonReady = useRef(false);
+  const urlStoryRef = useRef(null);
+  const [revealPick, setRevealPick] = useState(null);
+  // Unkeyed mounts are reused across books (the home hero, the plaza
+  // continue card): a new story starts with a clean slate — the
+  // witness flag and any pending reveal belong to the previous book.
+  // Declared before the witness effect below so that, on the commit
+  // where the story changes, the reset runs first and a genuinely
+  // non-ready new book re-arms the witness in the same pass.
+  useEffect(() => {
+    witnessedNonReady.current = false;
+    setRevealPick(null);
+  }, [storyId]);
+  useEffect(() => {
+    if (status !== "ready") witnessedNonReady.current = true;
+  }, [status]);
+  useEffect(() => {
+    if (!url || !storyId || !fxMotionOn || !witnessedNonReady.current) return;
+    // The resolved url must belong to THIS story: on an unkeyed
+    // story switch the previous book's object url is still in state
+    // until the new fetch lands, and revealing over it would claim
+    // the new book's one reveal for a picture that is not its own.
+    if (urlStoryRef.current !== storyId) return;
+    const key = `${storyId}@${version ?? ""}`;
+    if (revealedCoverKeys.has(key)) return;
+    if (revealedCoverKeys.size > 500) revealedCoverKeys.clear();
+    revealedCoverKeys.add(key);
+    const family =
+      shelfForTemplate(story?.genreTemplateId || story?.config?.genreTemplateId || "")?.id || null;
+    setRevealPick(pickFx(PIXELFX_SCENE.COVER_REVEAL, family));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, storyId, version, fxMotionOn]);
   if (publicCoverUrl && !publicCoverFailed) {
     return (
       <span className={`world-art story-cover ${className}`} aria-hidden="true">
@@ -71,6 +123,14 @@ export default function StoryCover({ story, genreId = "mist", sources, eager = f
           fetchPriority={eager ? "high" : "auto"}
           decoding="async"
         />
+        {revealPick && (
+          <PixelfxCanvas
+            className="story-cover-fx"
+            pick={revealPick}
+            loop={false}
+            onDone={() => setRevealPick(null)}
+          />
+        )}
       </span>
     );
   }

@@ -149,3 +149,106 @@ test('live slot cap degrades past the limit and frees on release', () => {
   releaseLiveSlot(extra)
   assert.equal(livePixelfxCount(), 0)
 })
+
+test('wave-3 primaries render pixels and one-shots finish', async () => {
+  const picks = [
+    ['cover-reveal', pickFx(PIXELFX_SCENE.COVER_REVEAL, null)],
+    ['empty-shelf', pickFx(PIXELFX_SCENE.EMPTY_SHELF, null)],
+    ['login-welcome', pickFx(PIXELFX_SCENE.LOGIN_WELCOME, null)],
+  ]
+  for (const [label, pick] of picks) {
+    const mod = await load(pick.fx)
+    const still = renderPixelfxStill(mod, { seed: pick.seed, palette: pick.palette })
+    assert.ok(nonTransparent(still.data) > 200, `${label} → ${pick.fx} still nearly blank (${nonTransparent(still.data)} px)`)
+  }
+  for (const scene of [PIXELFX_SCENE.COVER_REVEAL, PIXELFX_SCENE.LOGIN_WELCOME]) {
+    const pick = pickFx(scene, null)
+    const mod = await load(pick.fx)
+    const player = createPixelfxPlayer(mod, { seed: pick.seed, palette: pick.palette })
+    for (let i = 0; i < 300 && !player.done; i++) player.step(1 / 30)
+    assert.equal(player.done, true, `${scene} → ${pick.fx} must report done within 10s of steps`)
+  }
+})
+
+test('health probe: a real effect passes, blank / slow / throwing modules fail by name', async () => {
+  const { probePixelfxModule } = await import('../src/fx/health.js')
+  const wisp = await load('critters/wisp')
+  const healthy = probePixelfxModule(wisp, { seed: 11 })
+  assert.equal(healthy.ok, true, `wisp should probe healthy: ${JSON.stringify(healthy)}`)
+  assert.ok(healthy.maxPixels > 300)
+
+  // Blank: a well-shaped module whose draw paints nothing at all.
+  const blankMod = { meta: { size: [32, 32], loop: true, duration: 1 }, draw() {} }
+  const blank = probePixelfxModule(blankMod, {})
+  assert.equal(blank.ok, false)
+  assert.equal(blank.reason, 'blank')
+
+  // Error: construction itself explodes.
+  const errorMod = {
+    meta: { size: [32, 32], duration: 1 },
+    create() { throw new Error('boom') },
+  }
+  const errored = probePixelfxModule(errorMod, {})
+  assert.equal(errored.ok, false)
+  assert.equal(errored.reason, 'error')
+
+  // Slow: every draw burns ~35ms of CPU, far over the 24ms budget.
+  const slowMod = {
+    meta: { size: [16, 16], loop: true, duration: 1 },
+    draw(p) {
+      const end = performance.now() + 35
+      while (performance.now() < end) { /* burn */ }
+      p.px(0, 0, 0xffffffff)
+    },
+  }
+  const slow = probePixelfxModule(slowMod, {}, { steps: 9 })
+  assert.equal(slow.ok, false)
+  assert.equal(slow.reason, 'slow')
+})
+
+test('health chain + registry: capped, deduplicated, counted', async () => {
+  const health = await import('../src/fx/health.js')
+  const chain = health.pixelfxChain({
+    fx: 'a/one', seed: 1,
+    alts: [{ fx: 'b/two', seed: 1 }, { fx: 'a/one', seed: 1 }, { fx: 'c/three', seed: 1 }, { fx: 'd/four', seed: 1 }],
+  })
+  assert.deepEqual(chain.map((c) => c.fx), ['a/one', 'b/two', 'c/three'],
+    'chain = primary + at most PIXELFX_MAX_HEALS alternates, deduplicated')
+  assert.equal(health.PIXELFX_MAX_HEALS, 2)
+  assert.deepEqual(health.pixelfxChain(null), [])
+  assert.deepEqual(health.pixelfxChain({}), [])
+
+  assert.deepEqual(health.judgeLiveSamples({ durations: [2, 3, 2], maxPixels: 0 }), { ok: false, reason: 'blank' })
+  assert.equal(health.judgeLiveSamples({ durations: [40, 42, 41], maxPixels: 10 }).reason, 'slow')
+  assert.equal(health.judgeLiveSamples({ durations: [2, 3, 2], maxPixels: 10 }).ok, true)
+
+  health.resetPixelfxHealth()
+  health.recordPixelfxMount('a/one')
+  health.recordPixelfxMount('a/one')
+  health.recordPixelfxHeal('a/one', 'b/two', 'blank')
+  health.recordPixelfxOk('b/two')
+  health.recordPixelfxDeath('c/three', 'slow')
+  const snap = health.pixelfxHealthSnapshot()
+  assert.equal(snap.mounts, 2)
+  assert.equal(snap.heals, 1)
+  assert.equal(snap.deaths, 1)
+  assert.equal(snap.byFx['a/one'].blank, 1)
+  assert.equal(snap.byFx['a/one'].healed, 1)
+  assert.equal(snap.byFx['b/two'].ok, 1)
+  assert.equal(snap.byFx['c/three'].dead, 1)
+  health.resetPixelfxHealth()
+})
+
+test('quality tiers: lite steps slower and caps the raster, full is authored', async () => {
+  const { pixelfxQualityTier, PIXELFX_STEP_HZ, PIXELFX_LITE_STEP_HZ, PIXELFX_LITE_RASTER_CAP } = await import('../src/fx/player-core.js')
+  assert.deepEqual(pixelfxQualityTier(false), { stepHz: PIXELFX_STEP_HZ, rasterCap: null })
+  assert.deepEqual(pixelfxQualityTier(true), { stepHz: PIXELFX_LITE_STEP_HZ, rasterCap: PIXELFX_LITE_RASTER_CAP })
+  assert.ok(PIXELFX_LITE_STEP_HZ < PIXELFX_STEP_HZ)
+})
+
+test('prefetch is a silent no-op outside a browser', async () => {
+  const { prefetchPixelfx, prefetchedPixelfxIds } = await import('../src/fx/prefetch.js')
+  const warmed = await prefetchPixelfx(['critters/wisp', 'arcane/rune-circle'])
+  assert.deepEqual(warmed, [])
+  assert.deepEqual(prefetchedPixelfxIds(), [])
+})

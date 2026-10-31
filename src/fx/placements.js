@@ -8,12 +8,19 @@
 // - Ambient loops are actor-free effects at modest native sizes: the
 //   little stock character some effects act with never wanders into a
 //   reading app's chrome.
-// - Ambient primaries stay off the 320x180 full-frame weather scenes:
-//   pretty, but they paint an opaque rectangle and cost several times
-//   the per-frame time of the compact object effects (measured in
-//   PIXELFX-WAVE1.md). They remain listed as alternates for surfaces
-//   that can afford them. One exception: zhongtian's fireflies, sparse
-//   dots on a small particle count, kept for flavour.
+// - Ambient picks stay off the 320x180 full-frame weather scenes:
+//   pretty, but they paint an opaque rectangle (fireflies even fills
+//   a dark haze via drawBack) and cost several times the per-frame
+//   time of the compact object effects (measured in PIXELFX-WAVE1.md).
+//   Since wave 3 the `alt` lists are the LIVE self-healing chain, so
+//   alternates follow the same discipline as primaries — compact and
+//   transparent, never a full-frame weather scene. One pre-existing
+//   exception: zhongtian's fireflies PRIMARY (wave 1, kept as
+//   authored; it is a primary, never a heal target).
+// - Alternates also respect the scene's loop discipline: a one-shot
+//   scene's alternates must be non-looping (a looping alternate
+//   never reports done and its canvas would never leave), and every
+//   alternate everywhere must be actor-free.
 // - One scene, one effect. Atmosphere supports the surface; it never
 //   competes with text or progress affordances.
 // - The reader's prose surface takes no pixelfx at all. One-shots that
@@ -36,37 +43,89 @@ export const PIXELFX_SCENE = {
   PLAZA_LIKE: "plaza-like",
   PUBLISH_CELEBRATION: "publish-celebration",
   DETAIL_AMBIENT: "detail-ambient",
+  COVER_REVEAL: "cover-reveal",
+  EMPTY_SHELF: "empty-shelf",
+  LOGIN_WELCOME: "login-welcome",
 };
 
 // A gold ramp in the arcane family's 8-step shape: 修仙/玄幻 reads gold,
 // the library's native violet serves 副本 (a summoning circle) as-is.
 const GOLD_RAMP = ["#160d04", "#38200a", "#6e4410", "#b57f1e", "#eda93c", "#ffd873", "#ffefb0", "#ffffff"];
 
+// ——— Theme dimension (PIXELFX-WAVE3) ———
+// The shell theme (src/theme.js: 'black' | 'white' | 'aurora') reaches
+// this table through setPixelfxTheme, wired once by App; pickFx then
+// shades its palettes per theme:
+// - white: glow effects wash out on a light ground, so gold goes deep
+//   amber (DEEP_GOLD_RAMP, no near-white steps) and palette-free glow
+//   effects take the ink ramp (INK_RAMP — smoke/ink tones).
+// - aurora: the deep-navy glass theme takes blue-violet shades
+//   (VIOLET_RAMP for gold entries, AURORA_RAMP for palette-free glow).
+// - black: the authored look, untouched.
+// An entry may pin its own per-theme palette via `themes: { white:
+// { palette }, aurora: { palette } }`; that beats both its base
+// palette and the generic glow rule below.
+const DEEP_GOLD_RAMP = ["#140a02", "#2e1a06", "#54300c", "#7d4d12", "#a06a1c", "#bd8327", "#d29c33", "#e0aa3d"];
+const VIOLET_RAMP = ["#0d0618", "#241040", "#3d1f74", "#5a34a8", "#7d55d6", "#a586ec", "#cdbcf8", "#ffffff"];
+const INK_RAMP = ["#0a0d16", "#182036", "#2a3a5f", "#42598a", "#5d78a8", "#7e99c2", "#a3b9d6", "#c9d8e8"];
+const AURORA_RAMP = ["#050a24", "#0e1a4d", "#1d2f85", "#2f4bc0", "#4f6fe8", "#7d97ff", "#b3c4ff", "#eef2ff"];
+
+// Categories whose light is the picture: on white they need ink, on
+// aurora they need blue-violet — but only when the entry carries no
+// palette of its own (an authored palette is a deliberate choice).
+const GLOW_CATEGORIES = new Set(["arcane", "holy", "lightning", "scifi", "fire", "shadow"]);
+
+export const PIXELFX_THEMES = ["black", "white", "aurora"];
+
+let currentTheme = "black";
+
+/** Set the theme pickFx shades for (App wires the shell theme here). */
+export function setPixelfxTheme(theme) {
+  currentTheme = PIXELFX_THEMES.includes(theme) ? theme : "black";
+  return currentTheme;
+}
+
+export function pixelfxTheme() {
+  return currentTheme;
+}
+
+const GOLD_THEMES = { white: { palette: DEEP_GOLD_RAMP }, aurora: { palette: VIOLET_RAMP } };
+
+function themedPaletteFor(entry, fxId) {
+  const override = entry.themes?.[currentTheme];
+  if (override?.palette) return [...override.palette];
+  if (entry.palette) return [...entry.palette];
+  const category = fxId.split("/")[0];
+  if (currentTheme === "white" && GLOW_CATEGORIES.has(category)) return [...INK_RAMP];
+  if (currentTheme === "aurora" && GLOW_CATEGORIES.has(category)) return [...AURORA_RAMP];
+  return undefined;
+}
+
 // Generation wait: a quiet loop ringing the waiting card's orb, keyed
 // to the family of the book being written. `alt` lists runner-up
 // candidates for later waves; pickFx always takes the primary.
 const WAITING_BY_FAMILY = {
-  xuanzhen: { fx: "arcane/rune-circle", palette: GOLD_RAMP, seed: 7, alt: ["arcane/arcane-orb", "arcane/portal"] },
-  wuxia: { fx: "water/ripples", seed: 3, alt: ["weather/falling-leaves", "critters/butterfly"] },
+  xuanzhen: { fx: "arcane/rune-circle", palette: GOLD_RAMP, themes: GOLD_THEMES, seed: 7, alt: ["arcane/arcane-orb", "arcane/portal"] },
+  wuxia: { fx: "water/ripples", seed: 3, alt: ["critters/butterfly", "holy/sunburst"] },
   chuanyue: { fx: "arcane/portal", seed: 5, alt: ["arcane/rune-circle", "spawn/spawn-portal"] },
-  yanqing: { fx: "critters/butterfly", seed: 2, alt: ["weather/cherry-blossoms", "holy/sunburst"] },
-  dushi: { fx: "water/rain-splash", seed: 4, alt: ["weather/rain", "lightning/spark-arc"] },
-  yule: { fx: "pickups/power-star", seed: 6, alt: ["weather/shooting-stars", "weather/fireflies"] },
-  lishi: { fx: "fire/campfire", seed: 8, alt: ["fire/brazier", "weather/falling-leaves"] },
+  yanqing: { fx: "critters/butterfly", seed: 2, alt: ["holy/sunburst", "pickups/power-star"] },
+  dushi: { fx: "water/rain-splash", seed: 4, alt: ["lightning/spark-arc", "scifi/hologram"] },
+  yule: { fx: "pickups/power-star", seed: 6, alt: ["holy/sunburst", "critters/butterfly"] },
+  lishi: { fx: "fire/campfire", seed: 8, alt: ["fire/brazier", "critters/butterfly"] },
   kehuan: { fx: "scifi/energy-core", seed: 9, alt: ["lightning/plasma-ball", "scifi/hologram"] },
-  moshi: { fx: "shadow/shadow-flames", seed: 10, alt: ["weather/storm", "fire/campfire"] },
+  moshi: { fx: "shadow/shadow-flames", seed: 10, alt: ["fire/campfire", "shadow/necro-skulls"] },
   xuanyi: { fx: "critters/wisp", seed: 11, alt: ["critters/ghost", "shadow/necro-skulls"] },
   lingyi: { fx: "critters/ghost", seed: 12, alt: ["critters/wisp", "shadow/shadow-flames"] },
   fuben: { fx: "arcane/rune-circle", seed: 13, alt: ["arcane/portal", "scifi/teleporter-pad"] },
   dianjing: { fx: "scifi/hologram", seed: 14, alt: ["lightning/plasma-ball", "scifi/energy-core"] },
-  junshi: { fx: "fire/brazier", seed: 15, alt: ["fire/campfire", "weather/storm"] },
-  tiyu: { fx: "holy/sunburst", seed: 16, alt: ["pickups/power-star", "weather/shooting-stars"] },
-  zhongtian: { fx: "weather/fireflies", seed: 17, alt: ["weather/falling-leaves", "water/fountain"] },
-  duanpian: { fx: "arcane/arcane-orb", seed: 18, alt: ["critters/butterfly", "weather/fireflies"] },
+  junshi: { fx: "fire/brazier", seed: 15, alt: ["fire/campfire", "critters/butterfly"] },
+  tiyu: { fx: "holy/sunburst", seed: 16, alt: ["pickups/power-star", "critters/butterfly"] },
+  zhongtian: { fx: "weather/fireflies", seed: 17, alt: ["water/fountain", "critters/butterfly"] },
+  duanpian: { fx: "arcane/arcane-orb", seed: 18, alt: ["critters/butterfly", "arcane/portal"] },
   fanpai: { fx: "shadow/void-orb", seed: 19, alt: ["shadow/shadow-flames", "shadow/black-hole"] },
 };
 
-const WAITING_DEFAULT = { fx: "water/water-orb", seed: 1, alt: ["weather/fireflies", "arcane/arcane-orb"] };
+const WAITING_DEFAULT = { fx: "water/water-orb", seed: 1, alt: ["arcane/arcane-orb", "critters/butterfly"] };
 
 // The intervention beat: one one-shot burst over the intervention
 // sequence's weave, gone when it finishes. Arcane by default — an
@@ -93,7 +152,7 @@ const INTERVENE_DEFAULT = { fx: "arcane/magic-circle-cast", seed: 20, alt: ["arc
 // the caller decides which via structureFor (see chapterMilestoneKind
 // in main.jsx) and asks pickFx with { grand: true }.
 const CHAPTER_UPGRADE_BY_FAMILY = {
-  xuanzhen: { fx: "arcane/mana-burst", palette: GOLD_RAMP, grandFx: "holy/holy-pillar", seed: 31, alt: ["explosions/firework-burst", "arcane/star-fall"] },
+  xuanzhen: { fx: "arcane/mana-burst", palette: GOLD_RAMP, themes: GOLD_THEMES, grandFx: "holy/holy-pillar", seed: 31, alt: ["explosions/firework-burst", "arcane/star-fall"] },
   wuxia: { fx: "arcane/mana-burst", grandFx: "holy/smite", seed: 32, alt: ["holy/holy-pillar"] },
   kehuan: { fx: "lightning/zap-hit", grandFx: "scifi/emp-blast", seed: 33, alt: ["explosions/firework-burst"] },
   dianjing: { fx: "lightning/zap-hit", grandFx: "scifi/emp-blast", seed: 34, alt: ["explosions/firework-burst"] },
@@ -131,7 +190,7 @@ const AVATAR_REVEAL_DEFAULT = { fx: "spawn/summon-rise", seed: 50, alt: ["arcane
 // gets its family's weather.
 const FORGE_AMBIENT_BY_WORLD = {
   mist: { fx: "water/ripples", seed: 61, alt: ["critters/wisp"] },
-  cultivation: { fx: "arcane/rune-circle", palette: GOLD_RAMP, seed: 62, alt: ["arcane/arcane-orb"] },
+  cultivation: { fx: "arcane/rune-circle", palette: GOLD_RAMP, themes: GOLD_THEMES, seed: 62, alt: ["arcane/arcane-orb"] },
   neon: { fx: "scifi/hologram", seed: 63, alt: ["lightning/spark-arc"] },
   city: { fx: "water/rain-splash", seed: 64, alt: ["weather/rain"] },
   court: { fx: "fire/candle", seed: 65, alt: ["fire/brazier"] },
@@ -148,7 +207,7 @@ const FORGE_OPEN_DEFAULT = { fx: "arcane/star-fall", seed: 70, alt: ["spawn/spaw
 
 // Plaza like: a fingertip-sized burst on the like button itself,
 // throttled by the caller; never on un-like.
-const PLAZA_LIKE_DEFAULT = { fx: "pickups/collect-burst", seed: 80, alt: ["pickups/power-star"] };
+const PLAZA_LIKE_DEFAULT = { fx: "pickups/collect-burst", seed: 80, alt: ["ui/coin-collect"] };
 
 // Publish celebration: the toast that says a book reached the
 // bookstore / a post reached the plaza gets one confetti beat anchored
@@ -166,7 +225,31 @@ const DETAIL_AMBIENT_BY_FAMILY = {
   zhongtian: { fx: "weather/fireflies", seed: 105, alt: ["water/fountain"] },
 };
 
-const DETAIL_AMBIENT_DEFAULT = { fx: "fire/spirit-flame", seed: 100, alt: ["weather/fireflies", "critters/wisp"] };
+const DETAIL_AMBIENT_DEFAULT = { fx: "fire/spirit-flame", seed: 100, alt: ["critters/wisp", "water/fountain"] };
+
+// ——— Wave 3 scenes (PIXELFX-WAVE3): the last three planned scenes ———
+
+// Cover reveal: the moment a finished painting swaps into a cover
+// frame (auto-paint landing, a manual re-roll, a meta adoption) — one
+// short glint burst over the frame. Family-free: the painting itself
+// already carries the family's flavour; the beat only says "new".
+// (transitions/* wipes were considered and rejected again: they are
+// 320x180 landscape wipes and would sit ON the picture, not over its
+// frame.)
+const COVER_REVEAL_DEFAULT = { fx: "pickups/collect-burst", seed: 110, alt: ["holy/feather-burst", "ui/quest-complete"] };
+
+// Empty shelf: the profile shelf's empty state breathes very quietly
+// behind its art and copy — a single butterfly drifting on
+// transparency. (weather/fireflies was the first draft's pick and was
+// rejected on inspection: its drawBack fills the whole 320x180 frame
+// with a dark-green haze, which reads as a hard-edged box inside the
+// light empty-state card, worst on the white theme.)
+const EMPTY_SHELF_DEFAULT = { fx: "critters/butterfly", seed: 120, alt: ["holy/sunburst", "critters/wisp"] };
+
+// Login welcome: sign-in / registration lands and the account sheet
+// closes — one soft feather beat at the top of the app, gone before
+// it can block anything. Family-free (no book is in hand yet).
+const LOGIN_WELCOME_DEFAULT = { fx: "holy/feather-burst", seed: 130, alt: ["ui/quest-complete", "explosions/firework-burst"] };
 
 const TABLES = {
   waiting: { byFamily: WAITING_BY_FAMILY, fallback: WAITING_DEFAULT },
@@ -179,21 +262,38 @@ const TABLES = {
   "plaza-like": { byFamily: {}, fallback: PLAZA_LIKE_DEFAULT },
   "publish-celebration": { byFamily: {}, fallback: PUBLISH_CELEBRATION_DEFAULT },
   "detail-ambient": { byFamily: DETAIL_AMBIENT_BY_FAMILY, fallback: DETAIL_AMBIENT_DEFAULT },
+  "cover-reveal": { byFamily: {}, fallback: COVER_REVEAL_DEFAULT },
+  "empty-shelf": { byFamily: {}, fallback: EMPTY_SHELF_DEFAULT },
+  "login-welcome": { byFamily: {}, fallback: LOGIN_WELCOME_DEFAULT },
 };
 
 /**
  * The effect pick for a scene and genre family (shelf id). Returns a
- * fresh { fx, palette?, seed? } the caller can hand straight to
- * PixelfxCanvas, or null for an unmapped scene. With { grand: true }
- * the entry's finale variant (grandFx) wins when the scene defines
- * one (chapter-upgrade); every other scene ignores the flag.
+ * fresh { fx, palette?, seed, alts } the caller can hand straight to
+ * PixelfxCanvas, or null for an unmapped scene. The palette is shaded
+ * for the current shell theme (see setPixelfxTheme). `alts` is the
+ * self-healing chain (PIXELFX-WAVE3): the entry's runner-up ids as
+ * ready picks with the same seed and NO palette — if the primary
+ * fails its health probe, the player retries the alternates with
+ * their native ramps, so a broken palette can never poison the chain.
+ * With { grand: true } the entry's finale variant (grandFx) wins when
+ * the scene defines one (chapter-upgrade); every other scene ignores
+ * the flag.
  */
 export function pickFx(scene, genreFamily, { grand = false } = {}) {
   const table = TABLES[scene];
   if (!table) return null;
   const entry = table.byFamily[genreFamily] || table.fallback;
-  const pick = { fx: grand && entry.grandFx ? entry.grandFx : entry.fx, seed: entry.seed };
-  if (entry.palette) pick.palette = [...entry.palette];
+  const fx = grand && entry.grandFx ? entry.grandFx : entry.fx;
+  const pick = { fx, seed: entry.seed, alts: [] };
+  const palette = themedPaletteFor(entry, fx);
+  if (palette) pick.palette = palette;
+  const seen = new Set([fx]);
+  for (const altId of entry.alt || []) {
+    if (seen.has(altId)) continue;
+    seen.add(altId);
+    pick.alts.push({ fx: altId, seed: entry.seed });
+  }
   return pick;
 }
 
@@ -224,16 +324,10 @@ export function placementFxIds() {
   return [...ids];
 }
 
-// Scenes still noted for a future wave — deliberately not wired:
-// - "cover-reveal": a finished cover swaps in (transitions/* are
-//   full-frame wipes — handle with care, they are 320x180 by design).
-// - "empty-shelf" / "login-welcome": critters/* and weather/* loops.
-// Wave 2 landed the six enumerated scenes: chapter-upgrade,
-// merge-success (the wave-1 note called it "merge-encounter"),
-// avatar-reveal, forge-ambient (+ forge-open for the book-opening
-// beat), plaza-like + publish-celebration, detail-ambient.
-export const PLANNED_SCENES = [
-  "cover-reveal",
-  "empty-shelf",
-  "login-welcome",
-];
+// Scene backlog: empty since wave 3. Wave 1 landed waiting +
+// intervene; wave 2 landed chapter-upgrade, merge-success (the wave-1
+// note called it "merge-encounter"), avatar-reveal, forge-ambient
+// (+ forge-open), plaza-like + publish-celebration, detail-ambient;
+// wave 3 landed the last three — cover-reveal, empty-shelf,
+// login-welcome. Every scene in PIXELFX_SCENE is wired.
+export const PLANNED_SCENES = [];

@@ -59,9 +59,7 @@ export default function GenerationOverlay({ kind = "story", onCancel, family = n
         {fxPick && (
           <PixelfxCanvas
             className="generation-fx"
-            fx={fxPick.fx}
-            palette={fxPick.palette}
-            seed={fxPick.seed}
+            pick={fxPick}
             loop
           />
         )}
