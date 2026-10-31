@@ -33,6 +33,18 @@
      near-black and disappears on the art. These two values are fixed
      across all three themes, like .story-cover-pending-chip's. */
   --on-art:#f5f7ff; --on-art-dim:rgba(216,226,250,.82);
+  /* REQ-70 face-anchor spec (DESIGN §58): ONE crop recipe for every
+     small avatar/portrait slot on the site, defined here and only
+     here. Portrait-kind pictures (化身立绘 — full-body figures)
+     anchor at the very top of the source and zoom by --face-zoom
+     around that same top anchor, so the visible window is always the
+     source's top slice: the whole head (hair, leaves and all) stays
+     in frame and the face lands at a fixed scale — measured on the
+     production portrait corpus, face height is 20–31% of the frame
+     for every portrait in the wild, head always whole. Uploaded and
+     default pictures are user-framed squares: they take
+     --face-plain-pos and no zoom. */
+  --face-pos:50% 0%; --face-zoom:1.7; --face-origin:50% 0%; --face-plain-pos:50% 12%;
   /* On-art chip (CONTRAST-FIX, 2026-10-29): the solid scrim a lone
      text CTA wears when it rides bright art (the store banner's
      「上架我的故事」 measured 3.89 worst-case bare). #f5f7ff on this
@@ -1036,12 +1048,18 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .avatar-stage{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--surface-card);backdrop-filter:var(--blur-card);-webkit-backdrop-filter:var(--blur-card);box-shadow:var(--shadow-card),var(--shadow-glass-top)}
 .avatar-frame{position:relative;width:100%;aspect-ratio:3/4;overflow:hidden;border-radius:18px;background:linear-gradient(160deg,rgba(56,189,248,.16),rgba(139,92,246,.14) 55%,rgba(6,13,31,.35))}
 .avatar-frame .avatar-portrait-img,.avatar-frame .avatar-portrait-fallback{position:absolute;inset:0;width:100%;height:100%}
-/* Face-anchored crop everywhere (BUGHUNT-FIX, BH-11): the portrait's
-   face lives in the upper band, so every crop of it anchors at
-   50% 12% — the same anchor the plaza author avatars already used —
+/* The editor stage is a whole-figure surface (like the profile
+   showcase): it opts OUT of the §58 face crop and shows the full
+   portrait under the plain anchor. */
+.avatar-frame .avatar-portrait-img{object-position:var(--face-plain-pos);transform:none}
+/* Face-anchored crop everywhere else (BUGHUNT-FIX BH-11, unified by
+   REQ-70 into DESIGN §58): AvatarPortrait is portrait-kind by
+   definition, so its base rule IS the one shared spec — every small
+   slot that renders it (avatar cards, bring-in rows, the home face
+   frame) inherits the same top anchor and the same facial scale
    instead of the centre crop that shrank the whole figure into
    small thumbs with the face unrecognisable. */
-.avatar-portrait-img{object-fit:cover;object-position:50% 12%;display:block}
+.avatar-portrait-img{object-fit:cover;object-position:var(--face-pos);transform:scale(var(--face-zoom));transform-origin:var(--face-origin);display:block}
 .avatar-portrait-fallback{display:grid;place-items:center;background:linear-gradient(150deg,rgba(56,189,248,.22),rgba(139,92,246,.28));color:var(--ink)}
 .avatar-portrait-fallback span{font-size:64px;font-weight:800;opacity:.85}
 .avatar-frame-state{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);padding:6px 14px;border-radius:999px;background:rgba(6,13,31,.72);color:#dbeafe;font-size:12.5px;font-weight:650;white-space:nowrap;backdrop-filter:blur(6px)}
@@ -1321,11 +1339,12 @@ button.plaza-source-row.is-link{cursor:pointer}
 .ryan-glyph-btn:active{transform:scale(.92)}
 .ryan-avatar-wrap{display:flex;justify-content:center;margin-top:24px}
 .ryan-avatar-frame{width:136px;height:136px;flex:none;display:block;border-radius:50%;overflow:hidden;background:var(--medal-bg)}
-.ryan-avatar{width:100%;height:100%;display:block;object-fit:cover;object-position:50% 12%}
-/* Avatar portraits are full-body 3:4 figures: zoom the circle onto the
-   head-and-shoulders so the face carries the circle, like a headshot.
-   Uploads and the default asset are already framed for the circle. */
-.ryan-avatar-frame.is-portrait .ryan-avatar{transform:scale(2.05);transform-origin:50% 14%}
+.ryan-avatar{width:100%;height:100%;display:block;object-fit:cover;object-position:var(--face-plain-pos)}
+/* Avatar portraits are full-body figures: the §58 face spec puts the
+   head-and-shoulders in the circle at the same facial scale as every
+   other slot. Uploads and the default asset are already framed for
+   the circle. */
+.ryan-avatar-frame.is-portrait .ryan-avatar{object-position:var(--face-pos);transform:scale(var(--face-zoom));transform-origin:var(--face-origin)}
 .ryan-name{margin:20px 0 0;padding:0 8px;text-align:center;font-size:37px;font-weight:800;letter-spacing:-.5px;line-height:1.15;color:var(--profile-ink-strong);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;line-clamp:1;overflow:hidden}
 .ryan-name[data-name-tier="mid"]{font-size:28px}
 .ryan-name[data-name-tier="long"]{font-size:22px;letter-spacing:0}
@@ -1460,8 +1479,8 @@ button.plaza-source-row.is-link{cursor:pointer}
 .profile-edit-close{width:32px;height:32px;border:0;border-radius:50%;background:var(--glass-2);color:var(--sheet-ink);display:grid;place-items:center;cursor:pointer}
 .profile-edit-picture{display:flex;align-items:center;gap:14px;margin-top:18px}
 .profile-edit-preview-frame{width:56px;height:56px;flex:none;display:block;border-radius:50%;overflow:hidden;background:var(--glass-2)}
-.profile-edit-preview{width:100%;height:100%;display:block;object-fit:cover;object-position:50% 12%}
-.profile-edit-preview-frame.is-portrait .profile-edit-preview{transform:scale(2.05);transform-origin:50% 14%}
+.profile-edit-preview{width:100%;height:100%;display:block;object-fit:cover;object-position:var(--face-plain-pos)}
+.profile-edit-preview-frame.is-portrait .profile-edit-preview{object-position:var(--face-pos);transform:scale(var(--face-zoom));transform-origin:var(--face-origin)}
 .profile-edit-picture-copy strong{display:block;font-size:15px}
 .profile-edit-picture-copy small{display:block;margin-top:3px;font-size:12.5px;color:var(--sheet-dim)}
 .profile-edit-picture-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
@@ -1643,15 +1662,17 @@ button.plaza-source-row.is-link{cursor:pointer}
    Face-anchor slots, the profile window, plaza reorder surfaces, shelf
    controls, the avatar stand, the skeleton, help, and desktop bands. */
 
-/* Face anchor: any small round slot that shows a full-body portrait
-   crops to the head (top anchor + face zoom inside a clipping frame);
-   uploaded pictures take the top anchor without the zoom. The full
-   figure is only ever shown in the profile's avatar stand. */
+/* Face anchor (§27, unified by REQ-70 into DESIGN §58): every small
+   slot that shows a portrait crops by the ONE spec in :root —
+   portrait-kind pictures take the top anchor + face zoom, uploaded
+   pictures the plain anchor without the zoom. The full figure is
+   only ever shown whole in the profile's showcase and the avatar
+   editor's stage. */
 .mobile-bottom-nav button>span{font-size:11px;font-weight:650;line-height:1.15;white-space:nowrap}
 .nav-face-frame.is-person{width:40px;height:40px}
 .nav-face-frame{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;overflow:hidden;background:var(--medal-bg);color:var(--dim);flex:none}
-.nav-face-img{width:100%;height:100%;display:block;object-fit:cover;object-position:50% 12%}
-.nav-face-frame.is-portrait .nav-face-img{transform:scale(2.05);transform-origin:50% 14%}
+.nav-face-img{width:100%;height:100%;display:block;object-fit:cover;object-position:var(--face-plain-pos)}
+.nav-face-frame.is-portrait .nav-face-img{object-position:var(--face-pos);transform:scale(var(--face-zoom));transform-origin:var(--face-origin)}
 .side-profile-entry{margin-top:auto}
 
 /* Plaza avatar thumbs: the frame clips, the portrait zooms to the face. */
@@ -1664,14 +1685,13 @@ button.plaza-source-row.is-link{cursor:pointer}
    now hugs the frame exactly, at the frame's own 20px radius. */
 .plaza-avatar-profile-link{display:block;flex-shrink:0;padding:0;border:0;background:none;border-radius:20px;line-height:0}
 /* DEVICE-FIX REQ-22: the face anchor belongs to PORTRAIT pictures
-   only — uploads and the default asset sit centred, unscaled, and the
-   frame carries no backing tint, so the image fills the frame. */
-.plaza-avatar-frame .plaza-avatar-img{width:100%;height:100%;display:block;object-fit:cover;object-position:50% 50%;background:transparent}
-.plaza-avatar-frame.is-portrait .plaza-avatar-img{object-position:50% 12%;transform:scale(2.05);transform-origin:50% 14%}
-/* The 32px author frame zooms harder than the large slots (§33 D):
-   at 2.05x a full-body portrait still reads as a whole tiny figure;
-   3.4x at the face anchor puts the head in the circle. */
-.plaza-avatar-frame:not(.is-large).is-portrait .plaza-avatar-img{transform:scale(3.4);transform-origin:50% 11%}
+   only — uploads and the default asset sit unscaled under the plain
+   anchor, and the frame carries no backing tint, so the image fills
+   the frame. REQ-70: the portrait recipe is the ONE §58 spec at
+   every frame size — the old harder 3.4x zoom for the 32px frame is
+   retired (it cropped the chin off wide-headed portraits). */
+.plaza-avatar-frame .plaza-avatar-img{width:100%;height:100%;display:block;object-fit:cover;object-position:var(--face-plain-pos);background:transparent}
+.plaza-avatar-frame.is-portrait .plaza-avatar-img{object-position:var(--face-pos);transform:scale(var(--face-zoom));transform-origin:var(--face-origin)}
 
 /* Profile window: a sheet over the current page. The base page recedes
    (scale + dim) while the window is up; closing returns to the exact
@@ -1766,9 +1786,9 @@ button.plaza-source-row.is-link{cursor:pointer}
    proper small PORTRAIT-thumb the user asked for (rounded rect,
    face-anchored, never distorted) instead of a squashed circle. */
 .home-draft-row .home-avatar-face-frame{width:40px;height:52px;flex:none;display:block;border-radius:10px;overflow:hidden;background:var(--medal-bg)}
-.home-draft-row .home-avatar-face-frame .avatar-portrait-img{transform:scale(1.7);transform-origin:50% 10%}
+.home-draft-row .home-avatar-face-frame .avatar-portrait-img{width:100%;height:100%}
 .home-avatar-face-frame{width:40px;height:40px;flex:none;display:block;border-radius:50%;overflow:hidden;background:var(--medal-bg)}
-.home-avatar-face-frame .avatar-portrait-img{width:100%;height:100%;display:block;object-fit:cover;object-position:50% 12%;transform:scale(2.05);transform-origin:50% 14%}
+.home-avatar-face-frame .avatar-portrait-img{width:100%;height:100%;display:block;object-fit:cover}
 .home-avatar-face-frame .avatar-portrait-fallback{width:100%;height:100%;display:grid;place-items:center;font-size:15px;font-weight:700;color:var(--dim)}
 .home-footer{display:flex;flex-wrap:wrap;gap:8px 20px;justify-content:center;margin-top:44px}
 .home-footer-legal{display:inline-flex;gap:8px 16px;align-items:center}
@@ -1836,8 +1856,8 @@ html[data-shell-theme='black'] .profile-hero-bg:not(.is-clear){opacity:.85}
 .page-profile.is-page-form .profile-hero .ryan-menu{top:60px;right:20px}
 .profile-hero-id{position:relative;z-index:3;margin-top:auto;padding:18px 2px 20px}
 .profile-hero-face{display:block;width:74px;height:74px;border-radius:50%;overflow:hidden;box-shadow:0 0 0 2px color-mix(in srgb,var(--profile-ink) 55%,transparent),0 10px 24px rgba(0,0,0,.35);background:var(--profile-chip)}
-.profile-hero-face img{width:100%;height:100%;object-fit:cover;display:block}
-.profile-hero-face.is-portrait img{object-position:50% 0;transform:scale(1.9);transform-origin:50% 3%}
+.profile-hero-face img{width:100%;height:100%;object-fit:cover;object-position:var(--face-plain-pos);display:block}
+.profile-hero-face.is-portrait img{object-position:var(--face-pos);transform:scale(var(--face-zoom));transform-origin:var(--face-origin)}
 .profile-hero-name-row{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:14px}
 .profile-hero-name{margin:0;font-size:26px;font-weight:700;letter-spacing:-.01em;color:var(--profile-ink-strong);line-height:1.15;overflow-wrap:anywhere}
 .profile-hero-name[data-name-tier='mid']{font-size:22px}
@@ -1909,13 +1929,16 @@ button.profile-stat{cursor:pointer}
      every scroll position, with zero scroll intervention. */
 .profile-showcase{flex:none;width:min(100%,420px);border-radius:24px;overflow:hidden;background:var(--profile-panel);margin:0 auto;text-align:left}
 .profile-showcase-figure{position:relative;aspect-ratio:4/3;overflow:hidden}
-/* The figure is contain-fit over a blurred cover copy of the same
-   painting (.profile-showcase-backdrop): any portrait proportion
-   letterboxes onto its own blurred ambience instead of losing its
-   head or feet to a cover crop. The 8% anchor survives on the
-   backdrop only. */
-.profile-showcase-backdrop{position:absolute;inset:0;background-size:cover;background-position:50% 8%;filter:blur(26px) brightness(.55) saturate(1.1);transform:scale(1.08);z-index:0}
-:root[data-shell-theme='white'] .profile-showcase-backdrop{filter:blur(26px) brightness(1.04) saturate(1.05)}
+/* The figure is contain-fit over its own ground (REQ-70): the fill
+   is painted from the portrait's own edge tones (ShowcaseFill +
+   art-edges.js) and the halo is the SAME image at the SAME contain
+   geometry as the figure — blurred, breathing 10% past the figure's
+   edges — so the painting reads as one picture at one proportion,
+   and a pale matte melts into its own ground with no seam. The old
+   cover-fit blurred backdrop (a second, larger scale of the same
+   painting behind the first) is retired. */
+.profile-showcase-fill{position:absolute;inset:0;background:var(--profile-panel);z-index:0}
+.profile-showcase-halo{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:50% 50%;filter:blur(26px) brightness(.97) saturate(1.05);transform:scale(1.1);z-index:0;pointer-events:none}
 .profile-showcase-img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}
 .profile-showcase-motes{z-index:2}
 .profile-showcase-noface{position:absolute;inset:0;display:grid;place-items:center;font-size:96px;font-weight:700;line-height:1;color:color-mix(in srgb,var(--profile-ink) 15%,transparent);z-index:1}
@@ -1930,11 +1953,11 @@ button.profile-stat{cursor:pointer}
 .profile-avatar-row::-webkit-scrollbar{display:none}
 .profile-avatar-tile,.profile-avatar-new{flex:0 0 auto;width:64px;border:0;background:none;padding:0;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;font:inherit}
 .profile-avatar-tile-img{width:64px;height:64px;border-radius:16px;overflow:hidden;background:var(--profile-chip);display:grid;place-items:center;border:2px solid transparent;box-sizing:border-box}
-/* BH-13: tiles crop on the established face anchor (50% 12%, BH-11) with
-   the plaza large-frame face zoom (scale 2.05 @ 50% 14%) — a plain cover
+/* BH-13 / REQ-70: tiles crop by the ONE §58 face spec — a plain cover
    crop squeezed a full-body portrait into a tiny figure adrift in its
-   own pale background. */
-.profile-avatar-tile-img img{width:100%;height:100%;object-fit:cover;object-position:50% 12%;display:block;transform:scale(2.05);transform-origin:50% 14%}
+   own pale background, and the switcher row was where the owner saw
+   two avatars at two different facial scales side by side. */
+.profile-avatar-tile-img img{width:100%;height:100%;object-fit:cover;object-position:var(--face-pos);display:block;transform:scale(var(--face-zoom));transform-origin:var(--face-origin)}
 .profile-avatar-tile.is-selected .profile-avatar-tile-img{border-color:var(--violet)}
 .profile-avatar-tile.is-main .profile-avatar-tile-img{box-shadow:0 0 0 2px #f6a21e}
 /* BH-13: one clean ring when the main avatar is also the selected one. */

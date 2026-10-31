@@ -43,6 +43,7 @@ import {
 import { downloadText } from "./downloads.js";
 import { drawPersonalityTraits, personalityTraitText } from "./personality-traits.js";
 import { drawInspirationFragments } from "./inspiration-fragments.js";
+import { samplePortraitEdges } from "./art-edges.js";
 import {
   AVATAR_LIMIT,
   AVATAR_PRESETS,
@@ -9486,6 +9487,31 @@ const responsiveDefaultBannerUrl = (url) => (url === "/art/banner-profile-1600.w
   ? "/art/banner-profile-800.webp"
   : url);
 
+// REQ-70: the showcase figure's ground. It is painted from the
+// portrait's own edge tones (samplePortraitEdges) as a soft top→
+// bottom falloff, so the painting stands on its own colours and a
+// pale-matted portrait's matte simply continues to the figure's
+// edges — there is no seam to see. Until the tones land (or if they
+// never do) the span keeps the plain panel ground from CSS.
+function ShowcaseFill({ url }) {
+  const [edges, setEdges] = useState(null);
+  useEffect(() => {
+    let live = true;
+    setEdges(null);
+    if (url) {
+      samplePortraitEdges(url).then((found) => { if (live) setEdges(found); }, () => {});
+    }
+    return () => { live = false; };
+  }, [url]);
+  return (
+    <span
+      className="profile-showcase-fill"
+      aria-hidden="true"
+      style={edges ? { background: `linear-gradient(180deg, ${edges.top} 0%, ${edges.average} 52%, ${edges.bottom} 100%)` } : undefined}
+    />
+  );
+}
+
 function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onOpenDetail, onOpenProfile, onClose = null, ownStories = null, onOpenStory = null, shellTheme, onShellThemeChange, onOpenLibrary, onOpenHelp }) {
   // Two forms, one component (PROFILE-FIX §33): the WINDOW form (a
   // sheet over the current page, onClose set) for someone else's
@@ -10132,14 +10158,23 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
                 <div className="profile-showcase-figure">
                   {stageAvatar.hasPortrait && stageAvatar.portraitUrl && stageFailedFor !== stageAvatar.id ? (
                     <>
-                      {/* The painting itself, blurred and cover-fit,
-                          fills the figure box behind the figure — the
-                          foreground copy is contain-fit, so the whole
-                          figure (head to shoes) is always in frame. */}
-                      <span
-                        className="profile-showcase-backdrop"
-                        style={{ backgroundImage: `url("${stageAvatar.portraitUrl}")` }}
+                      {/* REQ-70: one painting, one proportion. The
+                          ground is the portrait's own edge tones
+                          (ShowcaseFill) and the halo behind the figure
+                          is the SAME image at the SAME contain
+                          geometry — only blurred, breathing ~10% past
+                          the figure's edges — so no second scale of
+                          the painting ever appears and a pale matte
+                          melts into its own ground instead of ending
+                          at a hard seam. The foreground copy stays
+                          contain-fit: head to shoes always in frame. */}
+                      <ShowcaseFill url={stageAvatar.portraitUrl} />
+                      <img
+                        className="profile-showcase-halo"
+                        src={stageAvatar.portraitUrl}
+                        alt=""
                         aria-hidden="true"
+                        draggable={false}
                       />
                       <img
                         className="profile-showcase-img"

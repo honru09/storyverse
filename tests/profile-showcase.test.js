@@ -47,11 +47,9 @@ test('REQ-64: the shell route effect arms nothing for the profile view', () => {
   assert.doesNotMatch(main, /page-profile\.is-page-form/)
 })
 
-test('REQ-64: figure box rule — 4:3 box, contain figure, blurred cover backdrop', () => {
+test('REQ-64: figure box rule — 4:3 box, contain figure (backdrop recipe superseded by REQ-70, see showcase-visual.test.js)', () => {
   assert.match(ruleBody('.profile-showcase-figure{'), /aspect-ratio:4\/3/)
   assert.match(ruleBody('.profile-showcase-img{'), /object-fit:contain/)
-  assert.match(ruleBody('.profile-showcase-backdrop{'), /background-size:cover/)
-  assert.match(ruleBody('.profile-showcase-backdrop{'), /background-position:50% 8%/)
   // The card keeps the 420px width cap and flex pinning; no
   // max-height may flatten the figure box. (The card rule is the
   // flex:none one — a separate .profile-showcase rule carries the
