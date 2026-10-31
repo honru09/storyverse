@@ -1,0 +1,26 @@
+{
+  "owner": {
+    "uid": "username:sv70self",
+    "token": "PMSXDO_bodqKK5Smh7nlm8QTEdQkX3MjcjMPeiDF6Xg",
+    "session": {
+      "uid": "username:sv70self",
+      "email": null,
+      "provider": "username",
+      "expiresAt": 1796007754445,
+      "token": "PMSXDO_bodqKK5Smh7nlm8QTEdQkX3MjcjMPeiDF6Xg"
+    }
+  },
+  "author": {
+    "uid": "username:sv70author",
+    "token": "fMG74COmPlin95YXtJ9E5jcDceM_MQZ7ywcjO4VcvIY",
+    "session": {
+      "uid": "username:sv70author",
+      "email": null,
+      "provider": "username",
+      "expiresAt": 1796007755438,
+      "token": "fMG74COmPlin95YXtJ9E5jcDceM_MQZ7ywcjO4VcvIY"
+    }
+  },
+  "bookId": "pub-97ec3609-8e5",
+  "postId": "post-5b2c914c-b37"
+}
