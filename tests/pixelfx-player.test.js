@@ -13,7 +13,7 @@ import {
   livePixelfxCount,
   MAX_LIVE_PIXELFX,
 } from '../src/fx/player-core.js'
-import { pickFx } from '../src/fx/placements.js'
+import { pickFx, pickForgeAmbientFx, PIXELFX_SCENE } from '../src/fx/placements.js'
 
 const load = (id) => import(`../src/fx/pixelfx/fx/${id}.js`)
 
@@ -79,6 +79,56 @@ test('every waiting primary renders pixels (the phone never waits on a blank)', 
       nonTransparent(still.data) > 300,
       `${family ?? 'default'} → ${pick.fx} still nearly blank (${nonTransparent(still.data)} px)`,
     )
+  }
+})
+
+test('wave-2 primaries render pixels (celebrations and ambience are never blank)', async () => {
+  const picks = [
+    ['chapter-upgrade small', pickFx(PIXELFX_SCENE.CHAPTER_UPGRADE, null)],
+    ['chapter-upgrade grand', pickFx(PIXELFX_SCENE.CHAPTER_UPGRADE, null, { grand: true })],
+    ['chapter-upgrade xuanzhen grand', pickFx(PIXELFX_SCENE.CHAPTER_UPGRADE, 'xuanzhen', { grand: true })],
+    ['chapter-upgrade kehuan small', pickFx(PIXELFX_SCENE.CHAPTER_UPGRADE, 'kehuan')],
+    ['chapter-upgrade xuanyi small', pickFx(PIXELFX_SCENE.CHAPTER_UPGRADE, 'xuanyi')],
+    ['merge-success', pickFx(PIXELFX_SCENE.MERGE_SUCCESS, null)],
+    ['avatar-reveal', pickFx(PIXELFX_SCENE.AVATAR_REVEAL, null)],
+    ['forge-open', pickFx(PIXELFX_SCENE.FORGE_OPEN, null)],
+    ['plaza-like', pickFx(PIXELFX_SCENE.PLAZA_LIKE, null)],
+    ['publish-celebration', pickFx(PIXELFX_SCENE.PUBLISH_CELEBRATION, null)],
+    ['detail-ambient default', pickFx(PIXELFX_SCENE.DETAIL_AMBIENT, null)],
+    ['detail-ambient xuanyi', pickFx(PIXELFX_SCENE.DETAIL_AMBIENT, 'xuanyi')],
+    ['detail-ambient moshi', pickFx(PIXELFX_SCENE.DETAIL_AMBIENT, 'moshi')],
+    ['forge world mist', pickForgeAmbientFx('mist', null)],
+    ['forge world cultivation', pickForgeAmbientFx('cultivation', null)],
+    ['forge world neon', pickForgeAmbientFx('neon', null)],
+    ['forge world city', pickForgeAmbientFx('city', null)],
+    ['forge world court', pickForgeAmbientFx('court', null)],
+    ['forge world frontier', pickForgeAmbientFx('frontier', null)],
+  ]
+  for (const [label, pick] of picks) {
+    const mod = await load(pick.fx)
+    const still = renderPixelfxStill(mod, { seed: pick.seed, palette: pick.palette })
+    assert.ok(
+      nonTransparent(still.data) > 200,
+      `${label} → ${pick.fx} still nearly blank (${nonTransparent(still.data)} px)`,
+    )
+  }
+})
+
+test('wave-2 one-shot primaries actually finish (their canvases can leave)', async () => {
+  const picks = [
+    pickFx(PIXELFX_SCENE.CHAPTER_UPGRADE, null),
+    pickFx(PIXELFX_SCENE.CHAPTER_UPGRADE, null, { grand: true }),
+    pickFx(PIXELFX_SCENE.MERGE_SUCCESS, null),
+    pickFx(PIXELFX_SCENE.AVATAR_REVEAL, null),
+    pickFx(PIXELFX_SCENE.FORGE_OPEN, null),
+    pickFx(PIXELFX_SCENE.PLAZA_LIKE, null),
+    pickFx(PIXELFX_SCENE.PUBLISH_CELEBRATION, null),
+  ]
+  for (const pick of picks) {
+    const mod = await load(pick.fx)
+    const player = createPixelfxPlayer(mod, { seed: pick.seed, palette: pick.palette })
+    for (let i = 0; i < 300 && !player.done; i++) player.step(1 / 30)
+    assert.equal(player.done, true, `${pick.fx} must report done within 10s of steps`)
   }
 })
 

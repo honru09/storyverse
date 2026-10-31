@@ -14,7 +14,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { pickFx, placementFxIds, PIXELFX_SCENE } from '../src/fx/placements.js'
+import { pickFx, pickForgeAmbientFx, placementFxIds, PIXELFX_SCENE, FORGE_AMBIENT_WORLDS } from '../src/fx/placements.js'
 
 const FX_ROOT = fileURLToPath(new URL('../src/fx/pixelfx/fx/', import.meta.url))
 const VENDOR_DIR = fileURLToPath(new URL('../src/fx/pixelfx/', import.meta.url))
@@ -105,6 +105,123 @@ test('pickFx: fallbacks, scene guard, palette variants, fresh copies', () => {
   const again = pickFx('waiting', 'xuanzhen')
   assert.equal(again.fx, 'arcane/rune-circle')
   assert.notEqual(again.palette[0], '#000000')
+})
+
+test('wave-2 placements: every scene hands out effects that exist', async () => {
+  const onDisk = new Set(effectFilesOnDisk())
+  const families = [
+    'xuanzhen', 'wuxia', 'chuanyue', 'yanqing', 'dushi', 'yule', 'lishi',
+    'kehuan', 'moshi', 'xuanyi', 'lingyi', 'fuben', 'dianjing', 'junshi',
+    'tiyu', 'zhongtian', 'duanpian', 'fanpai', null, 'custom',
+  ]
+  const scenes = [
+    PIXELFX_SCENE.CHAPTER_UPGRADE, PIXELFX_SCENE.MERGE_SUCCESS,
+    PIXELFX_SCENE.AVATAR_REVEAL, PIXELFX_SCENE.FORGE_OPEN,
+    PIXELFX_SCENE.PLAZA_LIKE, PIXELFX_SCENE.PUBLISH_CELEBRATION,
+    PIXELFX_SCENE.DETAIL_AMBIENT,
+  ]
+  for (const scene of scenes) {
+    for (const family of families) {
+      for (const grand of [false, true]) {
+        const pick = pickFx(scene, family, { grand })
+        assert.ok(pick && onDisk.has(pick.fx), `${scene}/${family}/grand=${grand} pick must exist`)
+        assert.equal(typeof pick.seed, 'number')
+      }
+    }
+  }
+  // The forge ambient chain: each preset world speaks for itself, a
+  // custom world borrows its family's waiting pick.
+  assert.deepEqual(FORGE_AMBIENT_WORLDS, ['mist', 'cultivation', 'neon', 'city', 'court', 'frontier'])
+  for (const world of FORGE_AMBIENT_WORLDS) {
+    const pick = pickForgeAmbientFx(world, 'xuanzhen')
+    assert.ok(onDisk.has(pick.fx), `forge world ${world} pick must exist`)
+    assert.equal(pick.fx, pickFx(PIXELFX_SCENE.FORGE_AMBIENT, world).fx)
+  }
+  assert.equal(pickForgeAmbientFx('custom-world', 'xuanyi').fx, 'critters/wisp')
+  assert.equal(pickForgeAmbientFx('', null).fx, 'water/water-orb')
+  // The remaining PLANNED scenes are exactly the three wave 2 did not
+  // enumerate; the six landed scenes are no longer planned.
+  const { PLANNED_SCENES } = await import('../src/fx/placements.js')
+  assert.deepEqual(PLANNED_SCENES, ['cover-reveal', 'empty-shelf', 'login-welcome'])
+})
+
+test('wave-2 one-shot primaries are actor-free and non-looping; ambient primaries loop actor-free', async () => {
+  // A one-shot whose meta loops never reports done (its canvas would
+  // never leave), and an effect with a stock actor would march a
+  // little stock character across a reading app's chrome. Both are
+  // placement bugs; pin the primaries against them.
+  const oneShotScenes = [
+    PIXELFX_SCENE.CHAPTER_UPGRADE, PIXELFX_SCENE.MERGE_SUCCESS,
+    PIXELFX_SCENE.AVATAR_REVEAL, PIXELFX_SCENE.FORGE_OPEN,
+    PIXELFX_SCENE.PLAZA_LIKE, PIXELFX_SCENE.PUBLISH_CELEBRATION,
+    PIXELFX_SCENE.INTERVENE,
+  ]
+  const families = ['xuanzhen', 'wuxia', 'kehuan', 'moshi', 'xuanyi', 'lingyi', 'yanqing', 'fuben', 'dianjing', null]
+  const loadMeta = async (id) => (await import(pathToFileURL(join(FX_ROOT, `${id}.js`)).href)).meta
+  for (const scene of oneShotScenes) {
+    for (const family of families) {
+      for (const grand of [false, true]) {
+        const pick = pickFx(scene, family, { grand })
+        const meta = await loadMeta(pick.fx)
+        assert.ok(!meta.actor, `${scene}/${family} → ${pick.fx} must be actor-free`)
+        assert.ok(!meta.loop, `${scene}/${family} → ${pick.fx} must be a true one-shot (non-looping meta)`)
+      }
+    }
+  }
+  for (const world of FORGE_AMBIENT_WORLDS) {
+    const meta = await loadMeta(pickForgeAmbientFx(world, null).fx)
+    assert.ok(!meta.actor && meta.loop, `forge world ${world} ambient must loop actor-free`)
+  }
+  for (const family of ['xuanyi', 'lingyi', 'moshi', 'fanpai', 'zhongtian', null]) {
+    const meta = await loadMeta(pickFx(PIXELFX_SCENE.DETAIL_AMBIENT, family).fx)
+    assert.ok(!meta.actor && meta.loop, `detail-ambient/${family} must loop actor-free`)
+  }
+})
+
+test('pickFx grand variant: finale picks differ where the table defines them', () => {
+  const small = pickFx('chapter-upgrade', null)
+  const grand = pickFx('chapter-upgrade', null, { grand: true })
+  assert.equal(small.fx, 'arcane/mana-burst')
+  assert.equal(grand.fx, 'explosions/firework-burst')
+  assert.notEqual(small.fx, grand.fx)
+  assert.equal(pickFx('chapter-upgrade', 'xuanzhen', { grand: true }).fx, 'holy/holy-pillar')
+  // Scenes without a grand variant ignore the flag entirely.
+  assert.equal(pickFx('merge-success', null, { grand: true }).fx, pickFx('merge-success', null).fx)
+  assert.equal(pickFx('waiting', 'xuanzhen', { grand: true }).fx, 'arcane/rune-circle')
+})
+
+test('wave-2 wiring: every landed surface mounts the player through placements', () => {
+  const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
+  // 1. chapter milestones in the reader + the forge-open stamp pair.
+  assert.match(main, /PIXELFX_SCENE\.CHAPTER_UPGRADE/)
+  assert.match(main, /chapterMilestoneKind/)
+  assert.match(main, /structureFor\(story, index\)/)
+  assert.match(main, /PIXELFX_SCENE\.FORGE_OPEN/)
+  assert.match(main, /JUST_OPENED_KEY\(story\.id\)/)
+  // 2. merge success on the started merge stage.
+  assert.match(main, /PIXELFX_SCENE\.MERGE_SUCCESS/)
+  assert.match(main, /className="merge-fx"/)
+  // 3. avatar reveal over the stage frame.
+  assert.match(main, /PIXELFX_SCENE\.AVATAR_REVEAL/)
+  assert.match(main, /className="avatar-reveal-fx"/)
+  // 4. forge ambient on the world / identity steps only.
+  assert.match(main, /pickForgeAmbientFx\(world\?\.id/)
+  assert.match(main, /step === 2 \|\| step === 3/)
+  assert.match(main, /className="forge-ambient-fx"/)
+  // 5. plaza like burst (throttled, like-only) + publish celebration.
+  assert.match(main, /PIXELFX_SCENE\.PLAZA_LIKE/)
+  assert.match(main, /className="plaza-like-fx"/)
+  assert.match(main, /PIXELFX_SCENE\.PUBLISH_CELEBRATION/)
+  assert.match(main, /celebrateToast/)
+  assert.match(main, /onToast=\{celebrateToast\}/)
+  // 6. detail ambience inside the existing ambience layer.
+  assert.match(main, /PIXELFX_SCENE\.DETAIL_AMBIENT/)
+  assert.match(main, /className="detail-ambience-fx"/)
+  // Every wave-2 layer has a CSS home in aurora.css.
+  const css = readFileSync(new URL('../src/aurora.css', import.meta.url), 'utf8')
+  for (const cls of ['reader-open-fx', 'merge-fx', 'avatar-reveal-fx', 'forge-ambient-fx', 'plaza-like-fx', 'toast-fx', 'detail-ambience-fx']) {
+    assert.match(css, new RegExp(`\\.${cls}\\{`), `${cls} needs a CSS rule`)
+  }
 })
 
 test('pilot wiring: overlays mount the player through placements', () => {
