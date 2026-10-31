@@ -314,3 +314,18 @@ test('observe writes changes through and keeps failures pending for the next tri
   await sync.flush('uid-observe')
   assert.deepEqual(uploads, ['watched'], 'an unchanged story is not uploaded twice')
 })
+
+test('syncedIds exposes the persisted in-step set for the cover gate (COVER-RETRY-FIX)', async () => {
+  const storage = new MemoryStorage()
+  storage.setItem('storyweave:cloud-synced:uid-gate', JSON.stringify({ 'old-book': T1, 'other-book': T2 }))
+  const sync = createCloudSync({ getAccessToken: async () => 't', fetchImpl: async () => Response.json({}), storage })
+  const ids = sync.syncedIds('uid-gate')
+  assert.ok(ids instanceof Set)
+  assert.deepEqual([...ids].sort(), ['old-book', 'other-book'], 'the persisted synced map is the membership source')
+  assert.deepEqual([...sync.syncedIds('uid-never')], [], 'an unknown account has no synced books')
+  // An upload through observe+flush joins the set.
+  const story = localStory('fresh-book', T3)
+  sync.observe({ uid: 'uid-gate', stories: [story], readReadingStateRaw: () => null })
+  await sync.flush('uid-gate')
+  assert.ok(sync.syncedIds('uid-gate').has('fresh-book'), 'a book uploaded this session is in step')
+})

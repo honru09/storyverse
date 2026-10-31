@@ -34,8 +34,10 @@ import {
   storyDistinguisherFor,
 } from "./list-layout.js";
 import {
+  coverNeedsMetaReconcile,
   coverRequestInFlight,
   coverStateOf,
+  fetchCoverReconcilePatch,
   requestCoverImage,
   shouldAutoRequestCover,
   withCoverState,
@@ -12340,6 +12342,10 @@ function App() {
       writeReadingStateRaw: (raw) => {
         try { window.localStorage.setItem(READING_LOCATION_KEY, raw); } catch { /* storage blocked */ }
       },
+    }).then(() => {
+      // COVER-RETRY-FIX: with the shelf settled, adopt any cover the
+      // server already holds for a book whose local state says missing.
+      if (!cancelled) void reconcileCoverMetas();
     });
     return () => { cancelled = true; };
   }, [cloudUid, cloudSync, store]);
@@ -12732,6 +12738,7 @@ function App() {
   // untouched. Automatic requests happen once per story per session;
   // manual re-rolls come from the reader's cover dialog.
   const coverAttempts = useRef(new Set());
+  const coverMetaChecks = useRef(new Set());
   const updateCoverState = useCallback((id, patch) => {
     setLibrary((current) => ({
       ...current,
@@ -12765,20 +12772,42 @@ function App() {
         }
         return;
       }
-      updateCoverState(id, { status: "failed" });
+      // COVER-RETRY-FIX: the failure is stamped with its own time —
+      // the per-day retry gate reads this date, so a failure must not
+      // inherit the (earlier) pending stamp of the attempt's start.
+      updateCoverState(id, { status: "failed", updatedAt: new Date().toISOString() });
       if (manual) setToast(error?.message || "封面暂时没能生成，请稍后再试。");
+    }
+  }, [store, authClient, updateCoverState]);
+  // COVER-RETRY-FIX: after the cloud library settles, reconcile the
+  // books whose local cover state says "missing" against the server's
+  // truth. A painting that settled after its response was lost (the
+  // charge landed, the reply did not) is adopted in place instead of
+  // being painted — and charged — a second time. One probe per book
+  // per session, only for the needy states, failures silent.
+  const reconcileCoverMetas = useCallback(async () => {
+    const snapshot = store.getSnapshot().library.stories;
+    for (const story of snapshot) {
+      if (!coverNeedsMetaReconcile(story) || coverMetaChecks.current.has(story.id)) continue;
+      coverMetaChecks.current.add(story.id);
+      const patch = await fetchCoverReconcilePatch({
+        story,
+        getAccessToken: () => authClient.getAccessToken(),
+      });
+      if (patch) updateCoverState(story.id, { ...patch, updatedAt: new Date().toISOString() });
     }
   }, [store, authClient, updateCoverState]);
   useEffect(() => {
     // Covers live behind sign-in; firing before the session restore lands
     // would only burn the attempt on a 401.
     if (account.status !== "authenticated") return;
+    const syncedIds = cloudUid ? cloudSync.syncedIds(cloudUid) : null;
     for (const story of library.stories) {
-      if (!shouldAutoRequestCover(story) || coverAttempts.current.has(story.id)) continue;
+      if (!shouldAutoRequestCover(story, Date.now(), { inAccountLibrary: syncedIds ? syncedIds.has(story.id) : false }) || coverAttempts.current.has(story.id)) continue;
       coverAttempts.current.add(story.id);
       void runCoverRequest(story.id);
     }
-  }, [library.stories, runCoverRequest, account.status]);
+  }, [library.stories, runCoverRequest, account.status, cloudUid, cloudSync]);
   const avatarState = useAvatarProfile(authClient, account);
   // REQ-58: the profile tab renders its avatar row from the public
   // profile payload, which lives in the profile cache — and avatar
