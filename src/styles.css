@@ -18,6 +18,7 @@
   --dur-press:120ms; --dur-state:180ms; --dur-pop:450ms; --dur-ripple:1000ms; --dur-check:450ms;
   --dur-rise:550ms; --dur-page:320ms; --dur-sheet:240ms; --dur-shimmer:1600ms;
   --dur-tab:240ms; --dur-fade:160ms;
+  --dur-step-fwd:420ms; --dur-step-back:320ms; --dur-hero-in:1200ms;
   --ease-out:cubic-bezier(.22,1,.36,1); --ease-pop:cubic-bezier(.25,1,.35,1); --ease-press:cubic-bezier(.2,.9,.3,1); --ease-drawer:cubic-bezier(.32,.72,0,1);
   --ease-spring:cubic-bezier(.3,1,.4,1);
   /* Legacy aliases — var() chains only, so they follow the active theme. */
@@ -1541,23 +1542,36 @@ button.plaza-source-row.is-link{cursor:pointer}
 .shelf-brick-collage img{width:100%;height:100%;object-fit:cover;display:block}
 .shelf-brick-random strong{white-space:nowrap}
 .shelf-brick-random .shelf-brick-count{flex-shrink:1;white-space:normal;line-height:1.45}
-/* GENRE-FREEDOM hero (REQ-51 revised): free creation is the step's
-   main visual — a black-hole region (fixed dark plate in every theme,
-   like the family cards' artwork) with the free-genre input inside.
-   The vortex is three slow-rotating CSS layers, transform/opacity
-   only; the shell's [data-motion="off"] blanket rule and the global
-   prefers-reduced-motion rule both still it completely. */
+/* GENRE-FREEDOM hero (REQ-51 revised; REQ-71 layered art): free
+   creation is the step's main visual — a black-hole region (fixed
+   dark plate in every theme, like the family cards' artwork) with
+   the free-genre input inside. REQ-71 replaced the pure-CSS vortex
+   with generated plates: a nebula backdrop, a screen-blended
+   stardust sheet, and a black-backed accretion-ring plate inside
+   the vortex frame, ringed by two thin CSS orbits turning at
+   different speeds (46s reverse / 32s forward). GSAP breathes and
+   drifts the plates (transform/opacity only; DESIGN §5 hero rows);
+   the orbits still completely under the shell's [data-motion="off"]
+   blanket rule and the global prefers-reduced-motion rule. */
 .genre-hero{position:relative;overflow:hidden;margin:0 0 18px;padding:26px 20px 22px;border:1px solid rgba(148,184,255,.28);border-radius:24px;background:radial-gradient(120% 130% at 78% -10%,#1c2b52 0%,#0a1024 46%,#04060f 100%);color:#eef3ff;box-shadow:0 18px 44px rgba(2,6,20,.35)}
 .genre-hero.selected{border-color:rgba(125,211,252,.75);box-shadow:0 0 0 1px rgba(125,211,252,.45),0 18px 44px rgba(2,6,20,.35)}
-.genre-hero-vortex{position:absolute;top:-72px;right:-56px;width:250px;height:250px;pointer-events:none}
-.genre-hero-disc{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,transparent 0deg,rgba(125,211,252,.5) 40deg,transparent 90deg,rgba(167,139,250,.42) 150deg,transparent 210deg,rgba(56,189,248,.36) 280deg,transparent 330deg);-webkit-mask:radial-gradient(circle,transparent 58px,#000 60px,#000 108px,transparent 124px);mask:radial-gradient(circle,transparent 58px,#000 60px,#000 108px,transparent 124px);animation:genre-vortex-spin 26s linear infinite}
-.genre-hero-ring{position:absolute;border-radius:50%;border:1px solid rgba(165,205,255,.4)}
-.genre-hero-ring--a{inset:38px;animation:genre-vortex-spin-rev 17s linear infinite;border-style:dashed}
-.genre-hero-ring--b{inset:66px;border-color:rgba(196,181,253,.35);animation:genre-vortex-spin 11s linear infinite}
-.genre-hero-core{position:absolute;inset:96px;border-radius:50%;background:radial-gradient(circle,#0b1330 52%,rgba(10,16,38,.65) 68%,transparent 74%);box-shadow:0 0 44px 14px rgba(56,130,255,.35),inset 0 0 18px rgba(0,0,0,.9);animation:genre-core-pulse 5.2s ease-in-out infinite}
+.genre-hero-visual{position:absolute;inset:0;pointer-events:none}
+.genre-hero-nebula{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.genre-hero-dust{position:absolute;inset:-12%;width:124%;height:124%;object-fit:cover;mix-blend-mode:screen;opacity:.85}
+.genre-hero-vortex{position:absolute;top:-64px;right:-48px;width:252px;height:252px}
+.genre-hero-glow{position:absolute;inset:52px;border-radius:50%;background:radial-gradient(circle,rgba(255,150,60,.5) 0%,rgba(255,110,40,.16) 52%,transparent 70%);opacity:.38}
+.genre-hero-ring-img{position:absolute;inset:10px;width:calc(100% - 20px);height:calc(100% - 20px);object-fit:contain;mix-blend-mode:screen}
+.genre-hero-orbit{position:absolute;border-radius:50%;border:1px solid rgba(165,205,255,.35)}
+.genre-hero-orbit--a{inset:-4px;border-style:dashed;animation:genre-vortex-spin-rev 46s linear infinite}
+.genre-hero-orbit--b{inset:20px;border-color:rgba(196,181,253,.28);animation:genre-vortex-spin 32s linear infinite}
+.genre-hero-scrim{position:absolute;inset:0;background:linear-gradient(100deg,rgba(3,5,12,.68) 0%,rgba(3,5,12,.28) 48%,rgba(3,5,12,0) 74%),linear-gradient(0deg,rgba(3,5,12,.5),rgba(3,5,12,0) 42%)}
 @keyframes genre-vortex-spin{to{transform:rotate(360deg)}}
 @keyframes genre-vortex-spin-rev{to{transform:rotate(-360deg)}}
-@keyframes genre-core-pulse{0%,100%{opacity:.82}50%{opacity:1}}
+/* REQ-71: inside the forge, a freshly mounted selected mark pops in
+   once (scale + fade, no overshoot per §53) on top of its check
+   draw — the micro-motion that says the pick landed. */
+.page-forge .selected-mark{animation:sel-mark-pop var(--dur-pop) var(--ease-out)}
+@keyframes sel-mark-pop{0%{transform:scale(.5);opacity:0}100%{transform:scale(1);opacity:1}}
 .genre-hero-body{position:relative;display:grid;gap:12px}
 .genre-hero-head{display:flex;align-items:center;gap:10px}
 .genre-hero-head strong{font-size:24px;font-weight:800;letter-spacing:.02em}

@@ -1,0 +1,68 @@
+{
+  "tag": "after",
+  "checks": [
+    {
+      "name": "shelf wall renders 19 bricks (18 families + random)",
+      "ok": true,
+      "detail": "bricks=19"
+    },
+    {
+      "name": "picked note has no duplicated name",
+      "ok": true,
+      "detail": "已选：历史。低位入局，用事功改掉已知的败局。"
+    },
+    {
+      "name": "motion off: hero layers carry no inline animation residue",
+      "ok": true,
+      "detail": "{\"shellMotion\":\"off\",\"heroInline\":\"\",\"ringInline\":\"\",\"inputVisible\":true}"
+    },
+    {
+      "name": "reduced motion: hero complete and still",
+      "ok": true,
+      "detail": "{\"inputVisible\":true,\"heroVisible\":true,\"ringInline\":\"\"}"
+    }
+  ],
+  "hero": {
+    "ringImg": true,
+    "nebula": true,
+    "dust": true,
+    "orbits": 2,
+    "oldDisc": false,
+    "heroText": "自由创世"
+  },
+  "shelves": {
+    "bricks": 19,
+    "artSrcs": [
+      "/art/family-xuanzhen-640.webp",
+      "/art/family-wuxia-640.webp",
+      "/art/family-chuanyue-640.webp",
+      "/art/family-yanqing-640.webp",
+      "/art/family-dushi-640.webp",
+      "/art/family-yule-640.webp",
+      "/art/family-lishi-640.webp",
+      "/art/family-kehuan-640.webp",
+      "/art/family-moshi-640.webp",
+      "/art/family-xuanyi-640.webp",
+      "/art/family-lingyi-640.webp",
+      "/art/family-fuben-640.webp",
+      "/art/family-dianjing-640.webp",
+      "/art/family-junshi-640.webp",
+      "/art/family-tiyu-640.webp",
+      "/art/family-zhongtian-640.webp",
+      "/art/family-duanpian-640.webp",
+      "/art/family-fanpai-640.webp"
+    ]
+  },
+  "pickedNote": "已选：历史。低位入局，用事功改掉已知的败局。",
+  "motionOff": {
+    "shellMotion": "off",
+    "heroInline": "",
+    "ringInline": "",
+    "inputVisible": true
+  },
+  "reduced": {
+    "inputVisible": true,
+    "heroVisible": true,
+    "ringInline": ""
+  }
+}

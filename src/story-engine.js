@@ -1098,33 +1098,31 @@ export const genreTemplateById = (id) => GENRE_TEMPLATE_BY_ID[id] || null
  */
 export const GENRE_SHELVES = [
   { id: 'xuanzhen', name: '玄幻修真', templateIds: ['xuanhuan', 'xianxia', 'gaowu'] },
-  // GENRE-FREEDOM expansion (REQ-51): nine more families. `art` is the
-  // public/art basename for the family's card face — this batch mints
-  // no new artwork, so each new family borrows the closest existing
-  // plate (family-* for the original nine, world/cover plates for the
-  // newcomers); a shelf without `art` uses its own family-<id> plate.
-  { id: 'wuxia', name: '武侠江湖', templateIds: ['wuxia'], art: 'cover-eastern' },
-  { id: 'chuanyue', name: '穿越重生', templateIds: ['chuanyue', 'chongsheng'], art: 'court' },
+  // GENRE-FREEDOM expansion (REQ-51): nine more families. REQ-71 minted
+  // a dedicated plate for every family, so no shelf borrows another
+  // family's (or a world's) face any more — each uses family-<id>.
+  { id: 'wuxia', name: '武侠江湖', templateIds: ['wuxia'] },
+  { id: 'chuanyue', name: '穿越重生', templateIds: ['chuanyue', 'chongsheng'] },
   { id: 'yanqing', name: '言情', templateIds: ['romance-ancient', 'romance-modern', 'gongdou'] },
   { id: 'dushi', name: '都市现实', templateIds: ['urban', 'campus'] },
-  { id: 'yule', name: '娱乐圈', templateIds: ['yulequan'], art: 'neon' },
+  { id: 'yule', name: '娱乐圈', templateIds: ['yulequan'] },
   { id: 'lishi', name: '历史', templateIds: ['lishi'] },
   { id: 'kehuan', name: '科幻', templateIds: ['scifi'] },
-  { id: 'moshi', name: '末世求生', templateIds: ['moshi'], art: 'cover-scifi' },
+  { id: 'moshi', name: '末世求生', templateIds: ['moshi'] },
   { id: 'xuanyi', name: '悬疑惊悚', templateIds: ['horror', 'guize-guatan', 'suspense-supernatural'] },
-  { id: 'lingyi', name: '灵异民俗', templateIds: ['lingyi'], art: 'cover-xuanyi' },
+  { id: 'lingyi', name: '灵异民俗', templateIds: ['lingyi'] },
   { id: 'fuben', name: '副本竞技', templateIds: ['wuxianliu'] },
-  { id: 'dianjing', name: '游戏电竞', templateIds: ['dianjing'], art: 'cover-fuben' },
-  { id: 'junshi', name: '军事', templateIds: ['junshi'], art: 'frontier' },
-  { id: 'tiyu', name: '体育竞技', templateIds: ['tiyu'], art: 'city' },
-  { id: 'zhongtian', name: '种田经营', templateIds: ['zhongtian'], art: 'mist' },
+  { id: 'dianjing', name: '游戏电竞', templateIds: ['dianjing'] },
+  { id: 'junshi', name: '军事', templateIds: ['junshi'] },
+  { id: 'tiyu', name: '体育竞技', templateIds: ['tiyu'] },
+  { id: 'zhongtian', name: '种田经营', templateIds: ['zhongtian'] },
   { id: 'duanpian', name: '短篇', templateIds: ['zhihu-short'] },
   { id: 'fanpai', name: '反派主角', templateIds: ['er-ren'] },
 ]
 
-// The public/art basename of a family's card face (REQ-51 expansion):
-// shelves that borrow a plate say so in `art`; the original nine use
-// their own family-<id> plate.
+// The public/art basename of a family's card face: every shelf owns a
+// dedicated family-<id> plate (REQ-71); the legacy `art` override is
+// honoured if a shelf ever carries one again.
 export const shelfArtBase = (shelf) => shelf?.art || `family-${shelf?.id}`
 
 export const shelfForTemplate = (templateId) =>
