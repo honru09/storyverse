@@ -952,6 +952,10 @@ input[type="checkbox"]{accent-color:var(--cyan)}
   .mobile-bottom-nav{display:none}
   .topbar{padding-inline:44px}.page{padding-bottom:64px}
   .forge-layout{grid-template-columns:minmax(0,1fr) 250px;gap:36px}
+  /* BUGHUNT-20261031: the confirm step renders no preview panel, so
+     the second column would sit empty (250px + 36px gap) on desktop —
+     collapse the layout to one column on that step only. */
+  .forge-layout.is-confirm{grid-template-columns:minmax(0,1fr)}
   .preview-panel{display:block;position:sticky;top:100px;align-self:start;padding:20px;border:1px solid var(--line);border-radius:var(--radius-surface);background:var(--surface-card);backdrop-filter:var(--blur-panel);-webkit-backdrop-filter:var(--blur-panel);box-shadow:var(--shadow-card),var(--shadow-glass-top)}
   .preview-panel h3{margin:0 0 16px;font-size:13px;color:var(--dim)}
   .preview-cover{display:flex;align-items:flex-end;position:relative;isolation:isolate;aspect-ratio:3/4;padding:20px;margin-bottom:24px;border:1px solid var(--line);border-radius:var(--radius-card);color:var(--on-ink);overflow:hidden}
@@ -1229,6 +1233,12 @@ button.plaza-source-row.is-link{cursor:pointer}
 .plaza-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .plaza-panel-heading h2{margin:0}
 .plaza-avatar-panel{display:flex;gap:16px;align-items:center;padding-top:20px;padding-bottom:20px}
+/* BUGHUNT-20261031: the text column is a flex child with no
+   min-width, so one long unbroken token (a latin avatar name, a
+   link-like appearance line) sized the panel past its card — the
+   same shrink rule the source rows next door already carry. */
+.plaza-avatar-panel>div{min-width:0;flex:1}
+.plaza-avatar-panel strong,.plaza-avatar-panel small{overflow-wrap:anywhere}
 .plaza-avatar-panel p{margin:5px 0 0;color:var(--dim);font-size:13px;line-height:1.6}
 .plaza-avatar-panel small{display:block;margin-top:4px;color:var(--dim);font-size:12px;line-height:1.6}
 .plaza-avatar-panel .avatar-frame{width:64px;height:64px;aspect-ratio:auto;border-radius:50%;flex-shrink:0}

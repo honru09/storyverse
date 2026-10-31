@@ -234,7 +234,10 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
     void run(async () => { await client.setRecoveryEmail(bindPassword, null); setBindPassword(""); setBindEmail(""); });
   };
   const sendCode = () => {
-    if (!codeAvailable || busy || cooldown > 0) return;
+    // BUGHUNT-20261031: an empty mailbox used to fire the request and
+    // lean on the server error to say so — the button now stays
+    // disabled until an address is typed, like the form's own submit.
+    if (!codeAvailable || busy || cooldown > 0 || !identifier) return;
     void run(async () => { await client.requestEmailCode(identifier); setCooldown(60); });
   };
 
@@ -333,7 +336,7 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
         {activeMode === "code"
           ? <label>邮箱<input type="email" name="email" autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} required maxLength={254} value={accountId} disabled={busy || !configured} onChange={(event) => changeAccountId(event.target.value)} placeholder="you@example.com"/></label>
           : <label>邮箱或用户名<input type="text" name="account" autoComplete="username" autoCapitalize="none" spellCheck={false} required maxLength={254} value={accountId} disabled={busy || !configured} onChange={(event) => changeAccountId(event.target.value)} placeholder="邮箱或用户名"/></label>}
-        {activeMode === "code" && <label>验证码<div className="account-password"><input type="text" name="code" autoComplete="one-time-code" inputMode="numeric" autoCapitalize="none" spellCheck={false} required maxLength={6} value={code} disabled={busy || !codeAvailable} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} placeholder="6 位数字"/><button type="button" disabled={busy || !codeAvailable || cooldown > 0} onClick={sendCode}>{cooldown > 0 ? `${cooldown} 秒后重发` : "发送验证码"}</button></div></label>}
+        {activeMode === "code" && <label>验证码<div className="account-password"><input type="text" name="code" autoComplete="one-time-code" inputMode="numeric" autoCapitalize="none" spellCheck={false} required maxLength={6} value={code} disabled={busy || !codeAvailable} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} placeholder="6 位数字"/><button type="button" disabled={busy || !codeAvailable || cooldown > 0 || !identifier} onClick={sendCode}>{cooldown > 0 ? `${cooldown} 秒后重发` : "发送验证码"}</button></div></label>}
         {activeMode !== "reset" && activeMode !== "code" && <label>密码<div className="account-password"><input type={showPassword ? "text" : "password"} name="password" autoComplete={activeMode === "register" ? "new-password" : "current-password"} required minLength={activeMode === "register" ? 8 : undefined} maxLength={128} value={password} disabled={busy || !(passwordAvailable || usernameAvailable)} onChange={(event) => setPassword(event.target.value)} placeholder={activeMode === "register" ? "至少 8 位" : "输入密码"}/><button type="button" aria-label={showPassword ? "隐藏密码" : "显示密码"} aria-pressed={showPassword} disabled={busy || !(passwordAvailable || usernameAvailable)} onClick={() => setShowPassword((value) => !value)}>{showPassword ? "隐藏" : "显示"}</button></div></label>}
         {activeMode === "register" && <label>确认密码<input type="password" name="confirmPassword" autoComplete="new-password" required minLength={8} maxLength={128} value={confirmPassword} disabled={busy || !(passwordAvailable || usernameAvailable)} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="再输入一次密码"/></label>}
         {activeMode === "register" && confirmPassword && confirmPassword !== password && <p className="account-message is-error" role="alert">两次输入的密码不一致。</p>}
