@@ -23,13 +23,16 @@ const ruleBody = (selector) => {
 
 /* ——— G1 (REQ-35): the stage itself was never the cropper ———————— */
 
-test('REQ-35: the stage still shows the whole figure (contain), in every theme', () => {
-  /* REQ-64 supersedes the container: .profile-stage is deleted and
-   * the figure now lives in .profile-showcase-img — the REQ-35
-   * verdict (contain, never theme-narrowed back to cover) carries
-   * over to the new box verbatim. */
-  assert.match(ruleBody('.profile-showcase-img{'), /object-fit:contain/)
-  // No theme-scoped rule may narrow the showcase back to cover.
+test('REQ-35 → REQ-73: the stage shows the whole figure in every theme — by baked proportion, not by contain', () => {
+  /* REQ-64 carried the REQ-35 verdict (contain, never theme-
+   * narrowed back to cover) into .profile-showcase-img. REQ-73
+   * (DESIGN §59) supersedes the MECHANISM, not the verdict: the
+   * stage image is now the server's baked 3:4 portrait derivative
+   * in a 3:4 frame, so cover fills the frame exactly and the whole
+   * figure is in frame by construction — no theme may narrow the
+   * showcase either way. */
+  assert.match(ruleBody('.profile-showcase-img{'), /object-fit:cover/)
+  assert.match(ruleBody('.profile-showcase-figure{'), /aspect-ratio:3\/4/)
   assert.ok(!css.includes("[data-shell-theme='aurora'] .profile-showcase"), 'no aurora showcase override')
   assert.ok(!css.includes("[data-shell-theme='black'] .profile-showcase img"), 'no black showcase img override')
 })

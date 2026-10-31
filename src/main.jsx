@@ -43,7 +43,6 @@ import {
 import { downloadText } from "./downloads.js";
 import { drawPersonalityTraits, personalityTraitText } from "./personality-traits.js";
 import { drawInspirationFragments } from "./inspiration-fragments.js";
-import { samplePortraitEdges } from "./art-edges.js";
 import {
   AVATAR_LIMIT,
   AVATAR_PRESETS,
@@ -55,6 +54,7 @@ import {
   avatarPortraitState,
   createAvatar,
   deleteAvatar,
+  derivativeUrl,
   fetchAvatarObjectUrl,
   fetchAvatars,
   generateAvatar,
@@ -1312,7 +1312,7 @@ function useAvatarProfile(authClient, account) {
   return { avatar, avatars, mainId, quota, loaded, refresh, updateAvatar, applyCollection };
 }
 
-function AvatarPortrait({ avatar, getAccessToken, which = "current", className = "" }) {
+function AvatarPortrait({ avatar, getAccessToken, which = "current", className = "", variant = "face" }) {
   const { status, version, hasPrevious } = avatarPortraitState(avatar);
   const [url, setUrl] = useState(null);
   const avatarId = avatar?.id;
@@ -1322,14 +1322,17 @@ function AvatarPortrait({ avatar, getAccessToken, which = "current", className =
       return undefined;
     }
     let cancelled = false;
-    fetchAvatarObjectUrl({ avatar, which, getAccessToken })
+    // REQ-73: thumbnail surfaces read the baked face derivative by
+    // default; the editor stage passes variant={null} and compares
+    // whole paintings.
+    fetchAvatarObjectUrl({ avatar, which, variant, getAccessToken })
       .then((next) => { if (!cancelled) setUrl(next); })
       .catch(() => { if (!cancelled) setUrl(null); });
     return () => { cancelled = true; };
     // Keyed by id+version+slot, not object identity: the profile object is
     // rebuilt on every write and must not retrigger the fetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [avatarId, status, version, hasPrevious, which]);
+  }, [avatarId, status, version, hasPrevious, which, variant]);
   if (url) return <img className={`avatar-portrait-img ${className}`} src={url} alt="" />;
   return (
     <div className={`avatar-portrait-fallback ${className}`} aria-hidden="true">
@@ -1588,7 +1591,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
       <div className="avatar-layout">
         <section className="avatar-stage">
           <div className="avatar-frame">
-            <AvatarPortrait avatar={previewAvatar} getAccessToken={getToken} which={showPrevious ? "previous" : "current"} />
+            <AvatarPortrait avatar={previewAvatar} getAccessToken={getToken} which={showPrevious ? "previous" : "current"} variant={null} />
             {painting && <div className="avatar-frame-state">正在画…</div>}
             {!painting && portrait.status === "failed" && <div className="avatar-frame-state is-error">上次没画成</div>}
           </div>
@@ -4347,7 +4350,6 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
         <ul className="notify-list">
           {items.map((item) => {
             if (tab === "activity") {
-              const portrait = item.picture?.kind === "avatar";
               if (item.kind === "fusion_request") {
                 // 合流申请 (REQ-49): the one actionable row in the
                 // centre — the author answers here, and the answer
@@ -4355,8 +4357,8 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
                 return (
                   <li key={item.id}>
                     <div className="notify-row notify-row-static">
-                      <span className={`nav-face-frame is-person ${portrait ? "is-portrait" : ""}`} aria-hidden="true">
-                        <img className="nav-face-img" src={item.picture?.url || "/default-avatar.svg"} alt="" loading="lazy" />
+                      <span className="nav-face-frame is-person" aria-hidden="true">
+                        <img className="nav-face-img" src={derivativeUrl(item.picture?.url, "face") || "/default-avatar.svg"} alt="" loading="lazy" />
                       </span>
                       <span className="notify-row-copy">
                         <span className="notify-row-text">
@@ -4399,8 +4401,8 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
                     className="notify-row"
                     onClick={() => item.actorUid && onOpenProfile?.(item.actorUid)}
                   >
-                    <span className={`nav-face-frame is-person ${portrait ? "is-portrait" : ""}`} aria-hidden="true">
-                      <img className="nav-face-img" src={item.picture?.url || "/default-avatar.svg"} alt="" loading="lazy" />
+                    <span className="nav-face-frame is-person" aria-hidden="true">
+                      <img className="nav-face-img" src={derivativeUrl(item.picture?.url, "face") || "/default-avatar.svg"} alt="" loading="lazy" />
                     </span>
                     <span className="notify-row-copy">
                       <span className="notify-row-text">
@@ -6810,16 +6812,14 @@ function PlazaAvatarThumb({ publication, large = false }) {
   // avatar), so there is always a real image to show — never an empty
   // circle or an initial tile. A failed load falls back to the same
   // default asset rather than to nothing.
-  // Face anchor (user order 2026-10-28, DESIGN §27): when the picture IS
-  // the avatar's full-body portrait, the small frame crops to the head —
-  // the frame clips, the image zooms to the face anchor — so a round
-  // slot never shows a torso. Uploaded pictures get the top anchor only.
-  const resolved = publication?.avatar?.pictureUrl || "/default-avatar.svg";
+  // REQ-73: the face lives in the pixels now — avatar-kind pictures
+  // resolve to the server's baked face square, so the frame is a
+  // plain cover with no anchor or zoom left to apply.
+  const resolved = derivativeUrl(publication?.avatar?.pictureUrl, "face") || "/default-avatar.svg";
   const [src, setSrc] = useState(resolved);
   useEffect(() => { setSrc(resolved); }, [resolved]);
-  const portrait = publication?.avatar?.pictureKind === "avatar";
   return (
-    <span className={`plaza-avatar-frame ${large ? "is-large" : ""} ${portrait ? "is-portrait" : ""}`}>
+    <span className={`plaza-avatar-frame ${large ? "is-large" : ""}`}>
       <img
         className="plaza-avatar-img"
         src={src}
@@ -6888,12 +6888,12 @@ function postTimeFor(iso) {
 
 /** A person's resolved picture (post/comment author), with the default asset as the floor. */
 function PersonPicture({ picture, size = 40 }) {
-  const [src, setSrc] = useState(picture?.url || "/default-avatar.svg");
-  useEffect(() => { setSrc(picture?.url || "/default-avatar.svg"); }, [picture?.url]);
-  const portrait = picture?.kind === "avatar";
+  const faceUrl = derivativeUrl(picture?.url, "face") || "/default-avatar.svg";
+  const [src, setSrc] = useState(faceUrl);
+  useEffect(() => { setSrc(faceUrl); }, [faceUrl]);
   return (
     <span
-      className={`plaza-avatar-frame ${portrait ? "is-portrait" : ""}`}
+      className="plaza-avatar-frame"
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
@@ -8814,8 +8814,8 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
         ) : (
         <>
         <div className="profile-edit-picture">
-          <span className={`profile-edit-preview-frame${effectivePictureKind === "avatar" ? " is-portrait" : ""}`}>
-            <img className="profile-edit-preview" src={picturePreviewUrl} alt="" />
+          <span className="profile-edit-preview-frame">
+            <img className="profile-edit-preview" src={derivativeUrl(picturePreviewUrl, "face")} alt="" />
           </span>
           <div className="profile-edit-picture-copy">
             <strong>头像</strong>
@@ -8933,7 +8933,6 @@ function ProfileCoverArt({ publication }) {
 }
 
 function ProfileConnectionRow({ person, account, busyUid, onToggleFollow, onOpenProfile }) {
-  const portrait = person.picture?.kind === "avatar";
   return (
     <div className="profile-connection-row">
       <button
@@ -8942,8 +8941,8 @@ function ProfileConnectionRow({ person, account, busyUid, onToggleFollow, onOpen
         onClick={() => onOpenProfile?.(person.uid)}
         aria-label={`打开 ${person.displayName} 的主页`}
       >
-        <span className={`nav-face-frame is-person ${portrait ? "is-portrait" : ""}`} aria-hidden="true">
-          <img className="nav-face-img" src={person.picture?.url || "/default-avatar.svg"} alt="" loading="lazy" />
+        <span className="nav-face-frame is-person" aria-hidden="true">
+          <img className="nav-face-img" src={derivativeUrl(person.picture?.url, "face") || "/default-avatar.svg"} alt="" loading="lazy" />
         </span>
         <span className="profile-connection-copy">
           <strong>{person.displayName}</strong>
@@ -8970,7 +8969,6 @@ function ProfileConnectionRow({ person, account, busyUid, onToggleFollow, onOpen
 // lists, search results): the same face-anchored row grammar as the
 // 粉丝/关注 lists, with a caller-supplied trailing action.
 function FriendPersonRow({ person, trailing = null, onOpenProfile }) {
-  const portrait = person.picture?.kind === "avatar";
   return (
     <div className="profile-connection-row">
       <button
@@ -8979,8 +8977,8 @@ function FriendPersonRow({ person, trailing = null, onOpenProfile }) {
         onClick={() => onOpenProfile?.(person.uid)}
         aria-label={`打开 ${person.displayName} 的主页`}
       >
-        <span className={`nav-face-frame is-person ${portrait ? "is-portrait" : ""}`} aria-hidden="true">
-          <img className="nav-face-img" src={person.picture?.url || "/default-avatar.svg"} alt="" loading="lazy" />
+        <span className="nav-face-frame is-person" aria-hidden="true">
+          <img className="nav-face-img" src={derivativeUrl(person.picture?.url, "face") || "/default-avatar.svg"} alt="" loading="lazy" />
         </span>
         <span className="profile-connection-copy">
           <strong>{person.displayName}</strong>
@@ -9680,30 +9678,12 @@ const responsiveDefaultBannerUrl = (url) => (url === "/art/banner-profile-1600.w
   ? "/art/banner-profile-800.webp"
   : url);
 
-// REQ-70: the showcase figure's ground. It is painted from the
-// portrait's own edge tones (samplePortraitEdges) as a soft top→
-// bottom falloff, so the painting stands on its own colours and a
-// pale-matted portrait's matte simply continues to the figure's
-// edges — there is no seam to see. Until the tones land (or if they
-// never do) the span keeps the plain panel ground from CSS.
-function ShowcaseFill({ url }) {
-  const [edges, setEdges] = useState(null);
-  useEffect(() => {
-    let live = true;
-    setEdges(null);
-    if (url) {
-      samplePortraitEdges(url).then((found) => { if (live) setEdges(found); }, () => {});
-    }
-    return () => { live = false; };
-  }, [url]);
-  return (
-    <span
-      className="profile-showcase-fill"
-      aria-hidden="true"
-      style={edges ? { background: `linear-gradient(180deg, ${edges.top} 0%, ${edges.average} 52%, ${edges.bottom} 100%)` } : undefined}
-    />
-  );
-}
+// REQ-73: small slots and the showcase read DERIVATIVE images —
+// the server bakes a normalised 3:4 'portrait' variant and a 288²
+// 'face' variant of every painting (server/avatar-derivatives.js),
+// addressed by the derivativeUrl helper in ./avatar.js — so these
+// surfaces only ever do a plain cover of an already-shaped image
+// and never guess at crops again.
 
 function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOpenAvatar, onOpenDetail, onOpenProfile, onClose = null, ownStories = null, onOpenStory = null, shellTheme, onShellThemeChange, onOpenLibrary, onOpenHelp }) {
   // Two forms, one component (PROFILE-FIX §33): the WINDOW form (a
@@ -10094,9 +10074,9 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           </div>
         )}
         <div className="profile-hero-id">
-          <span className={`profile-hero-face${profile.picture?.kind === "avatar" ? " is-portrait" : ""}`}>
+          <span className="profile-hero-face">
             <img
-              src={pictureSrc || "/default-avatar.svg"}
+              src={derivativeUrl(pictureSrc, "face") || "/default-avatar.svg"}
               alt=""
               onError={() => { if (pictureSrc !== "/default-avatar.svg") setPictureSrc("/default-avatar.svg"); }}
             />
@@ -10339,39 +10319,25 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           {stageAvatar ? (
             <>
               {/* REQ-64 showcase: the rebuilt avatar container. The
-                  figure lives in its own 4:3 box (contain-fit, so the
-                  head and shoes are inside the box by construction)
-                  and the name plate flows BELOW it in normal layout —
-                  nothing overlays the painting, and no scroll guard,
-                  restore or parking logic exists on this surface any
-                  more. The whole card is short enough to fit the
-                  visible band between the topbar and the bottom nav
-                  whole, so no resting scroll position can slice it. */}
+                  figure lives in its own 3:4 box and the name plate
+                  flows BELOW it in normal layout — nothing overlays
+                  the painting, and no scroll guard, restore or
+                  parking logic exists on this surface any more. */}
               <div className="profile-showcase">
                 <div className="profile-showcase-figure">
                   {stageAvatar.hasPortrait && stageAvatar.portraitUrl && stageFailedFor !== stageAvatar.id ? (
                     <>
-                      {/* REQ-70: one painting, one proportion. The
-                          ground is the portrait's own edge tones
-                          (ShowcaseFill) and the halo behind the figure
-                          is the SAME image at the SAME contain
-                          geometry — only blurred, breathing ~10% past
-                          the figure's edges — so no second scale of
-                          the painting ever appears and a pale matte
-                          melts into its own ground instead of ending
-                          at a hard seam. The foreground copy stays
-                          contain-fit: head to shoes always in frame. */}
-                      <ShowcaseFill url={stageAvatar.portraitUrl} />
-                      <img
-                        className="profile-showcase-halo"
-                        src={stageAvatar.portraitUrl}
-                        alt=""
-                        aria-hidden="true"
-                        draggable={false}
-                      />
+                      {/* REQ-73: ONE image, already shaped. The server
+                          bakes a 'portrait' derivative of every
+                          painting at an exact 3:4 with the painting's
+                          own edge tones padded into the pixels, so
+                          this frame is the same 3:4 and a plain cover
+                          fill is exact — no ground layer, no halo
+                          copy, no second scale of the painting, and
+                          nothing left for CSS to guess. */}
                       <img
                         className="profile-showcase-img"
-                        src={stageAvatar.portraitUrl}
+                        src={derivativeUrl(stageAvatar.portraitUrl, "portrait")}
                         alt=""
                         loading="lazy"
                         onError={() => setStageFailedFor(stageAvatar.id)}
@@ -10406,7 +10372,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
                   >
                     <span className="profile-avatar-tile-img">
                       {item.hasPortrait && item.portraitUrl ? (
-                        <img src={item.portraitUrl} alt="" loading="lazy" />
+                        <img src={derivativeUrl(item.portraitUrl, "face")} alt="" loading="lazy" />
                       ) : (
                         <span className="profile-avatar-tile-letter" aria-hidden="true">{[...(item.name || "化")][0]}</span>
                       )}

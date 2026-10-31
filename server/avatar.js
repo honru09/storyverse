@@ -4,6 +4,12 @@ import { dayKeyFor } from './usage.js'
 import { createAvatarStore, collectionFromRecord, imageSlotFor } from './avatar-store.js'
 import { transcodePortraitImage, normalizedStoredImage } from './portrait-image.js'
 import {
+  DERIVATIVE_KINDS,
+  derivativeSlotFor,
+  ensureAvatarDerivative,
+  storeAvatarDerivatives,
+} from './avatar-derivatives.js'
+import {
   AVATAR_ABILITY_BOUNDS_MAX,
   AVATAR_ABILITY_DESC_MAX,
   AVATAR_ABILITY_NAME_MAX,
@@ -316,7 +322,7 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
     if (previousRecord?.image) {
       await backend.putImage(uid, previousSlot, { ...previousRecord, slot: previousSlot })
     }
-    await backend.putImage(uid, currentSlot, {
+    const storedRecord = {
       uid,
       slot: currentSlot,
       version,
@@ -325,7 +331,16 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
       bytes: image.buffer.length,
       model,
       updatedAt: now().toISOString(),
-    })
+    }
+    await backend.putImage(uid, currentSlot, storedRecord)
+    // REQ-73: the portrait/face derivatives bake alongside the
+    // painting. Best-effort — a derivative failure never fails a
+    // generation; reads rebuild them lazily from the stored bytes.
+    // (The rotated previous painting's derivative slots keep their
+    // old stamp and rebuild on read for the same reason.)
+    try {
+      await storeAvatarDerivatives(backend, uid, currentSlot, storedRecord)
+    } catch { /* rebuilt on read */ }
     if (!credit) await backend.incrementDaily(uid, day)
     const ready = {
       ...avatar,
@@ -339,6 +354,33 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
     }
     await commit(ready)
     return { avatar: ready, usage: produced.usage ?? null, anchor, model }
+  }
+
+  // REQ-73: paintings never move alone — their derivative slots
+  // (REQ-73) travel with them, so a main swap or a promotion can
+  // never leave a face derivative pointing at the wrong person.
+  const moveImageWithDerivatives = async (uid, fromSlot, toSlot) => {
+    const record = await backend.getImage(uid, fromSlot)
+    if (record?.image) await backend.putImage(uid, toSlot, { ...record, slot: toSlot })
+    else await backend.deleteImage(uid, toSlot)
+    if (fromSlot !== toSlot) await backend.deleteImage(uid, fromSlot)
+    for (const kind of DERIVATIVE_KINDS) {
+      const from = derivativeSlotFor(fromSlot, kind)
+      const to = derivativeSlotFor(toSlot, kind)
+      const derivative = await backend.getImage(uid, from)
+      if (derivative?.image) {
+        await backend.putImage(uid, to, { ...derivative, slot: to, sourceSlot: toSlot })
+      } else {
+        await backend.deleteImage(uid, to)
+      }
+      if (from !== to) await backend.deleteImage(uid, from)
+    }
+  }
+  const deleteImageWithDerivatives = async (uid, slot) => {
+    await backend.deleteImage(uid, slot)
+    for (const kind of DERIVATIVE_KINDS) {
+      await backend.deleteImage(uid, derivativeSlotFor(slot, kind))
+    }
   }
 
   return {
@@ -421,20 +463,17 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
           if (promoted) {
             for (const which of ['current', 'previous']) {
               const fromSlot = imageSlotFor(collection, promoted.id, which)
-              const record = await backend.getImage(identity.uid, fromSlot)
-              if (record?.image) await backend.putImage(identity.uid, which, { ...record, slot: which })
-              else await backend.deleteImage(identity.uid, which)
-              await backend.deleteImage(identity.uid, fromSlot)
+              await moveImageWithDerivatives(identity.uid, fromSlot, which)
             }
             mainId = promoted.id
           } else {
-            await backend.deleteImage(identity.uid, 'current')
-            await backend.deleteImage(identity.uid, 'previous')
+            await deleteImageWithDerivatives(identity.uid, 'current')
+            await deleteImageWithDerivatives(identity.uid, 'previous')
             mainId = null
           }
         } else {
           for (const which of ['current', 'previous']) {
-            await backend.deleteImage(identity.uid, imageSlotFor(collection, avatarId, which))
+            await deleteImageWithDerivatives(identity.uid, imageSlotFor(collection, avatarId, which))
           }
         }
         const next = { mainId, avatars: remaining }
@@ -459,18 +498,18 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
         const ownSlot = (which) => imageSlotFor(collection, avatarId, which)
         const oldMainId = collection.mainId
         const oldSlot = (which) => `${oldMainId}:${which}`
-        const oldCurrent = await backend.getImage(identity.uid, 'current')
-        const oldPrevious = await backend.getImage(identity.uid, 'previous')
-        const newCurrent = await backend.getImage(identity.uid, ownSlot('current'))
-        const newPrevious = await backend.getImage(identity.uid, ownSlot('previous'))
-        const swap = async (record, slot) => {
-          if (record?.image) await backend.putImage(identity.uid, slot, { ...record, slot })
-          else await backend.deleteImage(identity.uid, slot)
+        // Three moves through a scratch slot swap the paintings —
+        // derivatives travel with each move, so the swap stays
+        // atomic in effect and no derivative is orphaned.
+        for (const which of ['current', 'previous']) {
+          await moveImageWithDerivatives(identity.uid, which, `mainswap:${which}`)
         }
-        await swap(newCurrent, 'current')
-        await swap(newPrevious, 'previous')
-        await swap(oldCurrent, oldSlot('current'))
-        await swap(oldPrevious, oldSlot('previous'))
+        for (const which of ['current', 'previous']) {
+          await moveImageWithDerivatives(identity.uid, ownSlot(which), which)
+        }
+        for (const which of ['current', 'previous']) {
+          await moveImageWithDerivatives(identity.uid, `mainswap:${which}`, oldSlot(which))
+        }
         collection.mainId = avatarId
         await persistCollection(identity.uid, collection)
         return { avatars: collection.avatars, mainId: avatarId }
@@ -506,7 +545,7 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
         return produce(identity, collection, avatar, { credit: options?.credit === true })
       })
     },
-    async fetchImage(identity, which = 'current', avatarId = null) {
+    async fetchImage(identity, which = 'current', avatarId = null, variant = null) {
       if (!backend) return null
       const collection = await loadCollection(identity.uid)
       if (!collection || collection.avatars.length === 0) return null
@@ -519,6 +558,21 @@ export function createAvatarService({ env = process.env, store, imageGenerate, t
       if (!record?.image) return null
       // Legacy portraits heal a baked-in top band on first read (§40 ③a).
       const healed = await normalizedStoredImage(backend, identity.uid, slot, record)
+      if (variant && which === 'current' && DERIVATIVE_KINDS.includes(variant)) {
+        // REQ-73: derivatives build from the healed bytes — refetch
+        // so the stamp matches what is actually stored after
+        // healing. Any failure serves the original painting.
+        const fresh = (await backend.getImage(identity.uid, slot)) || record
+        const derivative = await ensureAvatarDerivative(backend, identity.uid, slot, fresh, variant)
+        if (derivative) {
+          return {
+            buffer: derivative.buffer,
+            contentType: derivative.contentType,
+            version: record.version,
+            updatedAt: record.updatedAt,
+          }
+        }
+      }
       return {
         buffer: healed.buffer,
         contentType: healed.contentType,

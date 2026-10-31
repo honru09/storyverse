@@ -25,6 +25,8 @@ export const followKeyFor = (followerUid, followeeUid) =>
 export const presenceKeyFor = (uid) => createHash('sha256').update(`presence\n${uid}`).digest('hex')
 export const profileKeyFor = (uid) => createHash('sha256').update(`user-profile\n${uid}`).digest('hex')
 export const pictureKeyFor = (uid) => createHash('sha256').update(`profile-picture\n${uid}`).digest('hex')
+/** REQ-73: the baked face derivative of an uploaded picture. */
+export const pictureFaceKeyFor = (uid) => createHash('sha256').update(`profile-picture-face\n${uid}`).digest('hex')
 export const bannerKeyFor = (uid) => createHash('sha256').update(`profile-banner\n${uid}`).digest('hex')
 export const userReportKeyFor = (reporterUid, targetUid) =>
   createHash('sha256').update(`user-report\n${reporterUid}\n${targetUid}`).digest('hex')
@@ -84,6 +86,7 @@ export function createMemorySocialStore() {
   const profiles = new Map()
   const handles = new Map()
   const pictures = new Map()
+  const pictureFaces = new Map()
   const banners = new Map()
   const reports = new Map()
   const announcements = new Map()
@@ -132,6 +135,12 @@ export function createMemorySocialStore() {
     },
     async putPicture(uid, record) { pictures.set(pictureKeyFor(uid), { ...record }) },
     async deletePicture(uid) { pictures.delete(pictureKeyFor(uid)) },
+    async getPictureFace(uid) {
+      const record = pictureFaces.get(pictureFaceKeyFor(uid))
+      return record ? { ...record } : null
+    },
+    async putPictureFace(uid, record) { pictureFaces.set(pictureFaceKeyFor(uid), { ...record }) },
+    async deletePictureFace(uid) { pictureFaces.delete(pictureFaceKeyFor(uid)) },
     async getBanner(uid) {
       const record = banners.get(bannerKeyFor(uid))
       return record ? { ...record } : null
@@ -272,6 +281,16 @@ export function createFirestoreSocialStore(loadDb) {
     },
     async deletePicture(uid) {
       await (await db()).collection('profile_pictures').doc(pictureKeyFor(uid)).delete()
+    },
+    async getPictureFace(uid) {
+      const snapshot = await (await db()).collection('profile_pictures').doc(pictureFaceKeyFor(uid)).get()
+      return snapshot.exists ? snapshot.data() : null
+    },
+    async putPictureFace(uid, record) {
+      await (await db()).collection('profile_pictures').doc(pictureFaceKeyFor(uid)).set({ ...record })
+    },
+    async deletePictureFace(uid) {
+      await (await db()).collection('profile_pictures').doc(pictureFaceKeyFor(uid)).delete()
     },
     async getBanner(uid) {
       const snapshot = await (await db()).collection('profile_banners').doc(bannerKeyFor(uid)).get()

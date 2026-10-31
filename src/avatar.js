@@ -381,6 +381,25 @@ export async function generateAvatar({ profile, avatarId, getAccessToken, fetchI
   return result?.avatar ?? null
 }
 
+/**
+ * The derivative URL for a server image (REQ-73, DESIGN §59):
+ * small slots and the showcase read baked derivatives — a
+ * normalised 3:4 'portrait' variant and a 288² 'face' variant —
+ * through a plain `variant` query parameter on the three image
+ * URL families that carry them. Anything else (the static default
+ * avatar, banners, covers, blob previews) passes through
+ * untouched; whole-image surfaces keep the original URL.
+ */
+export function derivativeUrl(url, variant) {
+  if (typeof url !== 'string' || !url) return url
+  if (variant !== 'portrait' && variant !== 'face') return url
+  if (!/^\/(?:api\/users\/[^/]+\/(?:portrait|picture)|api\/avatar\/image)(?:\?|$)/.test(url)) return url
+  const [path, query = ''] = url.split('?')
+  const params = new URLSearchParams(query)
+  params.set('variant', variant)
+  return `${path}?${params.toString()}`
+}
+
 const portraitUrlCache = new Map()
 
 /**
@@ -391,6 +410,7 @@ const portraitUrlCache = new Map()
 export async function fetchAvatarObjectUrl({
   avatar,
   which = 'current',
+  variant = null,
   getAccessToken,
   fetchImpl = globalThis.fetch,
   createObjectURL = (blob) => URL.createObjectURL(blob),
@@ -399,11 +419,17 @@ export async function fetchAvatarObjectUrl({
   const { status, version, hasPrevious } = avatarPortraitState(avatar)
   if (!avatar?.id) return null
   if (which === 'previous' ? !hasPrevious : status !== 'ready') return null
-  const key = `${avatar.id}@${which}@${version}`
+  // REQ-73: small surfaces ask for the baked derivative ('face' /
+  // 'portrait'); whole-image surfaces pass no variant and get the
+  // painting itself. Derivatives exist for the current painting
+  // only, so a 'previous' read never carries one.
+  const effectiveVariant = which === 'current' && (variant === 'face' || variant === 'portrait') ? variant : null
+  const key = `${avatar.id}@${which}@${version}@${effectiveVariant || 'orig'}`
   if (portraitUrlCache.has(key)) return portraitUrlCache.get(key)
   const headers = await avatarHeaders(getAccessToken)
   const params = new URLSearchParams({ avatarId: avatar.id })
   if (which === 'previous') params.set('which', 'previous')
+  if (effectiveVariant) params.set('variant', effectiveVariant)
   const response = await fetchImpl(`/api/avatar/image?${params}`, { headers })
   if (!response.ok) return null
   const blob = await response.blob()

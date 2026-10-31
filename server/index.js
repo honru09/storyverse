@@ -1008,7 +1008,10 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         const identity = await auth.identity(request.headers.authorization)
         const params = new URL(request.url, 'http://localhost').searchParams
         const which = params.get('which') || 'current'
-        const image = await avatar.fetchImage(identity, which, params.get('avatarId') || null)
+        // ?variant=portrait|face serves the REQ-73 baked derivative.
+        const variantParam = params.get('variant')
+        const variant = variantParam === 'portrait' || variantParam === 'face' ? variantParam : null
+        const image = await avatar.fetchImage(identity, which, params.get('avatarId') || null, variant)
         if (!image) throw new ApiError(404, '还没有这张立绘。')
         sendImage(request, response, image, PRIVATE_IMAGE_CACHE)
         return
@@ -1291,8 +1294,11 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         if (action === 'portrait' && request.method === 'GET') {
           // ?avatar=<id> serves that collection member's painting
           // (PROFILE-ENRICH §35); without it, the main avatar's.
-          const avatarParam = new URL(request.url, 'http://localhost').searchParams.get('avatar')
-          const image = await social.portrait(uid, avatarParam || undefined)
+          // ?variant=portrait|face serves the REQ-73 baked derivative.
+          const query = new URL(request.url, 'http://localhost').searchParams
+          const variantParam = query.get('variant')
+          const variant = variantParam === 'portrait' || variantParam === 'face' ? variantParam : null
+          const image = await social.portrait(uid, query.get('avatar') || undefined, variant)
           if (!image) throw new ApiError(404, '这位用户还没有立绘。')
           sendImage(request, response, image, PUBLIC_IMAGE_CACHE)
           return
@@ -1300,7 +1306,9 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         if (action === 'picture' && request.method === 'GET') {
           // The resolved profile picture (upload or portrait). The
           // default avatar is a static asset and never lands here.
-          const image = await social.picture(uid)
+          // ?variant=face serves the REQ-73 baked face square.
+          const variantParam = new URL(request.url, 'http://localhost').searchParams.get('variant')
+          const image = await social.picture(uid, variantParam === 'face' ? 'face' : null)
           if (!image) throw new ApiError(404, '这位用户还没有自定义头像。')
           sendImage(request, response, image, PUBLIC_IMAGE_CACHE)
           return
