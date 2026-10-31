@@ -77,7 +77,6 @@ import {
   fetchPostComments,
   fetchStoreBooks,
   plazaCardIntroFor,
-  cardIntroExcerptFor,
   clipToUnits,
   textUnitsFor,
   countTextFor,
@@ -7179,9 +7178,9 @@ function PlazaPostBookCard({ book, onOpenDetail, onReadLine, onEnter }) {
   }
   const genre = genreById[book.genreId] || GENRES[0];
   const templateName = plazaTemplateNameFor(book) || genre.label;
-  // DEVICE-FIX3 §54: the plaza book card shares the store card's
-  // intro spec — the clause-bounded excerpt, not the raw synopsis.
-  const intro = cardIntroExcerptFor(book);
+  // REQ-72 (user rule 2026-10-31): the plaza book card carries no
+  // intro either — same minimal spec as the store card (cover, title,
+  // author line, actions). The synopsis lives on the detail page only.
   return (
     <div className="plaza-post-book">
       <button
@@ -7195,7 +7194,6 @@ function PlazaPostBookCard({ book, onOpenDetail, onReadLine, onEnter }) {
         </span>
         <span className="plaza-post-book-copy">
           <strong>《{book.title}》</strong>
-          {intro && <small className="plaza-post-book-intro">{intro}</small>}
           <small>{book.authorName} · {book.manual ? "作者手写" : templateName} · {plazaLengthLabel(book)}</small>
         </span>
         <Icon name="chevron" size={16} />
