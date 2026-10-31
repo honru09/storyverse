@@ -597,12 +597,15 @@ const mapTotalFor = (total, generated = 0, current = 0) =>
 // The two-segment genre label （家族 · 模板） used by the forge summary and
 // the side preview. A template whose full name already carries its family
 // （言情 · 古言） stands as-is; every other template reads shelf-first, the
-// same shape as the identity row's 概念 · 本地称谓.
+// same shape as the identity row's 概念 · 本地称谓. REQ-71: when the shelf
+// and the template carry the SAME name （历史 · 历史）, the join would
+// print one name twice — the single name stands alone.
 const twoSegmentTemplateName = (template) => {
   if (!template) return "";
   if (template.fullName.includes(" · ")) return template.fullName;
   const shelf = shelfForTemplate(template.id);
-  return shelf ? `${shelf.name} · ${template.name}` : template.fullName;
+  if (!shelf || shelf.name === template.name) return template.fullName;
+  return `${shelf.name} · ${template.name}`;
 };
 
 function seedStory(story) {
@@ -2112,6 +2115,97 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
   const [step, setStep] = useState(
     clampForgeStep(initialDraft?.step),
   );
+  // REQ-71 motion wiring: the step transition reads its direction from
+  // the previously shown step; the roll nonce re-fires the dice-settle
+  // flicker on every random pick. The motion policy silences both
+  // whole (animate=false renders everything at rest, complete).
+  const { animate: forgeAnimate } = useMotionPolicy("forge");
+  const prevStepRef = useRef(step);
+  const [rollFx, setRollFx] = useState(0);
+  // REQ-71: directional step transition (DESIGN §5 --dur-step). §53
+  // forbids whole-page horizontal slides, so direction rides the
+  // vertical axis — forward steps rise in from below, backward steps
+  // settle in from above — and the panel's blocks stagger 30ms apart
+  // with the whole cascade capped near 180ms. clearProps on both the
+  // tweens and the cleanup leaves no residue behind.
+  useEffect(() => {
+    const direction = Math.sign(step - prevStepRef.current);
+    prevStepRef.current = step;
+    if (!forgeAnimate || direction === 0) return undefined;
+    const panel = forgeRef.current?.querySelector(".forge-step-panel");
+    if (!panel) return undefined;
+    const blocks = panel.querySelectorAll(":scope > *");
+    const forward = direction > 0;
+    const tweens = [
+      gsap.fromTo(
+        panel,
+        { y: forward ? 16 : -8, opacity: 0 },
+        { y: 0, opacity: 1, duration: forward ? 0.42 : 0.32, ease: "power3.out", clearProps: "transform,opacity" },
+      ),
+    ];
+    if (blocks.length > 1) {
+      tweens.push(gsap.fromTo(
+        blocks,
+        { y: 10, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.38, ease: "power3.out", clearProps: "transform,opacity", delay: 0.04, stagger: 0.03 },
+      ));
+    }
+    return () => {
+      tweens.forEach((tween) => tween.kill());
+      gsap.set([panel, ...blocks], { clearProps: "transform,opacity" });
+    };
+  }, [step, forgeAnimate]);
+  // REQ-71: the free-creation hero breathes. Entrance is staggered by
+  // layer (the nebula settles out of a slow push-in, the ring scales
+  // up through a quarter-turn, the stardust fades in last); the
+  // ambient loop then breathes ring and glow on offset sine cycles
+  // and drifts the stardust sheet across the plate. Transform/opacity
+  // only; with the policy off nothing is set and the composed plate
+  // simply sits, complete.
+  useEffect(() => {
+    if (!forgeAnimate || step !== 1) return undefined;
+    const root = forgeRef.current;
+    const nebula = root?.querySelector(".genre-hero-nebula");
+    const dust = root?.querySelector(".genre-hero-dust");
+    const vortex = root?.querySelector(".genre-hero-vortex");
+    const ring = root?.querySelector(".genre-hero-ring-img");
+    const glow = root?.querySelector(".genre-hero-glow");
+    if (!nebula || !vortex || !ring) return undefined;
+    const tweens = [
+      gsap.fromTo(nebula, { scale: 1.12, opacity: 0 }, { scale: 1.04, opacity: 1, duration: 1.1, ease: "power2.out" }),
+      gsap.fromTo(vortex, { scale: 0.82, opacity: 0, rotate: -10 }, { scale: 1, opacity: 1, rotate: 0, duration: 1.2, ease: "expo.out", delay: 0.1, clearProps: "transform,opacity" }),
+      gsap.to(ring, { scale: 1.05, duration: 7, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 1.3 }),
+      gsap.to(nebula, { xPercent: 1.2, duration: 30, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 1.2 }),
+    ];
+    if (dust) {
+      tweens.push(gsap.fromTo(dust, { opacity: 0 }, { opacity: 0.85, duration: 1.4, delay: 0.25 }));
+      tweens.push(gsap.to(dust, { xPercent: -2.5, yPercent: 1.5, duration: 26, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 1.6 }));
+    }
+    if (glow) {
+      tweens.push(gsap.to(glow, { opacity: 0.62, scale: 1.12, duration: 5, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 1.3 }));
+    }
+    return () => {
+      tweens.forEach((tween) => tween.kill());
+      gsap.set([nebula, dust, vortex, ring, glow].filter(Boolean), { clearProps: "transform,opacity" });
+    };
+  }, [step, forgeAnimate]);
+  // REQ-71: a roll lands with a dice-settle — the result line flickers
+  // three times in 90ms steps and settles, the way a slot reel stops.
+  // Restrained on purpose: no spinning bricks, no confetti.
+  useEffect(() => {
+    if (!forgeAnimate || rollFx === 0) return undefined;
+    const lines = forgeRef.current?.querySelectorAll(".random-combo-row p, .world-selection-note");
+    if (!lines?.length) return undefined;
+    const tween = gsap.timeline()
+      .to(lines, { opacity: 0.25, duration: 0.09, ease: "steps(1)" })
+      .to(lines, { opacity: 1, duration: 0.09, ease: "steps(1)" })
+      .to(lines, { opacity: 0.35, duration: 0.09, ease: "steps(1)" })
+      .to(lines, { opacity: 1, duration: 0.3, ease: "power3.out", clearProps: "opacity" });
+    return () => {
+      tween.kill();
+      gsap.set(lines, { clearProps: "opacity" });
+    };
+  }, [rollFx, forgeAnimate]);
   // 「默认即选中」 governance: a value the system filled in silently (the
   // first template, the default trait/style/length) is NOT shown as a
   // deliberate pick. A restored draft's stored values were all confirmed
@@ -2943,6 +3037,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       </div>
       <div className="forge-layout">
         <main className="forge-main">
+          <div className="forge-step-panel" key={step}>
           {step === 1 && (
             <>
               <div className="forge-ambient-wrap">
@@ -2957,7 +3052,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                 <p>{rolled
                   ? <>已配好：<b>{rolled.template.fullName} · {rolled.world}</b>，以「{rolled.identity.name}」的身份{rolled.point ? <>，从「{rolled.point.name}」醒来</> : null}。不满意就再掷一次。</>
                   : <>没想好？<b>随机组合</b>一次配好题材、世界、身份和出生点。</>}</p>
-                <Button variant="secondary" icon="spark" className="random-combo-button" onClick={rollCombo}>
+                <Button variant="secondary" icon="spark" className="random-combo-button" onClick={() => { rollCombo(); setRollFx((count) => count + 1); }}>
                   {rolled ? "再掷一次" : "随机组合"}
                 </Button>
                 </div>
@@ -2966,17 +3061,26 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                   open door is the hero of this step now — a large
                   black-hole visual region with the free-genre input
                   inside it, so creating is never gated by a category
-                  list. The vortex is pure CSS (transform/opacity
-                  only) and stops under the shell's data-motion policy
-                  and prefers-reduced-motion. Typing selects the custom
-                  genre; the example chips fill the field for readers
-                  who want a running start. */}
+                  list. REQ-71: the visual is layered generated art —
+                  a nebula plate, a screen-blended stardust sheet and a
+                  black-backed accretion-ring plate inside the vortex
+                  frame, orbited by two thin CSS rings. GSAP breathes
+                  and drifts the layers (transform/opacity only, see
+                  the forge hero effect); the motion policy and
+                  prefers-reduced-motion still every layer, complete.
+                  Typing selects the custom genre; the example chips
+                  fill the field for readers who want a running start. */}
               <div className={`genre-hero ${customGenreActive ? "selected" : ""}`}>
-                <div className="genre-hero-vortex" aria-hidden="true">
-                  <span className="genre-hero-disc" />
-                  <span className="genre-hero-ring genre-hero-ring--a" />
-                  <span className="genre-hero-ring genre-hero-ring--b" />
-                  <span className="genre-hero-core" />
+                <div className="genre-hero-visual" aria-hidden="true">
+                  <img className="genre-hero-nebula" src="/art/hero-genesis-nebula-640.webp" srcSet="/art/hero-genesis-nebula-640.webp 640w, /art/hero-genesis-nebula-1122.webp 1122w" sizes="(min-width: 700px) 60vw, 100vw" alt="" decoding="async" />
+                  <img className="genre-hero-dust" src="/art/hero-genesis-dust-1122.webp" alt="" decoding="async" />
+                  <div className="genre-hero-vortex">
+                    <span className="genre-hero-glow" />
+                    <img className="genre-hero-ring-img" src="/art/hero-genesis-ring-640.webp" alt="" decoding="async" />
+                    <span className="genre-hero-orbit genre-hero-orbit--a" />
+                    <span className="genre-hero-orbit genre-hero-orbit--b" />
+                  </div>
+                  <span className="genre-hero-scrim" />
                 </div>
                 <div className="genre-hero-body">
                   <div className="genre-hero-head">
@@ -3092,7 +3196,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                         treatment (a 3×3 collage of every family's art:
                         any of them could be the roll), same pick
                         grammar. No dashed special-case card. */}
-                    <button type="button" className="shelf-brick has-art shelf-brick-random" onClick={rollTemplate}>
+                    <button type="button" className="shelf-brick has-art shelf-brick-random" onClick={() => { rollTemplate(); setRollFx((count) => count + 1); }}>
                       <span className="shelf-brick-collage" aria-hidden="true">
                         {GENRE_SHELVES.slice(0, 9).map((shelf) => (
                           <img key={shelf.id} src={`/art/${shelfArtBase(shelf)}-640.webp`} alt="" loading="lazy" decoding="async" />
@@ -3209,7 +3313,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                       </span>
                       <Icon name="chevron" size={15} />
                     </button>
-                    <button type="button" className="world-card world-card-random" onClick={rollWorld}>
+                    <button type="button" className="world-card world-card-random" onClick={() => { rollWorld(); setRollFx((count) => count + 1); }}>
                       <span className="world-card-cover world-card-cover--symbol" aria-hidden="true">
                         <span className="world-card-symbol">掷</span>
                       </span>
@@ -3879,6 +3983,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
               <GenerationMode provider={provider} value={engine} onChange={setMode} disabled={busy} />
             </>
           )}
+          </div>
           {/* FORGE-TRIM (scroll fix): the status line renders BEFORE the
               docked action bar, so the bar is the last in-flow element
               of the forge column. It used to render after the bar, and

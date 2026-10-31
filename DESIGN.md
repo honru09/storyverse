@@ -138,6 +138,14 @@ colors:
 | `--dur-aurora` | 26–38s 循环 | ease-in-out | 极光光团缓漂 |
 | `--dur-pulse` | 2000ms 循环 | ease-in-out | 当前节点/生成中脉冲（scale 1↔1.25 + 光晕） |
 | `--dur-breathe` | 2600ms 循环 | ease-in-out | 预生成虚线节点呼吸（opacity .45↔1） |
+| `--dur-step-fwd` / `--dur-step-back` | 420ms / 320ms | `cubic-bezier(.22,1,.36,1)`（GSAP power3.out） | 造世步进转场（REQ-71）：§53 禁整页横滑，方向感走纵轴——前进上浮 16px 淡入、后退自上方 8px 落定；面板内块级错峰 30ms、总延迟封顶 ~180ms，块内动效 380ms 同缓动 |
+| `--dur-hero-in` | 1200ms | `cubic-bezier(.16,1,.3,1)`（GSAP expo.out） | 自由创世主视觉入场（REQ-71）：星云 1100ms 自 scale 1.12 落到 1.04、环体 1200ms 自 .82 + 转 −10° 展开、星尘 1400ms 淡入，三层错峰 |
+| hero 辉光呼吸 | 5000ms 循环 | sine.inOut（GSAP yoyo） | 主视觉光子环辉光 opacity .38↔.62 + scale 1↔1.12（REQ-71） |
+| hero 环体呼吸 | 7000ms 循环 | sine.inOut（GSAP yoyo） | 主视觉吸积环 scale 1↔1.05（REQ-71） |
+| hero 星尘漂移 | 26000ms 循环 | sine.inOut（GSAP yoyo） | 主视觉星尘层（screen 叠加、放大 124% 出血）x −2.5% / y +1.5% 往返（REQ-71） |
+| hero 星云缓漂 | 30000ms 循环 | sine.inOut（GSAP yoyo） | 主视觉星云底板 x +1.2% 往返（常驻 scale 1.04 兜边）（REQ-71） |
+| hero 轨道环转 | 46s / 32s 循环 | linear | 主视觉两层 CSS 轨道环差速旋转（外环反向虚线 / 内环正向，REQ-71） |
+| 掷骰落定 | 3×90ms + 300ms | steps(1) + `cubic-bezier(.22,1,.36,1)` | 随机组合/题材/世界（REQ-71）：结果行 opacity 闪烁三下（.25/1/.35）后 300ms 落定，不转卡、不撒花 |
 
 降级：`prefers-reduced-motion: reduce` 或动效开关 off → 全部动画关闭、状态变化瞬时完成；键盘输入模式（`html[data-input="keyboard"]`）同样全关（既有约定）。涟漪只在 pointerdown 产生，键盘触发不产生。
 

@@ -257,3 +257,17 @@ test('protagonist step has no origin picker: the identity step is the only origi
   assert.doesNotMatch(main, /draft\.origin === origin/)
   assert.doesNotMatch(main, /<dt>出身<\/dt>/)
 })
+
+test('REQ-71: layered genesis hero, step motion wiring, same-name label fix', () => {
+  // The hero is layered generated art now, not a pure-CSS vortex.
+  for (const layer of ['hero-genesis-nebula', 'hero-genesis-dust', 'hero-genesis-ring']) {
+    assert.ok(main.includes(layer), `hero layer ${layer} is wired`)
+  }
+  assert.match(styles, /\.genre-hero-orbit--a/)
+  assert.match(styles, /sel-mark-pop/)
+  // Step changes animate a keyed panel; rolls fire the settle flicker.
+  assert.match(main, /className="forge-step-panel" key=\{step\}/)
+  assert.match(main, /setRollFx/)
+  // 「历史 · 历史」: a shelf and template sharing one name print it once.
+  assert.match(main, /shelf\.name === template\.name/)
+})

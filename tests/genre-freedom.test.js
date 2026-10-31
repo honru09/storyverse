@@ -138,6 +138,13 @@ test('every family has card art on disk at both sizes', () => {
   }
 })
 
+test('REQ-71: every family owns its plate — no shelf borrows art', () => {
+  for (const shelf of GENRE_SHELVES) {
+    assert.equal(shelf.art, undefined, `${shelf.id} still borrows ${shelf.art}`)
+    assert.equal(shelfArtBase(shelf), `family-${shelf.id}`, `${shelf.id} resolves to its own plate`)
+  }
+})
+
 test('card faces carry no internal counts and the step leads with free creation', () => {
   const main = readFileSync(join(root, 'src/main.jsx'), 'utf8')
   assert.ok(!main.includes('种写法'), 'the 「N 种写法」 count copy is gone')
