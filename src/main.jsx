@@ -2178,7 +2178,10 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     const tweens = [
       gsap.fromTo(baked, { scale: 1.12, opacity: 0 }, { scale: 1.04, opacity: 1, duration: 1.1, ease: "power2.out" }),
       gsap.fromTo(vortex, { scale: 0.82, opacity: 0, rotate: -10 }, { scale: 1, opacity: 1, rotate: 0, duration: 1.2, ease: "expo.out", delay: 0.1, clearProps: "transform,opacity" }),
-      gsap.fromTo(baked, { scale: 1.04 }, { scale: 1.09, duration: 7, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 1.3 }),
+      // Breathing rides the entrance's resting scale via gsap.to —
+      // a delayed fromTo would immediate-render its start scale over
+      // the entrance's first frame (00055 review fix, ISSUE 3-1).
+      gsap.to(baked, { scale: 1.09, duration: 7, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 1.3 }),
       gsap.to(baked, { xPercent: 1.2, duration: 30, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 1.2 }),
     ];
     if (glow) {
