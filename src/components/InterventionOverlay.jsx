@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import PixelfxCanvas from "../fx/PixelfxCanvas.jsx";
+import { pickFx, PIXELFX_SCENE } from "../fx/placements.js";
+import { useMotionSettings } from "../motion/MotionProvider.jsx";
 
 const STAGES = ["扰动世界线", "重写下一章", "落定"];
 const STAGE_NOTES = [
@@ -33,8 +36,18 @@ export default function InterventionOverlay({
   stages = STAGES,
   notes = STAGE_NOTES,
   ariaLabel = "正在介入世界线",
+  family,
 }) {
   const [stage, setStage] = useState(0);
+  // PIXELFX-WAVE1 (§60): the intervention beat gets one one-shot pixel
+  // burst over the weave (arcane by default, family variants via
+  // placements), removed the moment it finishes. Only the intervention
+  // caller passes `family`; the re-roll reuse passes none and stays
+  // exactly as before. Motion off / reduced motion skips it entirely.
+  const settings = useMotionSettings();
+  const motionOn = Boolean(settings?.enabled) && !settings?.reducedMotion && !settings?.saveData;
+  const [fxDone, setFxDone] = useState(false);
+  const fxPick = family !== undefined && motionOn ? pickFx(PIXELFX_SCENE.INTERVENE, family) : null;
   const doneRef = useRef(false);
   useEffect(() => {
     if (stage >= stages.length - 1) return undefined;
@@ -60,6 +73,16 @@ export default function InterventionOverlay({
   return createPortal(
     <div className="intervention-overlay" role="alertdialog" aria-modal="false" aria-label={ariaLabel}>
       <div className="intervention-card">
+        {fxPick && !fxDone && (
+          <PixelfxCanvas
+            className="intervention-fx"
+            fx={fxPick.fx}
+            palette={fxPick.palette}
+            seed={fxPick.seed}
+            loop={false}
+            onDone={() => setFxDone(true)}
+          />
+        )}
         <svg className="intervention-weave" viewBox="0 0 120 72" aria-hidden="true">
           <path className="weave-strand strand-a" d="M4 52 C 30 20, 60 62, 116 18" />
           <path className="weave-strand strand-b" d="M4 30 C 36 58, 70 8, 116 44" />

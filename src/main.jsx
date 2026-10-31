@@ -4029,7 +4029,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
               </div>
             </div>
           }
-          {busy && <GenerationOverlay kind="story" onCancel={() => { operation.current?.abort(); operation.current = null; setBusy(false); }} />}
+          {busy && <GenerationOverlay kind="story" family={shelfForTemplate(draft.genreTemplateId)?.id || null} onCancel={() => { operation.current?.abort(); operation.current = null; setBusy(false); }} />}
         </main>
         {step !== 5 && (
           <PreviewPanel
@@ -6468,6 +6468,7 @@ function Reader({
       {intervening && (
         <InterventionOverlay
           settled={interveneSettled}
+          family={shelfForTemplate(story?.genreTemplateId || story?.config?.genreTemplateId || "")?.id || null}
           onDone={() => setIntervening(false)}
           onCancel={() => { interveneCancelledRef.current = true; setIntervening(false); }}
         />
@@ -11014,7 +11015,7 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
             </Button>
             <Button variant="ghost" disabled={busy} onClick={() => onNavigate("plaza-detail", { id })}>先不进入</Button>
           </div>
-          {busy && <GenerationOverlay kind="story" onCancel={() => { operation.current?.abort(); operation.current = null; setBusy(false); }} />}
+          {busy && <GenerationOverlay kind="story" family={shelfForTemplate(detail?.genreTemplateId || "")?.id || null} onCancel={() => { operation.current?.abort(); operation.current = null; setBusy(false); }} />}
         </>
       )}
     </div>
