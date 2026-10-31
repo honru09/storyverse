@@ -10,6 +10,11 @@ import { createPlazaFeedStore } from './plaza-feed-store.js'
 import { createBookRatingsStore } from './book-ratings-store.js'
 import { createAvatarStore, collectionFromRecord, imageSlotFor } from './avatar-store.js'
 import { normalizedStoredImage } from './portrait-image.js'
+import {
+  DERIVATIVE_KINDS,
+  ensureAvatarDerivative,
+  ensurePictureFaceDerivative,
+} from './avatar-derivatives.js'
 import { createCoverStore } from './cover-store.js'
 import { createIdentityStore } from './identity-store.js'
 import { isOfficialUid, plazaSummaryOf } from './plaza.js'
@@ -992,11 +997,17 @@ export function createSocialService({
         : buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47
       if (!magicOk) throw new ApiError(400, '图片格式对不上，请换一张 JPG 或 PNG。')
       return serialise(`profile:${identity.uid}`, async () => {
-        await backend.putPicture(identity.uid, {
+        const pictureRecord = {
           image: buffer.toString('base64'),
           contentType,
           updatedAt: new Date(now()).toISOString(),
-        })
+        }
+        await backend.putPicture(identity.uid, pictureRecord)
+        // REQ-73: bake the face derivative with the upload
+        // (best-effort; reads rebuild it lazily when missing).
+        try {
+          await ensurePictureFaceDerivative(backend, identity.uid, pictureRecord)
+        } catch { /* rebuilt on read */ }
         const existing = await profileRecordOf(identity.uid)
         await backend.putProfileRecord({
           uid: identity.uid,
@@ -1094,7 +1105,7 @@ export function createSocialService({
      * URL from the profile payload — so a 'default' resolution is 404
      * here by design.
      */
-    async picture(uid) {
+    async picture(uid, variant = null) {
       const target = clip(uid, 512)
       if (!target) return null
       const [record, profile] = await Promise.all([profileRecordOf(target), avatarProfileOf(target)])
@@ -1106,9 +1117,15 @@ export function createSocialService({
       if (kind === 'upload') {
         const stored = await backend.getPicture(target)
         if (!stored?.image) return null
+        // REQ-73: small slots read the baked face square; any
+        // derivative failure serves the uploaded bytes themselves.
+        if (variant === 'face') {
+          const derivative = await ensurePictureFaceDerivative(backend, target, stored)
+          if (derivative) return derivative
+        }
         return { buffer: Buffer.from(stored.image, 'base64'), contentType: stored.contentType || 'image/jpeg' }
       }
-      if (kind === 'avatar') return this.portrait(target)
+      if (kind === 'avatar') return this.portrait(target, undefined, variant)
       return null
     },
 
@@ -1121,7 +1138,7 @@ export function createSocialService({
      * the main avatar keeps its historic slot; an id that is not in
      * the collection is a 404, never a silent swap to the main image.
      */
-    async portrait(uid, avatarId) {
+    async portrait(uid, avatarId, variant = null) {
       if (!avatars) return null
       const target = clip(uid, 512)
       if (!target) return null
@@ -1135,7 +1152,16 @@ export function createSocialService({
       if (!image?.image) return null
       // Same lazy top-band healing as the avatar service (§40 ③a):
       // public tiles read through here.
-      return normalizedStoredImage(avatars, target, slot, image)
+      const healed = await normalizedStoredImage(avatars, target, slot, image)
+      if (variant && DERIVATIVE_KINDS.includes(variant)) {
+        // REQ-73: the derivative builds from the healed bytes (the
+        // refetch carries the post-healing stamp); any failure
+        // serves the healed original.
+        const fresh = (await avatars.getImage(target, slot)) || image
+        const derivative = await ensureAvatarDerivative(avatars, target, slot, fresh, variant)
+        if (derivative) return derivative
+      }
+      return healed
     },
 
     /** The resolved author identity + picture for plaza surfaces. */

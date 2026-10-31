@@ -34,18 +34,12 @@
      near-black and disappears on the art. These two values are fixed
      across all three themes, like .story-cover-pending-chip's. */
   --on-art:#f5f7ff; --on-art-dim:rgba(216,226,250,.82);
-  /* REQ-70 face-anchor spec (DESIGN §58): ONE crop recipe for every
-     small avatar/portrait slot on the site, defined here and only
-     here. Portrait-kind pictures (化身立绘 — full-body figures)
-     anchor at the very top of the source and zoom by --face-zoom
-     around that same top anchor, so the visible window is always the
-     source's top slice: the whole head (hair, leaves and all) stays
-     in frame and the face lands at a fixed scale — measured on the
-     production portrait corpus, face height is 20–31% of the frame
-     for every portrait in the wild, head always whole. Uploaded and
-     default pictures are user-framed squares: they take
-     --face-plain-pos and no zoom. */
-  --face-pos:50% 0%; --face-zoom:1.7; --face-origin:50% 0%; --face-plain-pos:50% 12%;
+  /* REQ-73 (DESIGN §59) RETIRED the §58 face-anchor variables: the
+     crop no longer happens in CSS at all. Every small slot reads a
+     server-baked face derivative and the showcase a baked 3:4
+     portrait derivative (server/avatar-derivatives.js), so these
+     surfaces carry no object-position recipe and no transform —
+     plain cover of an already-shaped image, defined in §59. */
   /* On-art chip (CONTRAST-FIX, 2026-10-29): the solid scrim a lone
      text CTA wears when it rides bright art (the store banner's
      「上架我的故事」 measured 3.89 worst-case bare). #f5f7ff on this
@@ -1053,18 +1047,14 @@ html[data-input="keyboard"] .reading-dialog[open]{opacity:1;transform:none}
 .avatar-stage{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--surface-card);backdrop-filter:var(--blur-card);-webkit-backdrop-filter:var(--blur-card);box-shadow:var(--shadow-card),var(--shadow-glass-top)}
 .avatar-frame{position:relative;width:100%;aspect-ratio:3/4;overflow:hidden;border-radius:18px;background:linear-gradient(160deg,rgba(56,189,248,.16),rgba(139,92,246,.14) 55%,rgba(6,13,31,.35))}
 .avatar-frame .avatar-portrait-img,.avatar-frame .avatar-portrait-fallback{position:absolute;inset:0;width:100%;height:100%}
-/* The editor stage is a whole-figure surface (like the profile
-   showcase): it opts OUT of the §58 face crop and shows the full
-   portrait under the plain anchor. */
-.avatar-frame .avatar-portrait-img{object-position:var(--face-plain-pos);transform:none}
-/* Face-anchored crop everywhere else (BUGHUNT-FIX BH-11, unified by
-   REQ-70 into DESIGN §58): AvatarPortrait is portrait-kind by
-   definition, so its base rule IS the one shared spec — every small
-   slot that renders it (avatar cards, bring-in rows, the home face
-   frame) inherits the same top anchor and the same facial scale
-   instead of the centre crop that shrank the whole figure into
-   small thumbs with the face unrecognisable. */
-.avatar-portrait-img{object-fit:cover;object-position:var(--face-pos);transform:scale(var(--face-zoom));transform-origin:var(--face-origin);display:block}
+/* The editor stage is a whole-figure surface: it reads the
+   original painting (AvatarPortrait variant={null}) and shows it
+   plainly. Everywhere else AvatarPortrait renders the server's
+   baked face derivative (REQ-73, DESIGN §59), which is already a
+   face-framed square — so the base rule is a plain centre cover
+   with NO anchor and NO transform; there is no crop left in CSS
+   for any slot on the site. */
+.avatar-portrait-img{object-fit:cover;object-position:50% 50%;display:block}
 .avatar-portrait-fallback{display:grid;place-items:center;background:linear-gradient(150deg,rgba(56,189,248,.22),rgba(139,92,246,.28));color:var(--ink)}
 .avatar-portrait-fallback span{font-size:64px;font-weight:800;opacity:.85}
 .avatar-frame-state{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);padding:6px 14px;border-radius:999px;background:rgba(6,13,31,.72);color:#dbeafe;font-size:12.5px;font-weight:650;white-space:nowrap;backdrop-filter:blur(6px)}
@@ -1350,12 +1340,10 @@ button.plaza-source-row.is-link{cursor:pointer}
 .ryan-glyph-btn:active{transform:scale(.92)}
 .ryan-avatar-wrap{display:flex;justify-content:center;margin-top:24px}
 .ryan-avatar-frame{width:136px;height:136px;flex:none;display:block;border-radius:50%;overflow:hidden;background:var(--medal-bg)}
-.ryan-avatar{width:100%;height:100%;display:block;object-fit:cover;object-position:var(--face-plain-pos)}
-/* Avatar portraits are full-body figures: the §58 face spec puts the
-   head-and-shoulders in the circle at the same facial scale as every
-   other slot. Uploads and the default asset are already framed for
-   the circle. */
-.ryan-avatar-frame.is-portrait .ryan-avatar{object-position:var(--face-pos);transform:scale(var(--face-zoom));transform-origin:var(--face-origin)}
+.ryan-avatar{width:100%;height:100%;display:block;object-fit:cover;object-position:50% 50%}
+/* REQ-73: avatar portraits reach small circles as the server's
+   baked face derivative, already framed — no CSS crop spec remains
+   on any slot (DESIGN §59 supersedes §58). */
 .ryan-name{margin:20px 0 0;padding:0 8px;text-align:center;font-size:37px;font-weight:800;letter-spacing:-.5px;line-height:1.15;color:var(--profile-ink-strong);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;line-clamp:1;overflow:hidden}
 .ryan-name[data-name-tier="mid"]{font-size:28px}
 .ryan-name[data-name-tier="long"]{font-size:22px;letter-spacing:0}
@@ -1490,8 +1478,7 @@ button.plaza-source-row.is-link{cursor:pointer}
 .profile-edit-close{width:32px;height:32px;border:0;border-radius:50%;background:var(--glass-2);color:var(--sheet-ink);display:grid;place-items:center;cursor:pointer}
 .profile-edit-picture{display:flex;align-items:center;gap:14px;margin-top:18px}
 .profile-edit-preview-frame{width:56px;height:56px;flex:none;display:block;border-radius:50%;overflow:hidden;background:var(--glass-2)}
-.profile-edit-preview{width:100%;height:100%;display:block;object-fit:cover;object-position:var(--face-plain-pos)}
-.profile-edit-preview-frame.is-portrait .profile-edit-preview{object-position:var(--face-pos);transform:scale(var(--face-zoom));transform-origin:var(--face-origin)}
+.profile-edit-preview{width:100%;height:100%;display:block;object-fit:cover;object-position:50% 50%}
 .profile-edit-picture-copy strong{display:block;font-size:15px}
 .profile-edit-picture-copy small{display:block;margin-top:3px;font-size:12.5px;color:var(--sheet-dim)}
 .profile-edit-picture-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
@@ -1686,20 +1673,19 @@ button.plaza-source-row.is-link{cursor:pointer}
    Face-anchor slots, the profile window, plaza reorder surfaces, shelf
    controls, the avatar stand, the skeleton, help, and desktop bands. */
 
-/* Face anchor (§27, unified by REQ-70 into DESIGN §58): every small
-   slot that shows a portrait crops by the ONE spec in :root —
-   portrait-kind pictures take the top anchor + face zoom, uploaded
-   pictures the plain anchor without the zoom. The full figure is
-   only ever shown whole in the profile's showcase and the avatar
+/* Small face slots (§27; the crop itself moved server-side with
+   REQ-73 / DESIGN §59): every small slot reads the baked face
+   derivative and shows it with a plain centre cover — no anchor
+   spec and no zoom exist in CSS any more. The full figure is only
+   ever shown whole in the profile's showcase and the avatar
    editor's stage. */
 .mobile-bottom-nav button>span{font-size:11px;font-weight:650;line-height:1.15;white-space:nowrap}
 .nav-face-frame.is-person{width:40px;height:40px}
 .nav-face-frame{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;overflow:hidden;background:var(--medal-bg);color:var(--dim);flex:none}
-.nav-face-img{width:100%;height:100%;display:block;object-fit:cover;object-position:var(--face-plain-pos)}
-.nav-face-frame.is-portrait .nav-face-img{object-position:var(--face-pos);transform:scale(var(--face-zoom));transform-origin:var(--face-origin)}
+.nav-face-img{width:100%;height:100%;display:block;object-fit:cover;object-position:50% 50%}
 .side-profile-entry{margin-top:auto}
 
-/* Plaza avatar thumbs: the frame clips, the portrait zooms to the face. */
+/* Plaza avatar thumbs: the frame clips a baked face square (REQ-73). */
 .plaza-avatar-frame{display:inline-block;width:32px;height:32px;border-radius:50%;overflow:hidden;flex-shrink:0;background:transparent;vertical-align:middle}
 .plaza-avatar-frame.is-large{width:76px;height:76px;border-radius:20px}
 /* DETAIL-FIX2: the profile-link wrapper around the large thumb is a
@@ -1708,14 +1694,12 @@ button.plaza-source-row.is-link{cursor:pointer}
    in a grey matte with the picture floating inside it. The wrapper
    now hugs the frame exactly, at the frame's own 20px radius. */
 .plaza-avatar-profile-link{display:block;flex-shrink:0;padding:0;border:0;background:none;border-radius:20px;line-height:0}
-/* DEVICE-FIX REQ-22: the face anchor belongs to PORTRAIT pictures
-   only — uploads and the default asset sit unscaled under the plain
-   anchor, and the frame carries no backing tint, so the image fills
-   the frame. REQ-70: the portrait recipe is the ONE §58 spec at
-   every frame size — the old harder 3.4x zoom for the 32px frame is
-   retired (it cropped the chin off wide-headed portraits). */
-.plaza-avatar-frame .plaza-avatar-img{width:100%;height:100%;display:block;object-fit:cover;object-position:var(--face-plain-pos);background:transparent}
-.plaza-avatar-frame.is-portrait .plaza-avatar-img{object-position:var(--face-pos);transform:scale(var(--face-zoom));transform-origin:var(--face-origin)}
+/* REQ-73: portrait-kind pictures arrive as the baked face square,
+   uploads as their own baked face square, the default asset as
+   itself — every kind is already framed for the circle, so one
+   plain cover serves all of them and the frame carries no backing
+   tint. The §58 zoom recipe that used to live here is retired. */
+.plaza-avatar-frame .plaza-avatar-img{width:100%;height:100%;display:block;object-fit:cover;object-position:50% 50%;background:transparent}
 
 /* Profile window: a sheet over the current page. The base page recedes
    (scale + dim) while the window is up; closing returns to the exact
@@ -1880,8 +1864,7 @@ html[data-shell-theme='black'] .profile-hero-bg:not(.is-clear){opacity:.85}
 .page-profile.is-page-form .profile-hero .ryan-menu{top:60px;right:20px}
 .profile-hero-id{position:relative;z-index:3;margin-top:auto;padding:18px 2px 20px}
 .profile-hero-face{display:block;width:74px;height:74px;border-radius:50%;overflow:hidden;box-shadow:0 0 0 2px color-mix(in srgb,var(--profile-ink) 55%,transparent),0 10px 24px rgba(0,0,0,.35);background:var(--profile-chip)}
-.profile-hero-face img{width:100%;height:100%;object-fit:cover;object-position:var(--face-plain-pos);display:block}
-.profile-hero-face.is-portrait img{object-position:var(--face-pos);transform:scale(var(--face-zoom));transform-origin:var(--face-origin)}
+.profile-hero-face img{width:100%;height:100%;object-fit:cover;object-position:50% 50%;display:block}
 .profile-hero-name-row{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:14px}
 .profile-hero-name{margin:0;font-size:26px;font-weight:700;letter-spacing:-.01em;color:var(--profile-ink-strong);line-height:1.15;overflow-wrap:anywhere}
 .profile-hero-name[data-name-tier='mid']{font-size:22px}
@@ -1938,32 +1921,23 @@ button.profile-stat{cursor:pointer}
 :root[data-shell-theme='white'] .profile-store-chip.is-live{color:#0d7a54}
 .profile-store-copy small{font-size:12px;color:var(--profile-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .profile-store-card>svg{flex:0 0 auto;color:var(--profile-faint)}
-/* REQ-64 showcase (replaces the deleted legacy stage wholesale):
-   the new container's rules are structural, not corrective.
-   - The card is a figure box plus an in-flow name plate — the plate
-     no longer overlays the painting, so no legibility scrims exist.
-   - The figure box is 4:3 (was: a 3:4 full-card frame). At the
-     profile column's 358px the figure is 268px tall and the whole
-     card lands at ~375px — comfortably inside the 390x844 visible
-     band (topbar bottom 71 → bottom-nav top 770 = 699px, measured),
-     so the card can be seen whole at its natural anchored stop and
-     no scroll position can leave half of it behind a bar.
-   - The portrait is contain-fit inside the figure box: the drawn
-     figure's head and shoes are inside the card by construction, at
-     every scroll position, with zero scroll intervention. */
-.profile-showcase{flex:none;width:min(100%,420px);border-radius:24px;overflow:hidden;background:var(--profile-panel);margin:0 auto;text-align:left}
-.profile-showcase-figure{position:relative;aspect-ratio:4/3;overflow:hidden}
-/* The figure is contain-fit over its own ground (REQ-70): the fill
-   is painted from the portrait's own edge tones (ShowcaseFill +
-   art-edges.js) and the halo is the SAME image at the SAME contain
-   geometry as the figure — blurred, breathing 10% past the figure's
-   edges — so the painting reads as one picture at one proportion,
-   and a pale matte melts into its own ground with no seam. The old
-   cover-fit blurred backdrop (a second, larger scale of the same
-   painting behind the first) is retired. */
-.profile-showcase-fill{position:absolute;inset:0;background:var(--profile-panel);z-index:0}
-.profile-showcase-halo{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:50% 50%;filter:blur(26px) brightness(.97) saturate(1.05);transform:scale(1.1);z-index:0;pointer-events:none}
-.profile-showcase-img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}
+/* REQ-73 showcase (the REQ-64 structure kept — figure box plus an
+   in-flow name plate, zero scroll intervention — with the picture
+   itself rebuilt): a vertical CHARACTER CARD.
+   - The figure box is 3:4, the exact proportion of the server's
+     baked 'portrait' derivative, so the single image cover-fills
+     it precisely: the subject is whole (the derivative padded the
+     painting's own edge tones into the pixels, never cropped it),
+     and there is no ground layer, halo copy or second scale left.
+   - Card width min(82%, 320px): at the 390px profile column the
+     figure is ~392px tall and the whole card ~460px — inside the
+     699px visible band (REQ-64's measurement) with room to spare;
+     at 360px it lands ~341+plate. (REQ-64's 4:3 card was 420 wide /
+     ~375 total; the new card is narrower and taller — a portrait
+     card, not a landscape frame with a figure pasted in it.) */
+.profile-showcase{flex:none;width:min(82%,320px);border-radius:24px;overflow:hidden;background:var(--profile-panel);margin:0 auto;text-align:left}
+.profile-showcase-figure{position:relative;aspect-ratio:3/4;overflow:hidden}
+.profile-showcase-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}
 .profile-showcase-motes{z-index:2}
 .profile-showcase-noface{position:absolute;inset:0;display:grid;place-items:center;font-size:96px;font-weight:700;line-height:1;color:color-mix(in srgb,var(--profile-ink) 15%,transparent);z-index:1}
 .profile-showcase-plate{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;padding:12px 16px 14px}
@@ -1977,11 +1951,11 @@ button.profile-stat{cursor:pointer}
 .profile-avatar-row::-webkit-scrollbar{display:none}
 .profile-avatar-tile,.profile-avatar-new{flex:0 0 auto;width:64px;border:0;background:none;padding:0;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;font:inherit}
 .profile-avatar-tile-img{width:64px;height:64px;border-radius:16px;overflow:hidden;background:var(--profile-chip);display:grid;place-items:center;border:2px solid transparent;box-sizing:border-box}
-/* BH-13 / REQ-70: tiles crop by the ONE §58 face spec — a plain cover
-   crop squeezed a full-body portrait into a tiny figure adrift in its
-   own pale background, and the switcher row was where the owner saw
-   two avatars at two different facial scales side by side. */
-.profile-avatar-tile-img img{width:100%;height:100%;object-fit:cover;object-position:var(--face-pos);display:block;transform:scale(var(--face-zoom));transform-origin:var(--face-origin)}
+/* REQ-73: tiles read the baked face derivative — already a
+   face-framed square at one fixed scale for every avatar — so the
+   rule is a plain cover with no anchor and no transform, and two
+   tiles side by side can no longer disagree about facial scale. */
+.profile-avatar-tile-img img{width:100%;height:100%;object-fit:cover;display:block}
 .profile-avatar-tile.is-selected .profile-avatar-tile-img{border-color:var(--violet)}
 .profile-avatar-tile.is-main .profile-avatar-tile-img{box-shadow:0 0 0 2px #f6a21e}
 /* BH-13: one clean ring when the main avatar is also the selected one. */

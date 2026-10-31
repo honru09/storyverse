@@ -122,22 +122,21 @@ test("another user's profile renders no create/plus entry (user order 2026-10-28
   assert.equal(profileBlock.split('aria-label="新建故事"').length - 1, 1, 'exactly one create entry on the profile')
 })
 
-test('face-anchor cropping: small round slots zoom portraits to the face', () => {
-  // REQ-70 (DESIGN §58): the per-slot private constants this test
-  // used to pin (2.05 @ 50% 14%, the 32px frame's 3.4 @ 50% 11%,
-  // BH-13's tile recipe) are retired — every slot now crops by the
-  // ONE spec in the :root --face-* variables, and the full pin set
-  // lives in tests/showcase-visual.test.js. What remains here is the
-  // shell-level shape: portrait frames carry the spec, uploads and
-  // the default asset are NOT face anchored (DEVICE-FIX REQ-22).
-  assert.match(css, /\.plaza-avatar-frame\.is-portrait \.plaza-avatar-img\{object-position:var\(--face-pos\);transform:scale\(var\(--face-zoom\)\);transform-origin:var\(--face-origin\)\}/)
-  assert.match(css, /\.plaza-avatar-frame \.plaza-avatar-img\{[^}]*object-position:var\(--face-plain-pos\)/)
-  assert.ok(!css.includes('.plaza-avatar-frame:not(.is-large).is-portrait'), 'REQ-70: no per-size portrait override remains')
-  assert.match(css, /\.nav-face-frame\.is-portrait \.nav-face-img\{[^}]*transform:scale\(var\(--face-zoom\)\)/)
-  assert.match(css, /--face-zoom:1\.7/)
+test('face slots (REQ-73): no CSS crop spec remains — small slots read baked face derivatives', () => {
+  // REQ-73 (DESIGN §59) supersedes REQ-70/§58 wholesale: after seven
+  // CSS-crop rounds the normalisation moved into the pixels. The
+  // :root --face-* variables, every is-portrait rule and every zoom
+  // transform are retired; what remains here is the shell-level
+  // shape of the new contract (the full pin set lives in
+  // tests/showcase-visual.test.js).
+  assert.ok(!css.includes('--face-'), 'the §58 variables are gone from the stylesheet')
+  assert.ok(!css.includes('is-portrait'), 'no is-portrait selector remains')
+  assert.match(css, /\.plaza-avatar-frame \.plaza-avatar-img\{[^}]*object-position:50% 50%/)
+  assert.match(css, /\.nav-face-img\{[^}]*object-position:50% 50%/)
   const thumbBlock = main.slice(main.indexOf('function PlazaAvatarThumb'), main.indexOf('function PublicationArtwork'))
-  assert.match(thumbBlock, /pictureKind === "avatar"/)
+  assert.match(thumbBlock, /derivativeUrl\(publication\?\.avatar\?\.pictureUrl, "face"\)/)
   assert.match(thumbBlock, /plaza-avatar-frame/)
+  assert.doesNotMatch(thumbBlock, /is-portrait/)
   // The full figure has exactly one home: the profile's avatar
   // showcase (PROFILE-ENRICH §35). REQ-64 (2026-10-31) retires the
   // §35 stage wholesale — container, guards and all — after the
@@ -147,41 +146,39 @@ test('face-anchor cropping: small round slots zoom portraits to the face', () =>
   assert.match(profileBlock, /className="profile-showcase"/)
   assert.doesNotMatch(profileBlock, /profile-showcase profile-avatar-stand/)
   assert.doesNotMatch(profileBlock, /profile-stage/)
-  // REQ-64 sizing rule: the FIGURE box is 4:3 (the old card was a
-  // 3:4 full-height frame, 477px at the profile column) and the
-  // card keeps the 420px width cap — figure 268px + in-flow plate
-  // ≈ 375px total, inside the measured 699px visible band, so the
-  // whole card fits between the bars at its anchored stop.
-  assert.match(css, /\.profile-showcase-figure\{[^}]*aspect-ratio:4\/3/)
-  assert.match(css, /\.profile-showcase\{[^}]*width:min\(100%,420px\)/)
+  // REQ-73 sizing rule: the card is a vertical character card —
+  // figure box 3:4 (the baked portrait derivative's own ratio),
+  // width min(82%, 320px): figure ~392px at the 390 column +
+  // in-flow plate ≈ 460px total, still inside REQ-64's measured
+  // 699px visible band.
+  assert.match(css, /\.profile-showcase-figure\{[^}]*aspect-ratio:3\/4/)
+  assert.match(css, /\.profile-showcase\{[^}]*width:min\(82%,320px\)/)
   assert.doesNotMatch(css, /\.profile-showcase\{[^}]*max-height/)
   // flex:none pins the card against a flex-column ancestor
   // shrinking it below its ruled height (DEVICE-FIX4's pin, kept).
   assert.match(css, /\.profile-showcase\{[^}]*flex:none/)
-  // BH-13 / REQ-70: the avatar tiles crop by the same §58 face spec
-  // instead of squeezing the whole figure into the square, and
-  // selected+main collapses to a single ring.
-  assert.match(css, /\.profile-avatar-tile-img img\{[^}]*object-position:var\(--face-pos\)/)
-  assert.match(css, /\.profile-avatar-tile-img img\{[^}]*transform:scale\(var\(--face-zoom\)\);transform-origin:var\(--face-origin\)/)
+  // The avatar tiles read the same baked face square, plainly.
+  assert.match(css, /\.profile-avatar-tile-img img\{[^}]*object-fit:cover/)
+  assert.doesNotMatch(css, /\.profile-avatar-tile-img img\{[^}]*transform/)
   assert.match(css, /\.profile-avatar-tile\.is-selected\.is-main \.profile-avatar-tile-img\{box-shadow:none\}/)
 })
 
-test('poster showcase (POSTER-AVATAR → REQ-64): the fake light rig stays retired, the figure is contain-fit in its own box', () => {
+test('poster showcase (POSTER-AVATAR → REQ-64 → REQ-73): one baked image, cover-fit, no layers', () => {
   assert.doesNotMatch(main, /profile-showcase-spot|profile-showcase-floor|profile-showcase-glow|profile-showcase-bg/)
   assert.doesNotMatch(css, /\.profile-showcase-spot|\.profile-showcase-floor|\.profile-showcase-glow|\.profile-showcase-bg/)
-  // DEVICE-FIX2 (REQ-28)'s fit verdict carries into the REQ-64 box:
-  // the figure is contain-fit (head to shoes always in frame). The
-  // plate flows below the figure, so no legibility scrim
-  // pseudo-layers exist on the card. REQ-70 retires the blurred
-  // cover backdrop that used to sit behind the figure (a second
-  // scale of the same painting): the ground is now the portrait's
-  // own sampled edge tones plus a same-geometry blurred halo —
-  // pinned in tests/showcase-visual.test.js.
-  assert.match(css, /\.profile-showcase-img\{[^}]*object-fit:contain/)
-  assert.ok(!css.includes('.profile-showcase-backdrop'), 'REQ-70: the cover backdrop is retired')
-  assert.doesNotMatch(profileBlock, /profile-showcase-backdrop/)
-  assert.match(profileBlock, /profile-showcase-halo/)
-  assert.match(profileBlock, /ShowcaseFill/)
+  // REQ-73: the figure is ONE image — the server's baked 3:4
+  // portrait derivative — cover-fit into the 3:4 box exactly (the
+  // derivative padded the painting's own edge tones into the
+  // pixels, so cover crops nothing and the subject stays whole).
+  // Every layered predecessor is retired: the REQ-70 ground fill
+  // and same-geometry halo join the older cover backdrop in the
+  // gone list — pinned in full in tests/showcase-visual.test.js.
+  assert.match(css, /\.profile-showcase-img\{[^}]*object-fit:cover/)
+  assert.ok(!css.includes('.profile-showcase-backdrop'), 'the cover backdrop is retired')
+  assert.ok(!css.includes('.profile-showcase-fill'), 'REQ-73: the ground fill is retired')
+  assert.ok(!css.includes('.profile-showcase-halo'), 'REQ-73: the halo layer is retired')
+  assert.doesNotMatch(profileBlock, /profile-showcase-backdrop|profile-showcase-halo|ShowcaseFill/)
+  assert.match(profileBlock, /derivativeUrl\(stageAvatar\.portraitUrl, "portrait"\)/)
   assert.doesNotMatch(css, /\.profile-showcase::before|\.profile-showcase::after/)
 })
 

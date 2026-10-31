@@ -47,14 +47,15 @@ test('REQ-64: the shell route effect arms nothing for the profile view', () => {
   assert.doesNotMatch(main, /page-profile\.is-page-form/)
 })
 
-test('REQ-64: figure box rule — 4:3 box, contain figure (backdrop recipe superseded by REQ-70, see showcase-visual.test.js)', () => {
-  assert.match(ruleBody('.profile-showcase-figure{'), /aspect-ratio:4\/3/)
-  assert.match(ruleBody('.profile-showcase-img{'), /object-fit:contain/)
-  // The card keeps the 420px width cap and flex pinning; no
-  // max-height may flatten the figure box. (The card rule is the
-  // flex:none one — a separate .profile-showcase rule carries the
-  // scroll-margin for anchor landings.)
-  assert.match(ruleBody('.profile-showcase{flex:none'), /width:min\(100%,420px\)/)
+test('REQ-73: figure box rule — 3:4 box, cover figure (REQ-64 box superseded; full pins in showcase-visual.test.js)', () => {
+  assert.match(ruleBody('.profile-showcase-figure{'), /aspect-ratio:3\/4/)
+  assert.match(ruleBody('.profile-showcase-img{'), /object-fit:cover/)
+  // REQ-73: the card is a vertical character card, width
+  // min(82%, 320px), flex pinned; no max-height may flatten the
+  // figure box. (The card rule is the flex:none one — a separate
+  // .profile-showcase rule carries the scroll-margin for anchor
+  // landings.)
+  assert.match(ruleBody('.profile-showcase{flex:none'), /width:min\(82%,320px\)/)
   assert.doesNotMatch(ruleBody('.profile-showcase{flex:none'), /max-height/)
 })
 
