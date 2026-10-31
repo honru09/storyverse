@@ -21,6 +21,14 @@
 //   memory: slow heals per session (which eventually lower every new
 //   mount's starting rung — pixelfxSessionTierPenalty) and the count
 //   of in-place tier drops (recordPixelfxTierDrop).
+// - since PIXELFX-WAVE6 every heal / death / tier-drop is also
+//   appended to a persisted ring buffer in localStorage (see the
+//   event-log section at the bottom): the in-memory table resets
+//   with the page, but the field record of what the self-healing
+//   actually did on readers' phones must survive an app restart so
+//   the settings page can summarise it and a bad week leaves a
+//   trace. Storage is best-effort: a denied or full localStorage
+//   degrades the log to session memory and can never throw.
 //
 // Discipline: healing is capped (PIXELFX_MAX_HEALS swaps per mount),
 // exhausting the chain removes the layer silently, and nothing in
@@ -179,13 +187,14 @@ export function recordPixelfxOk(fxId) {
   publishPixelfxHealth();
 }
 
-export function recordPixelfxHeal(fromId, toId, reason) {
+export function recordPixelfxHeal(fromId, toId, reason, scene = null) {
   health.heals += 1;
   if (reason === "slow") health.sessionSlowHeals += 1;
   const bucket = fxBucket(fromId);
   if (reason === "blank" || reason === "slow" || reason === "error") bucket[reason] += 1;
   bucket.healed += 1;
   publishPixelfxHealth();
+  appendPixelfxHealthLog({ fx: fromId, scene, type: "heal", result: `${reason} → ${toId}` });
 }
 
 /** Slow heals so far this session (the adaptive-quality memory). */
@@ -207,16 +216,115 @@ export function pixelfxSessionTierPenalty() {
 }
 
 /** Record an adaptive quality drop (player-core's ladder, one rung). */
-export function recordPixelfxTierDrop(fxId, fromIndex, toIndex) {
+export function recordPixelfxTierDrop(fxId, fromIndex, toIndex, scene = null) {
   health.tierDrops += 1;
   fxBucket(fxId).tierDrops += 1;
   publishPixelfxHealth();
+  appendPixelfxHealthLog({ fx: fxId, scene, type: "tier-drop", result: `${fromIndex} → ${toIndex}` });
 }
 
-export function recordPixelfxDeath(fxId, reason) {
+export function recordPixelfxDeath(fxId, reason, scene = null) {
   health.deaths += 1;
   const bucket = fxBucket(fxId);
   if (reason === "blank" || reason === "slow" || reason === "error") bucket[reason] += 1;
   bucket.dead += 1;
   publishPixelfxHealth();
+  appendPixelfxHealthLog({ fx: fxId, scene, type: "death", result: reason });
+}
+
+// ——— Persisted event log (PIXELFX-WAVE6) ———
+//
+// A ring of the last PIXELFX_HEALTH_LOG_LIMIT heal / death /
+// tier-drop events, each { at, fx, scene, type, result }, kept in
+// localStorage so the record survives an app restart. Reads go back
+// to storage every time (the buffer is tiny and events are rare), so
+// what the settings page summarises is always what is actually on
+// disk. Without a usable localStorage (node tests, privacy modes)
+// the log degrades to a session-memory ring of the same shape.
+
+export const PIXELFX_HEALTH_LOG_KEY = "storyweave:pixelfx-health-log";
+export const PIXELFX_HEALTH_LOG_LIMIT = 100;
+
+const HEALTH_LOG_TYPES = new Set(["heal", "death", "tier-drop"]);
+let memoryHealthLog = [];
+
+function healthLogStorage() {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function isHealthLogEntry(entry) {
+  return Boolean(
+    entry &&
+      typeof entry.at === "string" &&
+      typeof entry.fx === "string" &&
+      HEALTH_LOG_TYPES.has(entry.type),
+  );
+}
+
+function readPixelfxHealthLog() {
+  const store = healthLogStorage();
+  if (!store) return memoryHealthLog;
+  try {
+    const raw = store.getItem(PIXELFX_HEALTH_LOG_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isHealthLogEntry).slice(-PIXELFX_HEALTH_LOG_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+function appendPixelfxHealthLog({ fx, scene, type, result }) {
+  const entry = {
+    at: new Date().toISOString(),
+    fx,
+    scene: scene ?? null,
+    type,
+    result: result ?? null,
+  };
+  const store = healthLogStorage();
+  if (!store) {
+    memoryHealthLog = [...memoryHealthLog, entry].slice(-PIXELFX_HEALTH_LOG_LIMIT);
+    return;
+  }
+  try {
+    const log = readPixelfxHealthLog();
+    log.push(entry);
+    store.setItem(PIXELFX_HEALTH_LOG_KEY, JSON.stringify(log.slice(-PIXELFX_HEALTH_LOG_LIMIT)));
+  } catch {
+    /* quota or denial: the in-memory health table still counts */
+  }
+}
+
+/** The persisted heal / death / tier-drop events, oldest first. */
+export function pixelfxHealthLog() {
+  return [...readPixelfxHealthLog()];
+}
+
+/** Aggregate over the persisted log, for the settings summary line. */
+export function pixelfxHealthLogSummary() {
+  const log = readPixelfxHealthLog();
+  const summary = { events: log.length, heals: 0, deaths: 0, tierDrops: 0, anomalies: 0 };
+  for (const entry of log) {
+    if (entry.type === "heal") summary.heals += 1;
+    else if (entry.type === "death") summary.deaths += 1;
+    else if (entry.type === "tier-drop") summary.tierDrops += 1;
+  }
+  summary.anomalies = summary.deaths;
+  return summary;
+}
+
+/** Clear the persisted log (tests; the settings surface never does). */
+export function resetPixelfxHealthLog() {
+  memoryHealthLog = [];
+  try {
+    healthLogStorage()?.removeItem(PIXELFX_HEALTH_LOG_KEY);
+  } catch {
+    /* ignore */
+  }
 }

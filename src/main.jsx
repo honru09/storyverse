@@ -160,6 +160,7 @@ import PixelfxCanvas from "./fx/PixelfxCanvas.jsx";
 import { pickFx, pickForgeAmbientFx, setPixelfxTheme, PIXELFX_SCENE } from "./fx/placements.js";
 import { prefetchPixelfx } from "./fx/prefetch.js";
 import { finishStampEligible, stampFinishCelebration, peekFinishCelebration, claimFinishCelebration } from "./fx/finish-celebration.js";
+import { pixelfxHealthLogSummary } from "./fx/health.js";
 import WorldArtwork from "./components/WorldArtwork.jsx";
 import StoryCover from "./components/StoryCover.jsx";
 import AccountPanel, { ShellThemeSegments } from "./components/AccountPanel.jsx";
@@ -9758,6 +9759,11 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
   const motion = useMotionSettings();
   const systemPaused = motion.reducedMotion || motion.saveData;
   const motionOn = motion.enabled && !systemPaused;
+  // 特效健康 (PIXELFX-WAVE6 §60): a read-only aggregate over the
+  // persisted self-heal log (health.js) — what the pixelfx self-
+  // healing swapped, dropped or gave up on, across app restarts.
+  // Read at mount; the settings window remounts on every open.
+  const fxHealth = pixelfxHealthLogSummary();
   // 合流权限 (REQ-49): the account-level consent for other readers
   // fusing MY books — free / ask / forbidden, default free. The saved
   // value rides the profile record; this control loads it from the
@@ -9950,6 +9956,16 @@ function ProfileSettings({ account, authClient, shellTheme, onShellThemeChange, 
           </span>
           <Icon name="chevron" size={16} />
         </button>
+      </div>
+      <h3 className="settings-group-title">高级</h3>
+      <div className="settings-card">
+        <div className="settings-row settings-row-static">
+          <span className="settings-row-ic"><Icon name="sliders" size={19} /></span>
+          <span className="settings-row-copy">
+            <strong>特效健康</strong>
+            <small>{fxHealth.events === 0 ? "正常" : `近 ${fxHealth.events} 条记录 · 自愈 ${fxHealth.heals} 次 · 异常 ${fxHealth.anomalies}`}</small>
+          </span>
+        </div>
       </div>
       <p className="settings-foot-note">阅读时的纸色、字号与翻页方式在阅读器里的「阅读设置」单独调，不在这里。</p>
     </div>

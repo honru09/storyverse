@@ -462,3 +462,143 @@ test('wave-5 flash guard: a light strobe is softened in play; a calm effect neve
   assert.equal(calm.flash.softened, false)
   assert.equal(calm.flash.lightScale, 1)
 })
+
+// ——— PIXELFX-WAVE6: persisted health log, scene stamps, keyframes ———
+
+function stubLocalStorage() {
+  const map = new Map()
+  globalThis.localStorage = {
+    getItem: (key) => (map.has(key) ? map.get(key) : null),
+    setItem: (key, value) => { map.set(key, String(value)) },
+    removeItem: (key) => { map.delete(key) },
+  }
+  return map
+}
+
+test('health log: heal / death / tier-drop persist with scene attribution', async () => {
+  const health = await import('../src/fx/health.js')
+  const map = stubLocalStorage()
+  try {
+    health.resetPixelfxHealthLog()
+    health.recordPixelfxHeal('a/one', 'b/two', 'slow', 'waiting')
+    health.recordPixelfxDeath('c/three', 'blank', 'intervene')
+    health.recordPixelfxTierDrop('d/four', 0, 1, 'waiting')
+    const log = health.pixelfxHealthLog()
+    assert.equal(log.length, 3)
+    assert.deepEqual(
+      log.map(({ fx, scene, type, result }) => ({ fx, scene, type, result })),
+      [
+        { fx: 'a/one', scene: 'waiting', type: 'heal', result: 'slow → b/two' },
+        { fx: 'c/three', scene: 'intervene', type: 'death', result: 'blank' },
+        { fx: 'd/four', scene: 'waiting', type: 'tier-drop', result: '0 → 1' },
+      ],
+    )
+    assert.ok(log.every((entry) => typeof entry.at === 'string' && !Number.isNaN(Date.parse(entry.at))))
+    // The record lives in storage itself, not in module memory: a
+    // cold read (what an app restart sees) returns the same events.
+    const raw = JSON.parse(map.get(health.PIXELFX_HEALTH_LOG_KEY))
+    assert.equal(raw.length, 3)
+    assert.equal(raw[0].fx, 'a/one')
+    assert.deepEqual(health.pixelfxHealthLogSummary(), {
+      events: 3, heals: 1, deaths: 1, tierDrops: 1, anomalies: 1,
+    })
+    // Events without a scene still record, stamped null.
+    health.recordPixelfxDeath('e/five', 'error')
+    assert.equal(health.pixelfxHealthLog().at(-1).scene, null)
+    health.resetPixelfxHealthLog()
+    assert.equal(health.pixelfxHealthLog().length, 0)
+    assert.equal(map.has(health.PIXELFX_HEALTH_LOG_KEY), false)
+  } finally {
+    delete globalThis.localStorage
+    health.resetPixelfxHealthLog()
+  }
+})
+
+test('health log: the ring caps at the limit and drops the oldest', async () => {
+  const health = await import('../src/fx/health.js')
+  stubLocalStorage()
+  try {
+    health.resetPixelfxHealthLog()
+    const total = health.PIXELFX_HEALTH_LOG_LIMIT + 5
+    for (let i = 0; i < total; i++) health.recordPixelfxHeal(`fx/${i}`, 'b/two', 'blank', 'waiting')
+    const log = health.pixelfxHealthLog()
+    assert.equal(log.length, health.PIXELFX_HEALTH_LOG_LIMIT)
+    assert.equal(log[0].fx, 'fx/5', 'the five oldest events fell off the ring')
+    assert.equal(log.at(-1).fx, `fx/${total - 1}`)
+    health.resetPixelfxHealthLog()
+  } finally {
+    delete globalThis.localStorage
+    health.resetPixelfxHealthLog()
+  }
+})
+
+test('health log: without storage the ring lives in session memory', async () => {
+  const health = await import('../src/fx/health.js')
+  delete globalThis.localStorage
+  health.resetPixelfxHealthLog()
+  health.recordPixelfxHeal('a/one', 'b/two', 'blank', 'waiting')
+  assert.equal(health.pixelfxHealthLog().length, 1)
+  assert.equal(health.pixelfxHealthLogSummary().heals, 1)
+  health.resetPixelfxHealthLog()
+  assert.equal(health.pixelfxHealthLog().length, 0)
+})
+
+test('placements stamp every pick with the scene it serves', () => {
+  assert.equal(pickFx(PIXELFX_SCENE.WAITING, 'xuanzhen').scene, 'waiting')
+  assert.equal(pickFx(PIXELFX_SCENE.SEASON_FINALE, 'xuanzhen').scene, 'season-finale')
+  assert.equal(pickFx(PIXELFX_SCENE.CHAPTER_UPGRADE, 'kehuan', { grand: true }).scene, 'chapter-upgrade')
+  assert.equal(pickForgeAmbientFx('mist', null).scene, 'forge-ambient')
+  // A custom world falls back to the waiting table — and its stamp
+  // honestly says so.
+  assert.equal(pickForgeAmbientFx('no-such-world', 'xuanyi').scene, 'waiting')
+})
+
+test('keyframes: PNG codec round-trips and the diff judges drift', async () => {
+  const { encodePng, decodePng, diffFrames, PIXELFX_KEYFRAME_CHANGED_FRACTION } = await import('../scripts/fx-keyframes.mjs')
+  const width = 4
+  const height = 3
+  const rgb = Buffer.alloc(width * height * 3)
+  for (let i = 0; i < rgb.length; i++) rgb[i] = (i * 37) % 256
+  const decoded = decodePng(encodePng({ width, height, rgb }))
+  assert.equal(decoded.width, width)
+  assert.equal(decoded.height, height)
+  assert.deepEqual(decoded.rgb, rgb)
+  const same = diffFrames({ width, height, rgb }, { width, height, rgb })
+  assert.equal(same.fraction, 0)
+  const moved = Buffer.from(rgb)
+  moved[0] = (moved[0] + 200) % 256
+  const drift = diffFrames({ width, height, rgb }, { width, height, rgb: moved })
+  assert.equal(drift.changed, 1)
+  assert.ok(drift.fraction > PIXELFX_KEYFRAME_CHANGED_FRACTION)
+  assert.equal(diffFrames({ width, height, rgb }, { width: 2, height, rgb }), null)
+})
+
+test('keyframes: every scene renders a non-blank portrait, deterministically', async () => {
+  const { renderKeyframes } = await import('../scripts/fx-keyframes.mjs')
+  const first = await renderKeyframes()
+  assert.equal(first.size, Object.keys(PIXELFX_SCENE).length)
+  for (const [scene, { image }] of first) {
+    let painted = 0
+    for (let i = 0; i < image.rgb.length; i++) if (image.rgb[i] > 0) painted += 1
+    assert.ok(painted > 0, `${scene} portrait is blank`)
+  }
+  // Same seeds, same fixed step count: a second render must match
+  // pixel for pixel, or the compare mode would cry wolf daily.
+  const second = await renderKeyframes()
+  const { diffFrames } = await import('../scripts/fx-keyframes.mjs')
+  for (const [scene, { image }] of first) {
+    assert.equal(diffFrames(image, second.get(scene).image).fraction, 0, `${scene} render is not deterministic`)
+  }
+})
+
+test('settings wiring: the advanced group summarises the persisted health log', async () => {
+  const { readFileSync } = await import('node:fs')
+  const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
+  assert.match(main, /pixelfxHealthLogSummary/)
+  assert.match(main, /settings-group-title">高级/)
+  assert.match(main, /特效健康/)
+  const canvas = readFileSync(new URL('../src/fx/PixelfxCanvas.jsx', import.meta.url), 'utf8')
+  assert.match(canvas, /recordPixelfxHeal\(from\.fx, to\.fx, reason, sceneName\)/)
+  assert.match(canvas, /recordPixelfxDeath\(from\.fx, reason, sceneName\)/)
+  assert.match(canvas, /recordPixelfxTierDrop\(candidate\.fx, verdict\.index - 1, verdict\.index, sceneName\)/)
+})

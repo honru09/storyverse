@@ -97,9 +97,11 @@ function isLiteGpu() {
  * output for strobing and softens its light layer.
  *
  * Props: { pick?, fx?, palette?, seed?, alts?, loop = true,
- * pixelSize?, onDone?, className?, style? }. With loop={false} a
- * one-shot plays once and onDone fires when the SURVIVING candidate
- * finishes.
+ * pixelSize?, onDone?, className?, style?, scene? }. With loop={false}
+ * a one-shot plays once and onDone fires when the SURVIVING candidate
+ * finishes. `scene` names the placements scene for the persisted
+ * health log (PIXELFX-WAVE6); picks from placements already carry
+ * their scene, so the prop only serves direct fx mounts.
  */
 export default function PixelfxCanvas({
   pick,
@@ -112,6 +114,7 @@ export default function PixelfxCanvas({
   onDone,
   className,
   style,
+  scene,
 }) {
   const canvasRef = useRef(null);
   // The outgoing frame of an ambient pick change, kept for the
@@ -136,6 +139,10 @@ export default function PixelfxCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [pickKey, fx, seed, paletteKey],
   );
+  // The scene this mount serves, for persisted health-log events
+  // (PIXELFX-WAVE6): an explicit prop wins; placements picks carry
+  // their own scene stamp.
+  const sceneName = scene ?? pick?.scene ?? null;
   const chainKey =
     chain
       .map((c) => `${c.fx}#${c.seed ?? ""}#${c.palette ? c.palette.join(",") : ""}`)
@@ -182,14 +189,14 @@ export default function PixelfxCanvas({
       ctx?.clearRect(0, 0, canvas.width, canvas.height);
       if (attempt + 1 < chain.length) {
         const to = chain[attempt + 1];
-        recordPixelfxHeal(from.fx, to.fx, reason);
+        recordPixelfxHeal(from.fx, to.fx, reason, sceneName);
         console.info(
           `[pixelfx] ${from.fx} failed its health probe (${reason}); falling back to ${to.fx}`,
         );
         attempt += 1;
         void tryCandidate();
       } else {
-        recordPixelfxDeath(from.fx, reason);
+        recordPixelfxDeath(from.fx, reason, sceneName);
         console.warn(
           `[pixelfx] ${from.fx} removed: health probe failed (${reason}) and no alternates remain`,
         );
@@ -408,7 +415,7 @@ export default function PixelfxCanvas({
               const verdict = adaptive.observe(loadRatio);
               adaptWindow = [];
               if (verdict.changed === "drop") {
-                recordPixelfxTierDrop(candidate.fx, verdict.index - 1, verdict.index);
+                recordPixelfxTierDrop(candidate.fx, verdict.index - 1, verdict.index, sceneName);
                 console.info(
                   `[pixelfx] ${candidate.fx} stepped over budget; quality tier ${verdict.index - 1} → ${verdict.index}`,
                 );
@@ -499,7 +506,7 @@ export default function PixelfxCanvas({
     // The chain identity is captured via chainKey; pick objects are
     // re-created by callers (placements returns fresh copies).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chainKey, loop, pixelSize, animate]);
+  }, [chainKey, loop, pixelSize, animate, sceneName]);
 
   return (
     <canvas

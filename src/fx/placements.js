@@ -371,6 +371,10 @@ export function pickFx(scene, genreFamily, { grand = false } = {}) {
     seen.add(altId);
     pick.alts.push({ fx: altId, seed: entry.seed });
   }
+  // PIXELFX-WAVE6: the pick carries its scene so PixelfxCanvas can
+  // attribute heal / death / tier-drop events in the persisted
+  // health log (health.js) without every call site repeating it.
+  pick.scene = scene;
   return pick;
 }
 
