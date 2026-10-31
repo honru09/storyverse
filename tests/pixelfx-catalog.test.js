@@ -546,3 +546,51 @@ test('wave-4 review wiring: claims are visibility-guarded, races closed', () => 
   // uid/book switches clear any queued beat.
   assert.match(main, /useEffect\(\(\) => \{ setRatingFx\(null\); \}, \[bookId\]\)/)
 })
+
+test('wave-5 wiring: adaptive quality, crossfade, flash guard, save-data and pause coverage', () => {
+  const canvas = readFileSync(new URL('../src/fx/PixelfxCanvas.jsx', import.meta.url), 'utf8')
+  // Adaptive quality is wired end to end: ladder controller in,
+  // tier drops recorded, session penalty read at mount.
+  assert.match(canvas, /createAdaptiveQuality/)
+  assert.match(canvas, /pixelfxBaseTierIndex/)
+  assert.match(canvas, /recordPixelfxTierDrop/)
+  assert.match(canvas, /pixelfxSessionTierPenalty/)
+  assert.match(canvas, /PIXELFX_ADAPTIVE_WINDOW/)
+  // The flash guard reaches the player only via the pick's flag.
+  assert.match(canvas, /flashGuard/)
+  // Ambient crossfade: snapshots are taken only for looping mounts,
+  // blended only on the animated path, and a heal drops the snapshot.
+  assert.match(canvas, /PIXELFX_CROSSFADE_MS = 300/)
+  assert.match(canvas, /if \(loop && paintedAnimated/)
+  assert.match(canvas, /withFade && loop/)
+  assert.match(canvas, /fadeRef\.current = null;\n      paintedAnimated = false;\n      stopLoop\(\)/, 'heal drops the snapshot and the snapshot-able flag before clearing the frame')
+  // Save-data: the canvas never animates under it (still path only),
+  // and every mount gate in the app agrees.
+  assert.match(canvas, /!settings\.saveData/)
+  const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
+  assert.match(main, /const pixelfxMotionOn = \(settings\) =>\n  Boolean\(settings\?\.enabled\) && !settings\?\.reducedMotion && !settings\?\.saveData;/)
+  // Pause coverage by construction: every animated pixelfx frame in
+  // the app flows through PixelfxCanvas (IntersectionObserver +
+  // tab-visibility in its animate verdict). No other source file may
+  // drive the player factory directly.
+  const SRC_ROOT = fileURLToPath(new URL('../src/', import.meta.url))
+  const allowed = new Set(['fx/player-core.js', 'fx/health.js', 'fx/PixelfxCanvas.jsx'])
+  const offenders = []
+  const walk = (dir, rel) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      const relPath = rel ? `${rel}/${entry.name}` : entry.name
+      if (entry.isDirectory()) {
+        if (relPath !== 'fx/pixelfx') walk(path, relPath)
+      } else if (/\.jsx?$/.test(entry.name)) {
+        if (!allowed.has(relPath) && readFileSync(path, 'utf8').includes('createPixelfxPlayer')) {
+          offenders.push(relPath)
+        }
+      }
+    }
+  }
+  walk(SRC_ROOT, '')
+  assert.deepEqual(offenders, [], 'only player-core/health/PixelfxCanvas may drive the player')
+  assert.match(canvas, /IntersectionObserver/)
+  assert.match(canvas, /settings\.visible !== false/)
+})

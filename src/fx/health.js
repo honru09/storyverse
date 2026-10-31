@@ -17,6 +17,10 @@
 //   window exists) for field diagnosis. PixelfxCanvas.jsx owns the
 //   live-loop half (sampling real rAF steps); everything here is
 //   plain data + player-core, so node tests drive it directly.
+// - since PIXELFX-WAVE5 the registry also keeps the adaptive-quality
+//   memory: slow heals per session (which eventually lower every new
+//   mount's starting rung — pixelfxSessionTierPenalty) and the count
+//   of in-place tier drops (recordPixelfxTierDrop).
 //
 // Discipline: healing is capped (PIXELFX_MAX_HEALS swaps per mount),
 // exhausting the chain removes the layer silently, and nothing in
@@ -121,14 +125,25 @@ export function pixelfxChain(pick) {
 // ——— Health registry (in-memory, mirrored to window.__pixelfxHealth)
 
 function freshHealth() {
-  return { mounts: 0, heals: 0, deaths: 0, byFx: {}, updatedAt: null };
+  return {
+    mounts: 0,
+    heals: 0,
+    deaths: 0,
+    // PIXELFX-WAVE5: adaptive-quality bookkeeping. sessionSlowHeals
+    // counts this session's slow-driven chain swaps; tierDrops counts
+    // the in-place quality drops the adaptive controller made instead.
+    sessionSlowHeals: 0,
+    tierDrops: 0,
+    byFx: {},
+    updatedAt: null,
+  };
 }
 
 let health = freshHealth();
 
 function fxBucket(id) {
   if (!health.byFx[id]) {
-    health.byFx[id] = { mounts: 0, ok: 0, blank: 0, slow: 0, error: 0, healed: 0, dead: 0 };
+    health.byFx[id] = { mounts: 0, ok: 0, blank: 0, slow: 0, error: 0, healed: 0, dead: 0, tierDrops: 0 };
   }
   return health.byFx[id];
 }
@@ -166,9 +181,35 @@ export function recordPixelfxOk(fxId) {
 
 export function recordPixelfxHeal(fromId, toId, reason) {
   health.heals += 1;
+  if (reason === "slow") health.sessionSlowHeals += 1;
   const bucket = fxBucket(fromId);
   if (reason === "blank" || reason === "slow" || reason === "error") bucket[reason] += 1;
   bucket.healed += 1;
+  publishPixelfxHealth();
+}
+
+/** Slow heals so far this session (the adaptive-quality memory). */
+export function pixelfxSessionSlowHeals() {
+  return health.sessionSlowHeals;
+}
+
+/**
+ * Session tier penalty (PIXELFX-WAVE5): once this session has healed
+ * PIXELFX_SESSION_SLOW_HEAL_THRESHOLD effects for slowness, the device
+ * has told us plainly it cannot hold the authored rate — every later
+ * mount starts one ladder rung below its base instead of re-learning
+ * the same lesson per effect.
+ */
+export const PIXELFX_SESSION_SLOW_HEAL_THRESHOLD = 3;
+
+export function pixelfxSessionTierPenalty() {
+  return health.sessionSlowHeals >= PIXELFX_SESSION_SLOW_HEAL_THRESHOLD ? 1 : 0;
+}
+
+/** Record an adaptive quality drop (player-core's ladder, one rung). */
+export function recordPixelfxTierDrop(fxId, fromIndex, toIndex) {
+  health.tierDrops += 1;
+  fxBucket(fxId).tierDrops += 1;
   publishPixelfxHealth();
 }
 

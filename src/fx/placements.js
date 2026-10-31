@@ -338,8 +338,8 @@ const TABLES = {
 
 /**
  * The effect pick for a scene and genre family (shelf id). Returns a
- * fresh { fx, palette?, seed, alts } the caller can hand straight to
- * PixelfxCanvas, or null for an unmapped scene. The palette is shaded
+ * fresh { fx, palette?, seed, alts, flashGuard? } the caller can hand
+ * straight to PixelfxCanvas, or null for an unmapped scene. The palette is shaded
  * for the current shell theme (see setPixelfxTheme). `alts` is the
  * self-healing chain (PIXELFX-WAVE3): the entry's runner-up ids as
  * ready picks with the same seed and NO palette — if the primary
@@ -353,8 +353,16 @@ export function pickFx(scene, genreFamily, { grand = false } = {}) {
   const table = TABLES[scene];
   if (!table) return null;
   const entry = table.byFamily[genreFamily] || table.fallback;
-  const fx = grand && entry.grandFx ? entry.grandFx : entry.fx;
+  const usedGrand = grand && Boolean(entry.grandFx);
+  const fx = usedGrand ? entry.grandFx : entry.fx;
   const pick = { fx, seed: entry.seed, alts: [] };
+  // PIXELFX-WAVE5 (§60): the grand bursts — a chapter-upgrade pick
+  // that resolved to its grandFx, and every season-finale pick (that
+  // scene is grand signatures end to end) — carry the flash guard:
+  // PixelfxCanvas hands the flag to the player, which watches its own
+  // output for strobing and softens the light layer before a harsh
+  // frame can reach the reader.
+  if (usedGrand || scene === PIXELFX_SCENE.SEASON_FINALE) pick.flashGuard = true;
   const palette = themedPaletteFor(entry, fx);
   if (palette) pick.palette = palette;
   const seen = new Set([fx]);

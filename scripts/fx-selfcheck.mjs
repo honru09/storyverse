@@ -17,6 +17,15 @@
 // Identical (fx, seed, palette) renders are de-duplicated, so the
 // walk stays in the low hundreds of renders.
 //
+// PIXELFX-WAVE5 adds a flash audit on top: every flashGuard pick
+// (the grand bursts — chapter-upgrade grand variants and all
+// season-finale primaries) is re-rendered twice, once raw and once
+// with the player's flash guard live, and its peak flash-swing rate
+// (player-core's measureFrameFlash / isFlashSwing, the same math the
+// runtime guard judges by) is REPORTED per pick. The audit informs;
+// it does not gate — the runtime guard is what protects the reader,
+// and a raw number is a tuning input, not a defect by itself.
+//
 // Usage: npm run fx:selfcheck   (standalone on purpose — it is NOT
 // part of `npm test`; the daily storyweave-daily-bughunt cron can
 // call it after the test suite). Exit 0 + one summary line when the
@@ -32,7 +41,12 @@ import {
   PIXELFX_THEMES,
   FORGE_AMBIENT_WORLDS,
 } from "../src/fx/placements.js";
-import { createPixelfxPlayer } from "../src/fx/player-core.js";
+import {
+  createPixelfxPlayer,
+  measureFrameFlash,
+  isFlashSwing,
+  PIXELFX_FLASH_MAX_PER_SECOND,
+} from "../src/fx/player-core.js";
 import { countNonTransparent, PIXELFX_SLOW_STEP_MS } from "../src/fx/health.js";
 
 const FX_ROOT = fileURLToPath(new URL("../src/fx/pixelfx/fx/", import.meta.url));
@@ -72,7 +86,12 @@ const addRender = (label, candidate, expect) => {
   }
   const key = `${candidate.fx}|${candidate.seed ?? ""}|${candidate.palette ? candidate.palette.join(",") : ""}`;
   if (!renders.has(key)) renders.set(key, { label, pick: candidate, expects: new Set() });
-  renders.get(key).expects.add(expect);
+  const entry = renders.get(key);
+  entry.expects.add(expect);
+  // The flash audit follows the pick's guard flag (placements marks
+  // the grand primaries); an entry first seen as an alternate gains
+  // the flag when its primary label maps onto the same render.
+  if (candidate.flashGuard) entry.flashGuard = true;
 };
 const addPick = (label, pick, expect) => {
   addRender(label, pick, expect);
@@ -179,11 +198,51 @@ for (const { label, pick, expects } of renders.values()) {
   }
 }
 
+// ——— Flash audit (PIXELFX-WAVE5, report-only) ———
+// Peak flash swings inside any sliding played second, raw vs
+// guarded, for every render whose pick carries the flash guard.
+const peakSwingsPerSecond = (mod, pick, flashGuard) => {
+  const player = createPixelfxPlayer(mod, {
+    seed: pick.seed,
+    palette: pick.palette,
+    flashGuard,
+  });
+  const durationSteps = Math.ceil((player.meta.duration ?? 1.6) * 30) + 30;
+  const cap = Math.min(600, Math.max(90, durationSteps));
+  let prev = null;
+  let peak = 0;
+  const swingTimes = [];
+  for (let i = 0; i < cap; i++) {
+    const data = player.step(1 / 30);
+    const at = (i + 1) / 30;
+    if (isFlashSwing(measureFrameFlash(data, prev))) swingTimes.push(at);
+    while (swingTimes.length && at - swingTimes[0] >= 1) swingTimes.shift();
+    peak = Math.max(peak, swingTimes.length);
+    if (!prev || prev.length !== data.length) prev = new Uint8ClampedArray(data);
+    else prev.set(data);
+    if (player.done) break;
+  }
+  return { peak, flash: player.flash };
+};
+
+let flashAudited = 0;
+for (const { label, pick, flashGuard } of renders.values()) {
+  if (!pick || !flashGuard) continue;
+  const mod = await loadModule(pick.fx);
+  const raw = peakSwingsPerSecond(mod, pick, false);
+  const guarded = peakSwingsPerSecond(mod, pick, true);
+  flashAudited += 1;
+  console.log(
+    `flash audit: ${label} → ${pick.fx}: raw peak ${raw.peak} swings/s; guarded peak ${guarded.peak} swings/s ` +
+      `(light ×${guarded.flash.lightScale}, clamp ${guarded.flash.clamp}, softened ${guarded.flash.softened}; budget ${PIXELFX_FLASH_MAX_PER_SECOND}/s)`,
+  );
+}
+
 if (anomalies.length) {
   console.error(`fx-selfcheck: ${anomalies.length} anomal${anomalies.length === 1 ? "y" : "ies"} across ${checked} renders:`);
   for (const line of anomalies) console.error(`  - ${line}`);
   process.exit(1);
 }
 console.log(
-  `fx-selfcheck: OK — ${checked} unique renders across ${scenes.length} scenes × ${FAMILIES.length} families × ${PIXELFX_THEMES.length} themes all paint, step within ${PIXELFX_SLOW_STEP_MS}ms median, and hold loop discipline.`,
+  `fx-selfcheck: OK — ${checked} unique renders across ${scenes.length} scenes × ${FAMILIES.length} families × ${PIXELFX_THEMES.length} themes all paint, step within ${PIXELFX_SLOW_STEP_MS}ms median, and hold loop discipline; ${flashAudited} grand picks flash-audited above.`,
 );

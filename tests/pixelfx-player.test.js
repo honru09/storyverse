@@ -252,3 +252,213 @@ test('prefetch is a silent no-op outside a browser', async () => {
   assert.deepEqual(warmed, [])
   assert.deepEqual(prefetchedPixelfxIds(), [])
 })
+
+test('wave-5 adaptive quality: ladder shape and base rungs', async () => {
+  const {
+    PIXELFX_TIER_LADDER, pixelfxBaseTierIndex,
+    PIXELFX_STEP_HZ, PIXELFX_LITE_STEP_HZ, PIXELFX_LITE_RASTER_CAP,
+  } = await import('../src/fx/player-core.js')
+  assert.equal(PIXELFX_TIER_LADDER.length, 4)
+  assert.deepEqual(PIXELFX_TIER_LADDER[0], { stepHz: PIXELFX_STEP_HZ, rasterCap: null })
+  // Rung 2 IS the wave-3 lite tier — the ladder extends it, never redefines it.
+  assert.deepEqual(PIXELFX_TIER_LADDER[2], { stepHz: PIXELFX_LITE_STEP_HZ, rasterCap: PIXELFX_LITE_RASTER_CAP })
+  assert.equal(pixelfxBaseTierIndex(false), 0)
+  assert.equal(pixelfxBaseTierIndex(true), 2)
+  for (let i = 1; i < PIXELFX_TIER_LADDER.length; i++) {
+    assert.ok(PIXELFX_TIER_LADDER[i].stepHz < PIXELFX_TIER_LADDER[i - 1].stepHz, 'each rung steps slower')
+  }
+})
+
+test('wave-5 adaptive quality: debounced drops, patient rises, floor exhaustion', async () => {
+  const { createAdaptiveQuality, PIXELFX_ADAPTIVE_DROP_WINDOWS, PIXELFX_ADAPTIVE_RISE_WINDOWS } = await import('../src/fx/player-core.js')
+  // The controller is fed LOAD RATIOS (step CPU s per played s):
+  // 0.6 = bad window (> 0.4), 0.25 = middle zone, 0.05 = good (< 0.12).
+  const feed = (controller, ratio, times) => {
+    let verdict
+    for (let i = 0; i < times; i++) verdict = controller.observe(ratio)
+    return verdict
+  }
+  const c = createAdaptiveQuality({ baseIndex: 0 })
+  assert.equal(c.index, 0)
+  // One bad window is noise: no drop until the debounce fills.
+  assert.equal(feed(c, 0.6, PIXELFX_ADAPTIVE_DROP_WINDOWS - 1).changed, null)
+  assert.equal(c.index, 0)
+  assert.equal(feed(c, 0.6, 1).changed, 'drop')
+  assert.equal(c.index, 1)
+  assert.equal(c.tier.stepHz, 24)
+  // The middle zone resets the counters — bad, calm, bad never drops.
+  feed(c, 0.6, PIXELFX_ADAPTIVE_DROP_WINDOWS - 1)
+  feed(c, 0.25, 1)
+  assert.equal(feed(c, 0.6, PIXELFX_ADAPTIVE_DROP_WINDOWS - 1).changed, null)
+  assert.equal(c.index, 1)
+  // Rises take more good windows than drops take bad ones.
+  assert.equal(feed(c, 0.05, PIXELFX_ADAPTIVE_RISE_WINDOWS - 1).changed, null)
+  assert.equal(feed(c, 0.05, 1).changed, 'rise')
+  assert.equal(c.index, 0)
+  // Never above the base rung, however calm it gets.
+  feed(c, 0.05, PIXELFX_ADAPTIVE_RISE_WINDOWS * 2)
+  assert.equal(c.index, 0)
+  // startIndex is honoured but clamped into [base, floor].
+  assert.equal(createAdaptiveQuality({ baseIndex: 0, startIndex: 3 }).index, 3)
+  assert.equal(createAdaptiveQuality({ baseIndex: 2, startIndex: 0 }).index, 2)
+  // At the floor a due drop reports exhaustion instead of changing.
+  const floored = createAdaptiveQuality({ baseIndex: 2, startIndex: 3 })
+  assert.equal(feed(floored, 0.6, PIXELFX_ADAPTIVE_DROP_WINDOWS).exhausted, true)
+  assert.equal(floored.index, 3)
+})
+
+test('wave-5 health: slow heals earn the session tier penalty; drops are counted', async () => {
+  const health = await import('../src/fx/health.js')
+  health.resetPixelfxHealth()
+  health.recordPixelfxHeal('a/one', 'b/two', 'blank')
+  health.recordPixelfxHeal('a/one', 'b/two', 'slow')
+  health.recordPixelfxHeal('c/three', 'd/four', 'slow')
+  assert.equal(health.pixelfxSessionSlowHeals(), 2, 'only slow heals count toward the penalty')
+  assert.equal(health.pixelfxSessionTierPenalty(), 0)
+  health.recordPixelfxHeal('e/five', 'f/six', 'slow')
+  assert.equal(health.pixelfxSessionSlowHeals(), 3)
+  assert.equal(health.pixelfxSessionTierPenalty(), 1)
+  health.recordPixelfxTierDrop('a/one', 0, 1)
+  health.recordPixelfxTierDrop('a/one', 1, 2)
+  const snap = health.pixelfxHealthSnapshot()
+  assert.equal(snap.tierDrops, 2)
+  assert.equal(snap.sessionSlowHeals, 3)
+  assert.equal(snap.byFx['a/one'].tierDrops, 2)
+  health.resetPixelfxHealth()
+  assert.equal(health.pixelfxSessionTierPenalty(), 0)
+})
+
+test('wave-5 placements: only the grand bursts carry the flash guard', () => {
+  assert.equal(pickFx(PIXELFX_SCENE.CHAPTER_UPGRADE, 'xuanzhen', { grand: true }).flashGuard, true)
+  assert.equal(pickFx(PIXELFX_SCENE.CHAPTER_UPGRADE, null, { grand: true }).flashGuard, true)
+  assert.equal(pickFx(PIXELFX_SCENE.CHAPTER_UPGRADE, 'xuanzhen').flashGuard, undefined, 'the small beat is unguarded')
+  assert.equal(pickFx(PIXELFX_SCENE.SEASON_FINALE, 'wuxia').flashGuard, true)
+  assert.equal(pickFx(PIXELFX_SCENE.SEASON_FINALE, null).flashGuard, true)
+  assert.equal(pickFx(PIXELFX_SCENE.WAITING, 'xuanzhen').flashGuard, undefined)
+  assert.equal(pickFx(PIXELFX_SCENE.MERGE_SUCCESS, null).flashGuard, undefined)
+})
+
+test('wave-5 flash math: a full-field strobe is a swing, a gentle fade is not', async () => {
+  const { measureFrameFlash, isFlashSwing, applyLuminanceClamp } = await import('../src/fx/player-core.js')
+  const frame = (v) => {
+    const data = new Uint8ClampedArray(8 * 8 * 4)
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = v; data[i + 1] = v; data[i + 2] = v; data[i + 3] = 255
+    }
+    return data
+  }
+  const strobe = measureFrameFlash(frame(255), frame(0))
+  assert.equal(Math.round(strobe.meanDelta), 255)
+  assert.equal(strobe.movedFraction, 1)
+  assert.equal(isFlashSwing(strobe), true)
+  const gentle = measureFrameFlash(frame(110), frame(100))
+  assert.equal(isFlashSwing(gentle), false, 'a 10-level drift is not a flash')
+  const local = measureFrameFlash(frame(255), frame(0))
+  assert.ok(local.movedFraction > 0)
+  // Luminance is PREMULTIPLIED: a translucent white pixel emits only
+  // its alpha's worth of light. Raw-RGB luma would call the a=51
+  // frame full-strength — the exact blindness that made the guard's
+  // light-gain ladder unmeasurable on pure-light pixels.
+  const translucent = (a) => {
+    const data = frame(255)
+    for (let i = 0; i < data.length; i += 4) data[i + 3] = a
+    return data
+  }
+  assert.ok(Math.abs(measureFrameFlash(translucent(51)).mean - 51) < 1, 'a=51 white measures as 51, not 255')
+  assert.equal(isFlashSwing(measureFrameFlash(translucent(255), translucent(230))), false,
+    'a small alpha step of the same colour is not a flash')
+  // The clamp works in premultiplied terms too: rgb255/a128 (premul
+  // 128) under a ceiling of 64 halves the RGB, alpha untouched.
+  const hot = frame(255)
+  applyLuminanceClamp(hot, 128)
+  assert.ok(hot[0] <= 129 && hot[3] === 255, `clamped pixel ${hot[0]}`)
+  const glow = translucent(128)
+  applyLuminanceClamp(glow, 64)
+  assert.ok(Math.abs(glow[0] - 128) <= 1 && glow[3] === 128, `premul-clamped pixel ${glow[0]}/a${glow[3]}`)
+  const untouched = frame(90)
+  applyLuminanceClamp(untouched, 255)
+  assert.equal(untouched[0], 90, 'ceiling 255 is a no-op')
+})
+
+test('wave-5 flash guard: a pure-light strobe is tamed through its alpha', async () => {
+  const { createPixelfxPlayer, measureFrameFlash } = await import('../src/fx/player-core.js')
+  // NO colour at all — light only, at half gain. composite()
+  // normalises the RGB to 255 and carries the brightness in the
+  // alpha (≈128 on, 0 off), so a raw-RGB meter sees an untameable
+  // 255↔0 strobe while the emitted light is really 128↔0 — and the
+  // guard's gain ladder acts on exactly that alpha.
+  const pureLight = {
+    meta: { size: [16, 16], duration: 3 },
+    draw(p, t) {
+      const on = Math.floor(t * 8) % 2 === 0
+      p.shade(-16, -16, 16, 16, (x, y, o) => { if (on) { o.l = 0xffffff; o.k = 0.5 } })
+    },
+  }
+  const raw = createPixelfxPlayer(pureLight, {})
+  const guarded = createPixelfxPlayer(pureLight, { flashGuard: true })
+  let rawPeak = 0
+  let guardedLatePeak = 0
+  for (let i = 0; i < 90; i++) {
+    rawPeak = Math.max(rawPeak, measureFrameFlash(raw.step(1 / 30)).mean)
+    const mean = measureFrameFlash(guarded.step(1 / 30)).mean
+    if (i >= 60) guardedLatePeak = Math.max(guardedLatePeak, mean)
+  }
+  assert.ok(rawPeak > 100 && rawPeak < 160, `raw pure-light peak should be ≈128 (alpha-carried), got ${rawPeak}`)
+  assert.equal(guarded.flash.softened, true, 'the pure-light strobe must trip the guard')
+  assert.ok(guardedLatePeak < rawPeak - 40, `guarded late peak ${guardedLatePeak} should sit well under raw ${rawPeak}`)
+})
+
+test('wave-5 flash guard: a light strobe is softened in play; a calm effect never is', async () => {
+  const { createFlashGuard, PIXELFX_FLASH_LIGHT_SCALES } = await import('../src/fx/player-core.js')
+  // The guard escalates one level per fresh breach and restarts its window.
+  const guard = createFlashGuard()
+  const swing = { meanDelta: 200, movedFraction: 1 }
+  let verdict
+  for (let i = 0; i < 4; i++) verdict = guard.observe(swing, 0.1 * (i + 1))
+  assert.equal(verdict.escalated, true)
+  assert.equal(guard.level, 1)
+  assert.equal(guard.lightScale, PIXELFX_FLASH_LIGHT_SCALES[1])
+  assert.equal(guard.swingsInWindow, 0, 'escalation restarts the window')
+
+  // A synthetic light strobe: opaque black colour, full-field white
+  // light toggling at 4Hz — its flash lives entirely in the light
+  // layer, which is exactly what the guard's gain ladder tames.
+  const strobeMod = {
+    meta: { size: [16, 16], duration: 3 },
+    draw(p, t) {
+      const on = Math.floor(t * 8) % 2 === 0
+      p.shade(-16, -16, 16, 16, (x, y, o) => {
+        o.c = 0xff000000
+        if (on) { o.l = 0xffffff; o.k = 1 }
+      })
+    },
+  }
+  const raw = createPixelfxPlayer(strobeMod, {})
+  const guarded = createPixelfxPlayer(strobeMod, { flashGuard: true })
+  const meanOf = (data) => {
+    let sum = 0
+    for (let i = 0; i < data.length; i += 4) sum += (data[i] + data[i + 1] + data[i + 2]) / 3
+    return sum / (data.length / 4)
+  }
+  let rawPeak = 0
+  let guardedLatePeak = 0
+  for (let i = 0; i < 90; i++) {
+    rawPeak = Math.max(rawPeak, meanOf(raw.step(1 / 30)))
+    const mean = meanOf(guarded.step(1 / 30))
+    // Only the tail counts: the guard needs its first breach before
+    // it can soften anything, so early frames legitimately run raw.
+    if (i >= 60) guardedLatePeak = Math.max(guardedLatePeak, mean)
+  }
+  assert.ok(rawPeak > 250, `raw strobe should hit full brightness, got ${rawPeak}`)
+  assert.equal(raw.flash.enabled, false)
+  assert.equal(guarded.flash.softened, true, 'the strobe must trip the guard')
+  assert.ok(guarded.flash.lightScale < 1, `light gain stepped down to ${guarded.flash.lightScale}`)
+  assert.ok(guardedLatePeak < rawPeak - 40, `guarded late peak ${guardedLatePeak} should sit well under raw ${rawPeak}`)
+
+  // A calm ambient effect under the guard stays at full gain.
+  const wisp = await load('critters/wisp')
+  const calm = createPixelfxPlayer(wisp, { seed: 11, flashGuard: true })
+  for (let i = 0; i < 90; i++) calm.step(1 / 30)
+  assert.equal(calm.flash.softened, false)
+  assert.equal(calm.flash.lightScale, 1)
+})
