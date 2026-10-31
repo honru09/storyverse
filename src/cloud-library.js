@@ -425,5 +425,16 @@ export function createCloudSync({
       const active = openSession(uid)
       return active.pendingUploads.size + active.pendingDeletes.size + (active.readingDirty ? 1 : 0)
     },
+
+    /**
+     * The story ids this device currently holds in step with the
+     * account library (COVER-RETRY-FIX): the cover gate uses membership
+     * to tell an old, engine-unstamped book that already lives in the
+     * account library from local-only seeded stock.
+     */
+    syncedIds(uid) {
+      const active = openSession(uid)
+      return new Set(Object.keys(active.synced))
+    },
   }
 }
