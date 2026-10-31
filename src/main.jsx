@@ -156,6 +156,8 @@ import {
 } from "./fusion-permission.js";
 import { acceptGeneratedChapter, acceptRerolledChapter, acceptRevisedChapter, generationStatus, mergeSourceContext, nextGenerationIndex, requestChapter, requestChapterReroll, requestChapterRevision } from "./generation.js";
 import InterventionOverlay from "./components/InterventionOverlay.jsx";
+import PixelfxCanvas from "./fx/PixelfxCanvas.jsx";
+import { pickFx, pickForgeAmbientFx, PIXELFX_SCENE } from "./fx/placements.js";
 import WorldArtwork from "./components/WorldArtwork.jsx";
 import StoryCover from "./components/StoryCover.jsx";
 import AccountPanel, { ShellThemeSegments } from "./components/AccountPanel.jsx";
@@ -278,6 +280,7 @@ import {
   shelfForTemplate,
   startNextSeason,
   storyLengthModeOf,
+  structureFor,
   totalChaptersFor,
   validTargetChapters,
   spawnPointsForIdentity,
@@ -616,6 +619,40 @@ function seedStory(story) {
 function genreOf(story) {
   return genreById[story?.genreId || story?.config?.genreId] || GENRES[0];
 }
+
+// PIXELFX-WAVE2 (§60): the shared motion gate for every pixelfx mount
+// in this file — the same verdict GenerationOverlay reaches (global
+// toggle on, no reduced motion, no save-data). PixelfxCanvas re-checks
+// it internally and degrades to a still; surfaces here simply never
+// mount the layer at all when the policy says no.
+const pixelfxMotionOn = (settings) =>
+  Boolean(settings?.enabled) && !settings?.reducedMotion && !settings?.saveData;
+
+const storyFamilyOf = (story) =>
+  shelfForTemplate(story?.genreTemplateId || story?.config?.genreTemplateId || "")?.id || null;
+
+// PIXELFX-WAVE2 (§60): the chapter-open celebration predicate. A
+// chapter earns the small beat when it closes a unit （升格） and the
+// grand beat when it closes the line （季终/终局） — the owner's beat
+// map: season 6/12/18 small + 24 grand, long 50 small + 100 grand,
+// endless every arc close (12/24/…). Custom and short lines celebrate
+// only their finale. structureFor supplies the unit boundaries, so
+// this never drifts from the beat plan chapters are generated against.
+function chapterMilestoneKind(story, index) {
+  if (!story || !Number.isInteger(index) || index < 0) return null;
+  const structure = structureFor(story, index);
+  if (!structure.isUpgradePoint) return null;
+  if (structure.isFinale) return "grand";
+  if (structure.mode === "season" || structure.mode === "endless") return "small";
+  if (structure.mode === "long" && index + 1 === 50) return "small";
+  return null;
+}
+
+// The forge-open beat's hand-off: App.generate stamps the new book's
+// id here the moment its first chapter lands; the Reader consumes the
+// stamp on mount (once, and only while it is fresh) and plays the
+// forge-open one-shot over the cover page.
+const JUST_OPENED_KEY = (storyId) => `storyweave:just-opened:${storyId}`;
 
 function displayName(story, fallback = "未命名旅人") {
   return story?.config?.name?.trim() || fallback;
@@ -1362,6 +1399,13 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
   const [abilityEditMode, setAbilityEditMode] = useState(null);
   const [abilityCustomName, setAbilityCustomName] = useState("");
   const [abilityCustomDesc, setAbilityCustomDesc] = useState("");
+  // PIXELFX-WAVE2 (§60): the reveal beat — a summoning one-shot over
+  // the stage frame at the moment a portrait finishes painting. The
+  // derivative pipeline and face anchor are untouched; this is a
+  // transparent overlay on the reveal layer, gone when it finishes.
+  const fxSettings = useMotionSettings();
+  const fxMotionOn = pixelfxMotionOn(fxSettings);
+  const [revealFx, setRevealFx] = useState(null);
   const getToken = useCallback(() => authClient.getAccessToken(), [authClient]);
   const signedIn = account?.status === "authenticated" && Boolean(account?.user);
 
@@ -1458,6 +1502,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
       setEditingId(painted.id);
       seedForm(painted);
       setNotice("立绘已更新。");
+      if (fxMotionOn) setRevealFx({ key: Date.now(), pick: pickFx(PIXELFX_SCENE.AVATAR_REVEAL, null) });
       void avatarState.refresh();
     } catch (failure) {
       setError(failure.message || "立绘暂时没能生成，请稍后再试。");
@@ -1594,6 +1639,16 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
         <section className="avatar-stage">
           <div className="avatar-frame">
             <AvatarPortrait avatar={previewAvatar} getAccessToken={getToken} which={showPrevious ? "previous" : "current"} variant={null} />
+            {revealFx && fxMotionOn && (
+              <PixelfxCanvas
+                key={revealFx.key}
+                className="avatar-reveal-fx"
+                fx={revealFx.pick.fx}
+                seed={revealFx.pick.seed}
+                loop={false}
+                onDone={() => setRevealFx(null)}
+              />
+            )}
             {painting && <div className="avatar-frame-state">正在画…</div>}
             {!painting && portrait.status === "failed" && <div className="avatar-frame-state is-error">上次没画成</div>}
           </div>
@@ -2126,6 +2181,11 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
   const { animate: forgeAnimate } = useMotionPolicy("forge");
   const prevStepRef = useRef(step);
   const [rollFx, setRollFx] = useState(0);
+  // PIXELFX-WAVE2 (§60): the world / identity steps breathe with the
+  // world being picked — an ambient loop under the step panel, keyed
+  // by world so switching worlds switches the air with it.
+  const fxSettings = useMotionSettings();
+  const fxMotionOn = pixelfxMotionOn(fxSettings);
   // REQ-71: directional step transition (DESIGN §5 --dur-step). §53
   // forbids whole-page horizontal slides, so direction rides the
   // vertical axis — forward steps rise in from below, backward steps
@@ -3042,6 +3102,19 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       </div>
       <div className={`forge-layout${step === 5 ? " is-confirm" : ""}`}>
         <main className="forge-main">
+          {(step === 2 || step === 3) && fxMotionOn && (() => {
+            const pick = pickForgeAmbientFx(world?.id, shelfForTemplate(draft.genreTemplateId)?.id || null);
+            return (
+              <PixelfxCanvas
+                key={`${world?.id || "custom"}:${pick.fx}`}
+                className="forge-ambient-fx"
+                fx={pick.fx}
+                palette={pick.palette}
+                seed={pick.seed}
+                loop
+              />
+            );
+          })()}
           <div className="forge-step-panel" key={step}>
           {step === 1 && (
             <>
@@ -5467,6 +5540,16 @@ function Reader({
   const [rerolling, setRerolling] = useState(false);
   const [rerollSettled, setRerollSettled] = useState(false);
   const [proseOpen, setProseOpen] = useState(false);
+  // PIXELFX-WAVE2 (§60): two one-shot pixel celebrations — the
+  // forge-open beat over a brand-new book's cover page, and the
+  // upgrade / finale beat on a milestone chapter's open transition.
+  // Both live on transition surfaces (fixed, pointer-transparent,
+  // unmounted when the one-shot ends); prose itself never carries one.
+  const fxSettings = useMotionSettings();
+  const fxMotionOn = pixelfxMotionOn(fxSettings);
+  const [openFx, setOpenFx] = useState(null);
+  const [milestoneFx, setMilestoneFx] = useState(null);
+  const celebratedRef = useRef(new Set());
   const [error, setError] = useState("");
   const [preparing, setPreparing] = useState(false);
   const [generationError, setGenerationError] = useState("");
@@ -5574,6 +5657,45 @@ function Reader({
       .finally(() => { if (!controller.signal.aborted) { requesting.current = false; setPreparing(false); } });
     return () => { controller.abort(); requesting.current = false; };
   }, [story?.id, story?.revision, pendingIndex, retry, onPrepareChapter]);
+
+  useEffect(() => { celebratedRef.current = new Set(); }, [story?.id, readOnly]);
+
+  // Forge-open beat: consume the stamp App.generate left for this book
+  // when its first chapter landed. Only a fresh stamp plays — a later
+  // reopening from the shelf finds nothing (or an expired stamp) and
+  // the cover page stays quiet.
+  useEffect(() => {
+    if (!story?.id || readOnly || !fxMotionOn) return;
+    let stamped = 0;
+    try {
+      stamped = Number(window.sessionStorage.getItem(JUST_OPENED_KEY(story.id)) || 0);
+      if (stamped) window.sessionStorage.removeItem(JUST_OPENED_KEY(story.id));
+    } catch { /* storage trouble simply skips the beat */ }
+    if (stamped && Date.now() - stamped < 5 * 60_000) {
+      setOpenFx(pickFx(PIXELFX_SCENE.FORGE_OPEN, storyFamilyOf(story)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story?.id, readOnly]);
+
+  // Milestone beat: the reader has entered the prose (frontStage
+  // null) of a chapter that closes a unit or the line, and the chapter
+  // exists. Once per book + chapter per mount — paging away and back
+  // never replays it, and a chapter that only lands later fires when
+  // the reader actually opens it, not while it pre-generates.
+  const chaptersLanded = story?.chapters?.length || 0;
+  useEffect(() => {
+    if (!story || readOnly || frontStage !== null || !fxMotionOn) return;
+    if (index >= chaptersLanded) return;
+    const kind = chapterMilestoneKind(story, index);
+    if (!kind) return;
+    const key = `${story.id}:${index}`;
+    if (celebratedRef.current.has(key)) return;
+    celebratedRef.current.add(key);
+    setMilestoneFx({
+      key,
+      pick: pickFx(PIXELFX_SCENE.CHAPTER_UPGRADE, storyFamilyOf(story), { grand: kind === "grand" }),
+    });
+  }, [story, index, frontStage, chaptersLanded, readOnly, fxMotionOn]);
 
   useEffect(() => {
     titleRef.current?.focus({ preventScroll: true });
@@ -6522,6 +6644,29 @@ function Reader({
           <p className="cover-dialog-note">封面按这本书自己的世界背景生成，不带文字；每天最多生成 5 张，自动生成与手动更换共用。</p>
         </ReadingDialog>
       )}
+      {openFx && frontStage && (
+        <div className="reader-open-fx" aria-hidden="true">
+          <PixelfxCanvas
+            fx={openFx.fx}
+            palette={openFx.palette}
+            seed={openFx.seed}
+            loop={false}
+            onDone={() => setOpenFx(null)}
+          />
+        </div>
+      )}
+      {milestoneFx && (
+        <div className="reader-open-fx" aria-hidden="true">
+          <PixelfxCanvas
+            key={milestoneFx.key}
+            fx={milestoneFx.pick.fx}
+            palette={milestoneFx.pick.palette}
+            seed={milestoneFx.pick.seed}
+            loop={false}
+            onDone={() => setMilestoneFx(null)}
+          />
+        </div>
+      )}
       {shareOpen && (
         <ShareSheet
           story={story}
@@ -7220,6 +7365,12 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
   const own = Boolean(viewerUid) && post.authorUid === viewerUid;
   const [liked, setLiked] = useState(Boolean(post.viewerLiked));
   const [likeCount, setLikeCount] = useState(post.likeCount || 0);
+  // PIXELFX-WAVE2 (§60): a fingertip burst on the like button when a
+  // like lands — throttled, never on un-like, gone when it finishes.
+  const fxSettings = useMotionSettings();
+  const fxMotionOn = pixelfxMotionOn(fxSettings);
+  const [likeFx, setLikeFx] = useState(null);
+  const likeFxAtRef = useRef(0);
   const [commentCount, setCommentCount] = useState(post.commentCount || 0);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuWrapRef = useRef(null);
@@ -7253,6 +7404,10 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
     const wasCount = likeCount;
     setLiked(!wasLiked);
     setLikeCount((count) => Math.max(0, count + (wasLiked ? -1 : 1)));
+    if (!wasLiked && fxMotionOn && Date.now() - likeFxAtRef.current > 1500) {
+      likeFxAtRef.current = Date.now();
+      setLikeFx({ key: likeFxAtRef.current, pick: pickFx(PIXELFX_SCENE.PLAZA_LIKE, null) });
+    }
     try {
       const result = await togglePlazaPostLike({ id: post.id, getAccessToken: () => authClient.getAccessToken() });
       setLiked(Boolean(result.liked));
@@ -7405,6 +7560,16 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
         >
           <Icon name="heart" size={18} />
           <span>{likeCount > 0 ? likeCount : "赞"}</span>
+          {likeFx && (
+            <PixelfxCanvas
+              key={likeFx.key}
+              className="plaza-like-fx"
+              fx={likeFx.pick.fx}
+              seed={likeFx.pick.seed}
+              loop={false}
+              onDone={() => setLikeFx(null)}
+            />
+          )}
         </button>
         <button
           type="button"
@@ -8012,6 +8177,11 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
   const [busy, setBusy] = useState(false);
   const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  // PIXELFX-WAVE2 (§60): a whisper-quiet ambient loop inside the
+  // existing detail-ambience layer — behind every glass panel, faded
+  // by that layer's own mask, never over a panel or a line of text.
+  const fxSettings = useMotionSettings();
+  const fxMotionOn = pixelfxMotionOn(fxSettings);
   const goBack = onBack || (() => onNavigate("plaza"));
   const own = useMemo(() => plazaMineIds().has(id), [id]);
   // The fusion card's honest state against the reader's own shelf —
@@ -8128,6 +8298,21 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
           to the black/white themes and hides the layer elsewhere. */}
       <span className="detail-ambience" aria-hidden="true">
         <PublicationArtwork publication={detail} genreId={genre.id} eager />
+        {fxMotionOn && (() => {
+          const pick = pickFx(
+            PIXELFX_SCENE.DETAIL_AMBIENT,
+            detail.shelfId || shelfForTemplate(detail.genreTemplateId || "")?.id || null,
+          );
+          return (
+            <PixelfxCanvas
+              className="detail-ambience-fx"
+              fx={pick.fx}
+              palette={pick.palette}
+              seed={pick.seed}
+              loop
+            />
+          );
+        })()}
       </span>
       <div className="plaza-detail-top">
         <button type="button" className="back-link" onClick={goBack}>
@@ -11240,6 +11425,12 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
   const [mergedStory, setMergedStory] = useState(null);
   const [error, setError] = useState("");
   const started = Boolean(mergedStory);
+  // PIXELFX-WAVE2 (§60): the fusion beat — one convergence/burst
+  // one-shot over the merge stage the moment the fused line lands,
+  // keyed to the lead line's family; spent per merged book id.
+  const fxSettings = useMotionSettings();
+  const fxMotionOn = pixelfxMotionOn(fxSettings);
+  const [fusionFxFor, setFusionFxFor] = useState("");
   if (!originals.length)
     return (
       <div className="page page-merge page-enter">
@@ -11353,6 +11544,19 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
             <Icon name={started ? "check" : "git"} size={25} />
           </div>
         </div>
+        {started && mergedStory && fxMotionOn && fusionFxFor !== mergedStory.id && (() => {
+          const pick = pickFx(PIXELFX_SCENE.MERGE_SUCCESS, storyFamilyOf(leadStory));
+          return (
+            <PixelfxCanvas
+              className="merge-fx"
+              fx={pick.fx}
+              palette={pick.palette}
+              seed={pick.seed}
+              loop={false}
+              onDone={() => setFusionFxFor(mergedStory.id)}
+            />
+          );
+        })()}
         {selectedStories.length ? (
           <div className="merge-stage-cast">
             {selectedStories.map((story) => {
@@ -12204,6 +12408,22 @@ function App() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [toast, setToast] = useState("");
+  // PIXELFX-WAVE2 (§60): the publish / share success toasts earn one
+  // confetti beat anchored to the toast. Only the three exact success
+  // strings qualify; every other toast stays quiet, and the beat is
+  // spent the moment its one-shot finishes.
+  const appFxSettings = useMotionSettings();
+  const appFxMotionOn = pixelfxMotionOn(appFxSettings);
+  const [toastFx, setToastFx] = useState(null);
+  const celebrateToast = (message) => {
+    setToast(message);
+    if (
+      appFxMotionOn
+      && (message === "已上架到书城。" || message === "已发布到广场。" || message === "已分享到广场。")
+    ) {
+      setToastFx({ key: Date.now(), pick: pickFx(PIXELFX_SCENE.PUBLISH_CELEBRATION, null) });
+    }
+  };
   const [provider, setProvider] = useState({ configured: false });
   const opening = useRef(null);
   const handledRouteRef = useRef("");
@@ -12891,6 +13111,10 @@ function App() {
       }));
       setShareRequest(false);
       setToast("");
+      // PIXELFX-WAVE2 (§60): stamp the landing so the Reader plays the
+      // forge-open beat over the new book's cover page — once, there
+      // only (the stamp is consumed on sight and expires in minutes).
+      try { window.sessionStorage.setItem(JUST_OPENED_KEY(story.id), String(Date.now())); } catch { /* the beat is optional */ }
       navigate("reader", { storyId: story.id });
       opening.current = null;
   };
@@ -13205,7 +13429,7 @@ function App() {
         onEnter={(publication) => navigate("plaza-enter", { id: publication.id })}
         onOpenProfile={openProfile}
         onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
-        onToast={setToast}
+        onToast={celebrateToast}
       />
     );
   else if (view === "plaza-detail")
@@ -13221,7 +13445,7 @@ function App() {
         onReadLine={(detail) => void openPlazaLine(detail)}
         onEnter={(detail) => navigate("plaza-enter", { id: detail.id })}
         onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
-        onToast={setToast}
+        onToast={celebrateToast}
         onOpenProfile={openProfile}
         onOpenBook={(publicationId) => openPlazaDetail({ id: publicationId }, detailOrigin)}
       />
@@ -13237,7 +13461,7 @@ function App() {
         onNavigate={navigate}
         onOpenAccount={() => { setAccountIntent(null); setAccountOpen(true); }}
         onOpenAvatar={() => navigate("avatar")}
-        onToast={setToast}
+        onToast={celebrateToast}
         onBringAvatar={(story, avatar) => {
           const next = bringAvatarIntoStory(story, avatar);
           if (next !== story) {
@@ -13398,6 +13622,16 @@ function App() {
           <Icon name="check" size={15} />
           {toast}
         </div>
+      )}
+      {toastFx && (
+        <PixelfxCanvas
+          key={toastFx.key}
+          className="toast-fx"
+          fx={toastFx.pick.fx}
+          seed={toastFx.pick.seed}
+          loop={false}
+          onDone={() => setToastFx(null)}
+        />
       )}
     </div>
   );

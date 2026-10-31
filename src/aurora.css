@@ -106,6 +106,23 @@
 .intervention-fx{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:block;height:148px;width:auto;z-index:0;pointer-events:none}
 .intervention-card>*:not(.intervention-fx){position:relative;z-index:1}
 
+/* PIXELFX-WAVE2 (§60): the second wave's layers. Every canvas is
+   pointer-inert and lives on a transition or atmosphere surface —
+   the reader beats ride a fixed, centred, transparent stage that
+   unmounts with the one-shot; the forge/detail ambience layers sit
+   under their surfaces' content exactly like the wave-1 card rules. */
+.reader-open-fx{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.reader-open-fx canvas{display:block;height:min(240px,44vw);width:auto}
+.merge-stage{position:relative}
+.merge-fx{position:absolute;top:-16px;left:50%;transform:translateX(-50%);display:block;height:180px;width:auto;z-index:2;pointer-events:none}
+.avatar-reveal-fx{position:absolute;left:50%;bottom:5%;transform:translateX(-50%);display:block;height:48%;width:auto;z-index:2;pointer-events:none}
+.forge-main{position:relative}
+.forge-ambient-fx{position:absolute;top:2px;left:50%;transform:translateX(-50%);display:block;height:92px;width:auto;z-index:0;pointer-events:none;opacity:.85}
+.forge-main>*:not(.forge-ambient-fx){position:relative;z-index:1}
+.plaza-like-fx{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;height:48px;width:auto;z-index:2;pointer-events:none}
+.toast-fx{position:fixed;left:50%;bottom:calc(148px + env(safe-area-inset-bottom));transform:translateX(-50%);display:block;height:104px;width:auto;z-index:41;pointer-events:none}
+.detail-ambience-fx{position:absolute;left:50%;top:290px;transform:translateX(-50%);display:block;height:104px;width:auto;pointer-events:none;opacity:.55}
+
 /* ---- Story map ---- */
 .storymap{display:block;width:100%}
 .storymap-link{fill:none;stroke:rgba(168,196,255,.28);stroke-width:1.6}
