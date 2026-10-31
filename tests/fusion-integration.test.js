@@ -8,6 +8,7 @@ import {
   createMergedStory,
   createStory,
   outlineLengthFor,
+  storyBeatPlan,
   totalChaptersFor,
 } from '../src/story-engine.js'
 import { mergeSourceContext } from '../src/generation.js'
@@ -39,6 +40,31 @@ test('a fused line clears the lead ability description; cast abilities stay per 
   const merged = createMergedStory([a, b])
   assert.equal(merged.config.abilityDesc, '', 'the fused config carries no single-protagonist ability description')
   assert.deepEqual(merged.config.protagonists.map((person) => person.ability), ['借火一瞬', '签到系统'], 'each lead keeps his own ability name')
+})
+
+// --- REQ-61 × REQ-57 (00055 fix): the per-person half of the ruling
+// above — each lead's effect description must still REACH the fused
+// brief, attributed per person, or the cast's powers are names only.
+
+test('a fused brief restates each lead ability effect per person', () => {
+  const a = finishedShort({ name: '沈砚', ability: '借火一瞬', abilityDesc: '借来的火只能烧三息，烧完要还双倍的冷。' })
+  const b = finishedShort({ name: '陆鸣', genreId: 'city', ability: '签到系统', abilityDesc: '每天签到领一笔钱，断签清零。' })
+  const merged = createMergedStory([a, b])
+  assert.deepEqual(
+    merged.config.protagonists.map((person) => person.abilityDesc),
+    ['借来的火只能烧三息，烧完要还双倍的冷。', '每天签到领一笔钱，断签清零。'],
+    'each lead keeps his own ability description on the fused config',
+  )
+  const plan = storyBeatPlan(merged, 0)
+  assert.ok(plan.prerequisites.some((line) => line === '能力·沈砚：借火一瞬（借来的火只能烧三息，烧完要还双倍的冷。）'), plan.prerequisites.join('|'))
+  assert.ok(plan.prerequisites.some((line) => line === '能力·陆鸣：签到系统（每天签到领一笔钱，断签清零。）'), plan.prerequisites.join('|'))
+})
+
+test('a fused cast ability line drops empty slots instead of dangling a joiner', () => {
+  const a = finishedShort({ name: '沈砚', ability: '借火一瞬', abilityDesc: '借来的火只能烧三息。' })
+  const b = finishedShort({ name: '陆鸣', genreId: 'city', ability: '', abilityDesc: '' })
+  const merged = createMergedStory([a, b])
+  assert.equal(merged.config.ability, '借火一瞬')
 })
 
 // --- REQ-61 × REQ-59: a merged opening's brief must not carry the
