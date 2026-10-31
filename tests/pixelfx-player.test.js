@@ -602,3 +602,63 @@ test('settings wiring: the advanced group summarises the persisted health log', 
   assert.match(canvas, /recordPixelfxDeath\(from\.fx, reason, sceneName\)/)
   assert.match(canvas, /recordPixelfxTierDrop\(candidate\.fx, verdict\.index - 1, verdict\.index, sceneName\)/)
 })
+
+test('health log: method-level storage denial degrades to the memory ring', async () => {
+  const health = await import('../src/fx/health.js')
+  // A Storage object that exists but throws on write (zero-quota
+  // private mode): events must land in the memory ring, not vanish.
+  globalThis.localStorage = {
+    getItem: () => null,
+    setItem: () => { throw new Error('QuotaExceededError') },
+    removeItem: () => {},
+  }
+  try {
+    health.resetPixelfxHealthLog()
+    health.recordPixelfxHeal('a/one', 'b/two', 'slow', 'waiting')
+    health.recordPixelfxDeath('c/three', 'blank', 'intervene')
+    const log = health.pixelfxHealthLog()
+    assert.equal(log.length, 2)
+    assert.equal(log[0].type, 'heal')
+    assert.equal(log[1].type, 'death')
+    assert.deepEqual(health.pixelfxHealthLogSummary(), {
+      events: 2, heals: 1, deaths: 1, tierDrops: 0, anomalies: 1,
+    })
+    health.resetPixelfxHealthLog()
+  } finally {
+    delete globalThis.localStorage
+    health.resetPixelfxHealthLog()
+  }
+  // Same when reads throw from the start.
+  globalThis.localStorage = {
+    getItem: () => { throw new Error('SecurityError') },
+    setItem: () => {},
+    removeItem: () => {},
+  }
+  try {
+    health.recordPixelfxTierDrop('d/four', 0, 1, 'waiting')
+    assert.equal(health.pixelfxHealthLog().length, 1)
+    assert.equal(health.pixelfxHealthLog()[0].type, 'tier-drop')
+    health.resetPixelfxHealthLog()
+  } finally {
+    delete globalThis.localStorage
+    health.resetPixelfxHealthLog()
+  }
+})
+
+test('keyframes: the decoder refuses truncated and interlaced PNGs', async () => {
+  const { encodePng, decodePng } = await import('../scripts/fx-keyframes.mjs')
+  const png = encodePng({ width: 2, height: 2, rgb: Buffer.alloc(12, 7) })
+  assert.throws(() => decodePng(png.subarray(0, png.length - 12)), /truncated|corrupt/)
+  const interlaced = Buffer.from(png)
+  interlaced[28] = 1 // IHDR interlace byte: Adam7 must not unfilter as scanlines
+  assert.throws(() => decodePng(interlaced), /unsupported PNG format/)
+})
+
+test('keyframes: --compare on a missing directory lists missing baselines, never crashes', async () => {
+  const { spawnSync } = await import('node:child_process')
+  const script = new URL('../scripts/fx-keyframes.mjs', import.meta.url).pathname
+  const run = spawnSync(process.execPath, [script, '--compare', '/tmp/fx-keyframes-no-such-dir-wave6'], { encoding: 'utf8' })
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, /no readable baseline portrait/)
+  assert.doesNotMatch(run.stderr, /ENOENT/)
+})

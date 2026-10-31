@@ -31,15 +31,23 @@
 
 ## 验证计数
 
-- pixelfx 两测试文件 **47/47 全绿**（波六新增 7 项：落盘三类事件+场景归属 / 环形上限 / 无存储降级 / pick 场景戳 / PNG 编解码与 diff / 19 场景留影非空+确定性 / 设置接线断言）。
-- 全量套件 **1236 项 / 1231 过 / 5 败**——5 败全为 dedup ③a 族（新 clone 缺未跟踪的 fixture 图 avatar-shots/sample-portrait-v1-black-hair.png 等，ENOENT；波二至波五同基线）。**零新回归**（1236 = 基线 1229 + 波六 7 新测）。
+- pixelfx 两测试文件 **50/50 全绿**（波六新增 10 项：落盘三类事件+场景归属 / 环形上限 / 无存储降级 / 方法级拒绝降级（复核 F1 回归） / pick 场景戳 / PNG 编解码与 diff / 解码拒绝截断与隔行（F2 回归） / 19 场景留影非空+确定性 / 设置接线断言 / --compare 缺目录不崩（F3 回归））。
+- 全量套件 **1239 项 / 1234 过 / 5 败**——5 败全为 dedup ③a 族（新 clone 缺未跟踪的 fixture 图 avatar-shots/sample-portrait-v1-black-hair.png 等，ENOENT；波二至波五同基线）。另 import-daylight 的 backup merge 在满载时偶发 1 败（单跑四次三过一败，与波二/三/五记录的同一并行时序 flake，与本波零交集）。**零新回归**（1239 = 基线 1229 + 波六 10 新测）。
 - `npm run fx:selfcheck`：**325 渲染全过 + 56 grand 闪光审计全 0 次/秒**（与波五定版一致，本波未动 pick 与阈值）。
 - `npm run fx:keyframes`：留影 19 张 + 对 wave6 基线自比对无变样（exit 0）。
 - `npm run build` 通过。
 
-## Gemini 复核处置
+## Gemini 复核处置（两轮，逐条回源码核验）
 
-agy（gemini-4-argon-high）过本波代码 diff（health/placements/PixelfxCanvas/main/package/tests/fx-keyframes），结论 **no defects found**，无条目需处置。前两次调用分别因模型池不可用与进程被系统 Kill 未产出，第三次以纯文本模式完成——过程如实记此。
+复核经历两轮：纯文本 pass（gemini-4-argon-high，只读代码 diff）先报 no defects found；随后完整 agent pass（同模型，迟到交付）报 3 个缺陷。逐条回源码核验后**三条全部成立**，已在跟进提交中逐条修复并各补回归测试——以第二轮为准，第一轮结论作废：
+
+| # | 缺陷 | 核验与处置 |
+|---|---|---|
+| F1 | localStorage 对象存在但方法级抛错（配额满/SecurityError）时，append 的 catch 直接丢事件、read 永不回看内存环——「被拒/写满降级内存环」只在存储对象缺失时成立，违反 §60 写死口径 | **成立，已修**：health.js 加 `storageDegraded` 闩锁——getItem/setItem 一抛错即闩住，之后读写全走内存环；每次 append 先把（含盘上历史的）全量镜像进内存，闩住时不丢历史；reset 连闩一并清。补单测：setItem 抛错、getItem 抛错两路落盘降级后日志与汇总仍完整 |
+| F2 | decodePng 不校验隔行字节与解压长度：截断 PNG 经 subarray 钳制静默零填充成黑图、Adam7 隔行流会被当扫描线解成乱码——坏基线读不出「坏」，只会报出天量假变样 | **成立，已修**：解码前校验 chunk 边界、IHDR 压缩/过滤/隔行三字节须为 0、IEND 须在场、解压长度须恰为 (stride+1)×height，任一不符抛错（compare 侧按「基线不可读」逐条列）。补单测：截断与隔行字节各一例必抛 |
+| F3 | `--compare` 的基线目录不存在时 readdirSync 在 try 外直接 ENOENT 崩栈，与「基线缺失同列」的设计相悖（每日自查首跑前基线目录本就不存在，接线稿靠 cron 操作员先建基线绕开，但脚本自身不该崩） | **成立，已修**：readdirSync 包 try，缺目录时逐场景走「no readable baseline portrait」清单、exit 1 不崩栈。补单测：子进程跑 --compare 指向不存在目录，断言 exit 1 + 清单文案 + 无 ENOENT |
+
+复核过程如实记：模型池不可用与进程被 Kill 各废掉一次调用，纯文本 pass 与 agent pass 结论不一致时以逐条回源码核验的结果为准——三条均在源码上复现成立后才动手。
 
 ## 未证项（如实）
 

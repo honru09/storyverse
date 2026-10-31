@@ -247,6 +247,12 @@ export const PIXELFX_HEALTH_LOG_LIMIT = 100;
 
 const HEALTH_LOG_TYPES = new Set(["heal", "death", "tier-drop"]);
 let memoryHealthLog = [];
+// Latched the first time storage misbehaves at the METHOD level:
+// a localStorage object can exist while getItem/setItem throw
+// (zero-quota private modes, a full origin). From then on the log
+// lives in the session-memory ring, as §60 promises — the mirror is
+// kept current on every append so the latch loses no history.
+let storageDegraded = false;
 
 function healthLogStorage() {
   try {
@@ -267,7 +273,7 @@ function isHealthLogEntry(entry) {
 
 function readPixelfxHealthLog() {
   const store = healthLogStorage();
-  if (!store) return memoryHealthLog;
+  if (!store || storageDegraded) return memoryHealthLog;
   try {
     const raw = store.getItem(PIXELFX_HEALTH_LOG_KEY);
     if (!raw) return [];
@@ -275,7 +281,8 @@ function readPixelfxHealthLog() {
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(isHealthLogEntry).slice(-PIXELFX_HEALTH_LOG_LIMIT);
   } catch {
-    return [];
+    storageDegraded = true;
+    return memoryHealthLog;
   }
 }
 
@@ -287,17 +294,14 @@ function appendPixelfxHealthLog({ fx, scene, type, result }) {
     type,
     result: result ?? null,
   };
+  const log = [...readPixelfxHealthLog(), entry].slice(-PIXELFX_HEALTH_LOG_LIMIT);
+  memoryHealthLog = log;
   const store = healthLogStorage();
-  if (!store) {
-    memoryHealthLog = [...memoryHealthLog, entry].slice(-PIXELFX_HEALTH_LOG_LIMIT);
-    return;
-  }
+  if (!store || storageDegraded) return;
   try {
-    const log = readPixelfxHealthLog();
-    log.push(entry);
-    store.setItem(PIXELFX_HEALTH_LOG_KEY, JSON.stringify(log.slice(-PIXELFX_HEALTH_LOG_LIMIT)));
+    store.setItem(PIXELFX_HEALTH_LOG_KEY, JSON.stringify(log));
   } catch {
-    /* quota or denial: the in-memory health table still counts */
+    storageDegraded = true;
   }
 }
 
@@ -322,6 +326,7 @@ export function pixelfxHealthLogSummary() {
 /** Clear the persisted log (tests; the settings surface never does). */
 export function resetPixelfxHealthLog() {
   memoryHealthLog = [];
+  storageDegraded = false;
   try {
     healthLogStorage()?.removeItem(PIXELFX_HEALTH_LOG_KEY);
   } catch {

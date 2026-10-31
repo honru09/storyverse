@@ -98,27 +98,44 @@ export function decodePng(buffer) {
   let width = 0;
   let height = 0;
   let bpp = 0;
+  let seenIend = false;
   const idat = [];
   while (offset < buffer.length) {
+    if (offset + 8 > buffer.length) throw new Error("truncated PNG chunk header");
     const length = buffer.readUInt32BE(offset);
+    if (offset + 12 + length > buffer.length) throw new Error("truncated PNG chunk");
     const type = buffer.toString("ascii", offset + 4, offset + 8);
     const data = buffer.subarray(offset + 8, offset + 8 + length);
     if (type === "IHDR") {
+      if (data.length < 13) throw new Error("invalid IHDR");
       width = data.readUInt32BE(0);
       height = data.readUInt32BE(4);
-      if (data[8] !== 8 || (data[9] !== 2 && data[9] !== 6)) {
-        throw new Error(`unsupported PNG format (depth ${data[8]}, type ${data[9]})`);
+      // Compression (10), filter method (11) and interlace (12)
+      // must all be the plain values: an Adam7 stream unfilters to
+      // scrambled pixels if read as flat scanlines, so refuse it
+      // loudly instead of diffing garbage.
+      if (data[8] !== 8 || (data[9] !== 2 && data[9] !== 6) || data[10] !== 0 || data[11] !== 0 || data[12] !== 0) {
+        throw new Error(
+          `unsupported PNG format (depth ${data[8]}, type ${data[9]}, interlace ${data[12]})`,
+        );
       }
       bpp = data[9] === 2 ? 3 : 4;
     } else if (type === "IDAT") {
       idat.push(data);
     } else if (type === "IEND") {
+      seenIend = true;
       break;
     }
     offset += 12 + length;
   }
   const stride = width * bpp;
   const raw = inflateSync(Buffer.concat(idat));
+  // Without this, a short inflated stream would decode through
+  // subarray clamping into silently zero-filled rows — a corrupt
+  // baseline must read as corrupt, never as a black portrait.
+  if (!width || !height || !seenIend || raw.length !== (stride + 1) * height) {
+    throw new Error("corrupt or incomplete PNG data");
+  }
   const rows = Buffer.alloc(stride * height);
   for (let y = 0; y < height; y++) {
     const filter = raw[y * (stride + 1)];
@@ -259,9 +276,15 @@ if (invokedDirectly) {
     console.log(`fx-keyframes: wrote ${frames.size} keyframes to ${outDir}`);
   }
   if (compareDir) {
-    const baselineFiles = new Set(
-      readdirSync(compareDir).filter((name) => name.endsWith(".png")),
-    );
+    // A missing baseline directory is not a crash: every scene
+    // reports as a missing baseline portrait below.
+    let existing = [];
+    try {
+      existing = readdirSync(compareDir);
+    } catch {
+      /* handled per-scene as missing baselines */
+    }
+    const baselineFiles = new Set(existing.filter((name) => name.endsWith(".png")));
     const changed = [];
     for (const [scene, { image }] of frames) {
       const file = `${scene}.png`;
