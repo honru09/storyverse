@@ -102,6 +102,56 @@ export async function generationStatus({ fetchImpl = globalThis.fetch, signal } 
   }
 }
 
+// ——— GENFIX-20261101 · 生成单次点击死规则 (DESIGN §61) ———
+// One click must finish the job by itself. A generation attempt can
+// fail transiently in ways the reader can do nothing about — the
+// connection drops, iOS Safari resets a long fetch, the provider is
+// briefly busy (429), a gateway answers 502/504, or the response is
+// lost AFTER the server already generated and settled the chapter.
+// The old client made exactly ONE attempt and surfaced every one of
+// those as "请重试", stranding the reader on the confirmation step
+// until they clicked again (owner report 2026-11-01: 生成经常中断、
+// 要再点一次才进去). The second click only worked because the server
+// side already had the answer — the delivery registry answers an
+// identical replay from the settled result before any freeze or
+// provider call (server/index.js deliveryKeyFor), and the generator
+// joins/caches identical in-flight work — so the honest fix is for
+// the client to make that replay itself, automatically.
+//
+// Recovery contract (this function is the ONLY client path to
+// /api/generate, so the forge opening, plaza-line entry, fusion,
+// pre-generation, the reader's next chapter, intervention revision
+// and the frontier re-roll all inherit it):
+//   · transient failures (network error, client timeout, unparseable
+//     or lost response, 429/502/503/504) retry with growing backoff —
+//     GENERATION_RETRY_DELAYS_MS, 3 retries after the first attempt;
+//   · every retry resends the IDENTICAL payload, which is what makes
+//     it a reconciliation, not a second generation: the server
+//     registry/generator cache returns the settled chapter and never
+//     charges twice for it;
+//   · refusals a retry cannot change (401 sign-in, quota, coins) fail
+//     immediately, exactly as before;
+//   · the caller's abort signal stops the loop at once (a cancelled
+//     wait is a choice, not a failure);
+//   · only when every attempt is spent does the error surface — the
+//     callers keep their existing "story/draft is saved" copy and
+//     their manual retry affordance as the last resort.
+export const GENERATION_RETRY_DELAYS_MS = Object.freeze([2_000, 5_000, 12_000])
+
+const generationFailure = (message, { transient = false, cause } = {}) => {
+  const error = new Error(message, cause ? { cause } : undefined)
+  error.transient = transient
+  return error
+}
+
+const sleepUnlessAborted = (ms, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return }
+  const timer = setTimeout(() => { cleanup(); resolve() }, ms)
+  const onAbort = () => { cleanup(); reject(new DOMException('Aborted', 'AbortError')) }
+  const cleanup = () => { clearTimeout(timer); signal?.removeEventListener?.('abort', onAbort) }
+  signal?.addEventListener?.('abort', onAbort, { once: true })
+})
+
 async function sendGenerateRequest(story, payload, { fetchImpl = globalThis.fetch, signal, getAccessToken, onAuthRequired } = {}) {
   // The server now works inside a 270s total budget (retries + fallback,
   // RELIABILITY.md) under the platform's 300s ceiling; the old 65s client
@@ -126,10 +176,13 @@ async function sendGenerateRequest(story, payload, { fetchImpl = globalThis.fetc
     })
   } catch (error) {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-    throw new Error(timeout.aborted ? '这一章等待较久，进度已保留，请重试。' : '暂时无法连接，进度已保留，请重试。', { cause: error })
+    // A dropped connection or the client cap firing says nothing about
+    // the server's side of the story — the chapter may well be settled
+    // already. Transient: the recovery loop replays and reconciles.
+    throw generationFailure(timeout.aborted ? '这一章等待较久，进度已保留，请重试。' : '暂时无法连接，进度已保留，请重试。', { transient: true, cause: error })
   }
   let result
-  try { result = await response.json() } catch { throw new Error('章节暂时未能接上，请重试。') }
+  try { result = await response.json() } catch { throw generationFailure('章节暂时未能接上，请重试。', { transient: true }) }
   if (!response.ok) {
     // Server error text is never shown; stable codes map to fixed copy here.
     if (response.status === 401 || result?.code === 'auth-required') {
@@ -139,13 +192,38 @@ async function sendGenerateRequest(story, payload, { fetchImpl = globalThis.fetc
     if (result?.code === 'quota-exceeded') throw new Error('今天的生成额度已用完，请明天再继续创作。你的故事和进度都已保存。')
     if (result?.code === 'coins-exhausted') throw new Error('织币不足了。每天的免费织币会自动补足，开通会员或购买额度包可以继续创作。你的故事和进度都已保存。')
     const messages = { 429: '请求较多，请稍后再试。', 503: '在线创作暂不可用，已保存的章节仍可阅读。请稍后再试。', 504: '这一章等待较久，进度已保留，请重试。' }
-    throw new Error(messages[response.status] || '这一章暂时没能接上，进度已保留，请重试。')
+    // Gateway/provider turbulence (429 without a quota code, 502,
+    // 503, 504) is transient; any other refusal is final for this click.
+    throw generationFailure(messages[response.status] || '这一章暂时没能接上，进度已保留，请重试。', { transient: [429, 502, 503, 504].includes(response.status) })
   }
   return result
 }
 
+// The recovery loop itself: attempt, and on a transient failure wait
+// and replay the identical payload until the delays are spent. The
+// wait surfaces (forge overlay, reader "准备中") stay up throughout
+// because the callers' promises only settle when this returns or
+// finally throws — the reader is never bounced back to a "click
+// again" state by a recoverable failure.
+async function sendWithRecovery(story, payload, options = {}) {
+  const delays = Array.isArray(options.retryDelaysMs) ? options.retryDelaysMs : GENERATION_RETRY_DELAYS_MS
+  let attempt = 0
+  for (;;) {
+    try {
+      return await sendGenerateRequest(story, payload, options)
+    } catch (error) {
+      if (options.signal?.aborted || error?.name === 'AbortError') throw error
+      if (!error?.transient || attempt >= delays.length) throw error
+      const delayMs = delays[attempt]
+      attempt += 1
+      options.onRetry?.({ attempt, delayMs, error })
+      await sleepUnlessAborted(delayMs, options.signal)
+    }
+  }
+}
+
 export async function requestChapter(story, index, options = {}) {
-  const result = await sendGenerateRequest(story, { story, index }, options)
+  const result = await sendWithRecovery(story, { story, index }, options)
   if (result?.chapter?.index !== index || result?.key !== chapterKey(story, index) || acceptGeneratedChapter(story, result) === story) {
     throw new Error('章节与当前进度不匹配，请重试。')
   }
@@ -171,7 +249,7 @@ export function acceptRevisedChapter(story, result) {
 // a normal generation — the server regenerates the already-prepared next
 // chapter with the queued interventions woven in.
 export async function requestChapterRevision(story, index, options = {}) {
-  const result = await sendGenerateRequest(story, { story, index, mode: 'revise' }, options)
+  const result = await sendWithRecovery(story, { story, index, mode: 'revise' }, options)
   if (result?.chapter?.index !== index || result?.key !== chapterKey(story, index) || acceptRevisedChapter(story, result) === story) {
     throw new Error('重写结果与当前进度不匹配，请重试。')
   }
@@ -214,7 +292,7 @@ export function acceptRerolledChapter(story, result) {
 // and context as of its slot (its recorded interventions, lorebook hits
 // and ledger state), and the version it replaces is discarded.
 export async function requestChapterReroll(story, index, options = {}) {
-  const result = await sendGenerateRequest(story, { story, index, mode: 'reroll' }, options)
+  const result = await sendWithRecovery(story, { story, index, mode: 'reroll' }, options)
   if (result?.chapter?.index !== index || result?.key !== chapterKey(story, index) || acceptRerolledChapter(story, result) === story) {
     throw new Error('换版结果与当前进度不匹配，请重试。')
   }

@@ -71,10 +71,14 @@ test('request validates key and chapter index; never silently falls back', async
   await assert.rejects(requestChapter(story, 0, { fetchImpl: async () => Response.json({ ...result, key: 'wrong' }) }), /不匹配/)
 })
 
-test('request errors are safe and retries are user initiated', async () => {
+test('request errors are safe and transient failures retry in place (GENFIX-20261101 dead rule)', async () => {
+  // This test used to pin the opposite contract — "retries are user
+  // initiated", exactly one attempt — which is the state machine the
+  // 2026-11-01 owner order abolished: a transient 429 now retries
+  // automatically (1 attempt + 3 retries) before the error surfaces.
   let calls = 0
-  await assert.rejects(requestChapter(fresh(), 0, { fetchImpl: async () => { calls++; return Response.json({ error: 'secret server info' }, { status: 429 }) } }), /请求较多/)
-  assert.equal(calls, 1)
+  await assert.rejects(requestChapter(fresh(), 0, { retryDelaysMs: [0, 0, 0], fetchImpl: async () => { calls++; return Response.json({ error: 'secret server info' }, { status: 429 }) } }), /请求较多/)
+  assert.equal(calls, 4)
 })
 
 test('cancelled request does not report a network failure', async () => {

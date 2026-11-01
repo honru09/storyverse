@@ -118,7 +118,14 @@
 .avatar-reveal-fx{position:absolute;left:50%;bottom:5%;transform:translateX(-50%);display:block;height:48%;width:auto;z-index:2;pointer-events:none}
 .forge-main{position:relative}
 .forge-ambient-fx{position:absolute;top:2px;left:50%;transform:translateX(-50%);display:block;height:92px;width:auto;z-index:0;pointer-events:none;opacity:.85}
-.forge-main>*:not(.forge-ambient-fx){position:relative;z-index:1}
+/* GENFIX-20261101: .forge-actions is exempt from the lift — this
+   rule's specificity (0,2,0) silently beat the .forge-actions
+   position:fixed capsule in styles.css (0,1,0), so on every theme
+   the confirmation step's action bar fell back into the flow and
+   sat on the column's last text lines (owner screenshot 2026-11-01:
+   the generation-mode note trapped under the bar). The bar is a
+   fixed surface, not column content; it never needed the lift. */
+.forge-main>*:not(.forge-ambient-fx):not(.forge-actions){position:relative;z-index:1}
 .plaza-like-fx{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;height:48px;width:auto;z-index:2;pointer-events:none}
 .toast-fx{position:fixed;left:50%;bottom:calc(148px + env(safe-area-inset-bottom));transform:translateX(-50%);display:block;height:104px;width:auto;z-index:41;pointer-events:none}
 .detail-ambience-fx{position:absolute;left:50%;top:290px;transform:translateX(-50%);display:block;height:104px;width:auto;pointer-events:none;opacity:.55}
