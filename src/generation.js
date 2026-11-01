@@ -190,11 +190,24 @@ async function sendGenerateRequest(story, payload, { fetchImpl = globalThis.fetc
       throw new Error('请先登录，再继续在线创作。登录后这一章会接着生成。')
     }
     if (result?.code === 'quota-exceeded') throw new Error('今天的生成额度已用完，请明天再继续创作。你的故事和进度都已保存。')
-    if (result?.code === 'coins-exhausted') throw new Error('织币不足了。每天的免费织币会自动补足，开通会员或购买额度包可以继续创作。你的故事和进度都已保存。')
+    if (result?.code === 'coins-exhausted') {
+      // Marked, not just messaged: inside a recovery sequence this
+      // refusal can be a freeze race (see sendWithRecovery), which
+      // only the loop can tell apart from a genuine empty purse.
+      const failure = new Error('织币不足了。每天的免费织币会自动补足，开通会员或购买额度包可以继续创作。你的故事和进度都已保存。')
+      failure.code = 'coins-exhausted'
+      throw failure
+    }
     const messages = { 429: '请求较多，请稍后再试。', 503: '在线创作暂不可用，已保存的章节仍可阅读。请稍后再试。', 504: '这一章等待较久，进度已保留，请重试。' }
     // Gateway/provider turbulence (429 without a quota code, 502,
     // 503, 504) is transient; any other refusal is final for this click.
-    throw generationFailure(messages[response.status] || '这一章暂时没能接上，进度已保留，请重试。', { transient: [429, 502, 503, 504].includes(response.status) })
+    const failure = generationFailure(messages[response.status] || '这一章暂时没能接上，进度已保留，请重试。', { transient: [429, 502, 503, 504].includes(response.status) })
+    // The server stamps Retry-After on every 429 (server/index.js);
+    // a fixed ladder that ignores it would spend all its retries
+    // inside the cooldown window it was just told about.
+    const retryAfterSeconds = Number(response.headers?.get?.('Retry-After'))
+    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) failure.retryAfterMs = Math.min(retryAfterSeconds * 1_000, 60_000)
+    throw failure
   }
   return result
 }
@@ -208,16 +221,35 @@ async function sendGenerateRequest(story, payload, { fetchImpl = globalThis.fetc
 async function sendWithRecovery(story, payload, options = {}) {
   const delays = Array.isArray(options.retryDelaysMs) ? options.retryDelaysMs : GENERATION_RETRY_DELAYS_MS
   let attempt = 0
+  let sawTransient = false
   for (;;) {
     try {
       return await sendGenerateRequest(story, payload, options)
     } catch (error) {
       if (options.signal?.aborted || error?.name === 'AbortError') throw error
-      if (!error?.transient || attempt >= delays.length) throw error
-      const delayMs = delays[attempt]
+      // Freeze race (late agy review, verified against server order):
+      // a replay that arrives while the first attempt is STILL
+      // generating server-side misses the delivery registry and hits
+      // the coin freeze while that first attempt's freeze is still
+      // held — a purse that affords one chapter then reads as
+      // coins-exhausted even though the chapter is about to land.
+      // Inside a recovery sequence (an earlier attempt already failed
+      // transiently) that refusal is therefore reclassified as
+      // transient: the next replay hits the registry or joins the
+      // in-flight generation, and its cached answer releases the
+      // second freeze unspent. A FIRST-attempt coins-exhausted stays
+      // final — at click time, nothing of this click is in flight.
+      const freezeRace = sawTransient && error?.code === 'coins-exhausted'
+      if (!error?.transient && !freezeRace) throw error
+      if (error?.transient) sawTransient = true
+      if (attempt >= delays.length) throw error
+      // Retry-After, when the server sent one, floors the wait; the
+      // ladder value is jittered so a fleet-wide blip does not retry
+      // in lockstep.
+      const delayMs = Math.max(delays[attempt], error?.retryAfterMs || 0)
       attempt += 1
       options.onRetry?.({ attempt, delayMs, error })
-      await sleepUnlessAborted(delayMs, options.signal)
+      await sleepUnlessAborted(Math.round(delayMs * (0.75 + Math.random() * 0.5)), options.signal)
     }
   }
 }

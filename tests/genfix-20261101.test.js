@@ -148,6 +148,51 @@ test('aborting during the backoff stops the loop at once — a cancel is not a f
   assert.equal(calls, 1)
 })
 
+test('freeze race: coins-exhausted DURING a recovery sequence is not final — the in-flight attempt may be about to land', async () => {
+  // Attempt 1 drops off the network while the server keeps
+  // generating; the replay arrives before settlement, misses the
+  // registry and is refused at the coin freeze the first attempt is
+  // still holding. The loop must not surface 织币不足 there: the
+  // next replay reconciles with the landed chapter.
+  const story = fresh()
+  const result = resultFor(story, 0)
+  let calls = 0
+  const fetchImpl = async () => {
+    calls += 1
+    if (calls === 1) throw new TypeError('fetch failed')
+    if (calls === 2) return Response.json({ error: 'x', code: 'coins-exhausted' }, { status: 402 })
+    return Response.json(result)
+  }
+  assert.deepEqual(await requestChapter(story, 0, { fetchImpl, retryDelaysMs: NO_WAIT }), result)
+  assert.equal(calls, 3)
+})
+
+test('freeze race, spent: if every replay still meets the freeze, the coins error surfaces at the end', async () => {
+  let calls = 0
+  const fetchImpl = async () => {
+    calls += 1
+    if (calls === 1) throw new TypeError('fetch failed')
+    return Response.json({ error: 'x', code: 'coins-exhausted' }, { status: 402 })
+  }
+  await assert.rejects(requestChapter(fresh(), 0, { fetchImpl, retryDelaysMs: NO_WAIT }), /织币不足/)
+  assert.equal(calls, 4)
+})
+
+test('Retry-After floors the next wait instead of the ladder burning retries inside the cooldown', async () => {
+  const story = fresh()
+  const result = resultFor(story, 0)
+  const retries = []
+  let calls = 0
+  const fetchImpl = async () => {
+    calls += 1
+    if (calls === 1) return Response.json({ error: 'busy' }, { status: 429, headers: { 'Retry-After': '1' } })
+    return Response.json(result)
+  }
+  assert.deepEqual(await requestChapter(story, 0, { fetchImpl, retryDelaysMs: NO_WAIT, onRetry: (info) => retries.push(info) }), result)
+  assert.equal(retries.length, 1)
+  assert.ok(retries[0].delayMs >= 1_000, `Retry-After 1s must floor the wait, got ${retries[0].delayMs}ms`)
+})
+
 test('the intervention revision path recovers through the same loop', async () => {
   const accept = (story, index) => acceptChapter(story, buildChapter(story, index), chapterKey(story, index))
   let story = { ...accept(accept(createStory({ name: '阿遥' }), 0), 1), engine: 'gemini', readerIndex: 0 }
