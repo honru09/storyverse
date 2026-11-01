@@ -4355,7 +4355,13 @@ function AccountSceneDialog({ children, onClose }) {
     document.body.style.overflow = "hidden";
     closeRef.current?.focus({ preventScroll: true });
     const onKeyDown = (event) => {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape") return;
+      // BUGHUNT-20261101: the profile window underneath listens for
+      // Escape on window, and this overlay's listener used to let the
+      // key bubble on — one Esc closed the login AND the profile
+      // window behind it. Stop it here, like the profile sheets do.
+      event.stopPropagation();
+      onClose();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => {
@@ -4446,14 +4452,20 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
   // grant server-side; either answer retracts the item, so the panel
   // simply refetches and the row is gone.
   const [decidingId, setDecidingId] = useState("");
+  // BUGHUNT-20261101: a failed decision used to clear the in-flight
+  // pin and say nothing — the row stayed, the tap looked ignored,
+  // and the reader could not tell a failure from a missed tap.
+  const [decideError, setDecideError] = useState("");
   const decideFusion = async (item, approve) => {
     if (!item.requestId || decidingId) return;
     setDecidingId(item.requestId);
+    setDecideError("");
     try {
       await decideFusionRequest({ requestId: item.requestId, approve, getAccessToken: getToken });
       setRetry((value) => value + 1);
     } catch {
       setDecidingId("");
+      setDecideError("这次没能完成，请再试一次。");
     }
   };
 
@@ -4512,6 +4524,7 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
           );
         })}
       </div>
+      {decideError && <p className="plaza-thread-error" role="alert">{decideError}</p>}
       {error ? (
         <div className="notify-empty" role="alert">
           <p>{error}</p>
@@ -7091,6 +7104,13 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
           ))}
         </div>
       )}
+      {/* BUGHUNT-20261101: the catalogue request caps at 60 while the
+          server returns the filtered total — the 61st book used to be
+          silently invisible. Say the total and how to reach the rest
+          (search narrows the filter) instead of pretending 60 is all. */}
+      {data !== null && !error && data.total > books.length && books.length > 0 && (
+        <p className="plaza-note" role="status">共 {data.total} 本，先显示前 {books.length} 本；搜书名、作者或世界名能缩小范围找到其余的书。</p>
+      )}
     </div>
   );
 }
@@ -7346,6 +7366,14 @@ function PlazaCommentThread({ post, account, authClient, onOpenAccount, onCountC
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // BUGHUNT-20261101: deleting a comment used to be one bare click —
+  // permanent, repeatable while the request flew, and silent on
+  // success. Same two-step + word-afterwards rule as deleting a post
+  // or a rating; the in-flight row is pinned so a double tap cannot
+  // fire a second DELETE.
+  const [confirmingRemoveId, setConfirmingRemoveId] = useState("");
+  const [removingId, setRemovingId] = useState("");
+  const [removeNote, setRemoveNote] = useState("");
   const viewerUid = account.user?.uid || "";
 
   useEffect(() => {
@@ -7378,6 +7406,9 @@ function PlazaCommentThread({ post, account, authClient, onOpenAccount, onCountC
   };
 
   const remove = async (comment) => {
+    if (removingId) return;
+    setRemovingId(comment.id);
+    setError("");
     try {
       await deletePostComment({
         postId: post.id,
@@ -7386,7 +7417,9 @@ function PlazaCommentThread({ post, account, authClient, onOpenAccount, onCountC
       });
       setComments((current) => (current || []).filter((entry) => entry.id !== comment.id));
       onCountChange?.(-1);
-    } catch { setError("这条评论没能删掉，请稍后再试。"); }
+      setConfirmingRemoveId("");
+      setRemoveNote("这条评论已删除。");
+    } catch { setError("这条评论没能删掉，请稍后再试。"); } finally { setRemovingId(""); }
   };
 
   return (
@@ -7413,10 +7446,20 @@ function PlazaCommentThread({ post, account, authClient, onOpenAccount, onCountC
                     <strong>{comment.authorName}</strong>
                     {comment.official && <span className="plaza-byline-official">官方</span>}
                     <small>{postTimeFor(comment.createdAt)}</small>
-                    {canDelete && (
-                      <button type="button" className="plaza-thread-delete" onClick={() => void remove(comment)}>
+                    {canDelete && confirmingRemoveId !== comment.id && (
+                      <button type="button" className="plaza-thread-delete" disabled={Boolean(removingId)} onClick={() => setConfirmingRemoveId(comment.id)}>
                         删除
                       </button>
+                    )}
+                    {canDelete && confirmingRemoveId === comment.id && (
+                      <>
+                        <button type="button" className="plaza-thread-delete" disabled={Boolean(removingId)} onClick={() => void remove(comment)}>
+                          {removingId === comment.id ? "正在删除…" : "确认删除"}
+                        </button>
+                        <button type="button" className="plaza-thread-delete" disabled={Boolean(removingId)} onClick={() => setConfirmingRemoveId("")}>
+                          再想想
+                        </button>
+                      </>
                     )}
                   </div>
                   <p>{comment.content}</p>
@@ -7427,6 +7470,7 @@ function PlazaCommentThread({ post, account, authClient, onOpenAccount, onCountC
         </ul>
       )}
       {error && <p className="plaza-thread-error" role="alert">{error}</p>}
+      {removeNote && <p className="plaza-note" role="status">{removeNote}</p>}
       <div className="plaza-thread-composer">
         <input
           type="text"
@@ -7437,6 +7481,10 @@ function PlazaCommentThread({ post, account, authClient, onOpenAccount, onCountC
           placeholder={account.user ? "写下你的看法…" : "登录后参与评论"}
           aria-label="写评论"
         />
+        {/* BUGHUNT-20261101: the 300-char input used to stop dead with
+            no counter, unlike the post composer (x/500) and the rating
+            box (x/300) — same count grammar, near at 270. */}
+        <span className={`plaza-composer-count ${[...draft].length > 270 ? "is-near" : ""}`}>{[...draft].length} / 300</span>
         <Button
           variant="secondary"
           disabled={busy || !draft.trim()}
@@ -7533,8 +7581,16 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
 
+  // BUGHUNT-20261101: toggleLike used to fly with no in-flight guard
+  // (double taps raced two requests, the last response winning over
+  // the user's last tap) and a non-auth failure only snapped the
+  // count back in silence. Now the flight is pinned and a failure
+  // says so, like the card's report/delete paths already do.
+  const [likeBusy, setLikeBusy] = useState(false);
   const toggleLike = async () => {
     if (!account.user) { onOpenAccount(); return; }
+    if (likeBusy) return;
+    setLikeBusy(true);
     const wasLiked = liked;
     const wasCount = likeCount;
     setLiked(!wasLiked);
@@ -7551,7 +7607,8 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
       setLiked(wasLiked);
       setLikeCount(wasCount);
       if (failure?.code === "auth-required") onOpenAccount();
-    }
+      else setNote("点赞没能保存，请稍后再试。");
+    } finally { setLikeBusy(false); }
   };
 
   const report = async () => {
@@ -7691,6 +7748,7 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
           className={`plaza-post-action ${liked ? "is-liked" : ""}`}
           aria-pressed={liked}
           aria-label={liked ? "取消点赞" : "点赞"}
+          disabled={likeBusy}
           onClick={() => void toggleLike()}
         >
           <Icon name="heart" size={18} />
@@ -7742,6 +7800,12 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
   const [loadingMore, setLoadingMore] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
   const [focusPost, setFocusPost] = useState(null);
+  // BUGHUNT-20261101: two silent branches lived here — a failed
+  // "load more" left only the button to re-tap with no word, and a
+  // dead permalink fell back to the plain stream as if nothing was
+  // asked for. Both now say so, in the feed's own error grammar.
+  const [loadMoreError, setLoadMoreError] = useState("");
+  const [focusFailed, setFocusFailed] = useState(false);
   const [followingUids, setFollowingUids] = useState([]);
   const viewerUid = account.user?.uid || "";
   const getToken = useCallback(() => authClient?.getAccessToken(), [authClient]);
@@ -7791,11 +7855,12 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
   // stream: the post itself, fetched on its own, so the link works
   // even when the post has scrolled out of the first page.
   useEffect(() => {
-    if (!focusPostId) { setFocusPost(null); return undefined; }
+    if (!focusPostId) { setFocusPost(null); setFocusFailed(false); return undefined; }
     let live = true;
+    setFocusFailed(false);
     fetchPlazaPost({ id: focusPostId, getAccessToken: getToken })
       .then((post) => { if (live) setFocusPost(post); })
-      .catch(() => { if (live) setFocusPost(null); });
+      .catch(() => { if (live) { setFocusPost(null); setFocusFailed(true); } });
     return () => { live = false; };
   }, [focusPostId, getToken]);
 
@@ -7818,6 +7883,7 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
+    setLoadMoreError("");
     try {
       const result = await fetchPlazaPosts({ getAccessToken: getToken, cursor: nextCursor, limit: 20 });
       setPosts((current) => {
@@ -7826,7 +7892,7 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
       });
       pagedRef.current = true;
       setNextCursor(result.nextCursor);
-    } catch { /* the button stays; a tap retries */ } finally { setLoadingMore(false); }
+    } catch { setLoadMoreError("更多帖子没能打开，请稍后再试。"); } finally { setLoadingMore(false); }
   };
 
   const handlePosted = (post) => {
@@ -7996,6 +8062,9 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
           </div>
         </div>
       )}
+      {focusFailed && !focusPost && (
+        <p className="plaza-inline-note" role="alert">这条帖子已删除或不存在，下面是广场的信息流。</p>
+      )}
       {focusPost && (
         <PlazaPostCard
           key={`focus-${focusPost.id}`}
@@ -8049,6 +8118,7 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
           <Button variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>
             {loadingMore ? "正在加载…" : "加载更多"}
           </Button>
+          {loadMoreError && <p className="plaza-thread-error" role="alert">{loadMoreError}</p>}
         </div>
       )}
     </div>
@@ -8085,6 +8155,10 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
   const [formError, setFormError] = useState("");
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [removeNote, setRemoveNote] = useState("");
+  // BUGHUNT-20261101: a saved rating used to confirm itself only with
+  // a star-dust beat — invisible with motion off or reduced-motion.
+  // Same plain-words note as the delete path, beside it.
+  const [saveNote, setSaveNote] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   // PIXELFX-WAVE4 (§60): a landed rating earns one golden star-dust
   // beat over the star picker; edits count too (the save landed), a
@@ -8139,8 +8213,10 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
     if (!draftStars) { setFormError("先点一下星星，给这本书打个分吧。"); return; }
     setBusy(true);
     setFormError("");
+    setSaveNote("");
     try {
       await rateBook({ id: bookId, stars: draftStars, text: draftText, getAccessToken: token });
+      setSaveNote("评价已保存。");
       const payload = await load();
       // load() swallows its own failure into the error line and
       // resolves null — celebrating over that error would be a false
@@ -8286,6 +8362,7 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
               </div>
               {formError && <p className="plaza-thread-error" role="alert">{formError}</p>}
               {removeNote && <p className="plaza-note" role="status">{removeNote}</p>}
+              {saveNote && <p className="plaza-note" role="status">{saveNote}</p>}
             </div>
           )}
 
@@ -9224,6 +9301,14 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
             onChange={(event) => setDisplayName(clipToUnits(event.target.value, 18))}
             placeholder="给自己起个名字"
           />
+          {/* BUGHUNT-20261101: the name is clipped to 18 units (the
+              §54 card budget) while the field allows 20 characters —
+              the 10th Chinese character / 19th Latin letter used to
+              vanish with no word at all, the same trap the god-mode
+              world name had before it got its unit counter. */}
+          <small className="profile-edit-bio-count" aria-live="polite">
+            {textUnitsFor(displayName)} / 18
+          </small>
         </label>
         <label className="profile-edit-field">
           <span>个人简介</span>
