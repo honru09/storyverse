@@ -3895,18 +3895,21 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                     placeholder="取一个名字"
                   />
                 </label>
-                {(draft.persona || "") && (
-                  <label className="field-label">
-                    主角设定（会进入每一章的生成依据）
-                    <textarea
-                      rows={4}
-                      maxLength={PERSONA_MAX}
-                      value={draft.persona}
-                      onChange={(event) => set({ persona: event.target.value })}
-                      placeholder="这个人是谁、什么性格、带着什么处境走进故事"
-                    />
-                  </label>
-                )}
+                {/* BUGHUNT-20261101-SUPP: this box used to render only
+                    while persona was non-empty, so clearing the text
+                    unmounted the box and left no way back in — a
+                    one-way door. It stays mounted; empty is a valid
+                    value, same as a fresh draft. */}
+                <label className="field-label">
+                  主角设定（会进入每一章的生成依据）
+                  <textarea
+                    rows={4}
+                    maxLength={PERSONA_MAX}
+                    value={draft.persona || ""}
+                    onChange={(event) => set({ persona: event.target.value })}
+                    placeholder="这个人是谁、什么性格、带着什么处境走进故事"
+                  />
+                </label>
                 {/* FORGE-TRIM: with an avatar brought in, this whole
                     section steps aside — the avatar's own profile (its
                     description, carried in the persona field above) IS
@@ -9528,9 +9531,12 @@ function FriendsPanel({ authClient, onOpenProfile }) {
     if (person.friendState === "friends") return <span className="friend-state-chip">已是好友</span>;
     if (person.friendState === "pending-in") {
       return (
-        <button type="button" className="profile-connection-follow" disabled={busyUid === person.uid} onClick={() => void act(person, "accept")}>
-          同意申请
-        </button>
+        <span className="friend-state-actions">
+          <button type="button" className="profile-connection-follow" disabled={busyUid === person.uid} onClick={() => void act(person, "accept")}>
+            同意申请
+          </button>
+          <button type="button" className="friend-text-btn" disabled={busyUid === person.uid} onClick={() => void act(person, "decline")}>拒绝</button>
+        </span>
       );
     }
     if (person.friendState === "pending-out") {
@@ -9579,8 +9585,19 @@ function FriendsPanel({ authClient, onOpenProfile }) {
         ))}
       </div>
       {note && <p className="ryan-note" role="status">{note}</p>}
-      {loadError ? (
-        <p className="profile-line-empty" role="alert">{loadError}</p>
+      {/* BUGHUNT-20261101-SUPP: a failed reload used to replace the
+          whole section with one error line (and no retry) — even
+          when a good list was already on screen and an action had
+          just succeeded. Keep the list, banner the error with a
+          retry; only a first-load failure takes the whole section. */}
+      {loadError && data && (
+        <p className="profile-line-empty" role="alert">{loadError} <button type="button" className="small-link" onClick={() => reload()}>再试一次</button></p>
+      )}
+      {loadError && !data ? (
+        <>
+          <p className="profile-line-empty" role="alert">{loadError}</p>
+          <button type="button" className="small-link" onClick={() => reload()}>再试一次</button>
+        </>
       ) : !data ? (
         <div role="status" aria-label="正在打开好友">
           {[0, 1].map((i) => (
@@ -10479,6 +10496,14 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
         const result = await respondFriendRequest({ uid, accept: true, getAccessToken: getToken });
         setFriendState(result.state || "friends");
         setNote("你们已经是好友了。");
+      } else if (action === "decline") {
+        // BUGHUNT-20261101-SUPP: the profile and search rows used to
+        // offer only "accept" for an incoming request — refusing meant
+        // hunting the request down in the friends tab. Same decline
+        // branch the friends tab already had.
+        await respondFriendRequest({ uid, accept: false, getAccessToken: getToken });
+        setFriendState("none");
+        setNote("已婉拒这条申请。");
       } else if (action === "cancel") {
         const result = await cancelFriendRequest({ uid, getAccessToken: getToken });
         setFriendState(result.state || "none");
@@ -10657,9 +10682,14 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
             {friendState === "friends" ? (
               <span className="profile-friend-chip">已是好友</span>
             ) : friendState === "pending-in" ? (
-              <button type="button" className="profile-friend-btn" disabled={friendBusy} onClick={() => void actOnFriend("accept")}>
-                同意好友申请
-              </button>
+              <>
+                <button type="button" className="profile-friend-btn" disabled={friendBusy} onClick={() => void actOnFriend("accept")}>
+                  同意好友申请
+                </button>
+                <button type="button" className="profile-friend-btn is-quiet" disabled={friendBusy} onClick={() => void actOnFriend("decline")}>
+                  拒绝
+                </button>
+              </>
             ) : friendState === "pending-out" ? (
               <button type="button" className="profile-friend-btn is-quiet" disabled={friendBusy} onClick={() => void actOnFriend("cancel")}>
                 申请中 · 取消

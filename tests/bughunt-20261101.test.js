@@ -69,6 +69,27 @@ test('bughunt-9: a failed fusion decision in the message centre says so', () => 
   assert.match(main, /这次没能完成，请再试一次。/)
 })
 
+// Supplement from the second audit lane (verified line by line before
+// landing): three more real defects the first ten did not cover.
+test('bughunt-supp-1: a failed friends reload keeps the loaded list and offers a retry', () => {
+  assert.match(main, /loadError && data && \(/)
+  assert.match(main, /loadError && !data \? \(/)
+  assert.match(main, /onClick=\{\(\) => reload\(\)\}>再试一次<\/button>/)
+})
+
+test('bughunt-supp-2: the forge persona box stays mounted when its text is cleared', () => {
+  const forgeAt = main.indexOf('主角设定（会进入每一章的生成依据）')
+  const block = main.slice(forgeAt - 400, forgeAt + 400)
+  assert.doesNotMatch(block, /draft\.persona \|\| ""\) && \(/)
+  assert.match(block, /value=\{draft\.persona \|\| ""\}/)
+})
+
+test('bughunt-supp-3: an incoming friend request can be declined where it is seen', () => {
+  assert.match(main, /action === "decline"/)
+  assert.match(main, /onClick=\{\(\) => void actOnFriend\("decline"\)\}>/)
+  assert.match(main, /onClick=\{\(\) => void act\(person, "decline"\)\}>拒绝<\/button>/)
+})
+
 test('bughunt-10: Escape in the login overlay stops there and never closes the profile window behind it', () => {
   const dialogAt = main.indexOf('function AccountSceneDialog')
   const dialog = main.slice(dialogAt, main.indexOf('function InterventionSheet', dialogAt))
