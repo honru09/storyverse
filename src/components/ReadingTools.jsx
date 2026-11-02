@@ -29,6 +29,11 @@ export default function ReadingTools({
   const fxMotionOn =
     Boolean(fxSettings?.enabled) && !fxSettings?.reducedMotion && !fxSettings?.saveData;
   const [collectFx, setCollectFx] = useState(null);
+  // BUGHUNT-20261102: a bookmark used to vanish on one bare tap with
+  // no word afterwards — the same one-click-permanent pattern the
+  // comment/post/rating deletes already grew out of.
+  const [confirmingBookmarkKey, setConfirmingBookmarkKey] = useState('');
+  const [bookmarkRemovedNote, setBookmarkRemovedNote] = useState('');
   const handleToggleStoryBookmark = () => {
     if (!storyBookmarked && fxMotionOn) {
       setCollectFx({ key: Date.now(), pick: pickFx(PIXELFX_SCENE.SHELF_COLLECT, null) });
@@ -87,9 +92,17 @@ export default function ReadingTools({
       <div className="reading-search-results">
         {bookmarks.map(item => <div className="reading-bookmark-row" key={`${item.key}-${item.anchor.paragraph}`}>
           <button type="button" onClick={() => onSelect(item.chapterIndex, item.anchor)}><strong>{item.title}</strong><span>{item.excerpt}</span></button>
-          <button type="button" className="reading-bookmark-remove" onClick={() => onRemove(item)} aria-label={`删除书签：${item.title}`}>删除</button>
+          {confirmingBookmarkKey !== `${item.key}-${item.anchor.paragraph}` ? (
+            <button type="button" className="reading-bookmark-remove" onClick={() => setConfirmingBookmarkKey(`${item.key}-${item.anchor.paragraph}`)} aria-label={`删除书签：${item.title}`}>删除</button>
+          ) : (
+            <>
+              <button type="button" className="reading-bookmark-remove" onClick={() => { onRemove(item); setConfirmingBookmarkKey(''); setBookmarkRemovedNote('书签已删除。'); }}>确认删除</button>
+              <button type="button" className="reading-bookmark-remove" onClick={() => setConfirmingBookmarkKey('')}>再想想</button>
+            </>
+          )}
         </div>)}
       </div>
+      {bookmarkRemovedNote && <p className="reading-tools-status" role="status">{bookmarkRemovedNote}</p>}
     </>}
     {tab === 'dossier' && dossier && (
       <div className="reading-dossier" role="region" aria-label="剧情概览">

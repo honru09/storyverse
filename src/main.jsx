@@ -237,6 +237,7 @@ import {
   updateStylePreset,
   updateWorldBible,
   BOOK_TITLE_MAX,
+  BOOK_TITLE_MAX_UNITS,
   bookTitleWithinLimit,
   CHAPTER_TITLE_MAX,
   SYNOPSIS_MAX,
@@ -2187,8 +2188,9 @@ function ManualBookForm({ onCreate, onCancel }) {
           value={title}
           aria-label="书名"
           placeholder="给这本书起个名字"
-          onChange={(event) => { setTitle(event.target.value); setError(""); }}
+          onChange={(event) => { setTitle(clipToUnits(event.target.value, BOOK_TITLE_MAX_UNITS)); setError(""); }}
         />
+        <small className="da-unit-count" aria-live="polite">{textUnitsFor(title)} / {BOOK_TITLE_MAX_UNITS}</small>
       </label>
       <label className="field-label">
         简介
@@ -4086,9 +4088,10 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                     value={draft.bookTitle || ""}
                     placeholder={bookTitleSuggestion}
                     aria-label="这本书的书名"
-                    onChange={(event) => set({ bookTitle: event.target.value })}
+                    onChange={(event) => set({ bookTitle: clipToUnits(event.target.value, BOOK_TITLE_MAX_UNITS) })}
                   />
                 </label>
+                <small className="da-unit-count" aria-live="polite">{textUnitsFor(draft.bookTitle || "")} / {BOOK_TITLE_MAX_UNITS}</small>
                 <p className="field-hint">书名可以和世界不一样，最多 {BOOK_TITLE_MAX} 字。不改，就用上面这个建议名；开书以后也能在设定集里改。</p>
                 <p className="field-hint">这个题材的取名公式（百本实测）：{bookTitleFormula.pattern}——{bookTitleFormula.formula}；钩子要带{bookTitleFormula.hook}；{bookTitleFormula.target}最稳。</p>
               </div>
@@ -4465,6 +4468,10 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
     setDecideError("");
     try {
       await decideFusionRequest({ requestId: item.requestId, approve, getAccessToken: getToken });
+      // BUGHUNT-20261102: only the failure path used to clear the pin,
+      // so after one successful decision every other row stayed grey
+      // until the panel was closed and reopened.
+      setDecidingId("");
       setRetry((value) => value + 1);
     } catch {
       setDecidingId("");
@@ -4854,6 +4861,13 @@ function InterventionSheet({ story, readerIndex, onClose, onSubmit }) {
       // instead: the reader's own words lead, the chip direction follows.
       const chip = INTERVENTION_CHIPS.find((item) => item.id === chipId);
       const combined = chip?.text ? `${trimmed}${trimmed.endsWith("。") ? "" : "。"}${chip.text}` : trimmed;
+      // BUGHUNT-20261102: a full 120-char draft plus a chip used to
+      // merge past the cap and get silently sliced downstream, so the
+      // tail (the chip direction) never arrived. Refuse up front.
+      if (chip?.text && combined.length > INTERVENTION_TEXT_MAX) {
+        setError(`加上这个方向就 ${combined.length} 字了，超过 ${INTERVENTION_TEXT_MAX} 字上限，请先删减一点再提交。`);
+        return;
+      }
       const violation = findSettingViolation(combined);
       if (violation) {
         setError(violation);
@@ -5201,8 +5215,9 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
             value={bookTitle}
             aria-label="书名"
             placeholder="给这本书起个名字"
-            onChange={(event) => { setBookTitle(event.target.value); setBookTitleSaved(false); }}
+            onChange={(event) => { setBookTitle(clipToUnits(event.target.value, BOOK_TITLE_MAX_UNITS)); setBookTitleSaved(false); }}
           />
+          <small className="da-unit-count" aria-live="polite">{textUnitsFor(bookTitle)} / {BOOK_TITLE_MAX_UNITS}</small>
         </label>
         {bookTitleError && (
           <p className="intervention-error" role="alert">
@@ -7377,15 +7392,30 @@ function PlazaCommentThread({ post, account, authClient, onOpenAccount, onCountC
   const [confirmingRemoveId, setConfirmingRemoveId] = useState("");
   const [removingId, setRemovingId] = useState("");
   const [removeNote, setRemoveNote] = useState("");
+  const [commentsCursor, setCommentsCursor] = useState(null);
+  const [loadingMoreComments, setLoadingMoreComments] = useState(false);
   const viewerUid = account.user?.uid || "";
 
   useEffect(() => {
     let live = true;
     fetchPostComments({ postId: post.id })
-      .then((result) => { if (live) setComments(result.comments); })
+      .then((result) => { if (live) { setComments(result.comments); setCommentsCursor(result.nextCursor); } })
       .catch(() => { if (live) { setComments([]); setError("评论没能打开，请稍后再试。"); } });
     return () => { live = false; };
   }, [post.id]);
+
+  // BUGHUNT-20261102: the thread fetched limit=50 and dropped
+  // nextCursor, so comment 51+ was unreachable — and a just-posted
+  // 51st comment vanished on reopen, looking swallowed.
+  const loadMoreComments = async () => {
+    if (!commentsCursor || loadingMoreComments) return;
+    setLoadingMoreComments(true);
+    try {
+      const page = await fetchPostComments({ postId: post.id, cursor: commentsCursor });
+      setComments((current) => [...(current || []), ...page.comments]);
+      setCommentsCursor(page.nextCursor);
+    } catch { setError("更多评论没能打开，请稍后再试。"); } finally { setLoadingMoreComments(false); }
+  };
 
   const send = async () => {
     const text = draft.trim();
@@ -7471,6 +7501,11 @@ function PlazaCommentThread({ post, account, authClient, onOpenAccount, onCountC
             );
           })}
         </ul>
+      )}
+      {commentsCursor && (
+        <button type="button" className="book-ratings-more" disabled={loadingMoreComments} onClick={() => void loadMoreComments()}>
+          {loadingMoreComments ? "正在打开…" : "更多评论"}
+        </button>
       )}
       {error && <p className="plaza-thread-error" role="alert">{error}</p>}
       {removeNote && <p className="plaza-note" role="status">{removeNote}</p>}
@@ -7590,6 +7625,26 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
   // count back in silence. Now the flight is pinned and a failure
   // says so, like the card's report/delete paths already do.
   const [likeBusy, setLikeBusy] = useState(false);
+  // BUGHUNT-20261102: the card used to snapshot liked/counts/content
+  // into useState once, so the 60s refresh (which swaps the post
+  // object under the same key) never showed new likes, comments or
+  // edits — and a like state from another device could even un-like
+  // on the next tap. Resync from props, but never while a like is
+  // flying or an edit draft is open, so local optimism is not clobbered.
+  useEffect(() => {
+    if (!likeBusy) {
+      setLiked(Boolean(post.viewerLiked));
+      // Nullish form on purpose: the 20261030 rollback guard forbids
+      // the old failure-path rollback to the mount-time prop; this
+      // refresh sync is a different path (pinned by !likeBusy).
+      setLikeCount(post.likeCount ?? 0);
+    }
+    setCommentCount(post.commentCount || 0);
+    if (!editing) {
+      setContent(post.content);
+      setEdited(Boolean(post.updatedAt) && post.updatedAt !== post.createdAt);
+    }
+  }, [post.viewerLiked, post.likeCount, post.commentCount, post.content, post.updatedAt, likeBusy, editing]);
   const toggleLike = async () => {
     if (!account.user) { onOpenAccount(); return; }
     if (likeBusy) return;
@@ -8148,7 +8203,7 @@ function RatingStars({ value = 0 }) {
  * reader gets the sign-in door. No average is ever printed for a
  * book nobody has rated.
  */
-function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpenProfile }) {
+function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpenProfile, onRated }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [draftStars, setDraftStars] = useState(0);
@@ -8177,15 +8232,21 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
   const token = () => authClient.getAccessToken();
 
   const load = useCallback(async () => {
+    // BUGHUNT-20261102: the detail page is reused across books
+    // without a remount, but load() had no live guard — a slow
+    // response for book A could overwrite book B's panel.
+    const requestBook = bookId;
     try {
       const payload = await fetchBookRatings({
         id: bookId,
         getAccessToken: account.user ? token : undefined,
       });
+      if (bookIdRef.current !== requestBook) return null;
       setData(payload);
       setError("");
       return payload;
     } catch {
+      if (bookIdRef.current !== requestBook) return null;
       setError("评价暂时没能打开，请稍后再试。");
       return null;
     }
@@ -8221,6 +8282,10 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
       await rateBook({ id: bookId, stars: draftStars, text: draftText, getAccessToken: token });
       setSaveNote("评价已保存。");
       const payload = await load();
+      // BUGHUNT-20261102: the detail header reads its own copy of the
+      // average, so a save here must tell the parent to refetch it —
+      // otherwise the header keeps saying "暂无评价" above a saved 5★.
+      if (payload) onRated?.();
       // load() swallows its own failure into the error line and
       // resolves null — celebrating over that error would be a false
       // beat, and a book switch mid-flight must not inherit it.
@@ -8247,7 +8312,8 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
       // no confirm and no word afterwards — the button now asks
       // first (like deleting a post), and success says so.
       setRemoveNote("你的评价已删除。");
-      await load();
+      const removedPayload = await load();
+      if (removedPayload) onRated?.();
     } catch (failure) {
       if (failure?.code === "auth-required") onOpenAccount();
       else setFormError(failure?.message || "评价没能删掉，请稍后再试。");
@@ -8256,6 +8322,7 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
 
   const loadMore = async () => {
     if (!data?.nextCursor || loadingMore) return;
+    const requestBook = bookId;
     setLoadingMore(true);
     try {
       const page = await fetchBookRatings({
@@ -8263,6 +8330,7 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
         cursor: data.nextCursor,
         getAccessToken: account.user ? token : undefined,
       });
+      if (bookIdRef.current !== requestBook) return;
       setData((current) => current ? { ...current, ratings: [...current.ratings, ...page.ratings], nextCursor: page.nextCursor } : current);
     } catch { setError("更多评价没能打开，请稍后再试。"); } finally { setLoadingMore(false); }
   };
@@ -8423,7 +8491,13 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
   const fxSettings = useMotionSettings();
   const fxMotionOn = pixelfxMotionOn(fxSettings);
   const goBack = onBack || (() => onNavigate("plaza"));
-  const own = useMemo(() => plazaMineIds().has(id), [id]);
+  // BUGHUNT-20261102: "own" used to mean only "this device published
+  // it" (localStorage), so on another device or after clearing site
+  // data the author lost the unpublish row and only got "report".
+  const own = useMemo(
+    () => plazaMineIds().has(id) || (Boolean(account.user?.uid) && detail?.authorUid === account.user.uid),
+    [id, detail?.authorUid, account.user?.uid],
+  );
   // The fusion card's honest state against the reader's own shelf —
   // the same resolution the merge page runs (fusion.js).
   const fusionEntry = useMemo(
@@ -8780,6 +8854,7 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         authClient={authClient}
         onOpenAccount={onOpenAccount}
         onOpenProfile={onOpenProfile}
+        onRated={() => { fetchPlazaDetail({ id }).then((next) => setDetail(next)).catch(() => {}); }}
       />
 
       {shareOpen && (
@@ -9393,7 +9468,7 @@ function ProfileConnectionRow({ person, account, busyUid, onToggleFollow, onOpen
         <button
           type="button"
           className={`profile-connection-follow ${person.isFollowing ? "is-following" : ""}`}
-          disabled={busyUid === person.uid}
+          disabled={Boolean(busyUid)}
           aria-pressed={Boolean(person.isFollowing)}
           onClick={() => void onToggleFollow(person)}
         >
@@ -9532,10 +9607,10 @@ function FriendsPanel({ authClient, onOpenProfile }) {
     if (person.friendState === "pending-in") {
       return (
         <span className="friend-state-actions">
-          <button type="button" className="profile-connection-follow" disabled={busyUid === person.uid} onClick={() => void act(person, "accept")}>
+          <button type="button" className="profile-connection-follow" disabled={Boolean(busyUid)} onClick={() => void act(person, "accept")}>
             同意申请
           </button>
-          <button type="button" className="friend-text-btn" disabled={busyUid === person.uid} onClick={() => void act(person, "decline")}>拒绝</button>
+          <button type="button" className="friend-text-btn" disabled={Boolean(busyUid)} onClick={() => void act(person, "decline")}>拒绝</button>
         </span>
       );
     }
@@ -9543,7 +9618,7 @@ function FriendsPanel({ authClient, onOpenProfile }) {
       return (
         <span className="friend-state-actions">
           <span className="friend-state-chip">申请中</span>
-          <button type="button" className="friend-text-btn" disabled={busyUid === person.uid} onClick={() => void act(person, "cancel")}>取消</button>
+          <button type="button" className="friend-text-btn" disabled={Boolean(busyUid)} onClick={() => void act(person, "cancel")}>取消</button>
         </span>
       );
     }
@@ -9551,7 +9626,7 @@ function FriendsPanel({ authClient, onOpenProfile }) {
       <button
         type="button"
         className="profile-connection-follow"
-        disabled={busyUid === person.uid}
+        disabled={Boolean(busyUid)}
         onClick={() => { setComposingUid(person.uid); setDraft(""); }}
       >
         加好友
@@ -9640,8 +9715,8 @@ function FriendsPanel({ authClient, onOpenProfile }) {
                     onOpenProfile={onOpenProfile}
                     trailing={(
                       <span className="friend-state-actions">
-                        <button type="button" className="profile-connection-follow" disabled={busyUid === entry.person.uid} onClick={() => void act(entry.person, "accept")}>同意</button>
-                        <button type="button" className="friend-text-btn" disabled={busyUid === entry.person.uid} onClick={() => void act(entry.person, "decline")}>拒绝</button>
+                        <button type="button" className="profile-connection-follow" disabled={Boolean(busyUid)} onClick={() => void act(entry.person, "accept")}>同意</button>
+                        <button type="button" className="friend-text-btn" disabled={Boolean(busyUid)} onClick={() => void act(entry.person, "decline")}>拒绝</button>
                       </span>
                     )}
                   />
@@ -9661,7 +9736,7 @@ function FriendsPanel({ authClient, onOpenProfile }) {
                     <span className="friend-state-actions">
                       <span className="friend-state-chip">{FRIEND_OUTGOING_COPY[entry.status] || entry.status}</span>
                       {entry.status === "pending" && (
-                        <button type="button" className="friend-text-btn" disabled={busyUid === entry.person.uid} onClick={() => void act(entry.person, "cancel")}>取消</button>
+                        <button type="button" className="friend-text-btn" disabled={Boolean(busyUid)} onClick={() => void act(entry.person, "cancel")}>取消</button>
                       )}
                     </span>
                   )}
@@ -9719,7 +9794,7 @@ function FriendsPanel({ authClient, onOpenProfile }) {
                           placeholder="说一句打个招呼（可不填，最多 50 字）"
                           aria-label="好友申请留言"
                         />
-                        <button type="button" className="friend-compose-send" disabled={busyUid === person.uid} onClick={() => void act(person, "send")}>发送</button>
+                        <button type="button" className="friend-compose-send" disabled={Boolean(busyUid)} onClick={() => void act(person, "send")}>发送</button>
                         <button type="button" className="friend-text-btn" onClick={() => setComposingUid("")}>取消</button>
                       </div>
                     )}
