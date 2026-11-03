@@ -1281,6 +1281,10 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
     }
     // Pull the book off the shelf first; the reader opens as it comes
     // forward. The delay stays inside the page-transition token's reach.
+    // BUGHUNT-20261103: a second tap inside the 260ms window used to
+    // overwrite pullTimer.current without clearing the first timer,
+    // so both books' open callbacks fired in turn.
+    if (pullTimer.current) window.clearTimeout(pullTimer.current);
     setPulledId(story.id);
     pullTimer.current = window.setTimeout(() => {
       setPulledId(null);
@@ -1816,6 +1820,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
               onChange={(event) => setForm({ ...form, name: event.target.value })}
               placeholder="给化身取个名字"
             />
+            <small className="da-count" aria-live="polite">{form.name.length} / 20</small>
           </label>
           <label className="field-label">
             想象中的样子
@@ -1827,6 +1832,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
               onChange={(event) => setForm({ ...form, description: event.target.value })}
               placeholder="写一两句：性格、气质、给人的感觉——立绘会照着画，故事也会记住。"
             />
+            <small className="da-count" aria-live="polite">{form.description.length} / 300</small>
           </label>
           {/* REQ-57: the signature ability editor. The ability itself
               is one { name, desc } — picked from the same library the
@@ -1878,7 +1884,12 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
                     aria-pressed={form.ability?.id === item.id}
                     disabled={busy}
                     onClick={() => {
-                      setForm({ ...form, ability: { id: item.id, name: item.name, desc: item.desc } });
+                      // BUGHUNT-20261103: library entries carry a
+                      // bounds (what the power CANNOT do) and the
+                      // server keeps whatever ability object it is
+                      // handed — dropping bounds here silently
+                      // un-bounds the power on the next save.
+                      setForm({ ...form, ability: { id: item.id, name: item.name, desc: item.desc, ...(item.bounds ? { bounds: item.bounds } : {}) } });
                       setAbilityEditMode(null);
                     }}
                   >
@@ -2417,6 +2428,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
   // screen), the fragment batch redraws each time god mode is entered.
   const [traitBatch, setTraitBatch] = useState(() => drawPersonalityTraits(3));
   const [fragmentBatch, setFragmentBatch] = useState(() => drawInspirationFragments(4));
+  const [fragmentNote, setFragmentNote] = useState("");
   // Step one's open shelf (two-level taxonomy): a genuinely picked
   // template resumes on its own L2 screen with the pick lit; every
   // other entry — fresh, or restored-but-never-picked — starts on the
@@ -2735,9 +2747,19 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     });
   };
   const appendFragment = (fragment) => {    const current = (draft.customWorldSetting || "").trim();
+    if (current.length >= CUSTOM_WORLD_SETTING_MAX) {
+      setFragmentNote("设定已经写满了，先删减一点再加碎片。");
+      return;
+    }
     const needsStop = current && !"。！？".includes(current.slice(-1));
     const joined = current ? `${current}${needsStop ? "。" : ""}${fragment}` : fragment;
-    set({ customWorldSetting: joined.slice(0, CUSTOM_WORLD_SETTING_MAX) });
+    if (joined.length > CUSTOM_WORLD_SETTING_MAX) {
+      set({ customWorldSetting: joined.slice(0, CUSTOM_WORLD_SETTING_MAX) });
+      setFragmentNote("碎片只加了能放下的部分，设定已到上限。");
+      return;
+    }
+    setFragmentNote("");
+    set({ customWorldSetting: joined });
   };
   const [rolled, setRolled] = useState(null);
   const rollCombo = () => {
@@ -3492,6 +3514,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                         </button>
                       ))}
                     </div>
+                    {fragmentNote && <p className="field-hint" role="status">{fragmentNote}</p>}
                   </div>
                   {/* FORGE-TRIM: the 写法 chips that used to live here are
                       gone — they re-asked step one's category pick in a
@@ -7339,6 +7362,10 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
             ) : pickable.length === 0 ? (
               <p className="plaza-note">书城里还没有能分享的书。</p>
             ) : (
+              <>
+              {pickable.length > 12 && (
+                <p className="plaza-note">只显示前 12 本，搜书名或作者能缩小范围找到其余的书。</p>
+              )}
               <ul className="plaza-composer-booklist da-scroll">
                 {pickable.slice(0, 12).map((entry) => (
                   <li key={entry.id}>
@@ -7349,6 +7376,7 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
                   </li>
                 ))}
               </ul>
+              </>
             )}
           </div>
         )
@@ -10176,7 +10204,7 @@ function profileShareText({ profile, isSelf, shownName, shownHandle, url }) {
  * the whole text; 系统分享 appears only when navigator.share really
  * exists — never as a decoration that does nothing.
  */
-function ShareProfileSheet({ text, isSelf, onClose, onCopied, onCopyFailed }) {
+function ShareProfileSheet({ text, isSelf, onClose, onCopied, onCopyFailed, onShareFailed }) {
   const [value, setValue] = useState(text);
   const [busy, setBusy] = useState(false);
   // BUGHUNT-20261031: same dialog housekeeping as the edit sheet —
@@ -10217,8 +10245,11 @@ function ShareProfileSheet({ text, isSelf, onClose, onCopied, onCopyFailed }) {
     try {
       await navigator.share({ text: value });
       onClose();
-    } catch {
-      /* The reader dismissed the system sheet — nothing to report. */
+    } catch (failure) {
+      /* AbortError is the reader dismissing the system sheet — nothing
+         to report. Any other failure is a real share failure, not a
+         cancellation, and the caller says so. */
+      if (failure?.name !== "AbortError") onShareFailed?.();
       setBusy(false);
     }
   };
@@ -10288,6 +10319,17 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   const uidRef = useRef(uid);
   uidRef.current = uid;
   const [menuOpen, setMenuOpen] = useState(false);
+  const [bioExpanded, setBioExpanded] = useState(false);
+  const [bioClamped, setBioClamped] = useState(false);
+  const bioRef = useRef(null);
+  useEffect(() => {
+    // BUGHUNT-20261103: the hero bio clamps to 2 lines, so a long
+    // introduction is cut with nowhere to read the rest. Measure the
+    // real clamp: only offer the expand control when text is cut.
+    setBioExpanded(false);
+    const node = bioRef.current;
+    setBioClamped(Boolean(node) && node.scrollHeight > node.clientHeight + 1);
+  }, [profile?.bio]);
   const [reported, setReported] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [pictureSrc, setPictureSrc] = useState("");
@@ -10502,6 +10544,10 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
       };
       setProfile(next);
       rememberProfile({ viewerUid, profile: next });
+      // BUGHUNT-20261103: following lands with a sparkle, but
+      // unfollowing landed with nothing at all — the button flip was
+      // the only signal. Say it in words, like every other action.
+      if (!result.following) setNote("已取消关注。");
     } catch (failure) {
       if (failure?.code === "auth-required") onOpenAccount();
       else setNote(failure?.message || "操作没能完成，请稍后再试。");
@@ -10700,7 +10746,14 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
               never belonged here. No bio: the owner gets a tappable
               prompt, a visitor gets no line at all. */}
           {profile.bio ? (
-            <p className="profile-hero-bio">{profile.bio}</p>
+            <>
+              <p ref={bioRef} className={`profile-hero-bio ${bioExpanded ? "is-expanded" : ""}`}>{profile.bio}</p>
+              {bioClamped && (
+                <button type="button" className="small-link" onClick={() => setBioExpanded((current) => !current)}>
+                  {bioExpanded ? "收起" : "展开全文"}
+                </button>
+              )}
+            </>
           ) : isSelf ? (
             <button type="button" className="profile-hero-bio is-placeholder" onClick={() => setEditOpen(true)}>
               写一句介绍自己
@@ -11068,6 +11121,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
         onClose={() => setShareOpen(false)}
         onCopied={() => setNote("分享文案已复制。")}
         onCopyFailed={() => setNote("没能复制，请稍后再试。")}
+        onShareFailed={() => setNote("系统分享没能完成，请稍后再试。")}
       />
     )}
     {settingsOpen && isSelf && !windowForm && (
@@ -13002,9 +13056,27 @@ function App() {
   }, [profileRoute]);
   useEffect(() => {
     if (!profileRoute) return undefined;
-    const onKey = (event) => { if (event.key === "Escape") requestCloseProfile(); };
+    // BUGHUNT-20261103: the profile window is a modal surface, so it
+    // gets the same housekeeping as the edit/share sheets — body
+    // scroll locks while it is open and focus returns to the trigger
+    // when it closes. A native <dialog> open above it (ReadingDialog,
+    // e.g. the notifications panel) owns Escape itself: its cancel
+    // path closes the dialog, and without this guard the window
+    // listener would close the profile underneath in the same press.
+    const trigger = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (event) => {
+      if (event.key !== "Escape") return;
+      if (document.querySelector("dialog[open]")) return;
+      requestCloseProfile();
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      if (!document.querySelector("dialog[open]")) document.body.style.overflow = previousOverflow;
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    };
   }, [profileRoute, requestCloseProfile]);
   // Cloud library: while signed in, the shelf reconciles with the
   // account copy on sign-in and writes changes through in the
