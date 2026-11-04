@@ -4514,23 +4514,29 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
   const activeUnread = data?.categories?.[tab]?.unread || 0;
   useEffect(() => {
     if (!data || activeUnread <= 0) return undefined;
+    // BUGHUNT-20261104: read used to fire the instant data arrived, so
+    // flicking through a tab cleared its unread with no way back. Wait
+    // for a short dwell on the tab; leaving early cancels the timer
+    // and the watermark stays (it retries on the next real visit).
     let live = true;
-    markNotificationsRead({ category: tab, getAccessToken: getToken })
-      .then(() => {
-        if (!live) return;
-        setData((current) => {
-          if (!current?.categories?.[tab]) return current;
-          const next = {
-            ...current,
-            categories: { ...current.categories, [tab]: { ...current.categories[tab], unread: 0 } },
-          };
-          next.totalUnread = NOTIFY_TABS.reduce((sum, entry) => sum + (next.categories[entry.id]?.unread || 0), 0);
-          onUnreadChange?.(next.totalUnread);
-          return next;
-        });
-      })
-      .catch(() => { /* the watermark retries on the next open */ });
-    return () => { live = false; };
+    const timer = window.setTimeout(() => {
+      markNotificationsRead({ category: tab, getAccessToken: getToken })
+        .then(() => {
+          if (!live) return;
+          setData((current) => {
+            if (!current?.categories?.[tab]) return current;
+            const next = {
+              ...current,
+              categories: { ...current.categories, [tab]: { ...current.categories[tab], unread: 0 } },
+            };
+            next.totalUnread = NOTIFY_TABS.reduce((sum, entry) => sum + (next.categories[entry.id]?.unread || 0), 0);
+            onUnreadChange?.(next.totalUnread);
+            return next;
+          });
+        })
+        .catch(() => { /* the watermark retries on the next open */ });
+    }, 1500);
+    return () => { live = false; window.clearTimeout(timer); };
   }, [data, tab, activeUnread, getToken, onUnreadChange]);
 
   const category = data?.categories?.[tab] || { unread: 0, items: [] };
@@ -4637,6 +4643,7 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
                   <button
                     type="button"
                     className="notify-row"
+                    disabled={!item.actorUid}
                     onClick={() => item.actorUid && onOpenProfile?.(item.actorUid)}
                   >
                     <span className="nav-face-frame is-person" aria-hidden="true">
@@ -6159,10 +6166,16 @@ function Reader({
   };
   const openTools = () => { bookmarkAnchor.current = reading.capture(); setToolsOpen(true); };
   const togglePositionBookmark = () => {
-    const anchor = bookmarkAnchor.current || { paragraph: 0, offset: 0 };
+    // BUGHUNT-20261104: no captured anchor (scroll mode before any
+    // paragraph node renders) used to fall back to chapter start and
+    // silently plant a wrong bookmark — refuse instead, and let the
+    // tools sheet say so (return value is the refusal signal).
+    const anchor = bookmarkAnchor.current;
+    if (!anchor) return false;
     reading.store.toggleBookmark({ key: locationKey, storyId: bookContextId, chapterIndex: index,
       anchor, title: chapter.title, excerpt: chapter.paragraphs[anchor.paragraph] || '' });
     setBookmarkVersion(value => value + 1);
+    return true;
   };
   const toggleStoryBookmark = () =>
     onToggleBookmark?.({ ...story, bookmarked: !story.bookmarked });
@@ -6723,7 +6736,7 @@ function Reader({
           storyBookmarked={Boolean(story.bookmarked)}
           onToggleStoryBookmark={readOnly ? undefined : toggleStoryBookmark}
           onSelect={selectLocation} onBookmark={togglePositionBookmark} warning={reading.store.warning()}
-          onRemove={item => { reading.store.removeBookmark(item.key, item.anchor.paragraph); setBookmarkVersion(value => value + 1); }}/>
+          onRemove={item => { reading.store.removeBookmark(item.key, item.anchor.paragraph, item.anchor.offset); setBookmarkVersion(value => value + 1); }}/>
       </ReadingDialog>}
       {directoryOpen && (
         <ChapterDirectory
@@ -6985,6 +6998,11 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  // BUGHUNT-20261104: a refetch used to leave the previous filter's
+  // books on screen with nothing saying they were stale. Keep the
+  // list (no skeleton flash per keystroke) but say it is refreshing.
+  const [refreshing, setRefreshing] = useState(false);
+  const storeLoadedRef = useRef(false);
 
   // Keep-alive freshness (RATINGS): the store view stays mounted
   // (§37 J), so without this its cards would keep the counts they
@@ -7008,9 +7026,10 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
   useEffect(() => {
     let live = true;
     setError("");
+    if (storeLoadedRef.current) setRefreshing(true);
     fetchStoreBooks({ shelfId: shelf, kind, sort, q: debouncedQuery, limit: 60 })
-      .then((result) => { if (live) setData(result); })
-      .catch(() => { if (live) { setData({ books: [], total: 0 }); setError("书城暂时没能打开，请稍后再试。"); } });
+      .then((result) => { if (live) { setData(result); setRefreshing(false); storeLoadedRef.current = true; } })
+      .catch(() => { if (live) { setData({ books: [], total: 0 }); setError("书城暂时没能打开，请稍后再试。"); setRefreshing(false); storeLoadedRef.current = true; } });
     return () => { live = false; };
   }, [shelf, kind, sort, debouncedQuery, retry]);
 
@@ -7138,8 +7157,11 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
           </Button>
         </div>
       )}
+      {refreshing && !error && (
+        <p className="store-refreshing" role="status">正在刷新书城…</p>
+      )}
       {books.length > 0 && (
-        <div className="store-grid">
+        <div className="store-grid" aria-busy={refreshing || undefined}>
           {books.map((book) => (
             <StoreBookCard key={book.id} book={book} onOpen={onOpenBook} />
           ))}
@@ -9145,7 +9167,13 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
     if (!value || value === (editable.handle || "")) { setHandleState(null); return; }
     try {
       setHandleState(await checkHandleAvailable({ handle: value, getAccessToken: getToken }));
-    } catch { setHandleState(null); }
+    } catch {
+      // BUGHUNT-20261104: a failed check used to render exactly like
+      // "never checked", so a taken handle only surfaced at save time.
+      // Say the check itself failed; save-time conflict stays the
+      // backstop, and this note carries no available/unavailable claim.
+      setHandleState({ available: null, message: "没能确认这个 ID 是否可用，保存时会再核对。" });
+    }
   };
 
   // REQ-27: a kind pick only stages the choice (and supersedes any
@@ -9446,7 +9474,7 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
               placeholder="小写字母、数字、下划线"
             />
             {handleState && (
-              <small className={`profile-edit-handle-state ${handleState.available ? "is-ok" : "is-bad"}`}>
+              <small className={`profile-edit-handle-state ${handleState.available === true ? "is-ok" : handleState.available === false ? "is-bad" : ""}`}>
                 {handleState.message}
               </small>
             )}

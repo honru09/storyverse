@@ -34,6 +34,10 @@ export default function ReadingTools({
   // comment/post/rating deletes already grew out of.
   const [confirmingBookmarkKey, setConfirmingBookmarkKey] = useState('');
   const [bookmarkRemovedNote, setBookmarkRemovedNote] = useState('');
+  // BUGHUNT-20261104: the position-bookmark call can now refuse (no
+  // anchor captured yet) instead of silently landing at chapter start.
+  const [positionBookmarkNote, setPositionBookmarkNote] = useState('');
+  const bookmarkRowKey = item => `${item.key}-${item.anchor.paragraph}-${item.anchor.offset}`;
   const handleToggleStoryBookmark = () => {
     if (!storyBookmarked && fxMotionOn) {
       setCollectFx({ key: Date.now(), pick: pickFx(PIXELFX_SCENE.SHELF_COLLECT, null) });
@@ -66,7 +70,7 @@ export default function ReadingTools({
       </label>
       <p className="reading-tools-status" role="status">{!query.trim() ? '只搜索这本书已开启的章节，不会提前揭晓剧情。' : results.length ? `${results.length === 60 ? '前 ' : ''}${results.length} 处结果` : '没有找到，试试更短的词。'}</p>
       <div className="reading-search-results">
-        {results.map(result => <button type="button" key={`${result.chapterIndex}-${result.paragraph}`} onClick={() => onSelect(result.chapterIndex, { paragraph: result.paragraph, offset: 0 })}>
+        {results.map(result => <button type="button" key={`${result.chapterIndex}-${result.paragraph}-${result.offset ?? 0}`} onClick={() => onSelect(result.chapterIndex, { paragraph: result.paragraph, offset: result.anchorOffset ?? 0 })}>
           <strong>{result.title}</strong><span>{result.snippet}</span>
         </button>)}
       </div>
@@ -86,14 +90,18 @@ export default function ReadingTools({
           )}
         </button>
       )}
-      <button type="button" className="reading-bookmark-add" onClick={onBookmark}>标记／取消当前位置</button>
+      <button type="button" className="reading-bookmark-add" onClick={() => {
+        const ok = onBookmark?.();
+        setPositionBookmarkNote(ok === false ? '没能定位到当前位置，请稍后再试。' : '');
+      }}>标记／取消当前位置</button>
+      {positionBookmarkNote && <p className="reading-tools-status" role="status">{positionBookmarkNote}</p>}
       <p className="reading-tools-status">书签保存在本机；重写后的旧剧情书签不会跳到新剧情。</p>
       {!bookmarks.length && <p className="reading-tools-empty"><img className="empty-row-art" src="/art/empty-bookmarks-512.webp" alt="" loading="lazy" />还没有位置书签。</p>}
       <div className="reading-search-results">
-        {bookmarks.map(item => <div className="reading-bookmark-row" key={`${item.key}-${item.anchor.paragraph}`}>
+        {bookmarks.map(item => <div className="reading-bookmark-row" key={bookmarkRowKey(item)}>
           <button type="button" onClick={() => onSelect(item.chapterIndex, item.anchor)}><strong>{item.title}</strong><span>{item.excerpt}</span></button>
-          {confirmingBookmarkKey !== `${item.key}-${item.anchor.paragraph}` ? (
-            <button type="button" className="reading-bookmark-remove" onClick={() => setConfirmingBookmarkKey(`${item.key}-${item.anchor.paragraph}`)} aria-label={`删除书签：${item.title}`}>删除</button>
+          {confirmingBookmarkKey !== bookmarkRowKey(item) ? (
+            <button type="button" className="reading-bookmark-remove" onClick={() => setConfirmingBookmarkKey(bookmarkRowKey(item))} aria-label={`删除书签：${item.title}`}>删除</button>
           ) : (
             <>
               <button type="button" className="reading-bookmark-remove" onClick={() => { onRemove(item); setConfirmingBookmarkKey(''); setBookmarkRemovedNote('书签已删除。'); }}>确认删除</button>

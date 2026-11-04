@@ -882,7 +882,7 @@ export default function ReaderPager({
           </div>
         ))}
         {pages && (
-          <div className="reader-pager-page reader-pager-end">
+          <div className="reader-pager-page reader-pager-end" aria-hidden={pageRef.current !== pages.length || undefined}>
             <article className="reader-article">{endMatter}</article>
           </div>
         )}

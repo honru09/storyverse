@@ -2045,6 +2045,10 @@ button.profile-stat{cursor:pointer}
 .notify-row{display:flex;align-items:flex-start;gap:11px;width:100%;padding:10px;border:0;border-radius:14px;background:transparent;color:var(--ink);text-align:left;font:inherit}
 button.notify-row{cursor:pointer}
 button.notify-row:hover{background:var(--glass)}
+/* BUGHUNT-20261104: a row with no actor to open is a disabled button,
+   not a clickable-looking dead end — no pointer, no hover wash, no dim. */
+button.notify-row:disabled{cursor:default;opacity:1}
+button.notify-row:disabled:hover{background:transparent}
 .notify-row-static{cursor:default}
 .notify-row-icon{display:grid;place-items:center;width:40px;height:40px;flex:0 0 auto;border-radius:50%;background:var(--glass-2);color:var(--dim)}
 .notify-row-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;padding-top:2px}
@@ -2127,6 +2131,9 @@ button.settings-row{cursor:pointer}
 .store-sorts button:active{transform:scale(.96)}
 .store-sorts button.active{color:var(--selected-text);background:var(--selected-surface);font-weight:650}
 .store-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 12px;margin-top:24px}
+/* BUGHUNT-20261104: the refetch status line (previous filter's books
+   stay on screen while the new set loads). */
+.store-refreshing{margin:16px 0 0;color:var(--dim);font-size:13px}
 @media (min-width:700px){.store-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:32px 20px}}
 @media (min-width:1050px){.store-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 /* DEVICE-FIX REQ-21: the store card is a fixed format — a flex column

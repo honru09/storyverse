@@ -169,7 +169,12 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
   const changeMode = (next) => { modeTouched.current = true; setMode(next); setLocalError(""); if (typeof client.clearError === "function") client.clearError(); setPassword(""); setConfirmPassword(""); setCode(""); setShowPassword(false); setRecoveryEmail(""); setRecoveryInfo(null); setRecoverySent(false); setRecoveryCode(""); setNewPassword(""); };
   // Editing the identifier after a recovery lookup invalidates the lookup:
   // the panel must never act on a previous name's state.
-  const changeAccountId = (value) => { setAccountId(value); setRecoveryInfo(null); setRecoverySent(false); setRecoveryCode(""); };
+  // BUGHUNT-20261104: editing the identifier used to keep the old
+  // code and its 60s cooldown, so a code requested for A sat in the
+  // box for B (and B could not be re-sent for a minute). Changing the
+  // identifier clears both; any server-side throttle still surfaces
+  // through the normal error path on the next send.
+  const changeAccountId = (value) => { setAccountId(value); setRecoveryInfo(null); setRecoverySent(false); setRecoveryCode(""); setCode(""); setCooldown(0); };
   const run = async (operation) => {
     if (inFlight.current || account.busy) return;
     inFlight.current = true;

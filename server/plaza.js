@@ -634,8 +634,14 @@ export function createPlazaService({ env = process.env, store, avatarStore, soci
       if (shelfId) books = books.filter((book) => book.shelfId === shelfId)
       const needle = typeof q === 'string' ? q.trim().toLowerCase() : ''
       if (needle) {
-        books = books.filter((book) => [book.title, book.authorName, book.worldName]
-          .some((value) => String(value || '').toLowerCase().includes(needle)))
+        // BUGHUNT-20261104: cards show @{authorHandle} whenever it
+        // differs from the display name, but search never matched it —
+        // a handle copied off a card returned zero results. Match the
+        // handle too, with a leading @ stripped from the needle.
+        const handleNeedle = needle.replace(/^@/, '')
+        books = books.filter((book) => [book.title, book.authorName, book.worldName, book.authorHandle]
+          .some((value) => String(value || '').toLowerCase().includes(needle)
+            || String(value || '').toLowerCase().includes(handleNeedle)))
       }
       if (sort === 'complete') {
         books = books

@@ -23,11 +23,21 @@ export function findInChapters(chapters, query, lastAccessible = chapters.length
   const results = [];
   chapters.slice(0, lastAccessible + 1).forEach((chapter, chapterIndex) => {
     chapter?.paragraphs?.forEach((text, paragraph) => {
-      const offset = text.toLocaleLowerCase().indexOf(needle);
-      if (offset < 0 || results.length >= 60) return;
-      const start = Math.max(0, offset - 24);
-      results.push({ chapterIndex, paragraph, title: chapter.title,
-        snippet: `${start ? '…' : ''}${text.slice(start, offset + needle.length + 60)}${text.length > offset + needle.length + 60 ? '…' : ''}` });
+      // BUGHUNT-20261104: every occurrence, not just the first per
+      // paragraph — and each carries its hit offset, so the jump lands
+      // on the hit instead of the paragraph start. anchorOffset is the
+      // 0–1 paragraph fraction normalizeAnchor expects.
+      const lower = text.toLocaleLowerCase();
+      let from = 0;
+      while (results.length < 60) {
+        const offset = lower.indexOf(needle, from);
+        if (offset < 0) break;
+        const start = Math.max(0, offset - 24);
+        results.push({ chapterIndex, paragraph, title: chapter.title, offset,
+          anchorOffset: text.length ? offset / text.length : 0,
+          snippet: `${start ? '…' : ''}${text.slice(start, offset + needle.length + 60)}${text.length > offset + needle.length + 60 ? '…' : ''}` });
+        from = offset + Math.max(1, needle.length);
+      }
     });
   });
   return results;
@@ -108,17 +118,25 @@ export function createReadingLocationStore({ storage } = {}) {
     toggleBookmark(entry) {
       if (!validEntry(entry) || typeof entry.storyId !== 'string' || !Number.isInteger(entry.chapterIndex)) return false;
       refresh();
-      const existing = bookmarks.some(item => item.key === entry.key && item.anchor.paragraph === entry.anchor.paragraph);
-      bookmarks = bookmarks.filter(item => item.key !== entry.key || item.anchor.paragraph !== entry.anchor.paragraph);
+      // BUGHUNT-20261104: dedup is offset-exact — two positions in one
+      // paragraph are two bookmarks, not one toggling the other.
+      const anchor = normalizeAnchor(entry.anchor);
+      const samePlace = item => item.key === entry.key
+        && item.anchor.paragraph === anchor.paragraph && item.anchor.offset === anchor.offset;
+      const existing = bookmarks.some(samePlace);
+      bookmarks = bookmarks.filter(item => !samePlace(item));
       if (!existing) bookmarks.push({ key: entry.key, storyId: entry.storyId, chapterIndex: entry.chapterIndex,
-        anchor: normalizeAnchor(entry.anchor), title: String(entry.title || '').slice(0, 150), excerpt: String(entry.excerpt || '').slice(0, 110) });
+        anchor, title: String(entry.title || '').slice(0, 150), excerpt: String(entry.excerpt || '').slice(0, 110) });
       bookmarks = bookmarks.slice(-MAX_BOOKMARKS);
       save();
       return !existing;
     },
-    removeBookmark(key, paragraph) {
+    removeBookmark(key, paragraph, offset) {
       refresh();
-      bookmarks = bookmarks.filter(item => item.key !== key || item.anchor.paragraph !== paragraph);
+      // With an offset, removal is offset-exact too; without one (legacy
+      // callers) it keeps the old paragraph-wide behaviour.
+      bookmarks = bookmarks.filter(item => item.key !== key || item.anchor.paragraph !== paragraph
+        || (Number.isFinite(offset) && item.anchor.offset !== offset));
       return save();
     },
   };
