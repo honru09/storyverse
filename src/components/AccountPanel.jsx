@@ -174,7 +174,11 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
   // box for B (and B could not be re-sent for a minute). Changing the
   // identifier clears both; any server-side throttle still surfaces
   // through the normal error path on the next send.
-  const changeAccountId = (value) => { setAccountId(value); setRecoveryInfo(null); setRecoverySent(false); setRecoveryCode(""); setCode(""); setCooldown(0); };
+  // BUGHUNT-20261105: the same change used to keep the new password
+  // typed for A (masked, easy to miss) while clearing the recovery
+  // code — the panel must never act on a previous name's state, so
+  // the password goes too.
+  const changeAccountId = (value) => { setAccountId(value); setRecoveryInfo(null); setRecoverySent(false); setRecoveryCode(""); setCode(""); setCooldown(0); setNewPassword(""); };
   const run = async (operation) => {
     if (inFlight.current || account.busy) return;
     inFlight.current = true;

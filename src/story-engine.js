@@ -2384,14 +2384,21 @@ export const interventionTargetIndex = (story, readerIndex) => {
   return target
 }
 
+// BUGHUNT-20261105: the fate roll, shared by the engine and by the
+// intervention sheet's text+fate merge (which must append exactly the
+// roll the engine would roll for the same queue length).
+export function interventionFateText(story) {
+  const seed = hash(`${story.id}|fate|${interventionsOf(story).length}`)
+  return INTERVENTION_FATE_POOL[parseInt(seed, 36) % INTERVENTION_FATE_POOL.length]
+}
+
 const resolveInterventionText = (story, { text, kind, chipId }) => {
   if (kind === 'chip' && chipId && chipId !== 'fate') {
     const chip = interventionChipById(chipId)
     if (chip) return chip.text
   }
   if (kind === 'chip' || kind === 'random') {
-    const seed = hash(`${story.id}|fate|${interventionsOf(story).length}`)
-    return INTERVENTION_FATE_POOL[parseInt(seed, 36) % INTERVENTION_FATE_POOL.length]
+    return interventionFateText(story)
   }
   return cleanBounded(text, INTERVENTION_TEXT_MAX)
 }

@@ -221,6 +221,7 @@ import {
   chapterForReading,
   INTERVENTION_CHIPS,
   INTERVENTION_TEXT_MAX,
+  interventionFateText,
   interventionTargetIndex,
   queueIntervention,
   queuedInterventionsFor,
@@ -1272,6 +1273,15 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
       return String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || ""));
     });
   const shelves = chunkShelves(visibleStories, capacity);
+  // BUGHUNT-20261105: a tap inside the 260ms window used to keep
+  // firing even after the reader chose delete or fuse instead —
+  // the reader would open over the delete dialog (or steal the
+  // fuse navigation). Choosing either action cancels the pull.
+  const cancelPull = () => {
+    if (pullTimer.current) window.clearTimeout(pullTimer.current);
+    pullTimer.current = null;
+    setPulledId(null);
+  };
   const handleOpen = (story) => {
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
       || document.querySelector(".app-shell")?.dataset.motion === "off";
@@ -1284,7 +1294,7 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
     // BUGHUNT-20261103: a second tap inside the 260ms window used to
     // overwrite pullTimer.current without clearing the first timer,
     // so both books' open callbacks fired in turn.
-    if (pullTimer.current) window.clearTimeout(pullTimer.current);
+    cancelPull();
     setPulledId(story.id);
     pullTimer.current = window.setTimeout(() => {
       setPulledId(null);
@@ -1391,7 +1401,7 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
                           type="button"
                           className="wood-book-delete"
                           aria-label={`删除《${story.title}》`}
-                          onClick={() => onDeleteStory(story)}
+                          onClick={() => { cancelPull(); onDeleteStory(story); }}
                         >
                           删除
                         </button>
@@ -1401,7 +1411,7 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
                           type="button"
                           className="wood-book-fuse"
                           aria-label={`让《${story.title}》与另一条线合流`}
-                          onClick={() => onFuseStory(story.id)}
+                          onClick={() => { cancelPull(); onFuseStory(story.id); }}
                         >
                           合流
                         </button>
@@ -4890,6 +4900,27 @@ function InterventionSheet({ story, readerIndex, onClose, onSubmit }) {
       // A chip used to silently discard typed text at submit time. Merge
       // instead: the reader's own words lead, the chip direction follows.
       const chip = INTERVENTION_CHIPS.find((item) => item.id === chipId);
+      // BUGHUNT-20261105: 听天命 has no fixed text (its direction is a
+      // roll, not a sentence), so the merge above used to reduce to
+      // the typed text alone and the roll never happened — while the
+      // sheet still promised both would be sent. Roll the same fate
+      // the engine would roll for a chip-only submit, append it, and
+      // hold it to the same 120-char refusal as the other chips.
+      if (chipId === "fate") {
+        const fateText = interventionFateText(story);
+        const combined = `${trimmed}${trimmed.endsWith("。") ? "" : "。"}${fateText}`;
+        if (combined.length > INTERVENTION_TEXT_MAX) {
+          setError(`加上这个方向就 ${combined.length} 字了，超过 ${INTERVENTION_TEXT_MAX} 字上限，请先删减一点再提交。`);
+          return;
+        }
+        const violation = findSettingViolation(combined);
+        if (violation) {
+          setError(violation);
+          return;
+        }
+        onSubmit({ kind: "text", text: combined });
+        return;
+      }
       const combined = chip?.text ? `${trimmed}${trimmed.endsWith("。") ? "" : "。"}${chip.text}` : trimmed;
       // BUGHUNT-20261102: a full 120-char draft plus a chip used to
       // merge past the cap and get silently sliced downstream, so the
@@ -7308,9 +7339,16 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
     return () => { live = false; };
   }, [mode, books]);
 
-  const pickable = (books || []).filter((entry) => !bookQuery.trim()
-    || entry.title.includes(bookQuery.trim())
-    || String(entry.authorName || "").includes(bookQuery.trim()));
+  // BUGHUNT-20261105: the picker used to match title/authorName only,
+  // case-sensitively, so it could not find the @handle the bookstore
+  // card actually shows — the same gap the 20261104 bookstore search
+  // fix closed on the server side. Same normalization here: trim,
+  // strip a leading @, compare lowercased.
+  const pickQuery = bookQuery.trim().replace(/^@/, "").toLowerCase();
+  const pickable = (books || []).filter((entry) => !pickQuery
+    || String(entry.title || "").toLowerCase().includes(pickQuery)
+    || String(entry.authorName || "").toLowerCase().includes(pickQuery)
+    || String(entry.authorHandle || "").toLowerCase().includes(pickQuery));
 
   const submit = async () => {
     if (busy || overLimit) return;
@@ -7382,7 +7420,11 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
             ) : booksFailed ? (
               <p className="plaza-note">书城这次没能打开，你的书还在，不用担心。<button type="button" className="small-link" onClick={() => { setBooksFailed(false); setBooks(null); }}>再试一次</button></p>
             ) : pickable.length === 0 ? (
-              <p className="plaza-note">书城里还没有能分享的书。</p>
+              // BUGHUNT-20261105: a query with no match used to report
+              // the bookstore as empty. Say which case it is.
+              <p className="plaza-note">{bookQuery.trim()
+                ? `没有找到符合「${bookQuery.trim()}」的书，换个关键词试试。`
+                : "书城里还没有能分享的书。"}</p>
             ) : (
               <>
               {pickable.length > 12 && (
@@ -7462,7 +7504,13 @@ function PlazaCommentThread({ post, account, authClient, onOpenAccount, onCountC
     setLoadingMoreComments(true);
     try {
       const page = await fetchPostComments({ postId: post.id, cursor: commentsCursor });
-      setComments((current) => [...(current || []), ...page.comments]);
+      // BUGHUNT-20261105: a comment posted locally sits past the
+      // cursor, so the next page legitimately contains it again —
+      // append by id, never twice.
+      setComments((current) => {
+        const seen = new Set((current || []).map((entry) => entry.id));
+        return [...(current || []), ...page.comments.filter((entry) => !seen.has(entry.id))];
+      });
       setCommentsCursor(page.nextCursor);
     } catch { setError("更多评论没能打开，请稍后再试。"); } finally { setLoadingMoreComments(false); }
   };
@@ -7631,7 +7679,7 @@ function PlazaPostBookCard({ book, onOpenDetail, onReadLine, onEnter }) {
   );
 }
 
-function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, onEnter, onOpenProfile, onOpenAccount, onToast, onDeleted }) {
+function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, onEnter, onOpenProfile, onOpenAccount, onToast, onDeleted, onLikeChange }) {
   const viewerUid = account.user?.uid || "";
   const own = Boolean(viewerUid) && post.authorUid === viewerUid;
   const [liked, setLiked] = useState(Boolean(post.viewerLiked));
@@ -7711,6 +7759,12 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
       const result = await togglePlazaPostLike({ id: post.id, getAccessToken: () => authClient.getAccessToken() });
       setLiked(Boolean(result.liked));
       setLikeCount(result.likeCount);
+      // BUGHUNT-20261105: the feed used to leave its posts list on
+      // the pre-like values, so the 20261102 resync effect re-ran
+      // when the flight landed and undid the just-applied result.
+      // Publish the result to the parent's list, so the resync reads
+      // fresh props instead of stale ones.
+      onLikeChange?.(post.id, result);
     } catch (failure) {
       setLiked(wasLiked);
       setLikeCount(wasCount);
@@ -8015,6 +8069,14 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
     ? storyLengthModeOf(activeStory) === "endless" && !isManuallyFinished(activeStory)
     : false;
   const streamPosts = (posts || []).filter((post) => !focusPost || post.id !== focusPost.id);
+  // BUGHUNT-20261105: see the card's onLikeChange note — a landed
+  // like must reach the feed's list, or the resync effect undoes it.
+  const handleLikeChange = (postId, result) => {
+    setPosts((current) => (current || []).map((entry) => entry.id === postId
+      ? { ...entry, viewerLiked: Boolean(result.liked), likeCount: result.likeCount } : entry));
+    setFocusPost((current) => current && current.id === postId
+      ? { ...current, viewerLiked: Boolean(result.liked), likeCount: result.likeCount } : current);
+  };
   return (
     <div className="page page-plaza page-enter">
       <div className="plaza-ambient-wrap">
@@ -8185,7 +8247,15 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
           onOpenProfile={onOpenProfile}
           onOpenAccount={onOpenAccount}
           onToast={onToast}
-          onDeleted={() => setFocusPost(null)}
+          onLikeChange={handleLikeChange}
+          onDeleted={(postId) => {
+            // BUGHUNT-20261105: clearing only the focus used to let
+            // the same post reappear as a stream card, because the
+            // stream filter keys off focusPost. Remove it from the
+            // list too, like the stream card already does.
+            setFocusPost(null);
+            setPosts((current) => (current || []).filter((entry) => entry.id !== postId));
+          }}
         />
       )}
       {posts !== null && posts.length === 0 && !focusPost && !error && (
@@ -8216,6 +8286,7 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
               onOpenProfile={onOpenProfile}
               onOpenAccount={onOpenAccount}
               onToast={onToast}
+              onLikeChange={handleLikeChange}
               onDeleted={(postId) => setPosts((current) => (current || []).filter((entry) => entry.id !== postId))}
             />
           ))}
@@ -9618,6 +9689,16 @@ function FriendsPanel({ authClient, onOpenProfile }) {
           ...current,
           people: current.people.map((row) => (row.uid === person.uid ? { ...row, friendState: "friends" } : row)),
         } : current);
+        // BUGHUNT-20261105: the requests tab renders data.incoming,
+        // not searchResult, so on a failed reload the accepted row
+        // stayed actionable under a success note. Patch the tab's
+        // own list (and its pending count) with the success, so the
+        // row is gone even if the reload below fails.
+        setData((current) => current ? {
+          ...current,
+          incoming: (current.incoming || []).filter((entry) => entry.person?.uid !== person.uid && entry.uid !== person.uid),
+          counts: current.counts ? { ...current.counts, incomingPending: Math.max(0, (current.counts.incomingPending || 0) - 1) } : current.counts,
+        } : current);
       } else if (action === "decline") {
         await respondFriendRequest({ uid: person.uid, accept: false, getAccessToken: getToken });
         setNote("已婉拒这条申请。");
@@ -9625,12 +9706,21 @@ function FriendsPanel({ authClient, onOpenProfile }) {
           ...current,
           people: current.people.map((row) => (row.uid === person.uid ? { ...row, friendState: "none" } : row)),
         } : current);
+        setData((current) => current ? {
+          ...current,
+          incoming: (current.incoming || []).filter((entry) => entry.person?.uid !== person.uid && entry.uid !== person.uid),
+          counts: current.counts ? { ...current.counts, incomingPending: Math.max(0, (current.counts.incomingPending || 0) - 1) } : current.counts,
+        } : current);
       } else if (action === "cancel") {
         await cancelFriendRequest({ uid: person.uid, getAccessToken: getToken });
         setNote("申请已取消。");
         setSearchResult((current) => current ? {
           ...current,
           people: current.people.map((row) => (row.uid === person.uid ? { ...row, friendState: "none" } : row)),
+        } : current);
+        setData((current) => current ? {
+          ...current,
+          outgoing: (current.outgoing || []).filter((entry) => entry.person?.uid !== person.uid && entry.uid !== person.uid),
         } : current);
       }
       reload();
@@ -9804,8 +9894,11 @@ function FriendsPanel({ authClient, onOpenProfile }) {
       ) : (
         <div className="friends-search">
           <div className="friends-search-modes" role="group" aria-label="查找方式">
-            <button type="button" className={searchMode === "name" ? "is-active" : ""} aria-pressed={searchMode === "name"} onClick={() => setSearchMode("name")}>按用户名</button>
-            <button type="button" className={searchMode === "email" ? "is-active" : ""} aria-pressed={searchMode === "email"} onClick={() => setSearchMode("email")}>按邮箱</button>
+            {/* BUGHUNT-20261105: switching modes used to leave the
+                other mode's result on screen under the new mode's
+                explainer, so it read as the new mode's answer. */}
+            <button type="button" className={searchMode === "name" ? "is-active" : ""} aria-pressed={searchMode === "name"} onClick={() => { setSearchMode("name"); setSearchResult(null); setSearchError(""); }}>按用户名</button>
+            <button type="button" className={searchMode === "email" ? "is-active" : ""} aria-pressed={searchMode === "email"} onClick={() => { setSearchMode("email"); setSearchResult(null); setSearchError(""); }}>按邮箱</button>
           </div>
           <div className="friends-search-bar">
             <input
