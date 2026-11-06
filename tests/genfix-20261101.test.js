@@ -224,13 +224,18 @@ test('confirm-step display: the topbar is densified without touching the pinned 
   // so the no-ghost fix must NOT rewrite the tokens — it densifies
   // the bar's effective background in the salt topbar rule by mixing
   // the token toward each theme's own opaque --surface-solid
-  // (effective alpha .95–.97, hue in-family).
+  // (hue in-family).
+  // BUGHUNT-20261106: the 40% mix (effective alpha .95–.97) still
+  // let card text stay legible THROUGH the bar on the live build
+  // (desktop Chromium, white theme, plaza/store/detail) — densify
+  // further to 15% token / 85% solid (effective alpha .98+). The
+  // tokens below stay pinned value-for-value.
   assert.ok(css.includes('--topbar-bg:rgba(6,13,31,.93)'), 'aurora topbar token stands')
   assert.ok(css.includes('--topbar-bg:rgba(17,18,20,.88)'), 'black topbar token stands')
   assert.ok(css.includes('--topbar-bg:rgba(246,245,242,.90)'), 'white topbar token stands')
   assert.match(
     css,
-    /html\[data-shell-theme='black'\] \.topbar,html\[data-shell-theme='white'\] \.topbar,html\[data-shell-theme='aurora'\] \.topbar\{[^}]*background:color-mix\(in srgb,var\(--topbar-bg\) 40%,var\(--surface-solid\)\)/,
+    /html\[data-shell-theme='black'\] \.topbar,html\[data-shell-theme='white'\] \.topbar,html\[data-shell-theme='aurora'\] \.topbar\{[^}]*background:color-mix\(in srgb,var\(--topbar-bg\) 15%,var\(--surface-solid\)\)/,
   )
 })
 

@@ -889,8 +889,13 @@ html.is-lite-gpu[data-shell-theme='black'] .mobile-bottom-nav,html.is-lite-gpu[d
    effective background is densified here by mixing the token toward
    each theme's own opaque --surface-solid — effective alpha lands
    at .95–.97, hue stays in-family, and the blur remains as the
-   second line of defence, not the only one. */
-html[data-shell-theme='black'] .topbar,html[data-shell-theme='white'] .topbar,html[data-shell-theme='aurora'] .topbar{backdrop-filter:blur(16px) saturate(1.3);-webkit-backdrop-filter:blur(16px) saturate(1.3);box-shadow:inset 0 1px 0 var(--card-top-hi);background:color-mix(in srgb,var(--topbar-bg) 40%,var(--surface-solid))}
+   second line of defence, not the only one.
+   BUGHUNT-20261106: the live build still showed card text legible
+   THROUGH the bar on desktop Chromium (white theme, plaza/store/
+   detail) — .96 plus blur is not enough when the filter is weak.
+   Densify further, 40% token / 60% solid to 15% / 85% (effective
+   alpha .98+); the token values themselves stay pinned. */
+html[data-shell-theme='black'] .topbar,html[data-shell-theme='white'] .topbar,html[data-shell-theme='aurora'] .topbar{backdrop-filter:blur(16px) saturate(1.3);-webkit-backdrop-filter:blur(16px) saturate(1.3);box-shadow:inset 0 1px 0 var(--card-top-hi);background:color-mix(in srgb,var(--topbar-bg) 15%,var(--surface-solid))}
 html.is-lite-gpu[data-shell-theme='black'] .topbar,html.is-lite-gpu[data-shell-theme='white'] .topbar,html.is-lite-gpu[data-shell-theme='aurora'] .topbar{backdrop-filter:none;-webkit-backdrop-filter:none}
 html[data-shell-theme='black'] .page:not(.page-reader),html[data-shell-theme='white'] .page:not(.page-reader),html[data-shell-theme='aurora'] .page:not(.page-reader){padding-bottom:calc(96px + env(safe-area-inset-bottom))}
 /* DEVICE-FIX4 (REQ-44-3): the bookstore's last row must clear not just

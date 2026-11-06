@@ -179,6 +179,7 @@ import {
   useMotionPolicy,
   useMotionSettings,
 } from "./motion/MotionProvider.jsx";
+import { isKeyboardInput, subscribeInputModality } from "./motion/input-modality.js";
 import {
   scrollToTop,
   useSceneMotion,
@@ -4574,7 +4575,14 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
         })}
       </div>
       {decideError && <p className="plaza-thread-error" role="alert">{decideError}</p>}
-      {error ? (
+      {/* BUGHUNT-20261106: a failed reload used to swap the whole
+          panel for the error page even when a list was already on
+          screen — same family as the friends panel fixed in
+          20261101-SUPP. With data in hand, show the error as a banner
+          above the list instead; the full-page error is only for the
+          first load, when there is nothing to keep. */}
+      {error && data && <p className="plaza-thread-error" role="alert">{error} <button type="button" className="small-link" onClick={() => setRetry((value) => value + 1)}>再试一次</button></p>}
+      {error && !data ? (
         <div className="notify-empty" role="alert">
           <p>{error}</p>
           <button type="button" className="small-link" onClick={() => setRetry((value) => value + 1)}>再试一次</button>
@@ -4809,10 +4817,12 @@ function ChapterDirectory({ story, index, readOnly, onSelect, onClose, onRenameC
               <input
                 value={drafts[position] ?? ""}
                 aria-label={`第 ${position + 1} 章标题`}
+                maxLength={CHAPTER_TITLE_MAX}
                 onChange={(event) =>
                   setDrafts((list) => list.map((title, itemIndex) => (itemIndex === position ? event.target.value : title)))
                 }
               />
+              <span className="da-count" aria-live="polite">{(drafts[position] ?? "").trim().length} / {CHAPTER_TITLE_MAX}</span>
             </label>
           ))}
           {editError && (
@@ -5768,10 +5778,22 @@ function Reader({
   const coverState = coverStateOf(story);
   const locationKey = story && chapterLocationKey(story.id, index, chapter.paragraphs, readOnly);
   const { animate: readerMotionAnimate } = useMotionPolicy("reader");
+  // BUGHUNT-20261106: turn motion used to follow
+  // preferences.inputMethod, a sticky copy fed only by the settings
+  // sheet — one keypress inside the sheet flipped the whole session
+  // to motion-off until the next pointer-driven settings change. The
+  // shell already tracks the LIVE modality on <html> (keydown ->
+  // keyboard, pointerdown/wheel -> pointer); follow that instead, so
+  // motion follows the input the reader is actually being driven
+  // with right now. preferences.inputMethod stays in the store
+  // (reading-preferences.test.js pins it) but no longer gates the
+  // reader.
+  const [readerKeyboard, setReaderKeyboard] = useState(() => isKeyboardInput());
+  useEffect(() => subscribeInputModality(setReaderKeyboard), []);
   // READER-PAGE (REQ-38): page turns animate only when the motion
   // policy allows it and the input is not the keyboard (whose turns
   // the appearance layer already marks motion-off).
-  const turnMotion = readerMotionAnimate && preferences.inputMethod !== "keyboard";
+  const turnMotion = readerMotionAnimate && !readerKeyboard;
   const reading = useReaderExperience({ readerRef, locationKey, settings: preferences.settings, turnMotion,
     blocked: preferencesOpen || toolsOpen || directoryOpen || shareOpen || interveneOpen || settingsOpen || proseOpen || frontStage !== null });
   const bookContextId = `${readOnly ? 'public' : 'private'}:${story?.id}`;
@@ -6020,8 +6042,20 @@ function Reader({
   };
   const saveChapterTitles = (titles) => {
     try {
+      const list = Array.isArray(titles) ? titles : [];
+      // BUGHUNT-20261106: the old forEach renamed in place and threw
+      // mid-loop, so one over-long title discarded every earlier
+      // rename and the error never said which chapter it was. Validate
+      // every draft first, naming the chapter, with the same rules
+      // renameChapterTitle enforces (trimmed, non-empty, <= 30).
+      for (let chapterIndex = 0; chapterIndex < list.length; chapterIndex++) {
+        const title = list[chapterIndex];
+        if (typeof title !== "string") continue;
+        if (!title.trim()) return `第 ${chapterIndex + 1} 章标题不能为空。`;
+        if (title.trim().length > CHAPTER_TITLE_MAX) return `第 ${chapterIndex + 1} 章标题最多 ${CHAPTER_TITLE_MAX} 字。`;
+      }
       let next = story;
-      (Array.isArray(titles) ? titles : []).forEach((title, chapterIndex) => {
+      list.forEach((title, chapterIndex) => {
         if (typeof title === "string" && title !== next.chapters[chapterIndex]?.title) {
           next = renameChapterTitle(next, chapterIndex, title);
         }
@@ -6536,7 +6570,7 @@ function Reader({
     </>
   );
   return (
-    <div ref={readerRef} className="page page-reader page-enter" data-reader-focused={focused ? 'true' : 'false'} data-chrome-lift={chromeLift || undefined} data-chrome-open={chromeOpen || undefined} onPointerDown={noteTapStart} onPointerUp={handleReaderTap} onPointerMove={handleReaderMove} onPointerCancel={handleReaderCancel} {...getReaderAppearance(preferences.settings, { inputMethod: preferences.inputMethod })}>
+    <div ref={readerRef} className="page page-reader page-enter" data-reader-focused={focused ? 'true' : 'false'} data-chrome-lift={chromeLift || undefined} data-chrome-open={chromeOpen || undefined} onPointerDown={noteTapStart} onPointerUp={handleReaderTap} onPointerMove={handleReaderMove} onPointerCancel={handleReaderCancel} {...getReaderAppearance(preferences.settings, { inputMethod: readerKeyboard ? "keyboard" : "pointer" })}>
       {frontStage && story && (
         <div className={`reader-front${frontLeaving ? " leaving" : ""}`} data-stage={frontStage} role="region" aria-label="开卷">
           <div className="reader-front-track">
@@ -9257,12 +9291,24 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
     setStagedPictureUpload(null);
   };
 
+  // BUGHUNT-20261106: the crop step is its own layer — Esc already
+  // closed the crop first and only closed the sheet when no crop was
+  // open, but the ✕ and the overlay tap went straight to onClose(),
+  // discarding the draft and the staged picture. All three close
+  // paths now share this one rule.
+  const closeTopLayer = () => {
+    if (cropRef.current) closeCrop();
+    else if (bannerCropRef.current) closeBannerCrop();
+    else onClose();
+  };
+
   // BUGHUNT-20261031: dialog housekeeping, mirroring AccountSceneDialog —
   // Esc closes (the crop step first when one is open), a tap on the
   // overlay outside the sheet closes, the page behind stops scrolling,
   // and focus returns to the trigger. The document listener stops
   // propagation so Esc here does not also close the profile window
-  // underneath; closing discards the draft exactly like the ✕ does.
+  // underneath; closing the sheet itself discards the draft exactly
+  // like the ✕ does.
   useEffect(() => {
     const trigger = document.activeElement;
     const previousOverflow = document.body.style.overflow;
@@ -9270,9 +9316,7 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
     const onKeyDown = (event) => {
       if (event.key !== "Escape") return;
       event.stopPropagation();
-      if (cropRef.current) closeCrop();
-      else if (bannerCropRef.current) closeBannerCrop();
-      else onClose();
+      closeTopLayer();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => {
@@ -9412,12 +9456,12 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
   };
 
   return (
-    <div className="profile-edit-overlay" role="dialog" aria-modal="true" aria-label="编辑资料" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="profile-edit-overlay" role="dialog" aria-modal="true" aria-label="编辑资料" onClick={(event) => { if (event.target === event.currentTarget) closeTopLayer(); }}>
       <div className="profile-edit-sheet da-sheet-frame">
         <span className="ryan-sheet-handle" aria-hidden="true" />
         <div className="profile-edit-heading">
           <h2>{crop ? "裁剪头像" : bannerCrop ? "裁剪头图" : "编辑资料"}</h2>
-          <button type="button" className="profile-edit-close" onClick={onClose} aria-label="关闭">
+          <button type="button" className="profile-edit-close" onClick={closeTopLayer} aria-label="关闭">
             <Icon name="x" size={16} />
           </button>
         </div>
@@ -9694,10 +9738,23 @@ function FriendsPanel({ authClient, onOpenProfile }) {
         // stayed actionable under a success note. Patch the tab's
         // own list (and its pending count) with the success, so the
         // row is gone even if the reload below fails.
+        // BUGHUNT-20261106: the friends tab and its count read
+        // data.friends / counts.friends, which the 20261105 patch
+        // never touched — on a failed reload the new friend was
+        // missing from the list while the success note said otherwise.
+        // Append the accepted person (flat row, same shape the tab
+        // renders) and bump the count, deduplicated.
         setData((current) => current ? {
           ...current,
           incoming: (current.incoming || []).filter((entry) => entry.person?.uid !== person.uid && entry.uid !== person.uid),
-          counts: current.counts ? { ...current.counts, incomingPending: Math.max(0, (current.counts.incomingPending || 0) - 1) } : current.counts,
+          friends: (current.friends || []).some((entry) => entry.uid === person.uid)
+            ? current.friends
+            : [...(current.friends || []), { ...person, friendState: "friends" }],
+          counts: current.counts ? {
+            ...current.counts,
+            incomingPending: Math.max(0, (current.counts.incomingPending || 0) - 1),
+            friends: (current.counts.friends || 0) + ((current.friends || []).some((entry) => entry.uid === person.uid) ? 0 : 1),
+          } : current.counts,
         } : current);
       } else if (action === "decline") {
         await respondFriendRequest({ uid: person.uid, accept: false, getAccessToken: getToken });

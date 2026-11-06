@@ -69,7 +69,11 @@ test('bughunt-6: changing the recovery identifier clears the new password too', 
 test('bughunt-7: a decided request leaves the requests tab even if reload fails', () => {
   const at = main.indexOf('BUGHUNT-20261105: the requests tab renders data.incoming')
   assert.ok(at > 0)
-  const block = main.slice(at, at + 2200)
+  // BUGHUNT-20261106: the accept branch grew a friends-list patch, so
+  // the cancel branch's outgoing filter sits ~2590 chars past the
+  // anchor now; the window widens to cover it. The assertions — each
+  // decided action patches its own list — are unchanged.
+  const block = main.slice(at, at + 3000)
   assert.match(block, /incoming: \(current\.incoming \|\| \[\]\)\.filter/)
   assert.match(block, /incomingPending: Math\.max\(0, \(current\.counts\.incomingPending \|\| 0\) - 1\)/)
   assert.match(block, /outgoing: \(current\.outgoing \|\| \[\]\)\.filter/)

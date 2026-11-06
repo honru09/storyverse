@@ -25,7 +25,11 @@ test('bughunt-2: forge confirm step collapses the empty preview column on deskto
 })
 
 test('bughunt-3: edit and share sheets close on Escape and overlay tap, lock scroll, restore focus', () => {
-  const overlays = main.match(/event\.target === event\.currentTarget\) onClose\(\)/g) || []
+  // BUGHUNT-20261106: the edit sheet's backdrop tap now routes through
+  // closeTopLayer (crop step first, sheet second) instead of calling
+  // onClose() directly — the close itself is unchanged, so both forms
+  // count here; the crop-first order is pinned by bughunt-20261106 #5.
+  const overlays = main.match(/event\.target === event\.currentTarget\) (onClose|closeTopLayer)\(\)/g) || []
   assert.equal(overlays.length, 2, 'both profile sheets need the backdrop-tap close')
   assert.match(main, /document\.body\.style\.overflow = "hidden"/)
   assert.match(main, /event\.stopPropagation\(\)/)

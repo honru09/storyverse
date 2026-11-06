@@ -147,6 +147,18 @@ button.chapter-item:disabled {
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
+  /* BUGHUNT-20261106: the dialog scrolls as one box, so a long
+     settings sheet scrolled its own title and close button out of
+     view. Pin the heading to the top of the scrollport; it inherits
+     the dialog's own background, so it stays opaque over the content
+     sliding underneath. The negative offsets cancel the dialog's
+     1.5rem padding and make the heading full-bleed. */
+  position: sticky;
+  top: calc(-1 * 1.5rem);
+  z-index: 1;
+  margin: -1.5rem -1.5rem 0;
+  padding: 1.5rem 1.5rem 0.75rem;
+  background: inherit;
 }
 .reading-dialog h2 {
   margin: 0;

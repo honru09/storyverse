@@ -231,7 +231,11 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
   };
   const resendRecoveryCode = () => {
     if (busy || cooldown > 0) return;
-    void run(async () => { await client.usernameRecoveryStart(identifier); setCooldown(60); });
+    // BUGHUNT-20261106: the server issues a fresh code on every resend
+    // past cooldown, voiding the old one — leaving the old code in the
+    // box guaranteed a rejection on submit. Clear it on success, so
+    // only the new code can be sent.
+    void run(async () => { await client.usernameRecoveryStart(identifier); setRecoveryCode(""); setCooldown(60); });
   };
   const submitRecoveryBinding = (event) => {
     event.preventDefault();
@@ -247,7 +251,10 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
     // lean on the server error to say so — the button now stays
     // disabled until an address is typed, like the form's own submit.
     if (!codeAvailable || busy || cooldown > 0 || !identifier) return;
-    void run(async () => { await client.requestEmailCode(identifier); setCooldown(60); });
+    // BUGHUNT-20261106: same staleness as resendRecoveryCode — a resend
+    // past cooldown voids the previous code, so clear the box on
+    // success instead of leaving a guaranteed-rejected code behind.
+    void run(async () => { await client.requestEmailCode(identifier); setCode(""); setCooldown(60); });
   };
 
   return <div className="account-panel" aria-busy={busy}>

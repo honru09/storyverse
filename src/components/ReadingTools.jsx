@@ -98,15 +98,15 @@ export default function ReadingTools({
       <p className="reading-tools-status">书签保存在本机；重写后的旧剧情书签不会跳到新剧情。</p>
       {!bookmarks.length && <p className="reading-tools-empty"><img className="empty-row-art" src="/art/empty-bookmarks-512.webp" alt="" loading="lazy" />还没有位置书签。</p>}
       <div className="reading-search-results">
-        {bookmarks.map(item => <div className="reading-bookmark-row" key={bookmarkRowKey(item)}>
+        {bookmarks.map(item => <div className={`reading-bookmark-row${confirmingBookmarkKey === bookmarkRowKey(item) ? " is-confirming" : ""}`} key={bookmarkRowKey(item)}>
           <button type="button" onClick={() => onSelect(item.chapterIndex, item.anchor)}><strong>{item.title}</strong><span>{item.excerpt}</span></button>
           {confirmingBookmarkKey !== bookmarkRowKey(item) ? (
             <button type="button" className="reading-bookmark-remove" onClick={() => setConfirmingBookmarkKey(bookmarkRowKey(item))} aria-label={`删除书签：${item.title}`}>删除</button>
           ) : (
-            <>
+            <div className="reading-bookmark-confirm">
               <button type="button" className="reading-bookmark-remove" onClick={() => { onRemove(item); setConfirmingBookmarkKey(''); setBookmarkRemovedNote('书签已删除。'); }}>确认删除</button>
               <button type="button" className="reading-bookmark-remove" onClick={() => setConfirmingBookmarkKey('')}>再想想</button>
-            </>
+            </div>
           )}
         </div>)}
       </div>

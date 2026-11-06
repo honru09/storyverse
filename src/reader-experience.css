@@ -141,11 +141,30 @@
 .reading-search-results strong{font-size:.875rem;line-height:1.5;color:var(--reader-accent)}
 .reading-search-results span{font-size:.875rem;line-height:1.8;color:var(--reader-text);overflow-wrap:anywhere}
 .reading-bookmark-row{display:grid;grid-template-columns:minmax(0,1fr) 48px;gap:8px;align-items:center}
+/* BUGHUNT-20261106: the 20261102 two-step delete put two buttons
+   into the 48px action column — "确认删除" overflowed it and
+   "再想想" wrapped onto a second row spanning the text column. In
+   the confirming state the row collapses to one column and the two
+   actions share their own full-width row. */
+.reading-bookmark-row.is-confirming{grid-template-columns:minmax(0,1fr)}
+.reading-bookmark-confirm{display:flex;gap:8px}
+.reading-bookmark-confirm .reading-bookmark-remove{flex:1;min-width:0}
 .reading-bookmark-remove{min-height:44px;border-radius:12px;background:var(--reader-soft);font-size:.8125rem}
 .reading-bookmark-add{width:100%;min-height:48px;margin-top:16px;border-radius:14px;background:var(--reader-soft);color:var(--reader-accent);font-size:.875rem;font-weight:600}
 .reading-tools-empty{padding:24px 0;text-align:center;color:var(--reader-secondary)}
 .reading-tools-empty .empty-row-art{display:block;width:52px;height:52px;margin:0 auto 10px;border-radius:14px}
 .reading-dialog:has(.reading-preferences){max-height:min(88dvh,850px)}
+/* BUGHUNT-20261106: the settings sheet's controls are painted from
+   the reader-paper palette (--preferences-* derives from --reader-*),
+   but the shell glass rule gave the dialog itself a translucent
+   shell-theme background — body text ghosted through in light paper,
+   and in night/oled paper the near-white text sat on light-grey
+   glass (footer note and reset nearly invisible). The settings
+   dialog takes the solid reader paper instead, so the designed
+   paper/ink pair is what the reader actually sees. Specificity
+   (0,4,0) beats the shell glass rule (0,3,1); the glass tokens
+   themselves are untouched. */
+.page-reader[data-reader-theme] .reading-dialog:has(.reading-preferences){background:var(--reader-surface);color:var(--reader-text);backdrop-filter:none;-webkit-backdrop-filter:none}
 .page-forge .choice-chip,.page-forge .origin-card,.page-forge .tone-card{font-size:.875rem;line-height:1.5}
 .page-forge .ability-card small{font-size:.875rem;line-height:1.7}
 .page-forge .generation-options button{font-size:.875rem;overflow-wrap:anywhere}
