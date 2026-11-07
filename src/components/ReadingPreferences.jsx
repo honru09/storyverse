@@ -39,6 +39,12 @@ export default function ReadingPreferences({ value, onChange, storageWarning }) 
   const markInput = (method) => { inputRef.current = method; setInputMethod(method); };
   const change = (patch) => onChange(patch, { inputMethod: inputRef.current });
   const sizeIndex = READER_FONT_SCALES.indexOf(settings.fontScale);
+  // BUGHUNT-20261107: the stepper has six rungs (…1.125, 1.375…)
+  // but the presets only four — on an in-between rung no preset
+  // read as selected. Highlight the nearest preset instead (ties
+  // fall to the smaller one: the reduce keeps the first minimum),
+  // so the group always shows where the size sits.
+  const nearestPresetSize = SIZE_PRESETS.reduce((best, preset) => (Math.abs(preset.value - settings.fontScale) < Math.abs(best - settings.fontScale) ? preset.value : best), SIZE_PRESETS[0].value);
   const isDefault = Object.keys(DEFAULT_READING_PREFERENCES).every((key) => settings[key] === DEFAULT_READING_PREFERENCES[key]);
   const options = (key, legend, values, className) => <OptionGroup key={key} legend={legend} name={`${id}-${key}`}
     value={settings[key]} options={values} className={className} onChange={(next) => change({ [key]: next })} />;
@@ -72,7 +78,7 @@ export default function ReadingPreferences({ value, onChange, storageWarning }) 
       </div>
       <div className="reading-font-options" role="group" aria-label="选择字号">
         {SIZE_PRESETS.map(({ value: size, label }) => <label className="reading-preference-option" key={size}>
-          <input type="radio" name={`${id}-font-size`} value={size} checked={settings.fontScale === size}
+          <input type="radio" name={`${id}-font-size`} value={size} checked={nearestPresetSize === size}
             onChange={() => change({ fontScale: size })} /><span>{label}</span>
         </label>)}
       </div>

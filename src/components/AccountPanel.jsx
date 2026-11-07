@@ -82,6 +82,11 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       setPassword("");
       setConfirmPassword("");
       setCode("");
+      // BUGHUNT-20261107: the sign-out reset cleared the code but not
+      // the send-code cooldown — the panel stays mounted, so the old
+      // cooldown (up to 60s) kept the send button disabled for the
+      // next account's fresh address.
+      setCooldown(0);
       setAccountId("");
       setRecoveryInfo(null);
       setRecoverySent(false);

@@ -73,5 +73,9 @@ test('bughunt-9: deleting a rating asks first and confirms success', () => {
 
 test('bughunt-10: reader chrome Next mirrors the chapter-end preparing state', () => {
   assert.match(main, /disabled=\{isFinal \|\| \(readOnly && !nextAvailable\) \|\| \(!readOnly && preparing && !nextAvailable\)\}/)
-  assert.match(main, /preparing && !nextAvailable \? "下一章准备中…" : "下一章"/)
+  // BUGHUNT-20261107: the chapter-end button also flips to "重试下一章"
+  // on generationError, and the chrome button now mirrors that third
+  // branch too — the guard's intent (chrome mirrors chapter-end) is
+  // unchanged, only the literal it pins grew by the retry branch.
+  assert.match(main, /preparing && !nextAvailable \? "下一章准备中…" : generationError && !nextAvailable \? "重试下一章" : "下一章"/)
 })

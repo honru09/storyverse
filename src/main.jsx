@@ -1214,15 +1214,19 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
       // Only a book the reader can see right now may be claimed — a
       // search-filtered-out book has no cell to play over, and
       // claiming it would spend the beat invisibly.
-      const q = shelfQuery.trim();
+      // BUGHUNT-20261107: the shelf search is case-insensitive (same
+      // as the store and the share picker) — the claim must use the
+      // same match as the visible list, or a cased query claims a
+      // book the list does not show.
+      const q = shelfQuery.trim().toLowerCase();
       const target = otherStories.find((story) => {
         if (!storyComplete(story) || !peekFinishCelebration(story.id)) return false;
         if (!q) return true;
         const genre = genreOf(story);
-        return story.title.includes(q)
-          || genre.label.includes(q)
-          || (genre.world || "").includes(q)
-          || (story.config?.customWorldName || "").includes(q);
+        return story.title.toLowerCase().includes(q)
+          || genre.label.toLowerCase().includes(q)
+          || (genre.world || "").toLowerCase().includes(q)
+          || (story.config?.customWorldName || "").toLowerCase().includes(q);
       });
       if (target && claimFinishCelebration(target.id)) setFinaleFxId(target.id);
     };
@@ -1247,7 +1251,9 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
   // F-24: a crowded shelf gets search + sort. Recent = last touched
   // first; progress = furthest-read first; title = name order. Search
   // matches the title and the world name.
-  const query = shelfQuery.trim();
+  // BUGHUNT-20261107: the match is case-insensitive, like the store
+  // search and the share picker — the shelf was the last holdout.
+  const query = shelfQuery.trim().toLowerCase();
   // N-03: same-titled books on the shelf carry their distinguisher in
   // the face line, so two identical spines can still be told apart.
   const duplicateShelfTitles = new Set(
@@ -1259,10 +1265,10 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
     .filter((story) => {
       if (!query) return true;
       const genre = genreOf(story);
-      return story.title.includes(query)
-        || genre.label.includes(query)
-        || (genre.world || "").includes(query)
-        || (story.config?.customWorldName || "").includes(query);
+      return story.title.toLowerCase().includes(query)
+        || genre.label.toLowerCase().includes(query)
+        || (genre.world || "").toLowerCase().includes(query)
+        || (story.config?.customWorldName || "").toLowerCase().includes(query);
     })
     .slice()
     .sort((a, b) => {
@@ -2224,6 +2230,7 @@ function ManualBookForm({ onCreate, onCancel }) {
           placeholder="用几句话介绍这本书：它讲什么、谁在里面、会往哪里走。之后在设定集里随时能改。"
           onChange={(event) => setSynopsis(event.target.value)}
         />
+        <small className="da-unit-count" aria-live="polite">{[...(synopsis || "")].length} / {SYNOPSIS_MAX}</small>
       </label>
       <div className="manual-book-more">
         <span className="field-label">题材分类（可不选）</span>
@@ -2758,6 +2765,13 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     });
   };
   const appendFragment = (fragment) => {    const current = (draft.customWorldSetting || "").trim();
+    // BUGHUNT-20261107: the same chip could be tapped again and the
+    // fragment appended a second time with no word at all — a fragment
+    // already in the setting (as a whole sentence) is refused with a note.
+    if (current.split(/[。！？]/).some((part) => part.trim() === fragment.trim())) {
+      setFragmentNote("这条碎片已经加过了。");
+      return;
+    }
     if (current.length >= CUSTOM_WORLD_SETTING_MAX) {
       setFragmentNote("设定已经写满了，先删减一点再加碎片。");
       return;
@@ -3162,6 +3176,10 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
         }}
         placeholder="也可以写一个只属于你的能力"
       />
+      {/* BUGHUNT-20261107: the long-text boxes across forge / settings /
+          the desk had a hard cap and no counter — the cap swallowed
+          characters silently. Each box below gets its x / N count. */}
+      <small className="da-unit-count" aria-live="polite">{[...(customAbility || "")].length} / 40</small>
     </label>
   );
   // The three-way source cards (REQ-57): shown only with an avatar
@@ -3330,6 +3348,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                     onChange={(event) => applyCustomGenreText(event.target.value)}
                     onFocus={() => { if (customGenreInput.trim() && !customGenreActive) applyCustomGenreText(customGenreInput); }}
                   />
+                  <small className="da-unit-count" aria-live="polite">{[...(customGenreInput || "")].length} / {CUSTOM_GENRE_TEXT_MAX}</small>
                   <div className="custom-genre-chips">
                     {["民国谍战", "末世种田", "赛博侦探"].map((example) => (
                       <button type="button" key={example} className="stage-chip" onClick={() => applyCustomGenreText(example)}>
@@ -3704,6 +3723,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                           onChange={(event) => set({ startPointName: event.target.value, startPointHook: "" })}
                           placeholder="例如：醒来的地方——一张草席、一间值班室、一段舰桥"
                         />
+                        <small className="da-unit-count" aria-live="polite">{[...(draft.startPointName || "")].length} / {START_POINT_NAME_MAX}</small>
                       </label>
                       <p className="field-hint">留空也行：出生点由你的背景设定决定。写一个小而具体的地方——主角睁开眼时，就在那里。</p>
                       {borrowPoints.length > 0 ? (
@@ -3781,6 +3801,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                                 : { startPointName: event.target.value, startPointHook: "", startPointCustom: true })}
                               placeholder="例如：醒来的地方——一张草席、一间值班室、一段舰桥"
                             />
+                            <small className="da-unit-count" aria-live="polite">{[...(draft.startPointName || "")].length} / {START_POINT_NAME_MAX}</small>
                           </label>
                           <label className="field-label">
                             开局处境（选填）
@@ -3793,6 +3814,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                                 : { startPointName: "", startPointHook: event.target.value, startPointCustom: true })}
                               placeholder="睁开眼时，正在发生什么"
                             />
+                            <small className="da-unit-count" aria-live="polite">{[...(draft.startPointHook || "")].length} / {START_POINT_HOOK_MAX}</small>
                           </label>
                           <p className="field-hint">写一个小而具体的地方——主角睁开眼时，就在那里。只管这一本，不会改掉预设。</p>
                         </div>
@@ -3899,6 +3921,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                       value={cardPreview.name}
                       onChange={(event) => setCardPreview((current) => ({ ...current, name: event.target.value }))}
                     />
+                    <small className="da-unit-count" aria-live="polite">{[...(cardPreview.name || "")].length} / 40</small>
                   </label>
                   <label className="field-label">
                     主角设定（卡上的描述与性格，可以改）
@@ -3908,6 +3931,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                       value={cardPreview.persona}
                       onChange={(event) => setCardPreview((current) => ({ ...current, persona: event.target.value }))}
                     />
+                    <small className="da-unit-count" aria-live="polite">{[...(cardPreview.persona || "")].length} / {PERSONA_MAX}</small>
                   </label>
                   {cardPreview.book && (
                     <p className="field-hint">这张卡还带着一本自己的世界书（{cardPreview.book.entries.length} 条条目）——点「用这张卡」会一并挂到这本书上，只属于你，不会出现在广场。开书后在阅读器的「设定集」里能看和改。</p>
@@ -3930,6 +3954,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                     onChange={(event) => set({ name: event.target.value })}
                     placeholder="取一个名字"
                   />
+                  <small className="da-unit-count" aria-live="polite">{[...(draft.name || "")].length} / 40</small>
                 </label>
                 {/* BUGHUNT-20261101-SUPP: this box used to render only
                     while persona was non-empty, so clearing the text
@@ -3945,6 +3970,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                     onChange={(event) => set({ persona: event.target.value })}
                     placeholder="这个人是谁、什么性格、带着什么处境走进故事"
                   />
+                  <small className="da-unit-count" aria-live="polite">{[...(draft.persona || "")].length} / {PERSONA_MAX}</small>
                 </label>
                 {/* FORGE-TRIM: with an avatar brought in, this whole
                     section steps aside — the avatar's own profile (its
@@ -3966,6 +3992,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                       placeholder="写下主角的性格，或点下面一条填入"
                       onChange={(event) => { setPickedTrait(true); set({ trait: event.target.value }); }}
                     />
+                    <small className="da-unit-count" aria-live="polite">{[...(draft.trait || "")].length} / 80</small>
                     <div className="trait-suggestions">
                       {traitBatch.map((entry) => (
                         <button
@@ -4019,6 +4046,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                           }
                           placeholder="例如：一座海边城市"
                         />
+                        <small className="da-unit-count" aria-live="polite">{[...(draft.hometown || "")].length} / 80</small>
                       </label>
                       <label className="field-label">
                         学习的地方（选填）
@@ -4030,6 +4058,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                           }
                           placeholder="例如：一所沿海学校"
                         />
+                        <small className="da-unit-count" aria-live="polite">{[...(draft.school || "")].length} / 80</small>
                       </label>
                       <label className="field-label">
                         做过的工作（选填）
@@ -4041,6 +4070,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                           }
                           placeholder="例如：档案员"
                         />
+                        <small className="da-unit-count" aria-live="polite">{[...(draft.role || "")].length} / 80</small>
                       </label>
                       <label className="field-label">
                         工作过的地方（选填）
@@ -4052,6 +4082,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                           }
                           placeholder="例如：一间档案馆"
                         />
+                        <small className="da-unit-count" aria-live="polite">{[...(draft.company || "")].length} / 80</small>
                       </label>
                       <label className="field-label">
                         重要的人（昵称，选填）
@@ -4063,6 +4094,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                           }
                           placeholder="写一个昵称或虚构名字"
                         />
+                        <small className="da-unit-count" aria-live="polite">{[...(draft.friend || "")].length} / 40</small>
                       </label>
                     </div>
                   )}
@@ -5066,7 +5098,12 @@ function ProseEditor({ chapter, onClose, onSave }) {
       setError("正文不能为空，至少留下一段。");
       return;
     }
-    onSave(cleaned);
+    // BUGHUNT-20261107: onSave returns a human error string (or
+    // null) like the other save handlers — a failed save keeps the
+    // editor open with the error inside it, instead of closing the
+    // editor and dropping the draft.
+    const failure = onSave(cleaned);
+    if (failure) setError(failure);
   };
   return (
     <ReadingDialog title="编辑正文 · 本章" onClose={onClose}>
@@ -5155,6 +5192,7 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
   const [tocEditing, setTocEditing] = useState(false);
   const [tocTitles, setTocTitles] = useState(() => tocChapters.map((chapter) => chapter.title));
   const [tocError, setTocError] = useState("");
+  const [loreError, setLoreError] = useState("");
   const saveSynopsis = () => {
     const error = onSaveSynopsis ? onSaveSynopsis(synopsis) : "简介没能保存，请再试一次。";
     if (error) {
@@ -5225,7 +5263,19 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
       ...list,
       { id: `lore-${Date.now().toString(36)}-${list.length}`, name: "", keys: [], content: "", constant: false, enabled: true, source: "manual" },
     ]);
-  const save = () =>
+  const save = () => {
+    // BUGHUNT-20261107: entries with a name/keys but no content
+    // used to be filtered out silently on save — the typed name and
+    // keys vanished with no word. Refuse the save and name the
+    // entry, so nothing typed is ever lost without being told.
+    const empty = entries.findIndex((entry) => !(entry.content || "").trim() && ((entry.name || "").trim() || (entry.keys || []).length > 0));
+    if (empty >= 0) {
+      const entry = entries[empty];
+      const name = (entry.name || "").trim();
+      setLoreError(`第 ${empty + 1} 条${name ? `「${name}」` : ""}还没有写内容，写上内容或删掉这条再保存。`);
+      return;
+    }
+    setLoreError("");
     onSave({
       worldBible: {
         premise: premise.trim(),
@@ -5237,6 +5287,7 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
         .map((entry) => ({ ...entry, name: (entry.name || "").trim() })),
       stylePreset,
     });
+  };
   return (
     <ReadingDialog title="设定集" onClose={onClose}>
       <p className="field-hint">
@@ -5317,6 +5368,7 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
             placeholder="用几句话介绍这本书：它讲什么、谁在里面、会往哪里走。"
             onChange={(event) => { setSynopsis(event.target.value); setSynopsisSaved(false); }}
           />
+          <small className="da-unit-count" aria-live="polite">{[...(synopsis || "")].length} / {SYNOPSIS_MAX}</small>
         </label>
         {synopsisError && (
           <p className="intervention-error" role="alert">
@@ -5346,6 +5398,7 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
             placeholder="这个世界是什么样子，主角身处其中的什么位置。"
             onChange={(event) => { setIntroBackground(event.target.value); setIntroSaved(false); }}
           />
+          <small className="da-unit-count" aria-live="polite">{[...(introBackground || "")].length} / {INTRO_BACKGROUND_MAX}</small>
         </label>
         <label className="field-label">
           核心规则（一行一条，最多三条）
@@ -5357,6 +5410,7 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
             placeholder="这本书自己的规矩：能力怎么用、代价是什么。"
             onChange={(event) => { setIntroRulesText(event.target.value); setIntroSaved(false); }}
           />
+          <small className="da-unit-count" aria-live="polite">{[...(introRulesText || "")].length} / {INTRO_RULES_MAX * (INTRO_RULE_MAX + 1)}</small>
         </label>
         <label className="field-label">
           主角与主线
@@ -5368,6 +5422,7 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
             placeholder="主角的处境、目标、对手与代价，这条线具体怎么走。"
             onChange={(event) => { setIntroThread(event.target.value); setIntroSaved(false); }}
           />
+          <small className="da-unit-count" aria-live="polite">{[...(introThread || "")].length} / {INTRO_THREAD_MAX}</small>
         </label>
         {introError && (
           <p className="intervention-error" role="alert">
@@ -5412,6 +5467,7 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
         <label className="field-label">
           世界核心
           <textarea rows={4} maxLength={1000} value={premise} onChange={(event) => setPremise(event.target.value)} />
+          <small className="da-unit-count" aria-live="polite">{[...(premise || "")].length} / 1000</small>
         </label>
         <span className="field-label">世界规则</span>
         {rules.map((rule, position) => (
@@ -5425,6 +5481,7 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
                 setRules((list) => list.map((item, index) => (index === position ? event.target.value : item)))
               }
             />
+            <small className="da-unit-count" aria-live="polite">{[...(rule || "")].length} / 600</small>
             <button
               type="button"
               className="small-link"
@@ -5442,6 +5499,7 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
         <label className="field-label">
           终局锚点
           <textarea rows={3} maxLength={1000} value={endingAnchor} onChange={(event) => setEndingAnchor(event.target.value)} />
+          <small className="da-unit-count" aria-live="polite">{[...(endingAnchor || "")].length} / 1000</small>
         </label>
         {outline.length > 0 && (
           <>
@@ -5470,10 +5528,16 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
                 <input
                   value={tocTitles[position] ?? ""}
                   aria-label={`第 ${position + 1} 章标题`}
+                  maxLength={CHAPTER_TITLE_MAX}
                   onChange={(event) =>
                     setTocTitles((list) => list.map((title, index) => (index === position ? event.target.value : title)))
                   }
                 />
+                {/* BUGHUNT-20261107: this box had no cap and no count,
+                    while the reader's directory drawer (same titles,
+                    same save) caps at 30 with an x / 30 count — a
+                    31+ character title only failed at save time. */}
+                <span className="da-count" aria-live="polite">{(tocTitles[position] ?? "").trim().length} / {CHAPTER_TITLE_MAX}</span>
               </label>
             ))}
             {tocError && (
@@ -5547,6 +5611,7 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
                 删除
               </button>
             </div>
+            <small className="da-unit-count" aria-live="polite">{[...(entry.name || "")].length} / 60</small>
             <input
               value={(entry.keys || []).join("、")}
               placeholder="触发关键词（逗号分隔，例如：潮汐税、税吏）"
@@ -5565,6 +5630,7 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
               aria-label={`条目 ${position + 1} 内容`}
               onChange={(event) => patchEntry(position, { content: event.target.value })}
             />
+            <small className="da-unit-count" aria-live="polite">{[...(entry.content || "")].length} / 2000</small>
             <div className="lore-entry-toggles">
               <button
                 type="button"
@@ -5635,6 +5701,11 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
             删除这本书
           </Button>
         </div>
+      )}
+      {loreError && (
+        <p className="intervention-error" role="alert">
+          {loreError}
+        </p>
       )}
       <div className="reading-dialog-actions">
         {!manual && <Button onClick={save}>保存设定集</Button>}
@@ -6114,15 +6185,18 @@ function Reader({
     try {
       const next = updateChapterProse(story, index, paragraphs);
       if (next === story) {
-        setProseOpen(false);
-        setError("这一章已经定稿，不能再改了。");
-        return;
+        // BUGHUNT-20261107: a failed save used to close the editor
+        // first and report after — the whole draft was lost and the
+        // only trace was a line at the top of the reader. Return the
+        // error instead; the editor stays open with the draft intact
+        // (the author can trim it down or copy it out first).
+        return "这一章已经定稿，不能再改了。";
       }
       update(next);
       setProseOpen(false);
+      return null;
     } catch (failure) {
-      setProseOpen(false);
-      setError(failure.message || "正文没能保存。");
+      return failure.message || "正文没能保存。";
     }
   };
   // 介入： the nudge is queued against the next unread chapter — never the
@@ -6716,8 +6790,12 @@ function Reader({
               >
                 {/* BUGHUNT-20261031: same preparing state as the
                     chapter-end button — the chrome button used to
-                    stay live and swallow repeat taps in silence. */}
-                {preparing && !nextAvailable ? "下一章准备中…" : "下一章"}
+                    stay live and swallow repeat taps in silence.
+                    BUGHUNT-20261107: the chapter-end button also
+                    flips to "重试下一章" on generationError — the
+                    chrome button kept saying "下一章". Same
+                    three-way copy. */}
+                {preparing && !nextAvailable ? "下一章准备中…" : generationError && !nextAvailable ? "重试下一章" : "下一章"}
               </button>
             </div>
             <div className="reader-chrome-grid" role="group" aria-label="阅读工具栏">
@@ -9588,6 +9666,10 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
               onBlur={() => void checkHandle()}
               placeholder="小写字母、数字、下划线"
             />
+            {/* BUGHUNT-20261107: the same sheet's display name and bio
+                both show a counter — the @ID box (maxLength 20) had
+                none, so the 21st character vanished silently. */}
+            <small className="profile-edit-bio-count" aria-live="polite">{handle.length} / 20</small>
             {handleState && (
               <small className={`profile-edit-handle-state ${handleState.available === true ? "is-ok" : handleState.available === false ? "is-bad" : ""}`}>
                 {handleState.message}
@@ -10744,6 +10826,11 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
         ...current,
         people: current.people.map((row) => (row.uid === person.uid ? { ...row, isFollowing: result.following } : row)),
       } : current);
+      // BUGHUNT-20261107: the list rows landed follow and unfollow
+      // with no word either way (the top-bar row got its unfollow
+      // note in 20261103; the list rows never did). Say it, like
+      // every other action.
+      setNote(result.following ? "已关注。" : "已取消关注。");
       // The page's own counts move with the list: following someone
       // from the 关注/粉丝 list changes this profile's following count
       // only when this profile is the viewer's own page.
@@ -11831,6 +11918,7 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
                       onChange={(event) => setEnterCustomAbility(event.target.value)}
                       placeholder="也可以写一个只属于你的能力"
                     />
+                    <small className="da-unit-count" aria-live="polite">{[...(enterCustomAbility || "")].length} / 40</small>
                   </label>
                 )}
               </>
@@ -12717,6 +12805,22 @@ function WriteDesk({ story, onUpdateStory, onNavigate }) {
     }
   }, [onUpdateStory]);
 
+  // BUGHUNT-20261107: commitDraft() hands the draft to the parent
+  // through state, so storyRef.current still holds the pre-commit
+  // book until the next render — a delete/move computed from the ref
+  // in the same tick would strand the draft. Flush the draft into a
+  // local book first and work from that (throws on validation
+  // failure, like commitDraft's false).
+  const bookWithDraft = () => {
+    const book = storyRef.current;
+    if (!dirtyRef.current) return book;
+    const index = selectedRef.current;
+    if (!book.chapters?.[index]) { dirtyRef.current = false; return book; }
+    const next = updateManualChapter(book, index, { title: draftRef.current.title, text: draftRef.current.text });
+    dirtyRef.current = false;
+    return next;
+  };
+
   // Autosave: a short quiet beat after the last keystroke.
   useEffect(() => {
     if (!dirtyRef.current) return undefined;
@@ -12753,22 +12857,47 @@ function WriteDesk({ story, onUpdateStory, onNavigate }) {
   };
   const deleteChapter = (index) => {
     try {
-      const next = removeManualChapter(storyRef.current, index);
-      dirtyRef.current = false;
+      const wasSelected = selectedRef.current;
+      // BUGHUNT-20261107: deleting used to leave the editor pointing
+      // at the old index — the next autosave then overwrote the
+      // neighbour chapter now sitting there, and a draft from the
+      // last 700ms was silently dropped (dirtyRef cleared first).
+      // Land the draft before indices shift (unless the chapter
+      // being edited is the one being deleted), then follow the
+      // selected chapter to its new index and reload the editor.
+      const base = index === wasSelected ? storyRef.current : bookWithDraft();
+      const next = removeManualChapter(base, index);
       onUpdateStory?.(next);
       setConfirmDelete(-1);
-      setSelected((current) => Math.max(0, Math.min(current, next.chapters.length - 1)));
+      const newSelected = index < wasSelected
+        ? wasSelected - 1
+        : Math.max(0, Math.min(wasSelected, next.chapters.length - 1));
+      dirtyRef.current = false;
+      setSelected(newSelected);
+      loadChapter(next, newSelected);
     } catch (failure) {
       setDeskError(failure.message || "这一章没能删掉，请再试一次。");
     }
   };
   const moveChapter = (index, delta) => {
-    if (!commitDraft()) return;
     const target = index + delta;
     try {
-      const next = moveManualChapter(storyRef.current, index, target);
-      if (next !== storyRef.current) onUpdateStory?.(next);
-      if (selected === index) setSelected(target);
+      const wasSelected = selectedRef.current;
+      // BUGHUNT-20261107: same index-drift as delete — moving a
+      // chapter across the selected one left the editor on the old
+      // index, so the next autosave overwrote the wrong chapter.
+      // Land the draft first, then follow the selected chapter to
+      // its new index (it moves with its chapter, and shifts when
+      // a chapter crosses it) and reload the editor onto it.
+      const base = bookWithDraft();
+      const next = moveManualChapter(base, index, target);
+      if (next !== base) onUpdateStory?.(next);
+      let newSelected = wasSelected;
+      if (wasSelected === index) newSelected = target;
+      else if (index < wasSelected && wasSelected <= target) newSelected = wasSelected - 1;
+      else if (target <= wasSelected && wasSelected < index) newSelected = wasSelected + 1;
+      setSelected(newSelected);
+      loadChapter(next, newSelected);
     } catch (failure) {
       setDeskError(failure.message || "章节没能移动，请再试一次。");
     }
@@ -12892,6 +13021,7 @@ function WriteDesk({ story, onUpdateStory, onNavigate }) {
               placeholder={`第 ${selected + 1} 章`}
               onChange={(event) => { dirtyRef.current = true; setDraftTitle(event.target.value); }}
             />
+            <small className="da-unit-count" aria-live="polite">{[...(draftTitle || "")].length} / {CHAPTER_TITLE_MAX}</small>
           </label>
           <label className="field-label">
             正文
