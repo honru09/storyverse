@@ -67,7 +67,12 @@ test('bughunt-5: changing the identifier clears the old code and its cooldown', 
   const fnAt = panel.indexOf('const changeAccountId')
   const fn = panel.slice(fnAt, panel.indexOf('const run', fnAt))
   assert.match(fn, /setCode\(""\)/)
-  assert.match(fn, /setCooldown\(0\)/)
+  // BUGHUNT-20261108: the single cooldown split into per-channel
+  // login/recovery cooldowns — changing the identifier clears both,
+  // so neither channel's old cooldown can bind the new identifier.
+  assert.match(fn, /setLoginCooldown\(0\)/)
+  assert.match(fn, /setRecoveryCooldown\(0\)/)
+  assert.doesNotMatch(fn, /setCooldown\(0\)/)
 })
 
 test('bughunt-6: unread is only cleared after dwelling on the tab', () => {

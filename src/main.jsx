@@ -44,7 +44,7 @@ import {
 } from "./cover.js";
 import { downloadText } from "./downloads.js";
 import { drawPersonalityTraits, personalityTraitText } from "./personality-traits.js";
-import { drawInspirationFragments } from "./inspiration-fragments.js";
+import { drawInspirationFragments, fragmentAlreadyAdded } from "./inspiration-fragments.js";
 import {
   AVATAR_LIMIT,
   AVATAR_PRESETS,
@@ -235,6 +235,7 @@ import {
   isFrontierChapter,
   replaceFrontierChapter,
   updateChapterProse,
+  CHAPTER_PROSE_PARAGRAPH_MAX,
   updateLorebook,
   updateStylePreset,
   updateWorldBible,
@@ -312,6 +313,8 @@ import {
   decodeImportText,
   leadingExcerpt,
   LOREBOOK_CONSTANT_MAX,
+  LOREBOOK_KEY_MAX,
+  LOREBOOK_KEYS_MAX,
   normalizeLorebookEntries,
   parseCharacterCardJson,
   parseCharacterCardPng,
@@ -1933,6 +1936,11 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
                     onChange={(event) => setAbilityCustomName(event.target.value)}
                     placeholder="给这个能力取个名字"
                   />
+                  {/* BUGHUNT-20261108: the name/description boxes on this
+                      same form count (20261103 #7); these two capped
+                      boxes did not, so the 41st/121st keystroke vanished
+                      silently. Same da-count line as the siblings. */}
+                  <small className="da-count" aria-live="polite">{abilityCustomName.length} / 40</small>
                 </label>
                 <label className="field-label">
                   它能做到什么
@@ -1944,6 +1952,7 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
                     onChange={(event) => setAbilityCustomDesc(event.target.value)}
                     placeholder="一句话写清效果和边界"
                   />
+                  <small className="da-count" aria-live="polite">{abilityCustomDesc.length} / 120</small>
                 </label>
                 <div className="avatar-ability-actions">
                   <button type="button" className="small-link" disabled={busy} onClick={applyAbilityCustom}>
@@ -2768,7 +2777,10 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     // BUGHUNT-20261107: the same chip could be tapped again and the
     // fragment appended a second time with no word at all — a fragment
     // already in the setting (as a whole sentence) is refused with a note.
-    if (current.split(/[。！？]/).some((part) => part.trim() === fragment.trim())) {
+    // BUGHUNT-20261108: the 20261107 check compared split parts (their
+    // 。！？ stripped) against the fragment WITH its trailing punctuation,
+    // so it never fired — see fragmentAlreadyAdded.
+    if (fragmentAlreadyAdded(current, fragment)) {
       setFragmentNote("这条碎片已经加过了。");
       return;
     }
@@ -4528,16 +4540,37 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
   // pin and say nothing — the row stayed, the tap looked ignored,
   // and the reader could not tell a failure from a missed tap.
   const [decideError, setDecideError] = useState("");
+  // BUGHUNT-20261108: a decided row used to stay on screen with live
+  // buttons until the refetch landed — a second tap in that window hit
+  // the server's once-only rule and reported a false failure.
+  const [decideNote, setDecideNote] = useState("");
   const decideFusion = async (item, approve) => {
     if (!item.requestId || decidingId) return;
     setDecidingId(item.requestId);
     setDecideError("");
+    setDecideNote("");
     try {
       await decideFusionRequest({ requestId: item.requestId, approve, getAccessToken: getToken });
       // BUGHUNT-20261102: only the failure path used to clear the pin,
       // so after one successful decision every other row stayed grey
       // until the panel was closed and reopened.
       setDecidingId("");
+      // Drop the row at once (the refetch below reconciles the rest,
+      // as the friends panel already does for accept/decline) and say
+      // the decision landed, so the window before the refetch cannot
+      // be re-tapped into a false failure.
+      setData((current) => {
+        if (!current?.categories?.activity) return current;
+        const activity = current.categories.activity;
+        return {
+          ...current,
+          categories: {
+            ...current.categories,
+            activity: { ...activity, items: (activity.items || []).filter((row) => row.requestId !== item.requestId) },
+          },
+        };
+      });
+      setDecideNote(approve ? "已同意这次合流申请。" : "已拒绝这次合流申请。");
       setRetry((value) => value + 1);
     } catch {
       setDecidingId("");
@@ -4607,6 +4640,7 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
         })}
       </div>
       {decideError && <p className="plaza-thread-error" role="alert">{decideError}</p>}
+      {decideNote && <p className="plaza-note" role="status">{decideNote}</p>}
       {/* BUGHUNT-20261106: a failed reload used to swap the whole
           panel for the error page even when a list was already on
           screen — same family as the friends panel fixed in
@@ -5110,24 +5144,43 @@ function ProseEditor({ chapter, onClose, onSave }) {
       <p className="field-hint">
         这是你正在读的最新章节——现在改还来得及。改动保存后就是这本书的正文，后面的章节会接着你改过的文字往下写；翻开下一章，这一章就此定稿，再不能改。
       </p>
-      {paragraphs.map((paragraph, position) => (
-        <div className="prose-editor-row" key={position}>
-          <textarea
-            rows={Math.min(10, Math.max(2, Math.ceil((paragraph.length || 1) / 36)))}
-            maxLength={4000}
-            value={paragraph}
-            aria-label={`正文第 ${position + 1} 段`}
-            onChange={(event) => patchParagraph(position, event.target.value)}
-          />
-          <button
-            type="button"
-            className="small-link"
-            onClick={() => setParagraphs((list) => list.filter((_, index) => index !== position))}
-          >
-            删除这段
-          </button>
-        </div>
-      ))}
+      {paragraphs.map((paragraph, position) => {
+        const length = [...paragraph].length;
+        // BUGHUNT-20261108: a paragraph capped at 4000 with no counter —
+        // typing or pasting past the cap vanished silently (maxLength),
+        // and a model-grown paragraph already past the cap lost its tail
+        // on the first keystroke. Show the count once the paragraph is
+        // near the cap (a per-paragraph count on every row is layout
+        // noise — 20261107's call), and say so out loud at the cap.
+        const nearLimit = length >= CHAPTER_PROSE_PARAGRAPH_MAX - 400;
+        const atLimit = length >= CHAPTER_PROSE_PARAGRAPH_MAX;
+        return (
+          <div className="prose-editor-row" key={position}>
+            <textarea
+              rows={Math.min(10, Math.max(2, Math.ceil((paragraph.length || 1) / 36)))}
+              maxLength={CHAPTER_PROSE_PARAGRAPH_MAX}
+              value={paragraph}
+              aria-label={`正文第 ${position + 1} 段`}
+              onChange={(event) => patchParagraph(position, event.target.value)}
+            />
+            {nearLimit && (
+              <small className={`da-unit-count${atLimit ? " is-over" : ""}`} aria-live="polite">
+                {length} / {CHAPTER_PROSE_PARAGRAPH_MAX}
+              </small>
+            )}
+            {atLimit && (
+              <small className="prose-limit-note" role="status">已到 {CHAPTER_PROSE_PARAGRAPH_MAX} 字上限，多出的文字没有写进去。</small>
+            )}
+            <button
+              type="button"
+              className="small-link"
+              onClick={() => setParagraphs((list) => list.filter((_, index) => index !== position))}
+            >
+              删除这段
+            </button>
+          </div>
+        );
+      })}
       <button
         type="button"
         className="small-link"
@@ -5622,6 +5675,16 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
                 })
               }
             />
+            {/* BUGHUNT-20261108: the keys box had no cap and no count —
+                saving sliced any key past 40 chars and dropped the 13th
+                key onward (lorebook.js), with nothing said. The count
+                shows n / 12 and turns red past it; an overlong key gets
+                its own warning before save. The sibling name/content
+                boxes already count this way. */}
+            <small className={`da-unit-count${(entry.keys || []).length > LOREBOOK_KEYS_MAX ? " is-over" : ""}`} aria-live="polite">{(entry.keys || []).length} / {LOREBOOK_KEYS_MAX}</small>
+            {(entry.keys || []).some((key) => [...key].length > LOREBOOK_KEY_MAX) && (
+              <small className="lore-key-warning" role="status">有个关键词超过 {LOREBOOK_KEY_MAX} 字，保存时只会留下前 {LOREBOOK_KEY_MAX} 字。</small>
+            )}
             <textarea
               rows={3}
               maxLength={2000}
@@ -7172,7 +7235,13 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
     if (storeLoadedRef.current) setRefreshing(true);
     fetchStoreBooks({ shelfId: shelf, kind, sort, q: debouncedQuery, limit: 60 })
       .then((result) => { if (live) { setData(result); setRefreshing(false); storeLoadedRef.current = true; } })
-      .catch(() => { if (live) { setData({ books: [], total: 0 }); setError("书城暂时没能打开，请稍后再试。"); setRefreshing(false); storeLoadedRef.current = true; } });
+      .catch(() => { if (live) { setError("书城暂时没能打开，请稍后再试。"); setRefreshing(false); storeLoadedRef.current = true; } });
+    // BUGHUNT-20261108: a failed reload used to wipe the books just on
+    // screen (setData to empty) and swap the whole grid for the error
+    // page — same family as the friends panel (20261101-SUPP) and the
+    // message centre (20261106 #4), both already fixed. Keep the data;
+    // the render below shows the error as a banner above the kept list,
+    // and the full-page error only when there is nothing to keep.
     return () => { live = false; };
   }, [shelf, kind, sort, debouncedQuery, retry]);
 
@@ -7266,7 +7335,8 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
         </div>
       </div>
 
-      {error && (
+      {error && data && <p className="plaza-thread-error" role="alert">{error} <button type="button" className="small-link" onClick={() => setRetry((value) => value + 1)}>再试一次</button></p>}
+      {error && !data && (
         <div className="plaza-empty" role="alert">
           <p>{error}</p>
           <Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>再试一次</Button>
@@ -7674,7 +7744,13 @@ function PlazaCommentThread({ post, account, authClient, onOpenAccount, onCountC
           <span className="da-skel da-skel--line" style={{ width: "79%" }} aria-hidden="true" />
         </div>
       )}
-      {comments !== null && comments.length === 0 && (
+      {/* BUGHUNT-20261108: the empty state used to render on a failed
+          load too (the catch empties the list), so a dead comment
+          section claimed "no comments yet" right above its own error
+          line — same family as the share picker's empty-vs-no-match
+          fix (20261105 #8) and the store's empty-vs-failed fix
+          (20261030 #5). Only a clean empty load is empty. */}
+      {comments !== null && comments.length === 0 && !error && (
         <p className="plaza-thread-empty"><img className="empty-row-art" src="/art/empty-comments-512.webp" alt="" loading="lazy" />暂无评论，来发表第一条看法吧。</p>
       )}
       {comments !== null && comments.length > 0 && (
@@ -7905,7 +7981,11 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
     } catch {
       setNote("这条帖子没能删掉，请稍后再试。");
       setBusy(false);
-      setConfirmingDelete(false);
+      // BUGHUNT-20261108: the failure path used to close the confirm
+      // box too, so retrying meant reopening ⋯ and confirming all over
+      // again. Keep the box open — the button is live again (busy is
+      // false) and the note above says what happened, like a failed
+      // comment delete keeps its confirm state.
     }
   };
 
@@ -8716,6 +8796,12 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  // BUGHUNT-20261108: the detail load effect has a live guard, but the
+  // post-rating refetch below had none — rate on book A, jump to book B
+  // before it lands, and A's response overwrote B. Track the current id
+  // (same shape as the ratings section's bookIdRef guard, 20261102 #7).
+  const idRef = useRef(id);
+  idRef.current = id;
   const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   // PIXELFX-WAVE2 (§60): a whisper-quiet ambient loop inside the
@@ -9087,7 +9173,7 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         authClient={authClient}
         onOpenAccount={onOpenAccount}
         onOpenProfile={onOpenProfile}
-        onRated={() => { fetchPlazaDetail({ id }).then((next) => setDetail(next)).catch(() => {}); }}
+        onRated={() => { const wanted = id; fetchPlazaDetail({ id: wanted }).then((next) => { if (idRef.current === wanted) setDetail(next); }).catch(() => {}); }}
       />
 
       {shareOpen && (

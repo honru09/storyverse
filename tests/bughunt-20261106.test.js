@@ -116,12 +116,15 @@ test('bughunt-9: accepting a friend request patches the friends list and count t
 })
 
 test('bughunt-10: a successful code resend clears the box, so the voided old code cannot be submitted', () => {
+  // BUGHUNT-20261108: the single cooldown split into per-channel
+  // login/recovery cooldowns — the resend still clears the box, and
+  // each channel now times its own 60s. Same intent, new names.
   const resendAt = panel.indexOf('BUGHUNT-20261106: the server issues a fresh code')
   assert.ok(resendAt > 0)
   const resend = panel.slice(resendAt, resendAt + 400)
-  assert.match(resend, /await client\.usernameRecoveryStart\(identifier\); setRecoveryCode\(""\); setCooldown\(60\);/)
+  assert.match(resend, /await client\.usernameRecoveryStart\(identifier\); setRecoveryCode\(""\); setRecoveryCooldown\(60\);/)
   const sendAt = panel.indexOf('BUGHUNT-20261106: same staleness as resendRecoveryCode')
   assert.ok(sendAt > 0)
   const send = panel.slice(sendAt, sendAt + 400)
-  assert.match(send, /await client\.requestEmailCode\(identifier\); setCode\(""\); setCooldown\(60\);/)
+  assert.match(send, /await client\.requestEmailCode\(identifier\); setCode\(""\); setLoginCooldown\(60\);/)
 })

@@ -119,3 +119,16 @@ export function drawInspirationFragments(count = 4, random = Math.random) {
   }
   return drawn
 }
+
+// BUGHUNT-20261108: the dedup used to split the setting on 。！？ and
+// compare each part against the fragment WITH its trailing punctuation
+// still on — the two sides could never be equal, so the check was dead
+// for all 89 fragments ending in 。！？ and the chip appended twice
+// silently. A fragment is appended verbatim (joined with 。 when the
+// setting does not already end in one), so containment is the exact
+// test: if the setting already holds this sentence, it is a repeat.
+export function fragmentAlreadyAdded(setting, fragment) {
+  const needle = typeof fragment === "string" ? fragment.trim() : ""
+  if (!needle) return false
+  return (setting || "").includes(needle)
+}

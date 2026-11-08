@@ -49,7 +49,13 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [code, setCode] = useState("");
-  const [cooldown, setCooldown] = useState(0);
+  // BUGHUNT-20261108: the login-code and recovery-code channels used to
+  // share one 60s client cooldown — a code sent on one channel locked
+  // the other's resend button for up to a minute, although the server
+  // throttles per recipient address (server/email-code.js) and the two
+  // channels never share one. Each channel now times its own cooldown.
+  const [loginCooldown, setLoginCooldown] = useState(0);
+  const [recoveryCooldown, setRecoveryCooldown] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState("");
   const [pending, setPending] = useState(false);
@@ -83,10 +89,11 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       setConfirmPassword("");
       setCode("");
       // BUGHUNT-20261107: the sign-out reset cleared the code but not
-      // the send-code cooldown — the panel stays mounted, so the old
-      // cooldown (up to 60s) kept the send button disabled for the
+      // the send-code cooldowns — the panel stays mounted, so the old
+      // cooldowns (up to 60s) kept the send buttons disabled for the
       // next account's fresh address.
-      setCooldown(0);
+      setLoginCooldown(0);
+      setRecoveryCooldown(0);
       setAccountId("");
       setRecoveryInfo(null);
       setRecoverySent(false);
@@ -155,10 +162,13 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
   const error = localError || account.error;
   const usage = account.user ? account.usage : null;
   useEffect(() => {
-    if (cooldown <= 0) return undefined;
-    const timer = window.setTimeout(() => setCooldown((value) => Math.max(0, value - 1)), 1000);
+    if (loginCooldown <= 0 && recoveryCooldown <= 0) return undefined;
+    const timer = window.setTimeout(() => {
+      if (loginCooldown > 0) setLoginCooldown((value) => Math.max(0, value - 1));
+      if (recoveryCooldown > 0) setRecoveryCooldown((value) => Math.max(0, value - 1));
+    }, 1000);
     return () => window.clearTimeout(timer);
-  }, [cooldown]);
+  }, [loginCooldown, recoveryCooldown]);
   // A request that is still running after a few seconds says so out
   // loud (N-01): a bare 「正在处理…」 with no explanation reads as a
   // hang on slow networks, so the wait gets words while it lasts.
@@ -183,7 +193,7 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
   // typed for A (masked, easy to miss) while clearing the recovery
   // code — the panel must never act on a previous name's state, so
   // the password goes too.
-  const changeAccountId = (value) => { setAccountId(value); setRecoveryInfo(null); setRecoverySent(false); setRecoveryCode(""); setCode(""); setCooldown(0); setNewPassword(""); };
+  const changeAccountId = (value) => { setAccountId(value); setRecoveryInfo(null); setRecoverySent(false); setRecoveryCode(""); setCode(""); setLoginCooldown(0); setRecoveryCooldown(0); setNewPassword(""); };
   const run = async (operation) => {
     if (inFlight.current || account.busy) return;
     inFlight.current = true;
@@ -214,7 +224,7 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
       if (!usernameAvailable) { setLocalError(`用户名登录还没开通。${alternativeLoginText("username")}`); return; }
       if (resetStage === "code") { void run(() => client.usernameRecoveryReset(identifier, recoveryCode, newPassword)); return; }
       if (resetStage === "send") {
-        void run(async () => { await client.usernameRecoveryStart(identifier); setRecoverySent(true); setCooldown(60); });
+        void run(async () => { await client.usernameRecoveryStart(identifier); setRecoverySent(true); setRecoveryCooldown(60); });
         return;
       }
       if (resetStage === "info") return;
@@ -235,12 +245,12 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
     void run(() => activeMode === "register" ? client.registerWithUsername(identifier, password, recoveryEmail) : client.signInWithUsername(identifier, password));
   };
   const resendRecoveryCode = () => {
-    if (busy || cooldown > 0) return;
+    if (busy || recoveryCooldown > 0) return;
     // BUGHUNT-20261106: the server issues a fresh code on every resend
     // past cooldown, voiding the old one — leaving the old code in the
     // box guaranteed a rejection on submit. Clear it on success, so
     // only the new code can be sent.
-    void run(async () => { await client.usernameRecoveryStart(identifier); setRecoveryCode(""); setCooldown(60); });
+    void run(async () => { await client.usernameRecoveryStart(identifier); setRecoveryCode(""); setRecoveryCooldown(60); });
   };
   const submitRecoveryBinding = (event) => {
     event.preventDefault();
@@ -255,11 +265,11 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
     // BUGHUNT-20261031: an empty mailbox used to fire the request and
     // lean on the server error to say so — the button now stays
     // disabled until an address is typed, like the form's own submit.
-    if (!codeAvailable || busy || cooldown > 0 || !identifier) return;
+    if (!codeAvailable || busy || loginCooldown > 0 || !identifier) return;
     // BUGHUNT-20261106: same staleness as resendRecoveryCode — a resend
     // past cooldown voids the previous code, so clear the box on
     // success instead of leaving a guaranteed-rejected code behind.
-    void run(async () => { await client.requestEmailCode(identifier); setCode(""); setCooldown(60); });
+    void run(async () => { await client.requestEmailCode(identifier); setCode(""); setLoginCooldown(60); });
   };
 
   return <div className="account-panel" aria-busy={busy}>
@@ -357,7 +367,7 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
         {activeMode === "code"
           ? <label>邮箱<input type="email" name="email" autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} required maxLength={254} value={accountId} disabled={busy || !configured} onChange={(event) => changeAccountId(event.target.value)} placeholder="you@example.com"/></label>
           : <label>邮箱或用户名<input type="text" name="account" autoComplete="username" autoCapitalize="none" spellCheck={false} required maxLength={254} value={accountId} disabled={busy || !configured} onChange={(event) => changeAccountId(event.target.value)} placeholder="邮箱或用户名"/></label>}
-        {activeMode === "code" && <label>验证码<div className="account-password"><input type="text" name="code" autoComplete="one-time-code" inputMode="numeric" autoCapitalize="none" spellCheck={false} required maxLength={6} value={code} disabled={busy || !codeAvailable} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} placeholder="6 位数字"/><button type="button" disabled={busy || !codeAvailable || cooldown > 0 || !identifier} onClick={sendCode}>{cooldown > 0 ? `${cooldown} 秒后重发` : "发送验证码"}</button></div></label>}
+        {activeMode === "code" && <label>验证码<div className="account-password"><input type="text" name="code" autoComplete="one-time-code" inputMode="numeric" autoCapitalize="none" spellCheck={false} required maxLength={6} value={code} disabled={busy || !codeAvailable} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} placeholder="6 位数字"/><button type="button" disabled={busy || !codeAvailable || loginCooldown > 0 || !identifier} onClick={sendCode}>{loginCooldown > 0 ? `${loginCooldown} 秒后重发` : "发送验证码"}</button></div></label>}
         {activeMode !== "reset" && activeMode !== "code" && <label>密码<div className="account-password"><input type={showPassword ? "text" : "password"} name="password" autoComplete={activeMode === "register" ? "new-password" : "current-password"} required minLength={activeMode === "register" ? 8 : undefined} maxLength={128} value={password} disabled={busy || !(passwordAvailable || usernameAvailable)} onChange={(event) => setPassword(event.target.value)} placeholder={activeMode === "register" ? "至少 8 位" : "输入密码"}/><button type="button" aria-label={showPassword ? "隐藏密码" : "显示密码"} aria-pressed={showPassword} disabled={busy || !(passwordAvailable || usernameAvailable)} onClick={() => setShowPassword((value) => !value)}>{showPassword ? "隐藏" : "显示"}</button></div></label>}
         {activeMode === "register" && <label>确认密码<input type="password" name="confirmPassword" autoComplete="new-password" required minLength={8} maxLength={128} value={confirmPassword} disabled={busy || !(passwordAvailable || usernameAvailable)} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="再输入一次密码"/></label>}
         {activeMode === "register" && confirmPassword && confirmPassword !== password && <p className="account-message is-error" role="alert">两次输入的密码不一致。</p>}
@@ -366,7 +376,7 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
           <label>恢复邮箱（可选）<input type="email" name="recoveryEmail" autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} maxLength={254} value={recoveryEmail} disabled={busy || !configured} onChange={(event) => setRecoveryEmail(event.target.value)} placeholder="you@example.com"/></label>
         </>}
         {activeMode === "reset" && resetStage === "code" && <>
-          <label>找回验证码<div className="account-password"><input type="text" name="recoveryCode" autoComplete="one-time-code" inputMode="numeric" autoCapitalize="none" spellCheck={false} required maxLength={6} value={recoveryCode} disabled={busy} onChange={(event) => setRecoveryCode(event.target.value.replace(/\D/g, ""))} placeholder="6 位数字"/><button type="button" disabled={busy || cooldown > 0} onClick={resendRecoveryCode}>{cooldown > 0 ? `${cooldown} 秒后重发` : "重新发送"}</button></div></label>
+          <label>找回验证码<div className="account-password"><input type="text" name="recoveryCode" autoComplete="one-time-code" inputMode="numeric" autoCapitalize="none" spellCheck={false} required maxLength={6} value={recoveryCode} disabled={busy} onChange={(event) => setRecoveryCode(event.target.value.replace(/\D/g, ""))} placeholder="6 位数字"/><button type="button" disabled={busy || recoveryCooldown > 0} onClick={resendRecoveryCode}>{recoveryCooldown > 0 ? `${recoveryCooldown} 秒后重发` : "重新发送"}</button></div></label>
           <label>新密码<input type="password" name="newPassword" autoComplete="new-password" required minLength={8} maxLength={128} value={newPassword} disabled={busy} onChange={(event) => setNewPassword(event.target.value)} placeholder="至少 8 位"/></label>
         </>}
         {activeMode === "reset" && !identifierIsEmail && recoveryInfo && <div className="account-message account-recovery-panel" role="status">

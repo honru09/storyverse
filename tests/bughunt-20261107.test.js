@@ -29,10 +29,18 @@ test('bughunt-2: the chrome next-chapter button flips to retry on generation err
 })
 
 test('bughunt-3: tapping the same inspiration fragment twice does not append it twice', () => {
+  // BUGHUNT-20261108: the 20261107 mechanism compared split parts
+  // (punctuation stripped) against the fragment WITH its trailing
+  // punctuation, so it never fired — a regression fixed by
+  // fragmentAlreadyAdded. The intent (same chip, no second append)
+  // is unchanged; the mechanism moved to containment, and the
+  // behaviour is now executed against all 100 real fragments in
+  // tests/bughunt-20261108.test.js.
   const at = main.indexOf('const appendFragment')
   const fn = main.slice(at, main.indexOf('const [rolled', at))
   assert.match(fn, /这条碎片已经加过了/)
-  assert.match(fn, /split\(\/\[。！？\]\/\)/)
+  assert.match(fn, /fragmentAlreadyAdded\(current, fragment\)/)
+  assert.doesNotMatch(fn, /split\(\/\[。！？\]\/\)/)
 })
 
 test('bughunt-4: every capped long-text box shows its x / N count', () => {
@@ -86,9 +94,13 @@ test('bughunt-7: the first-claim @ID box shows its x / 20 count', () => {
 })
 
 test('bughunt-8: signing out clears the send-code cooldown', () => {
+  // BUGHUNT-20261108: the single cooldown split into per-channel
+  // login/recovery cooldowns — sign-out must clear both, same intent.
   const at = panel.indexOf('if (hadUser.current)')
   const effect = panel.slice(at, panel.indexOf('}, [account.user])', at))
-  assert.match(effect, /setCooldown\(0\)/)
+  assert.match(effect, /setLoginCooldown\(0\)/)
+  assert.match(effect, /setRecoveryCooldown\(0\)/)
+  assert.doesNotMatch(effect, /setCooldown\(0\)/)
 })
 
 test('bughunt-9: the settings table-of-contents editor caps titles at 30 with a count', () => {

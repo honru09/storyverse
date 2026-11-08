@@ -419,6 +419,8 @@ button.chapter-item:disabled {
   resize: vertical;
 }
 .prose-editor-row .small-link { justify-self: end; }
+/* BUGHUNT-20261108: the at-cap note under a full paragraph. */
+.prose-editor-row .prose-limit-note { font-size: 12px; color: var(--danger); }
 
 /* ——— READER-PAGE (REQ-39): front matter — cover → contents → prose ———
    A fixed overlay above the always-mounted prose, sliding on the

@@ -50,8 +50,11 @@ test('bughunt-5: a failed fusion-permission read never presents the "free" defau
 
 test('bughunt-6: the email-code button stays disabled with an empty mailbox', () => {
   const panel = readFileSync(new URL('../src/components/AccountPanel.jsx', import.meta.url), 'utf8')
-  assert.match(panel, /cooldown > 0 \|\| !identifier\) return/)
-  assert.match(panel, /disabled=\{busy \|\| !codeAvailable \|\| cooldown > 0 \|\| !identifier\}/)
+  // BUGHUNT-20261108: the single cooldown split into per-channel
+  // login/recovery cooldowns — the login send guard now reads the
+  // login channel's own cooldown. Same intent.
+  assert.match(panel, /loginCooldown > 0 \|\| !identifier\) return/)
+  assert.match(panel, /disabled=\{busy \|\| !codeAvailable \|\| loginCooldown > 0 \|\| !identifier\}/)
 })
 
 test('bughunt-7: god-mode world-name counter counts the 12-unit clip budget, not 40', () => {

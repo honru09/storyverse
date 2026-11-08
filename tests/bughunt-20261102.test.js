@@ -25,7 +25,10 @@ test('bughunt-2: a saved/deleted rating tells the detail header to refetch its a
   assert.match(main, /onRated/)
   assert.match(main, /if \(payload\) onRated\?\.\(\)/)
   assert.match(main, /if \(removedPayload\) onRated\?\.\(\)/)
-  assert.match(main, /onRated=\{\(\) => \{ fetchPlazaDetail\(\{ id \}\)/)
+  // BUGHUNT-20261108: the refetch gained an id guard — rate on book A,
+  // jump to book B before it lands, and A's response must not overwrite
+  // B. The callback still refetches; it only writes back for its own book.
+  assert.match(main, /onRated=\{\(\) => \{ const wanted = id; fetchPlazaDetail\(\{ id: wanted \}\)\.then\(\(next\) => \{ if \(idRef\.current === wanted\) setDetail\(next\); \}\)/)
 })
 
 test('bughunt-3: a plaza card resyncs from fresh props after the 60s refresh, never mid-flight', () => {
