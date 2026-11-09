@@ -1718,8 +1718,12 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
       else { setEditingId(""); seedForm(null); }
       setNotice("这位化身已删除。TA 走过的故事都还在书架上。");
     } catch (failure) {
+      // BUGHUNT-20261109: a failed delete used to close the confirm
+      // state, so retrying meant re-walking 删除这位化身 → 确认删除
+      // while the error line was already on screen. Keep the confirm
+      // state (busy is released, the button can be tapped again);
+      // seedForm already clears it on the success path.
       setError(failure.message || "删除没能完成，请稍后再试。");
-      setConfirmDelete(false);
     } finally {
       setBusy(false);
     }
@@ -8151,6 +8155,10 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
   const [onlineCount, setOnlineCount] = useState(0);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  // BUGHUNT-20261109: the 60s tick used to swallow refresh failures
+  // whole — the list sat stale with no word. Remember a failed tick
+  // so the feed can say so and offer a retry; a landed tick clears it.
+  const [feedStale, setFeedStale] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
   const [focusPost, setFocusPost] = useState(null);
@@ -8198,10 +8206,15 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
   useEffect(() => {
     let live = true;
     setError("");
+    setFeedStale(false);
     load().catch(() => { if (live) { setPosts([]); setError("广场暂时没能打开，请稍后再试。"); } });
     // The presence count must not go stale while the plaza sits open:
     // refetch on a slow tick (which also freshens the list itself).
-    const timer = window.setInterval(() => { void refreshFeed().catch(() => {}); }, 60_000);
+    const timer = window.setInterval(() => {
+      void refreshFeed()
+        .then(() => { if (live) setFeedStale(false); })
+        .catch(() => { if (live) setFeedStale(true); });
+    }, 60_000);
     return () => { live = false; window.clearInterval(timer); };
   }, [load, refreshFeed, retry]);
 
@@ -8401,6 +8414,12 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
         <div className="plaza-empty" role="alert">
           <p>{error}</p>
           <Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>再试一次</Button>
+        </div>
+      )}
+      {feedStale && !error && (
+        <div className="plaza-empty" role="status">
+          <p>广场刚才没能刷新，显示的是之前的内容。</p>
+          <Button variant="secondary" onClick={() => { void refreshFeed().then(() => setFeedStale(false)).catch(() => {}); }}>再试一次</Button>
         </div>
       )}
       {posts === null && !error && (
@@ -8667,7 +8686,7 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
           <span className="da-skel da-skel--line" style={{ width: "68%" }} aria-hidden="true" />
         </div>
       )}
-      {error && <p className="plaza-thread-error" role="alert">{error}</p>}
+      {error && (<p className="plaza-thread-error" role="alert">{error} <button type="button" className="small-link" onClick={() => void load()}>再试一次</button></p>)}
       {data && (
         <>
           {data.ratingCount > 0 ? (
@@ -8794,6 +8813,9 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
 function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack, backLabel = "返回广场", onReadLine, onEnter, onOpenAccount, onToast, onOpenProfile, onOpenBook }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState("");
+  // BUGHUNT-20261109: a failed first load only offered 回去看看 —
+  // retrying meant leaving and coming back. Bump to re-run the fetch.
+  const [retry, setRetry] = useState(0);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   // BUGHUNT-20261108: the detail load effect has a live guard, but the
@@ -8854,7 +8876,7 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         if (live) setError(failure?.code === "not-found" ? "这条故事线已下架或不存在。" : "暂时没能打开这条故事线，请稍后再试。");
       });
     return () => { live = false; };
-  }, [id]);
+  }, [id, retry]);
 
   if (error) {
     return (
@@ -8864,7 +8886,10 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         </button>
         <div className="plaza-empty" role="alert">
           <h3>{error}</h3>
-          <Button variant="secondary" onClick={goBack}>回去看看</Button>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+            <Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>再试一次</Button>
+            <Button variant="secondary" onClick={goBack}>回去看看</Button>
+          </div>
         </div>
       </div>
     );
@@ -9361,6 +9386,13 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
   const bioOverLimit = bioCount > 120;
   const [handle, setHandle] = useState(editable.handle || "");
   const [handleState, setHandleState] = useState(null);
+  // BUGHUNT-20261109: a slow check used to stamp its verdict under
+  // whatever the box holds now — type twice, blur twice, and the
+  // first (stale) answer wins if it lands last. A sequence number
+  // plus a value check admit only the verdict for the current text.
+  const handleCheckSeq = useRef(0);
+  const handleRef = useRef(handle);
+  handleRef.current = handle;
   // USERNAME-IMMUTABLE (2026-10-28 user rule): the @ID is fixed once
   // it exists — the login name for username accounts (which the
   // editable block never carried, so the field used to open blank and
@@ -9434,14 +9466,17 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
   const checkHandle = async () => {
     const value = handle.trim().toLowerCase();
     if (!value || value === (editable.handle || "")) { setHandleState(null); return; }
+    const seq = ++handleCheckSeq.current;
+    const fresh = () => handleCheckSeq.current === seq && handleRef.current.trim().toLowerCase() === value;
     try {
-      setHandleState(await checkHandleAvailable({ handle: value, getAccessToken: getToken }));
+      const result = await checkHandleAvailable({ handle: value, getAccessToken: getToken });
+      if (fresh()) setHandleState(result);
     } catch {
       // BUGHUNT-20261104: a failed check used to render exactly like
       // "never checked", so a taken handle only surfaced at save time.
       // Say the check itself failed; save-time conflict stays the
       // backstop, and this note carries no available/unavailable claim.
-      setHandleState({ available: null, message: "没能确认这个 ID 是否可用，保存时会再核对。" });
+      if (fresh()) setHandleState({ available: null, message: "没能确认这个 ID 是否可用，保存时会再核对。" });
     }
   };
 
@@ -10161,13 +10196,16 @@ function FriendsPanel({ authClient, onOpenProfile }) {
                     <FriendPersonRow person={person} onOpenProfile={onOpenProfile} trailing={searchAction(person)} />
                     {composingUid === person.uid && (
                       <div className="friend-compose">
-                        <input
-                          value={draft}
-                          maxLength={50}
-                          onChange={(event) => setDraft(event.target.value)}
-                          placeholder="说一句打个招呼（可不填，最多 50 字）"
-                          aria-label="好友申请留言"
-                        />
+                        <div className="friend-compose-field">
+                          <input
+                            value={draft}
+                            maxLength={50}
+                            onChange={(event) => setDraft(event.target.value)}
+                            placeholder="说一句打个招呼（可不填，最多 50 字）"
+                            aria-label="好友申请留言"
+                          />
+                          <small className="da-unit-count" aria-live="polite">{draft.length} / 50</small>
+                        </div>
                         <button type="button" className="friend-compose-send" disabled={Boolean(busyUid)} onClick={() => void act(person, "send")}>发送</button>
                         <button type="button" className="friend-text-btn" onClick={() => setComposingUid("")}>取消</button>
                       </div>
@@ -10656,6 +10694,10 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   const viewerUid = account.user?.uid || "";
   const [profile, setProfile] = useState(() => peekProfile({ viewerUid, uid }));
   const [error, setError] = useState("");
+  // BUGHUNT-20261109: with a cached copy on hand, a failed background
+  // refresh used to vanish silently — stale data shown as if fresh.
+  // Remember it so the page can say the copy is last time's.
+  const [staleProfile, setStaleProfile] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   // PIXELFX-WAVE4 (§60): the follow button's rose spark state.
@@ -10696,6 +10738,10 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   const [connectionsKind, setConnectionsKind] = useState(null);
   const [connections, setConnections] = useState(null);
   const [connectionsError, setConnectionsError] = useState("");
+  // BUGHUNT-20261109: a failed name-list only said so — retrying
+  // meant closing the list and tapping the count again. Bump to
+  // re-run the fetch in place.
+  const [connectionsRetry, setConnectionsRetry] = useState(0);
   const [connectionBusyUid, setConnectionBusyUid] = useState("");
   // The friend relationship with this page's owner (FRIENDS batch):
   // seeded from the payload's viewerState.friendState, then driven by
@@ -10735,11 +10781,14 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
     setConnectionsError("");
     const remembered = profileViewState(uid);
     setStageAvatarId(remembered?.avatarId || "");
+    setStaleProfile(false);
     loadProfile({ viewerUid, uid, getAccessToken: getToken })
-      .then((next) => { if (live && next) setProfile(next); })
+      .then((next) => { if (live && next) { setProfile(next); setStaleProfile(false); } })
       .catch((failure) => {
         if (live && !peekProfile({ viewerUid, uid })) {
           setError(failure?.code === "not-found" ? "这位用户还不存在。" : "暂时没能打开这个主页，请稍后再试。");
+        } else if (live) {
+          setStaleProfile(true);
         }
       });
     const unsubscribe = subscribeProfile({ viewerUid, uid }, (next) => { if (live) setProfile(next); });
@@ -10793,7 +10842,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
       .then((result) => { if (live) setConnections(result); })
       .catch(() => { if (live) setConnectionsError("名单没能打开，请稍后再试。"); });
     return () => { live = false; };
-  }, [connectionsKind, uid, getToken]);
+  }, [connectionsKind, uid, getToken, connectionsRetry]);
 
   const rootClass = `page page-profile ${windowForm ? "" : "is-page-form"} ${windowForm ? "" : "page-enter"}`;
 
@@ -11020,6 +11069,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   return (
     <>
     <div className={rootClass} ref={pageRef}>
+      {staleProfile && (<p className="ryan-note" role="status">这次没能刷新，显示的是上次打开时的内容。</p>)}
       {windowForm && (
         <div
           className="profile-window-grab"
@@ -11191,13 +11241,16 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
       </div>
       {!isSelf && friendComposing && friendState === "none" && (
         <div className="friend-compose">
-          <input
-            value={friendDraft}
-            maxLength={50}
-            onChange={(event) => setFriendDraft(event.target.value)}
-            placeholder="说一句打个招呼（可不填，最多 50 字）"
-            aria-label="好友申请留言"
-          />
+          <div className="friend-compose-field">
+            <input
+              value={friendDraft}
+              maxLength={50}
+              onChange={(event) => setFriendDraft(event.target.value)}
+              placeholder="说一句打个招呼（可不填，最多 50 字）"
+              aria-label="好友申请留言"
+            />
+            <small className="da-unit-count" aria-live="polite">{friendDraft.length} / 50</small>
+          </div>
           <button type="button" className="friend-compose-send" disabled={friendBusy} onClick={() => void actOnFriend("send")}>发送申请</button>
           <button type="button" className="friend-text-btn" onClick={() => setFriendComposing(false)}>取消</button>
         </div>
@@ -11222,7 +11275,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
             </div>
           </div>
           {connectionsError ? (
-            <p className="profile-line-empty" role="alert">{connectionsError}</p>
+            <p className="profile-line-empty" role="alert">{connectionsError} <button type="button" className="small-link" onClick={() => setConnectionsRetry((value) => value + 1)}>再试一次</button></p>
           ) : !connections ? (
             <div role="status" aria-label="正在打开名单">
               {[0, 1, 2].map((i) => (
@@ -11874,17 +11927,32 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
           </div>
 
           {identityId && (isCustom ? (
-            <label className="field-label">
-              出生点（选填）
-              <input
-                maxLength={START_POINT_NAME_MAX}
-                autoComplete="off"
-                value={spawnName}
-                disabled={busy}
-                onChange={(event) => { setSpawnName(event.target.value); setSpawnHook(""); }}
-                placeholder="主角睁开眼的地方"
-              />
-            </label>
+            <>
+              <label className="field-label">
+                出生点（选填）
+                <input
+                  maxLength={START_POINT_NAME_MAX}
+                  autoComplete="off"
+                  value={spawnName}
+                  disabled={busy}
+                  onChange={(event) => setSpawnName(event.target.value)}
+                  placeholder="主角睁开眼的地方"
+                />
+                <small className="da-unit-count" aria-live="polite">{[...spawnName].length} / {START_POINT_NAME_MAX}</small>
+              </label>
+              <label className="field-label">
+                开局处境（选填）
+                <input
+                  maxLength={START_POINT_HOOK_MAX}
+                  autoComplete="off"
+                  value={spawnHook}
+                  disabled={busy}
+                  onChange={(event) => setSpawnHook(event.target.value)}
+                  placeholder="睁开眼时，正在发生什么"
+                />
+                <small className="da-unit-count" aria-live="polite">{[...spawnHook].length} / {START_POINT_HOOK_MAX}</small>
+              </label>
+            </>
           ) : (
             <div className="form-block">
               <span className="field-label">出生点</span>
@@ -13003,7 +13071,7 @@ function WriteDesk({ story, onUpdateStory, onNavigate }) {
 
   return (
     <div className="page page-write page-enter">
-      <button type="button" className="back-link" onClick={() => { commitDraft(); onNavigate("home"); }}>
+      <button type="button" className="back-link" onClick={() => { if (!commitDraft()) return; onNavigate("home"); }}>
         <Icon name="chevron" size={15} className="rotate-180" /> 回书架
       </button>
       <header className="write-heading">
@@ -13017,10 +13085,10 @@ function WriteDesk({ story, onUpdateStory, onNavigate }) {
       </header>
 
       <div className="write-actions">
-        <Button variant="secondary" icon="book" onClick={() => { commitDraft(); onNavigate("reader", { storyId: story.id }); }}>
+        <Button variant="secondary" icon="book" onClick={() => { if (!commitDraft()) return; onNavigate("reader", { storyId: story.id }); }}>
           在阅读器里看
         </Button>
-        <Button variant="secondary" icon="send" onClick={() => { commitDraft(); onNavigate("plaza-publish"); }}>
+        <Button variant="secondary" icon="send" onClick={() => { if (!commitDraft()) return; onNavigate("plaza-publish"); }}>
           上架到书城
         </Button>
         {finished ? (

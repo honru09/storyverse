@@ -18,7 +18,11 @@ test('bughunt-1: plaza post author name truncates instead of crowding the menu',
 test('bughunt-2: plaza 60s tick merges instead of dropping paged posts', () => {
   assert.match(main, /const refreshFeed = useCallback/)
   assert.match(main, /pagedRef\.current = true/)
-  assert.match(main, /void refreshFeed\(\)\.catch/)
+  // BUGHUNT-20261109: the tick still swallows the rejection (the
+  // interval never throws), but it now records the failure as a stale
+  // feed instead of dropping it silently — the literal changed from
+  // `void refreshFeed().catch(...)` to a then/catch chain.
+  assert.match(main, /void refreshFeed\(\)\n\s*\.then\(\(\) => \{ if \(live\) setFeedStale\(false\); \}\)\n\s*\.catch\(\(\) => \{ if \(live\) setFeedStale\(true\); \}\)/)
   // loadMore dedupes so a refreshed cursor can never duplicate a page.
   assert.match(main, /filter\(\(post\) => !seen\.has\(post\.id\)\)/)
 })
