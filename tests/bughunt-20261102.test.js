@@ -28,7 +28,10 @@ test('bughunt-2: a saved/deleted rating tells the detail header to refetch its a
   // BUGHUNT-20261108: the refetch gained an id guard — rate on book A,
   // jump to book B before it lands, and A's response must not overwrite
   // B. The callback still refetches; it only writes back for its own book.
-  assert.match(main, /onRated=\{\(\) => \{ const wanted = id; fetchPlazaDetail\(\{ id: wanted \}\)\.then\(\(next\) => \{ if \(idRef\.current === wanted\) setDetail\(next\); \}\)/)
+  // BUGHUNT-20261110: the refetch is now the named refreshHead (same id
+  // guard, plus a visible stale flag + retry when it fails).
+  assert.match(main, /onRated=\{refreshHead\}/)
+  assert.match(main, /const refreshHead = useCallback\(\(\) => \{\s+const wanted = id;\s+fetchPlazaDetail\(\{ id: wanted \}\)\s+\.then\(\(next\) => \{ if \(idRef\.current === wanted\) \{ setDetail\(next\); setRatingsHeadStale\(false\); \} \}\)/)
 })
 
 test('bughunt-3: a plaza card resyncs from fresh props after the 60s refresh, never mid-flight', () => {

@@ -236,6 +236,7 @@ import {
   replaceFrontierChapter,
   updateChapterProse,
   CHAPTER_PROSE_PARAGRAPH_MAX,
+  MANUAL_CHAPTER_TEXT_MAX,
   updateLorebook,
   updateStylePreset,
   updateWorldBible,
@@ -315,6 +316,7 @@ import {
   LOREBOOK_CONSTANT_MAX,
   LOREBOOK_KEY_MAX,
   LOREBOOK_KEYS_MAX,
+  LOREBOOK_MAX_ENTRIES,
   normalizeLorebookEntries,
   parseCharacterCardJson,
   parseCharacterCardPng,
@@ -5315,11 +5317,16 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
   const interventions = Array.isArray(story.interventions) ? story.interventions : [];
   const patchEntry = (position, patch) =>
     setEntries((list) => list.map((entry, index) => (index === position ? { ...entry, ...patch } : entry)));
-  const addEntry = () =>
+  const addEntry = () => {
+    // BUGHUNT-20261110: the save path truncates at 200 entries, so
+    // an uncapped "+ write one more" used to let entry 201+ be typed
+    // and then silently dropped on save. Stop at the cap instead.
+    if (entries.length >= LOREBOOK_MAX_ENTRIES) return;
     setEntries((list) => [
       ...list,
       { id: `lore-${Date.now().toString(36)}-${list.length}`, name: "", keys: [], content: "", constant: false, enabled: true, source: "manual" },
     ]);
+  };
   const save = () => {
     // BUGHUNT-20261107: entries with a name/keys but no content
     // used to be filtered out silently on save — the typed name and
@@ -5720,9 +5727,12 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
             </div>
           </div>
         ))}
-        <button type="button" className="small-link" onClick={addEntry}>
+        <button type="button" className="small-link" onClick={addEntry} disabled={entries.length >= LOREBOOK_MAX_ENTRIES}>
           + 写一条新条目
         </button>
+        {entries.length >= LOREBOOK_MAX_ENTRIES && (
+          <p className="field-hint" role="status">世界书条目已到 {LOREBOOK_MAX_ENTRIES} 条上限，先删一条再加。</p>
+        )}
       </div>
       <div className="settings-section">
         <h3>文风预设</h3>
@@ -6378,8 +6388,12 @@ function Reader({
     // tools sheet say so (return value is the refusal signal).
     const anchor = bookmarkAnchor.current;
     if (!anchor) return false;
-    reading.store.toggleBookmark({ key: locationKey, storyId: bookContextId, chapterIndex: index,
+    // BUGHUNT-20261110: the store can now refuse ("full") instead
+    // of silently evicting the oldest bookmark — pass the refusal
+    // through so the sheet can say the shelf is full.
+    const added = reading.store.toggleBookmark({ key: locationKey, storyId: bookContextId, chapterIndex: index,
       anchor, title: chapter.title, excerpt: chapter.paragraphs[anchor.paragraph] || '' });
+    if (added === "full") return "full";
     setBookmarkVersion(value => value + 1);
     return true;
   };
@@ -6581,7 +6595,7 @@ function Reader({
       total={displayTotal}
       generated={story.chapters?.length || 0}
       current={index}
-      state={readOnly ? null : generationState({ total: displayTotal, generated: story.chapters?.length || 0, current: index, engine: story.engine, preparing, complete: story.status === "complete" || isStoryComplete(story) })}
+      state={readOnly ? null : generationState({ total: displayTotal, generated: story.chapters?.length || 0, current: index, engine: story.engine, preparing, error: generationError, complete: story.status === "complete" || isStoryComplete(story) })}
     />
   </div>
   {!readOnly && lengthMode === "endless" && !isManuallyFinished(story) && (
@@ -7272,7 +7286,7 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="搜书名、作者或世界"
+          placeholder="搜书名、作者、世界或 @handle"
           aria-label="搜索书城"
         />
         {query && (
@@ -7389,7 +7403,7 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
           silently invisible. Say the total and how to reach the rest
           (search narrows the filter) instead of pretending 60 is all. */}
       {data !== null && !error && data.total > books.length && books.length > 0 && (
-        <p className="plaza-note" role="status">共 {data.total} 本，先显示前 {books.length} 本；搜书名、作者或世界名能缩小范围找到其余的书。</p>
+        <p className="plaza-note" role="status">共 {data.total} 本，先显示前 {books.length} 本；搜书名、作者、世界名或 @handle 能缩小范围找到其余的书。</p>
       )}
     </div>
   );
@@ -7614,7 +7628,7 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
             ) : (
               <>
               {pickable.length > 12 && (
-                <p className="plaza-note">只显示前 12 本，搜书名或作者能缩小范围找到其余的书。</p>
+                <p className="plaza-note">只显示前 12 本，搜书名、作者或 @handle 能缩小范围找到其余的书。</p>
               )}
               <ul className="plaza-composer-booklist da-scroll">
                 {pickable.slice(0, 12).map((entry) => (
@@ -8824,6 +8838,17 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
   // (same shape as the ratings section's bookIdRef guard, 20261102 #7).
   const idRef = useRef(id);
   idRef.current = id;
+  // BUGHUNT-20261110: the header's one-line rating summary is
+  // refetched after a rating lands — when that refetch fails the
+  // header used to keep saying "暂无评价" above a saved 5★, with
+  // no word and no retry. Track the stale refetch and offer one.
+  const [ratingsHeadStale, setRatingsHeadStale] = useState(false);
+  const refreshHead = useCallback(() => {
+    const wanted = id;
+    fetchPlazaDetail({ id: wanted })
+      .then((next) => { if (idRef.current === wanted) { setDetail(next); setRatingsHeadStale(false); } })
+      .catch(() => { if (idRef.current === wanted) setRatingsHeadStale(true); });
+  }, [id]);
   const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   // PIXELFX-WAVE2 (§60): a whisper-quiet ambient loop inside the
@@ -9011,6 +9036,9 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
               <span>暂无评价</span>
             )}
           </p>
+          {ratingsHeadStale && (
+            <p className="plaza-note" role="status">评分已保存，但头部数据没能刷新。 <button type="button" className="small-link" onClick={refreshHead}>再试一次</button></p>
+          )}
         </div>
       </section>
 
@@ -9198,7 +9226,7 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
         authClient={authClient}
         onOpenAccount={onOpenAccount}
         onOpenProfile={onOpenProfile}
-        onRated={() => { const wanted = id; fetchPlazaDetail({ id: wanted }).then((next) => { if (idRef.current === wanted) setDetail(next); }).catch(() => {}); }}
+        onRated={refreshHead}
       />
 
       {shareOpen && (
@@ -9621,17 +9649,24 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
       // land first (a staged banner reset only fires when no staged
       // upload supersedes it), then the field patch — which also
       // carries a staged picture-kind pick — returns the final
-      // profile. If an early write succeeds and a later one fails the
-      // error surfaces and the sheet stays open; the landed part is
-      // simply the new stored state, never a hidden one.
+      // profile. BUGHUNT-20261110: if an early write lands and a
+      // later one fails, the sheet used to report only "not saved"
+      // while the avatar/banner had already changed server-side —
+      // and closing the sheet ("discard the draft") could not undo
+      // it. Now the landed part is named in the error and pushed to
+      // the page via onSaved, so the page matches the stored state.
       let next = null;
+      let landed = "";
       if (stagedPictureUpload) {
         next = await uploadMyPicture({ ...stagedPictureUpload, getAccessToken: getToken });
+        landed = "头像";
       }
       if (stagedBannerUpload) {
         next = await uploadMyBanner({ ...stagedBannerUpload, getAccessToken: getToken });
+        landed = "头图";
       } else if (stagedBannerReset) {
         next = await deleteMyBanner({ getAccessToken: getToken });
+        landed = "头图";
       }
       const patch = {
         displayName: displayName.trim(),
@@ -9649,7 +9684,15 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
       if (failure?.code === "conflict") {
         setHandleState({ available: false, message: failure.message });
       }
-      setError(failure?.message || "资料没能保存，请稍后再试。");
+      // BUGHUNT-20261110: see the note above — a landed upload is
+      // pushed to the page and named, so "not saved" never hides a
+      // change that already took effect server-side.
+      if (landed) {
+        if (next) onSaved(next);
+        setError(`${landed}已经换上了，资料的其他部分没能保存。`);
+      } else {
+        setError(failure?.message || "资料没能保存，请稍后再试。");
+      }
       setBusy(false);
     }
   };
@@ -10707,6 +10750,28 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   const uidRef = useRef(uid);
   uidRef.current = uid;
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuWrapRef = useRef(null);
+  const menuRef = useRef(null);
+  // BUGHUNT-20261110: the ··· menu used to close only on a second
+  // tap, on report, or on switching profiles — same missing
+  // outside/Esc close the plaza post menu grew out of (20261030
+  // #6). The toggle lives in the topbar and the menu itself is a
+  // sibling below it, so both refs guard the tap.
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onPointerDown = (event) => {
+      if (menuWrapRef.current?.contains(event.target)) return;
+      if (menuRef.current?.contains(event.target)) return;
+      setMenuOpen(false);
+    };
+    const onKeyDown = (event) => { if (event.key === "Escape") setMenuOpen(false); };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menuOpen]);
   const [bioExpanded, setBioExpanded] = useState(false);
   const [bioClamped, setBioClamped] = useState(false);
   const bioRef = useRef(null);
@@ -11099,7 +11164,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
               <Icon name="x" size={20} />
             </button>
           ) : <span aria-hidden="true" />}
-          <span className="ryan-topbar-actions">
+          <span className="ryan-topbar-actions" ref={menuWrapRef}>
             <button type="button" className="ryan-glyph-btn" onClick={() => setShareOpen(true)} aria-label="分享主页">
               <Icon name="share" size={20} />
             </button>
@@ -11121,7 +11186,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           </span>
         </div>
         {menuOpen && !isSelf && (
-          <div className="ryan-menu" role="menu">
+          <div className="ryan-menu" role="menu" ref={menuRef}>
             <button type="button" disabled={reported} onClick={() => void reportThisUser()}>
               {reported ? "已举报" : "举报该用户"}
             </button>
@@ -13189,7 +13254,11 @@ function WriteDesk({ story, onUpdateStory, onNavigate }) {
             />
           </label>
           <div className="write-editor-foot">
-            <span>{draftWords} 字</span>
+            {/* BUGHUNT-20261110: the foot used to show only the
+                running word count, so an author writing toward the
+                100k chapter cap had no idea how much room was left
+                until every autosave started failing. */}
+            <span>{draftWords} / {MANUAL_CHAPTER_TEXT_MAX} 字</span>
             <span role="status">{deskError ? "" : saveNote}</span>
           </div>
           {deskError && (
@@ -13920,15 +13989,21 @@ function App() {
       getAccessToken: () => authClient.getAccessToken(),
       onAuthRequired: () => { setAccountIntent(null); setAccountOpen(true); },
     });
-    const candidate = acceptRevisedChapter(queuedStory, result);
-    if (candidate !== queuedStory) syncLivingPublication(candidate);
-    setLibrary((current) => {
-      const latest = current.stories.find((book) => book.id === id);
-      if (!latest) return current;
-      const next = acceptRevisedChapter(latest, result);
-      if (next === latest) return current;
-      return { ...current, stories: current.stories.map((book) => (book.id === id ? next : book)) };
-    });
+    // BUGHUNT-20261110: the request validates against the queued
+    // snapshot, but the swap still has to land on the library's
+    // CURRENT story — a revision that moved on mid-flight (another
+    // session landing a new revision) used to be refused silently
+    // here while the overlay reported the intervention settled.
+    // Refuse loudly instead: the queue was landed first, so the
+    // nudge survives and folds into the next generation.
+    const latest = store.getSnapshot().library.stories.find((book) => book.id === id);
+    const next = latest ? acceptRevisedChapter(latest, result) : null;
+    if (!next || next === latest) throw new Error("这次重写没能换上，介入还排在队列里。");
+    setLibrary((current) => ({
+      ...current,
+      stories: current.stories.map((book) => (book.id === id ? next : book)),
+    }));
+    syncLivingPublication(next);
   }, [store, setLibrary, syncLivingPublication, authClient]);
   // The frontier re-roll. The rotation is landed FIRST (it retires any
   // pre-generation computed from the old telling — in flight or already
@@ -13951,15 +14026,17 @@ function App() {
       getAccessToken: () => authClient.getAccessToken(),
       onAuthRequired: () => { setAccountIntent(null); setAccountOpen(true); },
     });
-    const candidate = acceptRerolledChapter(rotated, result);
-    if (candidate !== rotated) syncLivingPublication(candidate);
-    setLibrary((current) => {
-      const latest = current.stories.find((book) => book.id === id);
-      if (!latest) return current;
-      const next = acceptRerolledChapter(latest, result);
-      if (next === latest) return current;
-      return { ...current, stories: current.stories.map((book) => (book.id === id ? next : book)) };
-    });
+    // BUGHUNT-20261110: same loud refusal as the revision pass
+    // above — a re-roll whose swap the current story refuses (the
+    // chapter locked mid-flight) must not report "settled".
+    const latest = store.getSnapshot().library.stories.find((book) => book.id === id);
+    const next = latest ? acceptRerolledChapter(latest, result) : null;
+    if (!next || next === latest) throw new Error("这一章没能换成新的一版。");
+    setLibrary((current) => ({
+      ...current,
+      stories: current.stories.map((book) => (book.id === id ? next : book)),
+    }));
+    syncLivingPublication(next);
   }, [store, setLibrary, syncLivingPublication, authClient]);
   // Cover painting runs beside reading, never inside it: the story is
   // marked pending, the request resolves whenever the server finishes,

@@ -198,7 +198,9 @@ async function sendGenerateRequest(story, payload, { fetchImpl = globalThis.fetc
       failure.code = 'coins-exhausted'
       throw failure
     }
-    const messages = { 429: '请求较多，请稍后再试。', 503: '在线创作暂不可用，已保存的章节仍可阅读。请稍后再试。', 504: '这一章等待较久，进度已保留，请重试。' }
+    // BUGHUNT-20261110: 502 used to fall through to the generic
+    // line, so a gateway blip read exactly like any other failure.
+    const messages = { 429: '请求较多，请稍后再试。', 502: '网关暂时没能接上，进度已保留，请重试。', 503: '在线创作暂不可用，已保存的章节仍可阅读。请稍后再试。', 504: '这一章等待较久，进度已保留，请重试。' }
     // Gateway/provider turbulence (429 without a quota code, 502,
     // 503, 504) is transient; any other refusal is final for this click.
     const failure = generationFailure(messages[response.status] || '这一章暂时没能接上，进度已保留，请重试。', { transient: [429, 502, 503, 504].includes(response.status) })

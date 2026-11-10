@@ -11,7 +11,10 @@ const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 // the ten below duplicates the 20261030 / 20261031 / 20261101 / 20261102 lists.
 
 test('bughunt-1: the share picker says so when it only shows the first 12 books', () => {
-  assert.match(main, /只显示前 12 本，搜书名或作者能缩小范围找到其余的书/)
+  // BUGHUNT-20261110: the disclosure now also names @handle as a
+  // searchable field (the picker has searched handles since
+  // 20261105 #4); the 12-book cap disclosure itself is unchanged.
+  assert.match(main, /只显示前 12 本，搜书名、作者或 @handle 能缩小范围找到其余的书/)
   assert.match(main, /pickable\.length > 12 &&/)
   assert.match(main, /pickable\.slice\(0, 12\)/)
 })

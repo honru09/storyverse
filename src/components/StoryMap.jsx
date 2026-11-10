@@ -12,7 +12,7 @@ import { aggregateStates, chapterStates } from "../story-map.js";
 export { aggregateStates, chapterStates };
 
 /** The one-line generation state, same words + same colors everywhere. */
-export function generationState({ total = CHAPTER_COUNT, generated = 0, current = 0, engine, preparing = false, complete = false }) {
+export function generationState({ total = CHAPTER_COUNT, generated = 0, current = 0, engine, preparing = false, complete = false, error = "" }) {
   if (complete || (generated >= total && current >= total - 1)) return { key: "done", label: "已完结", className: "is-ready" };
   // A hand-written book (WRITE-MODE §50) is never waiting on a
   // generator: its next chapter exists when its author writes it.
@@ -22,6 +22,10 @@ export function generationState({ total = CHAPTER_COUNT, generated = 0, current 
     : { key: "waiting", label: "下一章待生成", className: "is-waiting" };
   if (preparing) return { key: "generating", label: "下一章生成中", className: "is-generating" };
   if (generated > current + 1) return { key: "ready", label: "下一章已备好", className: "is-ready" };
+  // BUGHUNT-20261110: a failed pre-generation used to read exactly
+  // like "not started yet" — the star map said "下一章待生成" while
+  // only the chapter-end button knew it had failed. Say so here.
+  if (error) return { key: "error", label: "下一章没能备好", className: "is-error" };
   return { key: "waiting", label: "下一章待生成", className: "is-waiting" };
 }
 

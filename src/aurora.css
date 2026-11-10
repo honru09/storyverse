@@ -192,6 +192,9 @@
 .gen-state.is-waiting{color:var(--dim)}
 .gen-state.is-waiting i{background:transparent;border:1.6px solid currentColor}
 .gen-state.is-action{color:var(--amber)}
+/* BUGHUNT-20261110: a failed pre-generation is its own state — the
+   star map must not call it "waiting". */
+.gen-state.is-error{color:var(--danger)}
 .reader-starmap{margin-top:20px;padding:16px 16px 13px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--glass)}
 .reader-starmap-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
 .reader-starmap-head b{font-size:13px;font-weight:700}

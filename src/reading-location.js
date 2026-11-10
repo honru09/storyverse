@@ -1,6 +1,6 @@
 export const READING_LOCATION_KEY = 'storyweave:reading-locations:v1';
 const MAX_LOCATIONS = 100;
-const MAX_BOOKMARKS = 80;
+export const MAX_BOOKMARKS = 80;
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -125,6 +125,10 @@ export function createReadingLocationStore({ storage } = {}) {
         && item.anchor.paragraph === anchor.paragraph && item.anchor.offset === anchor.offset;
       const existing = bookmarks.some(samePlace);
       bookmarks = bookmarks.filter(item => !samePlace(item));
+      // BUGHUNT-20261110: at the cap a new bookmark used to silently
+      // evict the oldest one — possibly another book's — while
+      // reporting success. Refuse instead ("full"); the sheet says so.
+      if (!existing && bookmarks.length >= MAX_BOOKMARKS) return 'full';
       if (!existing) bookmarks.push({ key: entry.key, storyId: entry.storyId, chapterIndex: entry.chapterIndex,
         anchor, title: String(entry.title || '').slice(0, 150), excerpt: String(entry.excerpt || '').slice(0, 110) });
       bookmarks = bookmarks.slice(-MAX_BOOKMARKS);

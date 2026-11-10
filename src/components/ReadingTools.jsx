@@ -92,7 +92,10 @@ export default function ReadingTools({
       )}
       <button type="button" className="reading-bookmark-add" onClick={() => {
         const ok = onBookmark?.();
-        setPositionBookmarkNote(ok === false ? '没能定位到当前位置，请稍后再试。' : '');
+        // BUGHUNT-20261110: "full" is the store refusing a new
+        // bookmark at the 80-bookmark cap — say so, don't claim it
+        // landed (and don't reuse the no-anchor wording).
+        setPositionBookmarkNote(ok === "full" ? "书签已满 80 条，先删一条再加。" : ok === false ? "没能定位到当前位置，请稍后再试。" : "");
       }}>标记／取消当前位置</button>
       {positionBookmarkNote && <p className="reading-tools-status" role="status">{positionBookmarkNote}</p>}
       <p className="reading-tools-status">书签保存在本机；重写后的旧剧情书签不会跳到新剧情。</p>

@@ -74,7 +74,10 @@ test('bughunt-5: the post-rating refetch cannot overwrite another book', () => {
   const fn = main.slice(at, main.indexOf('function PlazaPublish', at))
   assert.match(fn, /const idRef = useRef\(id\);/)
   assert.match(fn, /idRef\.current = id;/)
-  assert.match(fn, /const wanted = id; fetchPlazaDetail\(\{ id: wanted \}\)\.then\(\(next\) => \{ if \(idRef\.current === wanted\) setDetail\(next\); \}\)/)
+  // BUGHUNT-20261110: the refetch is now the named refreshHead (same
+  // id guard, plus a visible stale flag + retry when it fails).
+  assert.match(fn, /const refreshHead = useCallback\(\(\) => \{\s+const wanted = id;\s+fetchPlazaDetail\(\{ id: wanted \}\)\s+\.then\(\(next\) => \{ if \(idRef\.current === wanted\) \{ setDetail\(next\); setRatingsHeadStale\(false\); \} \}\)/)
+  assert.match(fn, /onRated=\{refreshHead\}/)
 })
 
 test('bughunt-6: a decided fusion row leaves at once and says so', () => {
