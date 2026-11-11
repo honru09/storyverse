@@ -54,13 +54,19 @@ test('bookmarks can be removed without changing positions', () => {
 });
 test('search never reveals locked chapters and returns literal text', () => {
   const chapters = [{ title: '一', paragraphs: ['风吹过 <script>Forest</script>', '风又起'] }, { title: '二', paragraphs: ['风秘密'] }];
-  assert.equal(findInChapters(chapters, '风', 0).length, 2);
-  assert.equal(findInChapters(chapters, 'FOREST', 0)[0].paragraph, 0);
-  assert.equal(findInChapters(chapters, '   ', 1).length, 0);
-  assert.equal(findInChapters(chapters, '秘密', 0).length, 0);
+  // BUGHUNT-20261111: findInChapters returns { results, total,
+  // hasMore } now — the array alone could not tell "60 of 60" from
+  // "60 of more".
+  assert.equal(findInChapters(chapters, '风', 0).results.length, 2);
+  assert.equal(findInChapters(chapters, 'FOREST', 0).results[0].paragraph, 0);
+  assert.equal(findInChapters(chapters, '   ', 1).results.length, 0);
+  assert.equal(findInChapters(chapters, '秘密', 0).results.length, 0);
 });
 test('search caps results and tolerates a not-yet-generated chapter', () => {
-  assert.equal(findInChapters([null, { title: '一', paragraphs: Array(90).fill('风') }], '风').length, 60);
+  const found = findInChapters([null, { title: '一', paragraphs: Array(90).fill('风') }], '风');
+  assert.equal(found.results.length, 60);
+  assert.equal(found.total, 90);
+  assert.equal(found.hasMore, true);
 });
 test('interleaved readers preserve new bookmarks and never resurrect deletions', () => {
   const storage = memory();

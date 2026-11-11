@@ -19,8 +19,14 @@ export function normalizeAnchor(value, count = Number.MAX_SAFE_INTEGER) {
 
 export function findInChapters(chapters, query, lastAccessible = chapters.length - 1) {
   const needle = String(query || '').trim().slice(0, 100).toLocaleLowerCase();
-  if (!needle) return [];
+  // BUGHUNT-20261111: the old shape returned only the (capped)
+  // array, so exactly 60 hits read as "the first 60" — a lie the
+  // caller could not detect. Scan everything, keep the first 60,
+  // and report the true total so the caller can tell "60 of 60"
+  // from "60 of more".
+  if (!needle) return { results: [], total: 0, hasMore: false };
   const results = [];
+  let total = 0;
   chapters.slice(0, lastAccessible + 1).forEach((chapter, chapterIndex) => {
     chapter?.paragraphs?.forEach((text, paragraph) => {
       // BUGHUNT-20261104: every occurrence, not just the first per
@@ -29,18 +35,21 @@ export function findInChapters(chapters, query, lastAccessible = chapters.length
       // 0–1 paragraph fraction normalizeAnchor expects.
       const lower = text.toLocaleLowerCase();
       let from = 0;
-      while (results.length < 60) {
+      while (true) {
         const offset = lower.indexOf(needle, from);
         if (offset < 0) break;
-        const start = Math.max(0, offset - 24);
-        results.push({ chapterIndex, paragraph, title: chapter.title, offset,
-          anchorOffset: text.length ? offset / text.length : 0,
-          snippet: `${start ? '…' : ''}${text.slice(start, offset + needle.length + 60)}${text.length > offset + needle.length + 60 ? '…' : ''}` });
+        total += 1;
+        if (results.length < 60) {
+          const start = Math.max(0, offset - 24);
+          results.push({ chapterIndex, paragraph, title: chapter.title, offset,
+            anchorOffset: text.length ? offset / text.length : 0,
+            snippet: `${start ? '…' : ''}${text.slice(start, offset + needle.length + 60)}${text.length > offset + needle.length + 60 ? '…' : ''}` });
+        }
         from = offset + Math.max(1, needle.length);
       }
     });
   });
-  return results;
+  return { results, total, hasMore: total > results.length };
 }
 
 // 统计章节有效字数（剔除空白字符）与预计阅读分钟数（按中文沉浸阅读约 360 字/分钟估算）。

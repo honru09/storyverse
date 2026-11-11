@@ -36,6 +36,22 @@ import { publicHandle } from './social.js'
 const clip = (value, length) => typeof value === 'string' ? value.trim().slice(0, length) : ''
 const charCount = (value) => [...value].length
 
+/**
+ * BUGHUNT-20261111: same composite-cursor fix as the plaza feed —
+ * the bare-createdAt cursor dropped every rating sharing the
+ * page-boundary millisecond. Cursor is `createdAt|id` (rating ids
+ * are `rating:<book>:<uid>`, no `|`), sort breaks ties on id, and
+ * the filter is a composite comparison. A bare createdAt still
+ * parses, degrading to the old strict comparison.
+ */
+const splitCursor = (cursor) => {
+  if (typeof cursor !== 'string' || !cursor) return null
+  const at = cursor.lastIndexOf('|')
+  if (at <= 0) return { at: cursor, id: '' }
+  return { at: cursor.slice(0, at), id: cursor.slice(at + 1) }
+}
+const cursorOf = (record) => `${record.createdAt}|${record.id}`
+
 export const RATING_TEXT_MAX = 300
 export const RATING_LIST_LIMIT = 20
 
@@ -202,7 +218,7 @@ export function createBookRatingsService({ env = process.env, store, books, soci
 
     /**
      * The book's rating panel payload: the summary pair, the review
-     * list (newest first, cursor-paginated on createdAt), and the
+     * list (newest first, cursor-paginated on createdAt|id), and the
      * viewer's own position — their rating to prefill the form, and
      * whether the book is theirs (the form then explains itself
      * instead of rendering).
@@ -213,9 +229,11 @@ export function createBookRatingsService({ env = process.env, store, books, soci
       const pageSize = Math.min(50, Math.max(1, Number.isInteger(limit) ? limit : RATING_LIST_LIMIT))
       const records = await backend.listRatingsByBook(bookId)
       const summary = ratingSummaryFor(records.map((record) => record.stars))
+      const parsed = splitCursor(cursor)
       const visible = records
-        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
-        .filter((record) => !cursor || String(record.createdAt) < String(cursor))
+        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || String(b.id).localeCompare(String(a.id)))
+        .filter((record) => !parsed || String(record.createdAt) < parsed.at
+          || (String(record.createdAt) === parsed.at && String(record.id) < parsed.id))
       const page = visible.slice(0, pageSize)
       let viewerRating = null
       if (viewer?.uid) {
@@ -226,7 +244,7 @@ export function createBookRatingsService({ env = process.env, store, books, soci
         bookId,
         ...summary,
         ratings: await Promise.all(page.map(summaryOf)),
-        nextCursor: visible.length > pageSize ? page[page.length - 1].createdAt : null,
+        nextCursor: visible.length > pageSize ? cursorOf(page[page.length - 1]) : null,
         total: records.length,
         viewerRating,
         viewerIsAuthor: Boolean(viewer?.uid) && viewer.uid === book.authorUid,

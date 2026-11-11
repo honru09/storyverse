@@ -34,6 +34,30 @@ import { publicHandle } from './social.js'
 const clip = (value, length) => typeof value === 'string' ? value.trim().slice(0, length) : ''
 const charCount = (value) => [...value].length
 
+/**
+ * BUGHUNT-20261111: a page cursor used to be the bare createdAt, so
+ * every record sharing the page-boundary millisecond with the next
+ * page was silently dropped — the strict `< cursor` filter excluded
+ * the whole millisecond. The cursor is now composite
+ * `createdAt|id` (post/comment ids never contain `|`), the sort has
+ * an id tiebreak, and the filter is a composite comparison. A bare
+ * createdAt (a cursor minted before this change) still parses — its
+ * id half is empty, which degrades to the old strict comparison.
+ */
+const splitCursor = (cursor) => {
+  if (typeof cursor !== 'string' || !cursor) return null
+  const at = cursor.lastIndexOf('|')
+  if (at <= 0) return { at: cursor, id: '' }
+  return { at: cursor.slice(0, at), id: cursor.slice(at + 1) }
+}
+const cursorOf = (record) => `${record.createdAt}|${record.id}`
+const newestFirst = (a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || String(b.id).localeCompare(String(a.id))
+const oldestFirst = (a, b) => String(a.createdAt).localeCompare(String(b.createdAt)) || String(a.id).localeCompare(String(b.id))
+const beforeCursor = (record, cursor) => String(record.createdAt) < cursor.at
+  || (String(record.createdAt) === cursor.at && String(record.id) < cursor.id)
+const afterCursor = (record, cursor) => String(record.createdAt) > cursor.at
+  || (String(record.createdAt) === cursor.at && String(record.id) > cursor.id)
+
 export const POST_CONTENT_MAX = 500
 export const COMMENT_CONTENT_MAX = 300
 
@@ -168,20 +192,21 @@ export function createPlazaFeedService({ env = process.env, store, books, social
   return {
     available: backend !== null && backend !== undefined,
 
-    /** The public timeline: active posts only, newest first, cursor = last createdAt seen. */
+    /** The public timeline: active posts only, newest first, cursor = last createdAt|id seen. */
     async feed({ viewer = null, cursor = '', limit = 20 } = {}) {
       if (!backend) return { posts: [], nextCursor: null }
       const pageSize = Math.min(50, Math.max(1, Number.isInteger(limit) ? limit : 20))
       const all = await backend.listPosts()
+      const parsed = splitCursor(cursor)
       const visible = all
         .filter((post) => post.status === 'active')
-        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
-        .filter((post) => !cursor || String(post.createdAt) < String(cursor))
+        .sort(newestFirst)
+        .filter((post) => !parsed || beforeCursor(post, parsed))
       const page = visible.slice(0, pageSize)
       const posts = await Promise.all(page.map((post) => summaryOf(post, viewer?.uid || '')))
       return {
         posts,
-        nextCursor: visible.length > pageSize ? page[page.length - 1].createdAt : null,
+        nextCursor: visible.length > pageSize ? cursorOf(page[page.length - 1]) : null,
       }
     },
 
@@ -337,14 +362,15 @@ export function createPlazaFeedService({ env = process.env, store, books, social
       await activePost(id)
       const pageSize = Math.min(100, Math.max(1, Number.isInteger(limit) ? limit : 50))
       const all = await backend.listCommentsByPost(id)
+      const parsed = splitCursor(cursor)
       const visible = all
         .filter((comment) => comment.status === 'active')
-        .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
-      const after = cursor ? visible.filter((comment) => String(comment.createdAt) > String(cursor)) : visible
+        .sort(oldestFirst)
+      const after = parsed ? visible.filter((comment) => afterCursor(comment, parsed)) : visible
       const page = after.slice(0, pageSize)
       return {
         comments: await Promise.all(page.map(commentSummaryOf)),
-        nextCursor: after.length > pageSize ? page[page.length - 1].createdAt : null,
+        nextCursor: after.length > pageSize ? cursorOf(page[page.length - 1]) : null,
         total: visible.length,
       }
     },

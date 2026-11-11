@@ -14,8 +14,11 @@ test('bughunt-1: the share picker says so when it only shows the first 12 books'
   // BUGHUNT-20261110: the disclosure now also names @handle as a
   // searchable field (the picker has searched handles since
   // 20261105 #4); the 12-book cap disclosure itself is unchanged.
+  // BUGHUNT-20261111: with a search the disclosure also reports the
+  // server total ("共 N 本符合…"), so the no-query branch is a
+  // ternary arm now — the copy and the 12-book slice are unchanged.
   assert.match(main, /只显示前 12 本，搜书名、作者或 @handle 能缩小范围找到其余的书/)
-  assert.match(main, /pickable\.length > 12 &&/)
+  assert.match(main, /pickable\.length > 12 \?/)
   assert.match(main, /pickable\.slice\(0, 12\)/)
 })
 

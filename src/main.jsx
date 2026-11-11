@@ -4602,7 +4602,17 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
     // and the watermark stays (it retries on the next real visit).
     let live = true;
     const timer = window.setTimeout(() => {
-      markNotificationsRead({ category: tab, getAccessToken: getToken })
+      // BUGHUNT-20261111: the watermark used to be "now", so items
+      // past the 50-item page were marked read without ever being
+      // shown. Cap it at the newest instant actually on screen — the
+      // unseen tail stays unread.
+      const shown = data?.categories?.[tab]?.items || [];
+      const readThrough = shown
+        .map((item) => item.at)
+        .filter((at) => typeof at === 'string' && at)
+        .sort()
+        .at(-1);
+      markNotificationsRead({ category: tab, readThrough, getAccessToken: getToken })
         .then(() => {
           if (!live) return;
           setData((current) => {
@@ -4681,6 +4691,7 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
           </p>
         </div>
       ) : (
+        <>
         <ul className="notify-list">
           {items.map((item) => {
             if (tab === "activity") {
@@ -4799,6 +4810,10 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
             );
           })}
         </ul>
+        {tab === "activity" && (data.activityTotal || 0) > items.length && (
+          <p className="plaza-note">只显示最近 50 条互动。</p>
+        )}
+        </>
       )}
     </div>
   );
@@ -5159,7 +5174,14 @@ function ProseEditor({ chapter, onClose, onSave }) {
         // near the cap (a per-paragraph count on every row is layout
         // noise — 20261107's call), and say so out loud at the cap.
         const nearLimit = length >= CHAPTER_PROSE_PARAGRAPH_MAX - 400;
-        const atLimit = length >= CHAPTER_PROSE_PARAGRAPH_MAX;
+        // BUGHUNT-20261111: a model-grown paragraph can already be
+        // PAST the cap (fully shown in the box) — the old note said
+        // "the extra words were not written in", which was false the
+        // moment the editor opened. Over the cap, say how far over
+        // and that it must be trimmed before saving; exactly at the
+        // cap, keep the original line.
+        const overLimit = length > CHAPTER_PROSE_PARAGRAPH_MAX;
+        const atLimit = length === CHAPTER_PROSE_PARAGRAPH_MAX;
         return (
           <div className="prose-editor-row" key={position}>
             <textarea
@@ -5170,13 +5192,15 @@ function ProseEditor({ chapter, onClose, onSave }) {
               onChange={(event) => patchParagraph(position, event.target.value)}
             />
             {nearLimit && (
-              <small className={`da-unit-count${atLimit ? " is-over" : ""}`} aria-live="polite">
+              <small className={`da-unit-count${atLimit || overLimit ? " is-over" : ""}`} aria-live="polite">
                 {length} / {CHAPTER_PROSE_PARAGRAPH_MAX}
               </small>
             )}
-            {atLimit && (
+            {overLimit ? (
+              <small className="prose-limit-note" role="status">这段已有 {length} 字，超过 {CHAPTER_PROSE_PARAGRAPH_MAX} 字上限，保存前请先删减到 {CHAPTER_PROSE_PARAGRAPH_MAX} 字以内。</small>
+            ) : atLimit ? (
               <small className="prose-limit-note" role="status">已到 {CHAPTER_PROSE_PARAGRAPH_MAX} 字上限，多出的文字没有写进去。</small>
-            )}
+            ) : null}
             <button
               type="button"
               className="small-link"
@@ -5916,6 +5940,12 @@ function Reader({
   const [generationError, setGenerationError] = useState("");
   const [retry, setRetry] = useState(0);
   const requesting = useRef(false);
+  // BUGHUNT-20261111: 下一章 is an on-demand ask, not background
+  // pre-generation — handleNext sets this before bumping retry, and
+  // the pre-generation effect below consumes it (once) into the
+  // prepare call, so the BILLING gate is skipped for exactly that
+  // one pass. Automatic pre-generation never sets it.
+  const onDemandRef = useRef(false);
   const titleRef = useRef(null);
   const readerRef = useRef(null);
   const index = readOnly
@@ -6025,7 +6055,12 @@ function Reader({
     requesting.current = true;
     setPreparing(true);
     setGenerationError("");
-    onPrepareChapter(story.id, pendingIndex, controller.signal)
+    // BUGHUNT-20261111: consume the on-demand flag exactly once —
+    // a 下一章 press skips the BILLING gate for this pass; every
+    // automatic pre-generation runs gated, as before.
+    const onDemand = onDemandRef.current;
+    onDemandRef.current = false;
+    onPrepareChapter(story.id, pendingIndex, controller.signal, { onDemand })
       .catch((failure) => { if (!controller.signal.aborted) setGenerationError(failure.message); })
       .finally(() => { if (!controller.signal.aborted) { requesting.current = false; setPreparing(false); } });
     return () => { controller.abort(); requesting.current = false; };
@@ -6346,6 +6381,10 @@ function Reader({
         requesting.current = true;
         setPreparing(true);
         setGenerationError("");
+        // BUGHUNT-20261111: mark this pass on-demand BEFORE bumping
+        // retry — the effect below reads and clears the flag, so the
+        // BILLING gate is skipped for this explicit 下一章 ask only.
+        onDemandRef.current = true;
         setRetry((value) => value + 1);
       }
       return;
@@ -7523,21 +7562,24 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
   const [content, setContent] = useState("");
   const [book, setBook] = useState(initialBook);
   const [books, setBooks] = useState(null);
+  const [defaultBooks, setDefaultBooks] = useState(null);
+  const [booksTotal, setBooksTotal] = useState(0);
   const [booksFailed, setBooksFailed] = useState(false);
   const [bookQuery, setBookQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const length = [...content].length;
   const overLimit = length > 500;
+  const searchSeqRef = useRef(0);
 
   useEffect(() => {
-    if (mode !== "share" || books !== null) return undefined;
+    if (mode !== "share" || defaultBooks !== null) return undefined;
     let live = true;
     fetchStoreBooks({ limit: 60 })
-      .then((result) => { if (live) { setBooks(result.books); setBooksFailed(false); } })
+      .then((result) => { if (live) { setDefaultBooks(result.books); setBooks(result.books); setBooksTotal(result.total || 0); setBooksFailed(false); } })
       .catch(() => { if (live) { setBooks([]); setBooksFailed(true); } });
     return () => { live = false; };
-  }, [mode, books]);
+  }, [mode, defaultBooks]);
 
   // BUGHUNT-20261105: the picker used to match title/authorName only,
   // case-sensitively, so it could not find the @handle the bookstore
@@ -7545,10 +7587,30 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
   // fix closed on the server side. Same normalization here: trim,
   // strip a leading @, compare lowercased.
   const pickQuery = bookQuery.trim().replace(/^@/, "").toLowerCase();
-  const pickable = (books || []).filter((entry) => !pickQuery
-    || String(entry.title || "").toLowerCase().includes(pickQuery)
-    || String(entry.authorName || "").toLowerCase().includes(pickQuery)
-    || String(entry.authorHandle || "").toLowerCase().includes(pickQuery));
+
+  // BUGHUNT-20261111: the picker used to search only the 60 books it
+  // had fetched once, while the copy promised a search could find
+  // the rest of the catalogue. With a query, ask the server — it
+  // searches title/author/world/handle — debounced, with an
+  // in-flight sequence guard so a slow reply never overwrites a
+  // newer one. Clearing the query restores the cached default 60
+  // with no refetch.
+  useEffect(() => {
+    if (mode !== "share" || defaultBooks === null) return undefined;
+    if (!pickQuery) { setBooks(defaultBooks); setBooksTotal(defaultBooks.length); return undefined; }
+    const seq = ++searchSeqRef.current;
+    const timer = window.setTimeout(() => {
+      fetchStoreBooks({ q: pickQuery, limit: 60 })
+        .then((result) => { if (searchSeqRef.current === seq) { setBooks(result.books); setBooksTotal(result.total || 0); } })
+        .catch(() => { /* keep the previous list; the query just does not narrow */ });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [mode, pickQuery, defaultBooks]);
+
+  // With a query the server already filtered (title/author/world/
+  // handle) — a client filter here would drop the world matches.
+  // Without a query the list is the default 60.
+  const pickable = books || [];
 
   const submit = async () => {
     if (busy || overLimit) return;
@@ -7618,7 +7680,7 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
             {books === null ? (
               <p className="plaza-note">正在打开书城…</p>
             ) : booksFailed ? (
-              <p className="plaza-note">书城这次没能打开，你的书还在，不用担心。<button type="button" className="small-link" onClick={() => { setBooksFailed(false); setBooks(null); }}>再试一次</button></p>
+              <p className="plaza-note">书城这次没能打开，你的书还在，不用担心。<button type="button" className="small-link" onClick={() => { setBooksFailed(false); setBooks(null); setDefaultBooks(null); }}>再试一次</button></p>
             ) : pickable.length === 0 ? (
               // BUGHUNT-20261105: a query with no match used to report
               // the bookstore as empty. Say which case it is.
@@ -7627,9 +7689,11 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
                 : "书城里还没有能分享的书。"}</p>
             ) : (
               <>
-              {pickable.length > 12 && (
+              {pickQuery && booksTotal > 12 ? (
+                <p className="plaza-note">共 {booksTotal} 本符合，先显示前 12 本，换更具体的关键词缩小范围。</p>
+              ) : pickable.length > 12 ? (
                 <p className="plaza-note">只显示前 12 本，搜书名、作者或 @handle 能缩小范围找到其余的书。</p>
-              )}
+              ) : null}
               <ul className="plaza-composer-booklist da-scroll">
                 {pickable.slice(0, 12).map((entry) => (
                   <li key={entry.id}>
@@ -9656,17 +9720,21 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
       // it. Now the landed part is named in the error and pushed to
       // the page via onSaved, so the page matches the stored state.
       let next = null;
-      let landed = "";
+      // BUGHUNT-20261111: landed used to be one string, so the
+      // banner upload overwrote the avatar — when the field patch
+      // then failed, the error named only the banner. Accumulate
+      // every step that landed, so both are named.
+      let landed = [];
       if (stagedPictureUpload) {
         next = await uploadMyPicture({ ...stagedPictureUpload, getAccessToken: getToken });
-        landed = "头像";
+        landed.push("头像");
       }
       if (stagedBannerUpload) {
         next = await uploadMyBanner({ ...stagedBannerUpload, getAccessToken: getToken });
-        landed = "头图";
+        landed.push("头图");
       } else if (stagedBannerReset) {
         next = await deleteMyBanner({ getAccessToken: getToken });
-        landed = "头图";
+        landed.push("头图");
       }
       const patch = {
         displayName: displayName.trim(),
@@ -9687,9 +9755,12 @@ function EditProfileSheet({ profile, getToken, onClose, onSaved }) {
       // BUGHUNT-20261110: see the note above — a landed upload is
       // pushed to the page and named, so "not saved" never hides a
       // change that already took effect server-side.
-      if (landed) {
+      // BUGHUNT-20261111: landed is a list now — both steps are named
+      // ("头像和头图已经换上了…"); a single step reads exactly as
+      // it did before ("头像已经换上了…").
+      if (landed.length) {
         if (next) onSaved(next);
-        setError(`${landed}已经换上了，资料的其他部分没能保存。`);
+        setError(`${landed.join("和")}已经换上了，资料的其他部分没能保存。`);
       } else {
         setError(failure?.message || "资料没能保存，请稍后再试。");
       }
@@ -9947,6 +10018,7 @@ function FriendsPanel({ authClient, onOpenProfile }) {
   const [searching, setSearching] = useState(false);
   const [composingUid, setComposingUid] = useState("");
   const [draft, setDraft] = useState("");
+  const [loadingMoreIncoming, setLoadingMoreIncoming] = useState(false);
 
   const reload = useCallback(() => {
     setLoadError("");
@@ -9955,6 +10027,25 @@ function FriendsPanel({ authClient, onOpenProfile }) {
       .catch(() => setLoadError("好友没能打开，请稍后再试。"));
   }, [getToken]);
   useEffect(() => { reload(); }, [reload]);
+
+  // BUGHUNT-20261111: incoming requests page 50 at a time while the
+  // badge counts all pending — append the next page, deduped by id,
+  // under a busy guard; the count never moves, so the list just
+  // grows until it matches it.
+  const loadMoreIncoming = () => {
+    if (loadingMoreIncoming || !data) return;
+    setLoadingMoreIncoming(true);
+    setLoadError("");
+    fetchFriends({ getAccessToken: getToken, incomingOffset: data.incoming.length })
+      .then((next) => {
+        setData((current) => current ? {
+          ...current,
+          incoming: [...current.incoming, ...next.incoming.filter((entry) => !current.incoming.some((old) => old.id === entry.id))],
+        } : current);
+      })
+      .catch(() => setLoadError("更多申请没能打开，请稍后再试。"))
+      .finally(() => setLoadingMoreIncoming(false));
+  };
 
   const pendingCount = data?.counts?.incomingPending || 0;
 
@@ -10145,6 +10236,9 @@ function FriendsPanel({ authClient, onOpenProfile }) {
             {data.friends.map((person) => (
               <FriendPersonRow key={person.uid} person={person} onOpenProfile={onOpenProfile} />
             ))}
+            {data.counts.friends > data.friends.length && (
+              <p className="profile-line-empty">只列出最近的 {data.friends.length} 位好友。</p>
+            )}
           </div>
         )
       ) : tab === "requests" ? (
@@ -10172,6 +10266,14 @@ function FriendsPanel({ authClient, onOpenProfile }) {
                   {entry.message && <p className="friend-request-message">「{entry.message}」</p>}
                 </div>
               ))}
+              {data.counts.incomingPending > data.incoming.length && (
+                <>
+                  <p className="profile-line-empty">只列出前 {data.incoming.length} 条申请。</p>
+                  <button type="button" className="small-link" disabled={loadingMoreIncoming} onClick={loadMoreIncoming}>
+                    {loadingMoreIncoming ? "正在打开…" : "显示更多"}
+                  </button>
+                </>
+              )}
             </div>
           )}
           {data.outgoing.length > 0 && (
@@ -13950,19 +14052,23 @@ function App() {
     (draft) => setLibrary((current) => ({ ...current, draft })),
     [setLibrary],
   );
-  const prepareChapter = useCallback(async (id, index, signal) => {
+  const prepareChapter = useCallback(async (id, index, signal, options = {}) => {
     const source = store.getSnapshot().library.stories.find((book) => book.id === id);
     if (!source || nextGenerationIndex(source) !== index) return;
     // BILLING gate: preparing a chapter nobody has asked for yet is a
     // background spend, so it is reserved for members and for lines
-    // touched within the last three days (a line being read right now
-    // always qualifies — opening it just stamped updatedAt; a record
-    // with no timestamp at all is legacy and also qualifies, so the
-    // gate never takes the prepared-next-chapter feel away from an
-    // active reader). On-demand generation is never gated here.
+    // touched within the last three days (a record with no timestamp
+    // at all is legacy and also qualifies). On-demand generation —
+    // the reader pressed 下一章 and is waiting on it — is never gated
+    // here: options.onDemand skips the gate, because the reader
+    // asked for this chapter outright. (An earlier comment claimed
+    // opening a line stamps updatedAt; that only holds for the local
+    // engine's prepared window, not for a gemini line, so a stale
+    // gemini line read again would otherwise sit behind this gate
+    // with no error and no chapter.)
     const updatedMs = source.updatedAt ? Date.parse(source.updatedAt) : NaN;
     const activeRecently = !Number.isFinite(updatedMs) || Date.now() - updatedMs < 3 * 86_400_000;
-    if (!activeRecently && !(await billingGateMember({ getAccessToken: () => authClient.getAccessToken() }))) return;
+    if (!options.onDemand && !activeRecently && !(await billingGateMember({ getAccessToken: () => authClient.getAccessToken() }))) return;
     const result = await requestChapter(source, index, { signal, getAccessToken: () => authClient.getAccessToken() });
     if (signal.aborted) return;
     const candidate = acceptGeneratedChapter(source, result);

@@ -1144,7 +1144,7 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           throw error
         }
         const body = await readAuthJson(request)
-        return sendJson(response, 200, await social.markNotificationsRead(identity, body.category))
+        return sendJson(response, 200, await social.markNotificationsRead(identity, body.category, body.readThrough))
       }
       if (pathname === '/api/fusion/status' && request.method === 'POST') {
         // 合流权限 (REQ-49): the merge page's per-book truth — the
@@ -1285,7 +1285,11 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
           if (error instanceof ApiError && error.status === 401) throw new ApiError(401, '请先登录，再看好友。', 'auth-required')
           throw error
         }
-        return sendJson(response, 200, await social.friends(identity))
+        const query = new URL(request.url, 'http://localhost').searchParams
+        const incomingOffset = Number.parseInt(query.get('incomingOffset') || '', 10)
+        return sendJson(response, 200, await social.friends(identity, {
+          incomingOffset: Number.isInteger(incomingOffset) ? incomingOffset : 0,
+        }))
       }
       const userMatch = pathname.match(/^\/api\/users\/([^/]+)(?:\/(profile|connections|portrait|picture|banner|follow|unfollow|report|friend-request\/respond|friend-request\/cancel|friend-request))?$/)
       if (userMatch) {

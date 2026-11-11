@@ -6,6 +6,7 @@ import { interventionFateText, queueIntervention } from '../src/story-engine.js'
 const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
 const panel = readFileSync(new URL('../src/components/AccountPanel.jsx', import.meta.url), 'utf8')
 const engine = readFileSync(new URL('../src/story-engine.js', import.meta.url), 'utf8')
+const plazaServer = readFileSync(new URL('../server/plaza.js', import.meta.url), 'utf8')
 
 // Daily bug-hunt 2026-11-05: guard assertions for this round's fixes.
 // Base: origin/main bd6b616 (bughunt-20261104 already merged).
@@ -48,8 +49,14 @@ test('bughunt-4: the share picker searches by @handle, case-insensitively', () =
   const at = main.indexOf('const pickQuery = bookQuery.trim()')
   const fn = main.slice(at, main.indexOf('const submit = async', at))
   assert.match(fn, /replace\(\/\^@\/, ""\)\.toLowerCase\(\)/)
-  assert.match(fn, /entry\.authorHandle/)
-  assert.match(fn, /toLowerCase\(\)\.includes\(pickQuery\)/)
+  // BUGHUNT-20261111: the match itself moved server-side (20261111
+  // #2 — the picker used to filter only its first 60 books, so a
+  // @handle past book 60 never matched). The normalised query is
+  // sent as q, and the server matches authorHandle among
+  // title/author/world/handle.
+  assert.match(fn, /fetchStoreBooks\(\{ q: pickQuery, limit: 60 \}\)/)
+  assert.match(plazaServer, /book\.authorHandle/)
+  assert.match(plazaServer, /handleNeedle/)
 })
 
 test('bughunt-5: switching friend-search mode drops the other mode\'s result', () => {

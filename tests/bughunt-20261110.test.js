@@ -116,15 +116,19 @@ test('bughunt-6: a partially landed profile save names what landed and syncs the
   // failed the sheet said only "not saved" while the avatar/banner
   // had already changed server-side, and closing the sheet
   // ("discard the draft") could not undo it.
+  // BUGHUNT-20261111: landed is a list now (20261111 #3) — the old
+  // single string overwrote the avatar with the banner, so a
+  // two-step save named only the banner. The single-step wording is
+  // unchanged ("头像已经换上了…"); both steps join with 和.
   const sheet = slice('function EditProfileSheet(', 'function FriendsPanel(')
   const saveAt = sheet.indexOf('const save = async')
   assert.notEqual(saveAt, -1)
   const save = sheet.slice(saveAt, sheet.indexOf('return (', saveAt))
-  assert.match(save, /let landed = ""/)
-  assert.match(save, /landed = "头像"/)
-  assert.match(save, /landed = "头图"/)
-  assert.match(save, /if \(landed\) \{\s+if \(next\) onSaved\(next\);/)
-  assert.match(save, /setError\(`\$\{landed\}已经换上了，资料的其他部分没能保存。`\)/)
+  assert.match(save, /let landed = \[\]/)
+  assert.match(save, /landed\.push\("头像"\)/)
+  assert.match(save, /landed\.push\("头图"\)/)
+  assert.match(save, /if \(landed\.length\) \{\s+if \(next\) onSaved\(next\);/)
+  assert.match(save, /setError\(`\$\{landed\.join\("和"\)\}已经换上了，资料的其他部分没能保存。`\)/)
 })
 
 test('bughunt-7: the comment-thread head wraps instead of clipping its confirm buttons', () => {

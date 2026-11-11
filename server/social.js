@@ -560,8 +560,13 @@ export function createSocialService({
      * pending requests waiting on THEM (with the sender's note), and
      * every request they sent with its standing state — the only place
      * a decline is ever visible, and only to the person who asked.
+     * BUGHUNT-20261111: the lists are capped (friends 100, requests
+     * 50 a page) while counts are full — the client discloses the
+     * truncation, and incoming requests page through incomingOffset
+     * (counts never move). Outgoing has no count shown anywhere, so
+     * it stays a single page for now.
      */
-    async friends(identity) {
+    async friends(identity, { incomingOffset = 0 } = {}) {
       if (!backend) throw new ApiError(503, '好友功能尚未配置。')
       const me = identity.uid
       const [friendships, incoming, outgoing] = await Promise.all([
@@ -577,7 +582,8 @@ export function createSocialService({
         return { ...row, friendState: 'friends', since: record.createdAt || null }
       }))
       const pendingIncoming = incoming.filter((record) => record.status === 'pending')
-      const incomingRows = await Promise.all([...pendingIncoming].sort(byCreated).slice(0, NOTIFY_ITEM_CAP).map(async (record) => ({
+      const offset = Number.isInteger(incomingOffset) && incomingOffset > 0 ? incomingOffset : 0
+      const incomingRows = await Promise.all([...pendingIncoming].sort(byCreated).slice(offset, offset + NOTIFY_ITEM_CAP).map(async (record) => ({
         id: record.id,
         message: record.message || '',
         at: record.createdAt || null,
@@ -1246,7 +1252,6 @@ export function createSocialService({
       ])
       const followItems = await Promise.all([...edges]
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-        .slice(0, NOTIFY_ITEM_CAP)
         .map(async (record) => {
           const person = await resolvedPerson(record.followerUid, identity)
           return {
@@ -1267,7 +1272,6 @@ export function createSocialService({
       const friendRequestItems = await Promise.all(incomingRequests
         .filter((record) => record.status === 'pending')
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-        .slice(0, NOTIFY_ITEM_CAP)
         .map(async (record) => {
           const person = await resolvedPerson(record.fromUid, identity)
           return {
@@ -1284,7 +1288,6 @@ export function createSocialService({
       const friendAcceptedItems = await Promise.all(outgoingRequests
         .filter((record) => record.status === 'accepted')
         .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
-        .slice(0, NOTIFY_ITEM_CAP)
         .map(async (record) => {
           const person = await resolvedPerson(record.toUid, identity)
           return {
@@ -1305,7 +1308,6 @@ export function createSocialService({
       const likeItems = await Promise.all(postLikes
         .filter((record) => record.userUid && record.userUid !== identity.uid)
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-        .slice(0, NOTIFY_ITEM_CAP)
         .map(async (record) => {
           const person = await resolvedPerson(record.userUid, identity)
           return {
@@ -1322,7 +1324,6 @@ export function createSocialService({
       const commentItems = await Promise.all(postComments
         .filter((record) => record.status === 'active' && record.authorUid && record.authorUid !== identity.uid)
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-        .slice(0, NOTIFY_ITEM_CAP)
         .map(async (record) => {
           const person = await resolvedPerson(record.authorUid, identity)
           return {
@@ -1353,7 +1354,6 @@ export function createSocialService({
       const ratingItems = await Promise.all(bookRatings
         .filter((record) => record.userUid && record.userUid !== identity.uid)
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-        .slice(0, NOTIFY_ITEM_CAP)
         .map(async (record) => {
           const person = await resolvedPerson(record.userUid, identity)
           return {
@@ -1381,7 +1381,6 @@ export function createSocialService({
       const fusionRequestItems = await Promise.all(fusionRequests
         .filter((record) => record.status === 'pending' && record.applicantUid && record.applicantUid !== identity.uid)
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-        .slice(0, NOTIFY_ITEM_CAP)
         .map(async (record) => {
           const person = await resolvedPerson(record.applicantUid, identity)
           return {
@@ -1402,12 +1401,16 @@ export function createSocialService({
             at: record.createdAt || null,
           }
         }))
-      const activityItems = [...followItems, ...friendRequestItems, ...friendAcceptedItems, ...likeItems, ...commentItems, ...ratingItems, ...fusionRequestItems]
+      // BUGHUNT-20261111: unread is counted on the FULL merged list
+      // before any cap — each sub-list used to be cut to 50 first and
+      // the merge cut to 50 again, so items past 50 never counted as
+      // unread and were still marked read on open. Totals ride along
+      // so the client can say the list is cut.
+      const activityFull = [...followItems, ...friendRequestItems, ...friendAcceptedItems, ...likeItems, ...commentItems, ...ratingItems, ...fusionRequestItems]
         .sort(byNewest)
-        .slice(0, NOTIFY_ITEM_CAP)
-      const announcementItems = [...announcementRecords]
+      const activityItems = activityFull.slice(0, NOTIFY_ITEM_CAP)
+      const announcementFull = [...announcementRecords]
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-        .slice(0, NOTIFY_ITEM_CAP)
         .map((record) => ({
           id: record.id,
           kind: 'announcement',
@@ -1415,26 +1418,28 @@ export function createSocialService({
           body: record.body,
           at: record.createdAt || null,
         }))
-      const systemItems = [...eventRecords]
+      const announcementItems = announcementFull.slice(0, NOTIFY_ITEM_CAP)
+      const systemFull = [...eventRecords]
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-        .slice(0, NOTIFY_ITEM_CAP)
         .map((record) => ({
           id: record.id,
           kind: record.kind,
           detail: record.detail || '',
           at: record.createdAt || null,
         }))
+      const systemItems = systemFull.slice(0, NOTIFY_ITEM_CAP)
       const itemsByCategory = { activity: activityItems, announcements: announcementItems, system: systemItems }
+      const fullByCategory = { activity: activityFull, announcements: announcementFull, system: systemFull }
       const categories = {}
       let totalUnread = 0
       NOTIFY_CATEGORIES.forEach((category, index) => {
         const readAt = readMarks[index] || ''
         const items = itemsByCategory[category]
-        const unread = items.filter((item) => item.at && item.at > readAt).length
-        categories[category] = { unread, items }
+        const unread = fullByCategory[category].filter((item) => item.at && item.at > readAt).length
+        categories[category] = { unread, items, total: fullByCategory[category].length }
         totalUnread += unread
       })
-      return { categories, totalUnread }
+      return { categories, totalUnread, activityTotal: activityFull.length }
     },
 
     /**
@@ -1442,11 +1447,18 @@ export function createSocialService({
      * the server's own instant, stored per user × category, so the
      * badge, another device and a later visit all agree — and reading
      * one category never touches the others.
+     * BUGHUNT-20261111: the caller may pass readThrough — the newest
+     * instant it actually SHOWED — and the watermark stops there, so
+     * items cut off past the 50-item page stay unread instead of
+     * being marked read sight unseen. An absent or unparsable value
+     * keeps the old "now" behaviour.
      */
-    async markNotificationsRead(identity, category) {
+    async markNotificationsRead(identity, category, readThrough) {
       if (!backend) throw new ApiError(503, '消息服务尚未配置。')
       if (!NOTIFY_CATEGORIES.includes(category)) throw new ApiError(400, '消息分类不对。')
-      const readAt = new Date(now()).toISOString()
+      const readAt = typeof readThrough === 'string' && readThrough && Number.isFinite(Date.parse(readThrough))
+        ? readThrough
+        : new Date(now()).toISOString()
       await backend.putNotifyRead(identity.uid, category, readAt)
       return { category, readAt }
     },

@@ -44,7 +44,7 @@ export default function ReadingTools({
     }
     onToggleStoryBookmark?.();
   };
-  const results = useMemo(() => findInChapters(chapters, query, lastAccessible), [chapters, query, lastAccessible]);
+  const { results, total, hasMore } = useMemo(() => findInChapters(chapters, query, lastAccessible), [chapters, query, lastAccessible]);
   const currentChapter = chapters?.[currentChapterIndex];
   const metrics = useMemo(() => estimateReadingMetrics(currentChapter?.paragraphs || []), [currentChapter]);
   const dossier = useMemo(
@@ -68,7 +68,7 @@ export default function ReadingTools({
         <input type="search" autoComplete="off" placeholder="输入字词或人物名字" maxLength={100}
           value={query} onChange={event => setQuery(event.target.value)} />
       </label>
-      <p className="reading-tools-status" role="status">{!query.trim() ? '只搜索这本书已开启的章节，不会提前揭晓剧情。' : results.length ? `${results.length === 60 ? '前 ' : ''}${results.length} 处结果` : '没有找到，试试更短的词。'}</p>
+      <p className="reading-tools-status" role="status">{!query.trim() ? '只搜索这本书已开启的章节，不会提前揭晓剧情。' : total ? (hasMore ? `前 60 处结果，共 ${total} 处` : `${total} 处结果`) : '没有找到，试试更短的词。'}</p>
       <div className="reading-search-results">
         {results.map(result => <button type="button" key={`${result.chapterIndex}-${result.paragraph}-${result.offset ?? 0}`} onClick={() => onSelect(result.chapterIndex, { paragraph: result.paragraph, offset: result.anchorOffset ?? 0 })}>
           <strong>{result.title}</strong><span>{result.snippet}</span>

@@ -48,7 +48,10 @@ test('bughunt-2: two positions in one paragraph are two bookmarks', () => {
 
 test('bughunt-3: in-book find returns every occurrence with its hit offset', () => {
   const chapters = [{ title: '第一章', paragraphs: ['猫在屋顶，猫在巷口。'] }]
-  const results = findInChapters(chapters, '猫')
+  // BUGHUNT-20261111: findInChapters returns { results, total,
+  // hasMore } now — the array alone could not tell "60 of 60" from
+  // "60 of more".
+  const results = findInChapters(chapters, '猫').results
   assert.equal(results.length, 2)
   assert.equal(results[0].offset, 0)
   assert.ok(results[1].offset > 0)

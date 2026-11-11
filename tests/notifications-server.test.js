@@ -138,7 +138,7 @@ test('互动 aggregates real follow edges, newest first, with resolved actors', 
 
   // Nobody has interacted with the fan: the category is honestly empty.
   const empty = await getNotifications(base, fanB.token)
-  assert.deepEqual(empty.categories.activity, { unread: 0, items: [] })
+  assert.deepEqual(empty.categories.activity, { unread: 0, items: [], total: 0 })
   assert.equal(empty.totalUnread, 0)
 
   const followB = await post(base, `/api/users/${encodeURIComponent(author.uid)}/follow`, fanB.token)
@@ -157,8 +157,9 @@ test('互动 aggregates real follow edges, newest first, with resolved actors', 
   assert.ok(activity.items[0].picture?.url, 'follow rows carry the face-anchored picture payload')
   assert.ok(activity.items[0].at > activity.items[1].at)
   // The other categories stay empty — nothing is invented to fill them.
-  assert.deepEqual(payload.categories.announcements, { unread: 0, items: [] })
-  assert.deepEqual(payload.categories.system, { unread: 0, items: [] })
+  // BUGHUNT-20261111: each category also carries its full total (0 here).
+  assert.deepEqual(payload.categories.announcements, { unread: 0, items: [], total: 0 })
+  assert.deepEqual(payload.categories.system, { unread: 0, items: [], total: 0 })
 })
 
 test('read watermarks are per category: reading one never touches the others', async (t) => {

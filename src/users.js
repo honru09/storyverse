@@ -256,14 +256,21 @@ export async function fetchNotifications({ getAccessToken, fetchImpl = globalThi
   return {
     categories: result?.categories ?? {},
     totalUnread: result?.totalUnread ?? 0,
+    // BUGHUNT-20261111: the full 互动 count, so the panel can say
+    // the list is cut at 50 instead of silently hiding the rest.
+    activityTotal: result?.activityTotal ?? 0,
   }
 }
 
 /** Opening a category marks that category — and only it — as read. */
-export async function markNotificationsRead({ category, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+export async function markNotificationsRead({ category, readThrough, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
   const headers = { 'Content-Type': 'application/json', ...(await usersHeaders(getAccessToken)) }
+  // BUGHUNT-20261111: readThrough caps the watermark at the newest
+  // instant actually shown, so items past the 50-item page stay unread.
+  const body = { category }
+  if (typeof readThrough === 'string' && readThrough) body.readThrough = readThrough
   const response = await fetchImpl('/api/me/notifications/read', {
-    method: 'POST', headers, body: JSON.stringify({ category }),
+    method: 'POST', headers, body: JSON.stringify(body),
   })
   return usersJson(response)
 }
@@ -298,9 +305,14 @@ export async function searchPeople({ q, email, limit, offset, getAccessToken, fe
  * with standing states — a decline is only ever visible here, to the
  * person who asked.
  */
-export async function fetchFriends({ getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+export async function fetchFriends({ getAccessToken, incomingOffset = 0, fetchImpl = globalThis.fetch } = {}) {
   const headers = await usersHeaders(getAccessToken)
-  const response = await fetchImpl('/api/me/friends', { headers })
+  // BUGHUNT-20261111: incoming requests page 50 at a time — the
+  // offset walks the pending list while counts stay full.
+  const params = new URLSearchParams()
+  if (Number.isInteger(incomingOffset) && incomingOffset > 0) params.set('incomingOffset', String(incomingOffset))
+  const query = params.toString()
+  const response = await fetchImpl(`/api/me/friends${query ? `?${query}` : ''}`, { headers })
   const result = await usersJson(response)
   return {
     friends: Array.isArray(result?.friends) ? result.friends : [],
