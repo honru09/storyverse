@@ -305,12 +305,14 @@ export async function searchPeople({ q, email, limit, offset, getAccessToken, fe
  * with standing states — a decline is only ever visible here, to the
  * person who asked.
  */
-export async function fetchFriends({ getAccessToken, incomingOffset = 0, fetchImpl = globalThis.fetch } = {}) {
+export async function fetchFriends({ getAccessToken, incomingOffset = 0, outgoingOffset = 0, fetchImpl = globalThis.fetch } = {}) {
   const headers = await usersHeaders(getAccessToken)
   // BUGHUNT-20261111: incoming requests page 50 at a time — the
   // offset walks the pending list while counts stay full.
+  // BUGHUNT-20261112: outgoing pages the same way (outgoingOffset).
   const params = new URLSearchParams()
   if (Number.isInteger(incomingOffset) && incomingOffset > 0) params.set('incomingOffset', String(incomingOffset))
+  if (Number.isInteger(outgoingOffset) && outgoingOffset > 0) params.set('outgoingOffset', String(outgoingOffset))
   const query = params.toString()
   const response = await fetchImpl(`/api/me/friends${query ? `?${query}` : ''}`, { headers })
   const result = await usersJson(response)
@@ -320,6 +322,41 @@ export async function fetchFriends({ getAccessToken, incomingOffset = 0, fetchIm
     outgoing: Array.isArray(result?.outgoing) ? result.outgoing : [],
     counts: result?.counts ?? { friends: 0, incomingPending: 0 },
   }
+}
+
+/**
+ * BUGHUNT-20261112: append one more page of friend requests onto the
+ * rows already on screen, deduplicated by id — a re-fetched page
+ * must never duplicate a row the reader already has.
+ */
+export function mergeRequestPages(loaded, page) {
+  const seen = new Set((loaded || []).map((entry) => entry.id))
+  return [...(loaded || []), ...(page || []).filter((entry) => !seen.has(entry.id))]
+}
+
+/**
+ * BUGHUNT-20261112: the page-preserving refetch behind the friends
+ * panel's reload — after an accept/decline/cancel the panel re-reads
+ * from the server, but the reader may already have flipped past page
+ * one. Fetch page one, then keep appending 50-row pages until the
+ * rows already on screen are covered again, so a second page never
+ * silently collapses back to the first 50. A page that lands short
+ * (under 50 rows) is the last page; a page that adds nothing stops
+ * the walk. Any failure rejects and the caller keeps the old list
+ * and says so.
+ */
+export async function fetchFriendsKeepingPages({ getAccessToken, alreadyLoaded = 0, fetchImpl = globalThis.fetch } = {}) {
+  const first = await fetchFriends({ getAccessToken, fetchImpl })
+  let incoming = [...first.incoming]
+  let lastPage = first.incoming
+  while (incoming.length < alreadyLoaded && lastPage.length === 50) {
+    const next = await fetchFriends({ getAccessToken, incomingOffset: incoming.length, fetchImpl })
+    lastPage = next.incoming
+    const merged = mergeRequestPages(incoming, next.incoming)
+    if (merged.length === incoming.length) break
+    incoming = merged
+  }
+  return { ...first, incoming }
 }
 
 /** Ask someone to be friends, with one short note (≤50 chars). Returns the standing state. */

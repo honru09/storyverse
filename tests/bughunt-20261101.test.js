@@ -37,7 +37,11 @@ test('bughunt-3: a failed plaza load-more says so instead of silently re-arming 
 })
 
 test('bughunt-4: a dead plaza permalink says the post is gone instead of silently showing the stream', () => {
-  assert.match(main, /focusFailed/)
+  // BUGHUNT-20261112: the state was renamed focusFailed -> focusError
+  // so a network failure stops being reported as a deletion; the
+  // 404 sentence below is unchanged, and the intent of this guard —
+  // a dead permalink says so — still holds.
+  assert.match(main, /focusError/)
   assert.match(main, /这条帖子已删除或不存在/)
 })
 

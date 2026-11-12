@@ -61,7 +61,7 @@ export default function StoryMap({
   const aggregated = nodes.length !== states.length;
   const count = states.length;
   const nodeCount = nodes.length;
-  const width = Math.max(300, nodeCount * (nodeCount <= 12 ? 64 : 30));
+  const width = Math.max(300, nodeCount * (nodeCount <= 12 ? 64 : 44));
   const height = variant === "mini" ? 44 : 92;
   const cy = height / 2;
   const points = nodes.map((_, index) => nodePoint(index, nodeCount, width, height));

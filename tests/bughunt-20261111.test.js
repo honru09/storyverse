@@ -165,7 +165,10 @@ test('bughunt-2: the share picker searches the server, not just the first 60 boo
   assert.match(composer, /const searchSeqRef = useRef\(0\)/)
   assert.match(composer, /searchSeqRef\.current === seq/)
   assert.match(composer, /const \[defaultBooks, setDefaultBooks\] = useState\(null\)/)
-  assert.match(composer, /if \(!pickQuery\) \{ setBooks\(defaultBooks\); setBooksTotal\(defaultBooks\.length\); return undefined; \}/)
+  // BUGHUNT-20261112: clearing the query also clears the search
+  // failure flag, so a stale "上一次的结果" note never survives
+  // into the restored default list.
+  assert.match(composer, /if \(!pickQuery\) \{ setBooks\(defaultBooks\); setBooksTotal\(defaultBooks\.length\); setPickSearchError\(false\); return undefined; \}/)
   assert.match(composer, /共 \{booksTotal\} 本符合，先显示前 12 本，换更具体的关键词缩小范围。/)
   // The no-query copy (20261110 #11) stays word for word.
   assert.match(composer, /只显示前 12 本，搜书名、作者或 @handle 能缩小范围找到其余的书。/)
@@ -214,7 +217,10 @@ test('bughunt-4: the friends panel discloses its caps and pages incoming request
   assert.match(panel, /loadingMoreIncoming/)
   assert.match(panel, /显示更多/)
   assert.match(usersClient, /incomingOffset/)
-  assert.match(socialServer, /async friends\(identity, \{ incomingOffset = 0 \} = \{\}\)/)
+  // BUGHUNT-20261112: friends() gained outgoingOffset (the outgoing
+  // side pages the same way now); the incoming paging this guard
+  // nails is unchanged.
+  assert.match(socialServer, /async friends\(identity, \{ incomingOffset = 0, outgoingOffset = 0 \} = \{\}\)/)
 
   const { store, service } = makeSocialService()
   const me = 'username:me'

@@ -563,10 +563,14 @@ export function createSocialService({
      * BUGHUNT-20261111: the lists are capped (friends 100, requests
      * 50 a page) while counts are full — the client discloses the
      * truncation, and incoming requests page through incomingOffset
-     * (counts never move). Outgoing has no count shown anywhere, so
-     * it stays a single page for now.
+     * (counts never move).
+     * BUGHUNT-20261112: outgoing got the same treatment — it was the
+     * one list still silently cut at 50 with no count at all. It
+     * pages through outgoingOffset the same way, and counts carry
+     * outgoingTotal (every request the caller sent, whatever its
+     * standing state, since the tab shows all states).
      */
-    async friends(identity, { incomingOffset = 0 } = {}) {
+    async friends(identity, { incomingOffset = 0, outgoingOffset = 0 } = {}) {
       if (!backend) throw new ApiError(503, '好友功能尚未配置。')
       const me = identity.uid
       const [friendships, incoming, outgoing] = await Promise.all([
@@ -589,7 +593,8 @@ export function createSocialService({
         at: record.createdAt || null,
         person: await resolvedPerson(record.fromUid, identity),
       })))
-      const outgoingRows = await Promise.all([...outgoing].sort(byUpdated).slice(0, NOTIFY_ITEM_CAP).map(async (record) => ({
+      const outgoingOffsetSafe = Number.isInteger(outgoingOffset) && outgoingOffset > 0 ? outgoingOffset : 0
+      const outgoingRows = await Promise.all([...outgoing].sort(byUpdated).slice(outgoingOffsetSafe, outgoingOffsetSafe + NOTIFY_ITEM_CAP).map(async (record) => ({
         id: record.id,
         status: record.status,
         message: record.message || '',
@@ -600,7 +605,7 @@ export function createSocialService({
         friends: friendRows,
         incoming: incomingRows,
         outgoing: outgoingRows,
-        counts: { friends: friendships.length, incomingPending: pendingIncoming.length },
+        counts: { friends: friendships.length, incomingPending: pendingIncoming.length, outgoingTotal: outgoing.length },
       }
     },
 

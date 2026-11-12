@@ -115,6 +115,7 @@ import {
   cancelFriendRequest,
   checkHandleAvailable,
   fetchFriends,
+  fetchFriendsKeepingPages,
   fetchNotifications,
   fetchUserConnections,
   fetchUserProfile,
@@ -317,6 +318,7 @@ import {
   LOREBOOK_KEY_MAX,
   LOREBOOK_KEYS_MAX,
   LOREBOOK_MAX_ENTRIES,
+  cardLorebookOverflow,
   normalizeLorebookEntries,
   parseCharacterCardJson,
   parseCharacterCardPng,
@@ -889,7 +891,7 @@ function BookOpenError({ onRetry, onBack, backLabel }) {
   );
 }
 
-function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, draft, account, onOpenAccount, authClient, avatar, onOpenAvatar, syncNote, onOpenHelp, onOpenLibrary }) {
+function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, draft, account, onOpenAccount, authClient, avatar, onOpenAvatar, syncNote, onOpenHelp, onOpenLibrary, genErrors = {} }) {
   const genre = genreOf(activeStory);
   const activeTotal = activeStory ? totalChaptersFor(activeStory) : 6;
   const currentChapter = activeStory
@@ -1011,7 +1013,7 @@ function Home({ onNavigate, onOpenStory, onDeleteStory, activeStory, stories, dr
                 total={mapTotalFor(activeTotal, activeStory.chapters?.length || 0, readerIndexFor(activeStory))}
                 generated={activeStory.chapters?.length || 0}
                 current={readerIndexFor(activeStory)}
-                state={generationState({ total: mapTotalFor(activeTotal, activeStory.chapters?.length || 0, readerIndexFor(activeStory)), generated: activeStory.chapters?.length || 0, current: readerIndexFor(activeStory), engine: activeStory.engine, complete: activeStory.status === "complete" || isStoryComplete(activeStory) })}
+                state={generationState({ total: mapTotalFor(activeTotal, activeStory.chapters?.length || 0, readerIndexFor(activeStory)), generated: activeStory.chapters?.length || 0, current: readerIndexFor(activeStory), engine: activeStory.engine, error: genErrors[activeStory.id] || "", complete: activeStory.status === "complete" || isStoryComplete(activeStory) })}
               />
             </div>
           )}
@@ -1460,6 +1462,13 @@ function useAvatarProfile(authClient, account) {
       setLoaded(true);
       return null;
     }
+    // BUGHUNT-20261112: the authenticated branch used to leave loaded
+    // true from the guest pass while the real list was still in
+    // flight, so AvatarPage's seed effect ran on the stale empty list
+    // and stranded a signed-in owner on a blank creation form.
+    // Drop loaded first; the finally below raises it when the real
+    // list lands (or the fetch fails).
+    setLoaded(false);
     try {
       const result = await fetchAvatars({ getAccessToken: () => authClient.getAccessToken() });
       setAvatars(result.avatars);
@@ -2959,6 +2968,16 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     // hung on this book (the world step defines the world; the card's
     // book is its own travelling material), inside the entry cap.
     const bookEntries = cardPreview.book?.entries || [];
+    // BUGHUNT-20261112: the append used to run through
+    // normalizeLorebookEntries, which silently cut the tail past 200
+    // while the preview promised the card's book would "一并挂上".
+    // Refuse up front and name the numbers instead; nothing is
+    // changed when it does not fit.
+    const overflow = cardLorebookOverflow((draft.lorebook || []).length, bookEntries.length);
+    if (overflow.overflow) {
+      setError(`这本书的世界书已有 ${overflow.existing} 条，加上这张卡的 ${overflow.card} 条会超过 ${overflow.max} 条上限，先删掉 ${overflow.excess} 条再用这张卡。`);
+      return;
+    }
     const lorebook = bookEntries.length
       ? normalizeLorebookEntries([...(draft.lorebook || []), ...bookEntries])
       : draft.lorebook;
@@ -2966,6 +2985,12 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     setAbilitySource(null);
     setCardPreview(null);
   };
+  // BUGHUNT-20261112: the same overflow the apply step refuses on,
+  // shown in the preview itself so the reader sees the numbers before
+  // pressing 用这张卡.
+  const cardOverflow = cardPreview?.book
+    ? cardLorebookOverflow((draft.lorebook || []).length, cardPreview.book.entries.length)
+    : null;
   const next = () => {
     // A free genre is reader-authored text like the god-mode setting:
     // same red-line check on leaving its step, never while typing.
@@ -3954,6 +3979,9 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                   {cardPreview.book && (
                     <p className="field-hint">这张卡还带着一本自己的世界书（{cardPreview.book.entries.length} 条条目）——点「用这张卡」会一并挂到这本书上，只属于你，不会出现在广场。开书后在阅读器的「设定集」里能看和改。</p>
                   )}
+                  {cardOverflow?.overflow && (
+                    <p className="field-hint" role="alert">这本书的世界书已有 {cardOverflow.existing} 条，加上这张卡的 {cardOverflow.card} 条会超过 {cardOverflow.max} 条上限，先删掉 {cardOverflow.excess} 条再用这张卡。</p>
+                  )}
                   <div className="card-preview-actions">
                     <Button onClick={applyCardPreview}>用这张卡</Button>
                     <Button variant="ghost" onClick={() => setCardPreview(null)}>
@@ -4812,6 +4840,12 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
         </ul>
         {tab === "activity" && (data.activityTotal || 0) > items.length && (
           <p className="plaza-note">只显示最近 50 条互动。</p>
+        )}
+        {tab === "announcements" && (data.categories?.[tab]?.total || 0) > items.length && (
+          <p className="plaza-note">只显示最近 50 条公告。</p>
+        )}
+        {tab === "system" && (data.categories?.[tab]?.total || 0) > items.length && (
+          <p className="plaza-note">只显示最近 50 条系统消息。</p>
         )}
         </>
       )}
@@ -5833,6 +5867,7 @@ function Reader({
   onOpenAvatarPage,
   unsaved = false,
   onPrepareChapter,
+  onGenerationError,
   onReviseChapter,
   onRerollChapter,
   onStartNextSeason,
@@ -6050,7 +6085,7 @@ function Reader({
 
   const pendingIndex = readOnly ? null : nextGenerationIndex(story, index);
   useEffect(() => {
-    if (pendingIndex === null || !onPrepareChapter) { requesting.current = false; setPreparing(false); setGenerationError(""); return; }
+    if (pendingIndex === null || !onPrepareChapter) { requesting.current = false; setPreparing(false); setGenerationError(""); onGenerationError?.(story?.id, ""); return; }
     const controller = new AbortController();
     requesting.current = true;
     setPreparing(true);
@@ -6061,10 +6096,16 @@ function Reader({
     const onDemand = onDemandRef.current;
     onDemandRef.current = false;
     onPrepareChapter(story.id, pendingIndex, controller.signal, { onDemand })
-      .catch((failure) => { if (!controller.signal.aborted) setGenerationError(failure.message); })
+      // BUGHUNT-20261112: the failure used to live only in this
+      // component's generationError, so the home hero kept saying
+      // "下一章待生成" after the pre-generation had failed. Record
+      // it App-side (and clear it on a success) through the same
+      // callback shape as onPrepareChapter.
+      .then(() => { if (!controller.signal.aborted) onGenerationError?.(story.id, ""); })
+      .catch((failure) => { if (!controller.signal.aborted) { setGenerationError(failure.message); onGenerationError?.(story.id, failure.message); } })
       .finally(() => { if (!controller.signal.aborted) { requesting.current = false; setPreparing(false); } });
     return () => { controller.abort(); requesting.current = false; };
-  }, [story?.id, story?.revision, pendingIndex, retry, onPrepareChapter]);
+  }, [story?.id, story?.revision, pendingIndex, retry, onPrepareChapter, onGenerationError]);
 
   useEffect(() => { celebratedRef.current = new Set(); }, [story?.id, readOnly]);
 
@@ -7566,6 +7607,8 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
   const [booksTotal, setBooksTotal] = useState(0);
   const [booksFailed, setBooksFailed] = useState(false);
   const [bookQuery, setBookQuery] = useState("");
+  const [pickSearchError, setPickSearchError] = useState(false);
+  const [pickRetry, setPickRetry] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const length = [...content].length;
@@ -7597,15 +7640,20 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
   // with no refetch.
   useEffect(() => {
     if (mode !== "share" || defaultBooks === null) return undefined;
-    if (!pickQuery) { setBooks(defaultBooks); setBooksTotal(defaultBooks.length); return undefined; }
+    if (!pickQuery) { setBooks(defaultBooks); setBooksTotal(defaultBooks.length); setPickSearchError(false); return undefined; }
     const seq = ++searchSeqRef.current;
     const timer = window.setTimeout(() => {
       fetchStoreBooks({ q: pickQuery, limit: 60 })
-        .then((result) => { if (searchSeqRef.current === seq) { setBooks(result.books); setBooksTotal(result.total || 0); } })
-        .catch(() => { /* keep the previous list; the query just does not narrow */ });
+        .then((result) => { if (searchSeqRef.current === seq) { setBooks(result.books); setBooksTotal(result.total || 0); setPickSearchError(false); } })
+        // BUGHUNT-20261112: a failed search used to keep the previous
+        // list with no word at all — the reader could not tell a
+        // stale list from a fresh one. Say so (the old list stays,
+        // for context) and offer a retry; a stale reply never sets
+        // the flag, only the current sequence may.
+        .catch(() => { if (searchSeqRef.current === seq) setPickSearchError(true); });
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [mode, pickQuery, defaultBooks]);
+  }, [mode, pickQuery, defaultBooks, pickRetry]);
 
   // With a query the server already filtered (title/author/world/
   // handle) — a client filter here would drop the world matches.
@@ -7681,7 +7729,15 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
               <p className="plaza-note">正在打开书城…</p>
             ) : booksFailed ? (
               <p className="plaza-note">书城这次没能打开，你的书还在，不用担心。<button type="button" className="small-link" onClick={() => { setBooksFailed(false); setBooks(null); setDefaultBooks(null); }}>再试一次</button></p>
-            ) : pickable.length === 0 ? (
+            ) : (
+              <>
+              {/* BUGHUNT-20261112: a failed search keeps the previous
+                  list for context, but the reader must know it is the
+                  old one — and get a retry that re-runs this query. */}
+              {pickSearchError && (
+                <p className="plaza-note" role="alert">这次没能搜到，显示的是上一次的结果。<button type="button" className="small-link" onClick={() => setPickRetry((value) => value + 1)}>再试一次</button></p>
+              )}
+              {pickable.length === 0 ? (
               // BUGHUNT-20261105: a query with no match used to report
               // the bookstore as empty. Say which case it is.
               <p className="plaza-note">{bookQuery.trim()
@@ -7704,6 +7760,8 @@ function PlazaComposerEditor({ account, authClient, initialBook = null, onPosted
                   </li>
                 ))}
               </ul>
+              </>
+              )}
               </>
             )}
           </div>
@@ -8245,7 +8303,12 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
   // dead permalink fell back to the plain stream as if nothing was
   // asked for. Both now say so, in the feed's own error grammar.
   const [loadMoreError, setLoadMoreError] = useState("");
-  const [focusFailed, setFocusFailed] = useState(false);
+  // BUGHUNT-20261112: the focus failure used to be one boolean that
+  // always read "已删除或不存在" — a network blip was reported as a
+  // deletion, with no retry. It is 'not-found' | 'failed' now, and
+  // only a real 404 keeps the old sentence.
+  const [focusError, setFocusError] = useState(null);
+  const [focusRetry, setFocusRetry] = useState(0);
   const [followingUids, setFollowingUids] = useState([]);
   const viewerUid = account.user?.uid || "";
   const getToken = useCallback(() => authClient?.getAccessToken(), [authClient]);
@@ -8300,14 +8363,17 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
   // stream: the post itself, fetched on its own, so the link works
   // even when the post has scrolled out of the first page.
   useEffect(() => {
-    if (!focusPostId) { setFocusPost(null); setFocusFailed(false); return undefined; }
+    if (!focusPostId) { setFocusPost(null); setFocusError(null); return undefined; }
     let live = true;
-    setFocusFailed(false);
+    setFocusError(null);
     fetchPlazaPost({ id: focusPostId, getAccessToken: getToken })
       .then((post) => { if (live) setFocusPost(post); })
-      .catch(() => { if (live) { setFocusPost(null); setFocusFailed(true); } });
+      // plazaError carries code 'not-found' only on a real 404;
+      // anything else (a network failure, a 500) is 'failed', never
+      // a deletion.
+      .catch((failure) => { if (live) { setFocusPost(null); setFocusError(failure?.code === "not-found" ? "not-found" : "failed"); } });
     return () => { live = false; };
-  }, [focusPostId, getToken]);
+  }, [focusPostId, getToken, focusRetry]);
 
   const publishable = useMemo(
     () => (stories || []).some((story) => plazaGateFor(story).publishable),
@@ -8521,8 +8587,11 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
           </div>
         </div>
       )}
-      {focusFailed && !focusPost && (
+      {focusError === "not-found" && !focusPost && (
         <p className="plaza-inline-note" role="alert">这条帖子已删除或不存在，下面是广场的信息流。</p>
+      )}
+      {focusError === "failed" && !focusPost && (
+        <p className="plaza-inline-note" role="alert">这条帖子暂时没能打开，请稍后再试。<button type="button" className="small-link" onClick={() => setFocusRetry((value) => value + 1)}>再试一次</button></p>
       )}
       {focusPost && (
         <PlazaPostCard
@@ -10019,10 +10088,23 @@ function FriendsPanel({ authClient, onOpenProfile }) {
   const [composingUid, setComposingUid] = useState("");
   const [draft, setDraft] = useState("");
   const [loadingMoreIncoming, setLoadingMoreIncoming] = useState(false);
+  const [loadingMoreOutgoing, setLoadingMoreOutgoing] = useState(false);
+  // BUGHUNT-20261112: reload reads the panel's CURRENT incoming
+  // length through a ref — the accept/decline/cancel patch calls
+  // reload in the same tick as its setData, before any re-render,
+  // so reading `data` directly would see the pre-patch list.
+  const dataRef = useRef(null);
+  dataRef.current = data;
 
+  // BUGHUNT-20261112: reload used to fetch page one only, so after
+  // an act the second page a reader had already flipped to silently
+  // collapsed back to the first 50 rows. Re-read page-preserving:
+  // keep appending pages until the rows already on screen are
+  // covered again. A failure keeps the old list and says so (the
+  // local patch from act already applied the outcome).
   const reload = useCallback(() => {
     setLoadError("");
-    fetchFriends({ getAccessToken: getToken })
+    fetchFriendsKeepingPages({ getAccessToken: getToken, alreadyLoaded: dataRef.current?.incoming?.length || 0 })
       .then((next) => setData(next))
       .catch(() => setLoadError("好友没能打开，请稍后再试。"));
   }, [getToken]);
@@ -10045,6 +10127,25 @@ function FriendsPanel({ authClient, onOpenProfile }) {
       })
       .catch(() => setLoadError("更多申请没能打开，请稍后再试。"))
       .finally(() => setLoadingMoreIncoming(false));
+  };
+
+  // BUGHUNT-20261112: outgoing requests page 50 at a time, exactly
+  // like incoming (20261111 #4) — append the next page, deduped by
+  // id, under a busy guard; outgoingTotal never moves, so the list
+  // just grows until it matches it.
+  const loadMoreOutgoing = () => {
+    if (loadingMoreOutgoing || !data) return;
+    setLoadingMoreOutgoing(true);
+    setLoadError("");
+    fetchFriends({ getAccessToken: getToken, outgoingOffset: data.outgoing.length })
+      .then((next) => {
+        setData((current) => current ? {
+          ...current,
+          outgoing: [...current.outgoing, ...next.outgoing.filter((entry) => !current.outgoing.some((old) => old.id === entry.id))],
+        } : current);
+      })
+      .catch(() => setLoadError("更多申请没能打开，请稍后再试。"))
+      .finally(() => setLoadingMoreOutgoing(false));
   };
 
   const pendingCount = data?.counts?.incomingPending || 0;
@@ -10293,6 +10394,14 @@ function FriendsPanel({ authClient, onOpenProfile }) {
                   )}
                 />
               ))}
+              {(data.counts.outgoingTotal || 0) > data.outgoing.length && (
+                <>
+                  <p className="profile-line-empty">只列出前 {data.outgoing.length} 条发出的申请。</p>
+                  <button type="button" className="small-link" disabled={loadingMoreOutgoing} onClick={loadMoreOutgoing}>
+                    {loadingMoreOutgoing ? "正在打开…" : "显示更多"}
+                  </button>
+                </>
+              )}
             </div>
           )}
         </>
@@ -12053,6 +12162,7 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
         <>
           <div className="avatar-picker">
             <span className="field-label">带哪位化身进入？</span>
+            {!avatarLoaded && <p className="field-hint" role="status">正在确认你的化身…</p>}
             {avatars.map((item) => (
               <div className={`avatar-bring ${chosenAvatar?.id === item.id ? "active" : ""}`} key={item.id}>
                 <span className="avatar-bring-thumb">
@@ -12270,8 +12380,8 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
           <p className="plaza-note">进入后，新章节的生成费用计入你自己的额度。</p>
           {error && <div className="sw-inline-alert" role="alert">{error}</div>}
           <div className="plaza-publish-actions">
-            <Button disabled={!identityId || busy} onClick={() => void enter()}>
-              {busy ? "正在进入…" : `带${chosenAvatar?.name || ""}进入 · 写下第一章`}
+            <Button disabled={!identityId || busy || !avatarLoaded} onClick={() => void enter()}>
+              {busy ? "正在进入…" : !avatarLoaded ? "化身加载中…" : `带${chosenAvatar?.name || ""}进入 · 写下第一章`}
             </Button>
             <Button variant="ghost" disabled={busy} onClick={() => onNavigate("plaza-detail", { id })}>先不进入</Button>
           </div>
@@ -14052,6 +14162,28 @@ function App() {
     (draft) => setLibrary((current) => ({ ...current, draft })),
     [setLibrary],
   );
+  // BUGHUNT-20261112: the home hero's star map used to say "下一章待
+  // 生成" after a pre-generation had already failed, because the
+  // failure lived only in the Reader's local generationError. Keep a
+  // storyId -> message record here, fed by the Reader through the
+  // same callback shape as onPrepareChapter: a failure records, a
+  // success clears that book's entry. The record clears only on a
+  // successful pre-generation for that book — never on navigation —
+  // so the hero keeps saying the chapter failed until it really
+  // lands. This touches no billing or gating logic.
+  const [genErrors, setGenErrors] = useState({});
+  const recordGenerationError = useCallback((storyId, message) => {
+    if (!storyId) return;
+    setGenErrors((current) => {
+      if (!message) {
+        if (!(storyId in current)) return current;
+        const next = { ...current };
+        delete next[storyId];
+        return next;
+      }
+      return current[storyId] === message ? current : { ...current, [storyId]: message };
+    });
+  }, []);
   const prepareChapter = useCallback(async (id, index, signal, options = {}) => {
     const source = store.getSnapshot().library.stories.find((book) => book.id === id);
     if (!source || nextGenerationIndex(source) !== index) return;
@@ -14454,7 +14586,11 @@ function App() {
   };
   const enterPlazaLine = async (detail, picks, { signal } = {}) => {
     const ownAvatar = avatarState.avatars.find((item) => item.id === picks.avatarId) || avatarState.avatar;
-    if (!ownAvatar) { navigate("avatar"); throw new Error("先创建你的化身，再带它进入这个世界。"); }
+    // BUGHUNT-20261112: the submit button is disabled until the
+    // avatars load, so this is a safety net only — but it must not
+    // throw: the throw used to land in PlazaEnter's catch and write
+    // into a component already unmounted by the navigate above.
+    if (!ownAvatar) { navigate("avatar"); return; }
     const draft = enterDraftFor(detail, { avatar: ownAvatar, ...picks });
     const settingViolation = findSettingViolation(draft.customWorldSetting);
     if (settingViolation) throw new Error(settingViolation);
@@ -14550,6 +14686,7 @@ function App() {
         avatars={avatarState.avatars}
         onOpenAvatarPage={() => navigate("avatar")}
         onPrepareChapter={prepareChapter}
+        onGenerationError={recordGenerationError}
         onReviseChapter={reviseChapter}
         onRerollChapter={rerollChapter}
         onStartNextSeason={startNextSeasonFor}
@@ -14591,6 +14728,7 @@ function App() {
         onAuthRequired={() => { setAccountIntent(null); setAccountOpen(true); }}
         avatar={avatarState.avatar}
         avatars={avatarState.avatars}
+        genErrors={genErrors}
       />
     );
   else if (view === "avatar")

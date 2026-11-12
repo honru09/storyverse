@@ -155,6 +155,29 @@ export function normalizeLorebookEntries(raw) {
   return entries
 }
 
+/**
+ * BUGHUNT-20261112: a character card's own world book used to be
+ * appended and then silently cut at the 200-entry cap by
+ * normalizeLorebookEntries — the preview promised it would "一并挂上"
+ * while the tail vanished. Decide BEFORE applying: when the book
+ * already holds `existingCount` entries and the card carries
+ * `cardCount`, say whether they fit and, when they do not, how many
+ * entries must go first. Nothing is changed here — the caller refuses
+ * and names the numbers.
+ */
+export function cardLorebookOverflow(existingCount, cardCount, max = LOREBOOK_MAX_ENTRIES) {
+  const existing = Math.max(0, Number(existingCount) || 0)
+  const card = Math.max(0, Number(cardCount) || 0)
+  const total = existing + card
+  return {
+    overflow: total > max,
+    existing,
+    card,
+    max,
+    excess: Math.max(0, total - max),
+  }
+}
+
 // ---------------------------------------------------------------------------
 // SillyTavern world-info JSON
 // ---------------------------------------------------------------------------
