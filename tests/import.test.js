@@ -100,6 +100,9 @@ test('world text: name comes from the first heading, else the file name; long fi
 })
 
 test('world text split: headings become keyed entries, the first is constant, nothing is lost', () => {
+  // BUGHUNT-20261113: splitWorldTextIntoEntries now returns
+  // { entries, total } (the pre-cap total is what the import caller
+  // reports on) — the assertions below read .entries.
   const text = [
     '雾港是一座被潮汐统治的港口。',
     '',
@@ -109,7 +112,7 @@ test('world text split: headings become keyed entries, the first is constant, no
     '# 紫晶回廊',
     '地下的旧引水渠，雨季会倒灌。文件末尾的独特记号 ZQX-9917 写在这里。',
   ].join('\n')
-  const entries = splitWorldTextIntoEntries(text)
+  const { entries } = splitWorldTextIntoEntries(text)
   assert.equal(entries.length, 3)
   assert.equal(entries[0].constant, true)
   assert.deepEqual(entries[1].keys, ['潮汐税法'])
@@ -120,7 +123,7 @@ test('world text split: headings become keyed entries, the first is constant, no
 test('world text split: one oversized unbroken section is hard-split, not truncated away', () => {
   const tail = '收尾记号 TAIL-4242'
   const text = `${'长'.repeat(4000)}${tail}`
-  const entries = splitWorldTextIntoEntries(text)
+  const { entries } = splitWorldTextIntoEntries(text)
   assert.ok(entries.length >= 3)
   assert.ok(entries.some((entry) => entry.content.includes(tail)))
   assert.ok(entries.every((entry) => entry.content.length <= 2000))

@@ -146,7 +146,11 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
   // explanation when there is nothing to send to / no channel yet.
   const resetStage = !recoveryInfo ? "lookup" : recoveryInfo.hasRecoveryEmail && recoveryInfo.channelOpen ? (recoverySent ? "code" : "send") : "info";
   const resetLabel = identifierIsEmail ? "发送重设邮件" : resetStage === "code" ? "重设密码并登录" : resetStage === "send" ? "发送找回验证码" : "继续";
-  const resetDisabled = identifierIsEmail ? !passwordAvailable : !usernameAvailable || (resetStage === "code" && (recoveryCode.length !== 6 || newPassword.length < 8));
+  // BUGHUNT-20261113: an email identifier with the password channel
+  // off must NOT disable the submit — submit() already carries the
+  // "邮箱密码登录还没开通" error with alternatives, but a disabled
+  // button never reaches it, so the copy was dead code.
+  const resetDisabled = identifierIsEmail ? false : !usernameAvailable || (resetStage === "code" && (recoveryCode.length !== 6 || newPassword.length < 8));
   const resetActionable = activeMode !== "reset" || identifierIsEmail || resetStage !== "info";
   // The unbound reminder is per account and per device: once dismissed
   // (or once an address is bound) it never comes back here.
@@ -403,6 +407,11 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
           <button className="account-google" type="button" aria-label="使用 Google 继续" title="使用 Google 继续" disabled={busy || !configured || !account.config?.providers?.google} onClick={() => void run(() => client.signInWithGoogle())}><GoogleMark/></button>
           <button className="account-guest" type="button" onClick={onContinue}>先不登录，继续体验 <span aria-hidden="true">→</span></button>
         </div>
+        {/* BUGHUNT-20261113: a disabled Google button with no word
+            reads as broken — say the channel is not open yet. The
+            loading state is excluded: providers are still unknown
+            while the config loads. */}
+        {account.status !== "loading" && configured && !account.config?.providers?.google && <p className="account-storage-note">Google 登录还没开通。</p>}
       {onOpenHelp && <button className="account-avatar-entry" type="button" onClick={onOpenHelp}>帮助与常见问题 <span aria-hidden="true">→</span></button>}
       </div>
         </div>

@@ -305,12 +305,14 @@ export async function searchPeople({ q, email, limit, offset, getAccessToken, fe
  * with standing states — a decline is only ever visible here, to the
  * person who asked.
  */
-export async function fetchFriends({ getAccessToken, incomingOffset = 0, fetchImpl = globalThis.fetch } = {}) {
+export async function fetchFriends({ getAccessToken, incomingOffset = 0, outgoingOffset = 0, fetchImpl = globalThis.fetch } = {}) {
   const headers = await usersHeaders(getAccessToken)
   // BUGHUNT-20261111: incoming requests page 50 at a time — the
   // offset walks the pending list while counts stay full.
+  // BUGHUNT-20261113: outgoing pages the same way.
   const params = new URLSearchParams()
   if (Number.isInteger(incomingOffset) && incomingOffset > 0) params.set('incomingOffset', String(incomingOffset))
+  if (Number.isInteger(outgoingOffset) && outgoingOffset > 0) params.set('outgoingOffset', String(outgoingOffset))
   const query = params.toString()
   const response = await fetchImpl(`/api/me/friends${query ? `?${query}` : ''}`, { headers })
   const result = await usersJson(response)
@@ -320,6 +322,39 @@ export async function fetchFriends({ getAccessToken, incomingOffset = 0, fetchIm
     outgoing: Array.isArray(result?.outgoing) ? result.outgoing : [],
     counts: result?.counts ?? { friends: 0, incomingPending: 0 },
   }
+}
+
+// One request-list page on the server — must match NOTIFY_ITEM_CAP
+// (server/social.js); the keeping-pages walk below steps by it.
+const FRIEND_REQUEST_PAGE_SIZE = 50
+
+/**
+ * BUGHUNT-20261113: an act (accept / decline / cancel / send) reloads,
+ * and a plain first-page reload collapses a paged request list back
+ * to 50 — the reader's page 2 silently vanishes after a success note.
+ * Re-walk both request lists to the depth the reader had already
+ * reached (alreadyLoaded counts), appending by id-deduped pages; a
+ * short page (or no new rows) stops the walk. A failed page throws
+ * and the caller keeps the old list, showing the load error instead.
+ */
+export async function fetchFriendsKeepingPages({ getAccessToken, alreadyLoadedIncoming = 0, alreadyLoadedOutgoing = 0, fetchImpl = globalThis.fetch } = {}) {
+  const first = await fetchFriends({ getAccessToken, fetchImpl })
+  const walk = async (list, alreadyLoaded, key, offsetKey) => {
+    let merged = [...list]
+    const seen = new Set(merged.map((entry) => entry?.id))
+    for (let offset = FRIEND_REQUEST_PAGE_SIZE; offset < alreadyLoaded; offset += FRIEND_REQUEST_PAGE_SIZE) {
+      const page = await fetchFriends({ getAccessToken, [offsetKey]: offset, fetchImpl })
+      const fresh = (page?.[key] || []).filter((entry) => entry && !seen.has(entry.id))
+      if (!fresh.length) break
+      fresh.forEach((entry) => seen.add(entry.id))
+      merged = [...merged, ...fresh]
+      if ((page?.[key] || []).length < FRIEND_REQUEST_PAGE_SIZE) break
+    }
+    return merged
+  }
+  const incoming = await walk(first.incoming, alreadyLoadedIncoming, 'incoming', 'incomingOffset')
+  const outgoing = await walk(first.outgoing, alreadyLoadedOutgoing, 'outgoing', 'outgoingOffset')
+  return { ...first, incoming, outgoing }
 }
 
 /** Ask someone to be friends, with one short note (≤50 chars). Returns the standing state. */

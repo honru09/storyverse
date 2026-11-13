@@ -214,7 +214,10 @@ test('bughunt-4: the friends panel discloses its caps and pages incoming request
   assert.match(panel, /loadingMoreIncoming/)
   assert.match(panel, /显示更多/)
   assert.match(usersClient, /incomingOffset/)
-  assert.match(socialServer, /async friends\(identity, \{ incomingOffset = 0 \} = \{\}\)/)
+  // BUGHUNT-20261113: friends() gained outgoingOffset (the outgoing
+  // list pages the same way now) — the signature literal follows;
+  // the incoming paging this test pins is unchanged.
+  assert.match(socialServer, /async friends\(identity, \{ incomingOffset = 0, outgoingOffset = 0 \} = \{\}\)/)
 
   const { store, service } = makeSocialService()
   const me = 'username:me'

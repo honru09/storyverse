@@ -42,6 +42,15 @@ export const IMPORT_TEXT_FILE_MAX_BYTES = 5 * 1024 * 1024
 export const IMPORT_PNG_FILE_MAX_BYTES = 15 * 1024 * 1024
 export const LOREBOOK_CONSTANT_MAX = 8
 
+// BUGHUNT-20261113: worldbook imports refuse over the cap instead of
+// silently dropping the tail — the same "refuse and say the numbers"
+// rule the character-card path follows (and the lorebook editor's own
+// addEntry cap). Returns the refusal copy, or null when the file fits.
+export function worldbookImportOverflow(total) {
+  if (!Number.isFinite(total) || total <= LOREBOOK_MAX_ENTRIES) return null
+  return `这份世界书共有 ${total} 条，超过 ${LOREBOOK_MAX_ENTRIES} 条上限，先删掉 ${total - LOREBOOK_MAX_ENTRIES} 条再导入。`
+}
+
 export function assertImportFileSize(size, kind) {
   const bytes = Number(size) || 0
   if (kind === 'png') {
@@ -183,11 +192,18 @@ export function parseWorldInfoJson(text) {
   else if (isRecord(parsed) && Array.isArray(parsed.entries)) rawEntries = parsed.entries
   if (!rawEntries) throw new Error('这个 JSON 里没有找到世界书条目——它可能不是世界书文件。角色卡请在主角那一步导入。')
   const entries = []
+  let totalEntries = 0
   for (const raw of rawEntries) {
     if (!isRecord(raw)) continue
     if (raw.disable === true || raw.disabled === true) continue
     const content = typeof raw.content === 'string' ? raw.content : ''
     if (!content.trim()) continue
+    // BUGHUNT-20261113: the file's own entry count is the truth the
+    // caller reports on — count every usable entry, keep only the
+    // first LOREBOOK_MAX_ENTRIES. The old loop broke at the cap and
+    // the caller reported the truncated count as the whole file.
+    totalEntries += 1
+    if (entries.length >= LOREBOOK_MAX_ENTRIES) continue
     const keys = [...keyListOf(raw.key), ...keyListOf(raw.keys), ...keyListOf(raw.keysecondary)]
     entries.push({
       id: makeEntryId('wb'),
@@ -198,7 +214,6 @@ export function parseWorldInfoJson(text) {
       enabled: true,
       source: 'worldbook',
     })
-    if (entries.length >= LOREBOOK_MAX_ENTRIES) break
   }
   if (!entries.length) throw new Error('这本世界书里的条目都是空的或已被禁用，没有可导入的内容。')
   const capped = capConstantEntries(normalizeLorebookEntries(entries))
@@ -206,6 +221,7 @@ export function parseWorldInfoJson(text) {
     name: isRecord(parsed) ? cleanText(parsed.name, 60) : '',
     description: isRecord(parsed) ? cleanText(parsed.description, 2000) : '',
     entries: capped.entries,
+    totalEntries,
     degradedConstants: capped.degraded,
   }
 }
@@ -324,14 +340,22 @@ export function splitWorldTextIntoEntries(text) {
     if (buffer.body.length >= WORLD_TEXT_SECTION_MAX) pushBuffer()
   }
   pushBuffer()
-  return normalizeLorebookEntries(entries)
+  // BUGHUNT-20261113: the split's own count is the truth the caller
+  // reports on — normalizeLorebookEntries caps at LOREBOOK_MAX_ENTRIES
+  // below, so return the pre-cap total alongside the kept entries.
+  // (The old bare-array return let the caller report the truncated
+  // count as "全文拆成 N 条".)
+  return { entries: normalizeLorebookEntries(entries), total: entries.length }
 }
 
 /*
  * A plain world-setting file. The leading excerpt (up to the god-mode
  * setting bound) becomes the editable setting text; a longer file is
  * kept whole as lorebook entries by the caller via
- * splitWorldTextIntoEntries, so nothing the author wrote is lost.
+ * splitWorldTextIntoEntries — up to the LOREBOOK_MAX_ENTRIES cap, past
+ * which the caller refuses the import and says the real count
+ * (BUGHUNT-20261113: the old "nothing is lost" claim was false past
+ * 200 entries, when the tail was silently dropped).
  */
 export function parseWorldText(text, fileName = '') {
   const raw = typeof text === 'string' ? text.replace(/^﻿/, '') : ''

@@ -1287,8 +1287,10 @@ export function createServer({ env = process.env, fetchImpl = globalThis.fetch, 
         }
         const query = new URL(request.url, 'http://localhost').searchParams
         const incomingOffset = Number.parseInt(query.get('incomingOffset') || '', 10)
+        const outgoingOffset = Number.parseInt(query.get('outgoingOffset') || '', 10)
         return sendJson(response, 200, await social.friends(identity, {
           incomingOffset: Number.isInteger(incomingOffset) ? incomingOffset : 0,
+          outgoingOffset: Number.isInteger(outgoingOffset) ? outgoingOffset : 0,
         }))
       }
       const userMatch = pathname.match(/^\/api\/users\/([^/]+)(?:\/(profile|connections|portrait|picture|banner|follow|unfollow|report|friend-request\/respond|friend-request\/cancel|friend-request))?$/)

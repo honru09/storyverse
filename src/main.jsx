@@ -115,6 +115,7 @@ import {
   cancelFriendRequest,
   checkHandleAvailable,
   fetchFriends,
+  fetchFriendsKeepingPages,
   fetchNotifications,
   fetchUserConnections,
   fetchUserProfile,
@@ -324,6 +325,7 @@ import {
   parseWorldText,
   personaTextFromCard,
   splitWorldTextIntoEntries,
+  worldbookImportOverflow,
 } from "./lorebook";
 
 const Icon = ({ name, size = 18, stroke = 1.8, className = "" }) => {
@@ -2896,6 +2898,11 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       if (lower.endsWith(".json")) {
         const { text, encoding } = decodeImportText(new Uint8Array(await file.arrayBuffer()));
         const parsed = parseWorldInfoJson(text);
+        // BUGHUNT-20261113: over the 200-entry cap the import is
+        // refused with the real count — the old path silently kept
+        // the first 200 and reported them as the whole file.
+        const overflow = worldbookImportOverflow(parsed.totalEntries);
+        if (overflow) { setError(overflow); return; }
         const setting = (parsed.description || "").slice(0, CUSTOM_WORLD_SETTING_MAX);
         const violation = findSettingViolation([setting, ...parsed.entries.map((entry) => entry.content)].join("\n"));
         if (violation) { setError(violation); return; }
@@ -2912,7 +2919,13 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
         const violation = findSettingViolation(parsed.text);
         if (violation) { setError(violation); return; }
         const long = parsed.text.trim().length > CUSTOM_WORLD_SETTING_MAX;
-        const entries = long ? splitWorldTextIntoEntries(parsed.text) : [];
+        const split = long ? splitWorldTextIntoEntries(parsed.text) : { entries: [], total: 0 };
+        // BUGHUNT-20261113: same refuse-and-say-the-numbers rule as
+        // the .json path — the old note called the truncated count
+        // "全文拆成 N 条".
+        const overflow = worldbookImportOverflow(split.total);
+        if (overflow) { setError(overflow); return; }
+        const entries = split.entries;
         applyImportedWorld({
           name: parsed.name,
           setting: leadingExcerpt(parsed.text, CUSTOM_WORLD_SETTING_MAX),
@@ -6430,11 +6443,14 @@ function Reader({
     // BUGHUNT-20261110: the store can now refuse ("full") instead
     // of silently evicting the oldest bookmark — pass the refusal
     // through so the sheet can say the shelf is full.
+    // BUGHUNT-20261113: the store's boolean already distinguishes the
+    // two successes (true = planted, false = lifted) — fold them no
+    // longer: the sheet says which one happened instead of silence.
     const added = reading.store.toggleBookmark({ key: locationKey, storyId: bookContextId, chapterIndex: index,
       anchor, title: chapter.title, excerpt: chapter.paragraphs[anchor.paragraph] || '' });
     if (added === "full") return "full";
     setBookmarkVersion(value => value + 1);
-    return true;
+    return added ? "added" : "removed";
   };
   const toggleStoryBookmark = () =>
     onToggleBookmark?.({ ...story, bookmarked: !story.bookmarked });
@@ -7421,7 +7437,7 @@ function Store({ onNavigate, onOpenBook, onPublish, resumeSignal }) {
           )}
           <img className="empty-art" src={searching ? "/art/empty-search-512.webp" : "/art/empty-store-512.webp"} alt="" loading="lazy" />
           <h3>{searching ? `没有搜到「${debouncedQuery}」` : "这个分类还没有上架的书"}</h3>
-          <p>{searching ? "换个书名、作者名或世界名试试。" : "走完一条故事线，就能把它上架到书城。"}</p>
+          <p>{searching ? "换个书名、作者名、世界名或 @handle 试试。" : "走完一条故事线，就能把它上架到书城。"}</p>
           <Button variant="secondary" icon="arrow" onClick={() => onNavigate("forge")}>
             开一本新书
           </Button>
@@ -10019,10 +10035,24 @@ function FriendsPanel({ authClient, onOpenProfile }) {
   const [composingUid, setComposingUid] = useState("");
   const [draft, setDraft] = useState("");
   const [loadingMoreIncoming, setLoadingMoreIncoming] = useState(false);
+  const [loadingMoreOutgoing, setLoadingMoreOutgoing] = useState(false);
+  // BUGHUNT-20261113: act()'s local patch and the reload below run in
+  // the same tick — the state snapshot reload() would close over is
+  // the pre-patch list, so the page-preserving reload reads the
+  // already-loaded depths from this ref instead.
+  const dataRef = useRef(null);
+  useEffect(() => { dataRef.current = data; }, [data]);
 
   const reload = useCallback(() => {
     setLoadError("");
-    fetchFriends({ getAccessToken: getToken })
+    // BUGHUNT-20261113: re-walk both request lists to the depth the
+    // reader had already reached — a plain first-page reload collapsed
+    // a paged list back to 50 after every accept / decline / cancel.
+    fetchFriendsKeepingPages({
+      getAccessToken: getToken,
+      alreadyLoadedIncoming: dataRef.current?.incoming?.length || 0,
+      alreadyLoadedOutgoing: dataRef.current?.outgoing?.length || 0,
+    })
       .then((next) => setData(next))
       .catch(() => setLoadError("好友没能打开，请稍后再试。"));
   }, [getToken]);
@@ -10045,6 +10075,24 @@ function FriendsPanel({ authClient, onOpenProfile }) {
       })
       .catch(() => setLoadError("更多申请没能打开，请稍后再试。"))
       .finally(() => setLoadingMoreIncoming(false));
+  };
+
+  // BUGHUNT-20261113: the outgoing list pages the same way as the
+  // incoming one (server outgoingOffset + counts.outgoingTotal) —
+  // before this it was a single silent page of 50.
+  const loadMoreOutgoing = () => {
+    if (loadingMoreOutgoing || !data) return;
+    setLoadingMoreOutgoing(true);
+    setLoadError("");
+    fetchFriends({ getAccessToken: getToken, outgoingOffset: data.outgoing.length })
+      .then((next) => {
+        setData((current) => current ? {
+          ...current,
+          outgoing: [...current.outgoing, ...next.outgoing.filter((entry) => !current.outgoing.some((old) => old.id === entry.id))],
+        } : current);
+      })
+      .catch(() => setLoadError("更多申请没能打开，请稍后再试。"))
+      .finally(() => setLoadingMoreOutgoing(false));
   };
 
   const pendingCount = data?.counts?.incomingPending || 0;
@@ -10293,6 +10341,14 @@ function FriendsPanel({ authClient, onOpenProfile }) {
                   )}
                 />
               ))}
+              {(data.counts.outgoingTotal || data.outgoing.length) > data.outgoing.length && (
+                <>
+                  <p className="profile-line-empty">只列出前 {data.outgoing.length} 条发出的申请。</p>
+                  <button type="button" className="small-link" disabled={loadingMoreOutgoing} onClick={loadMoreOutgoing}>
+                    {loadingMoreOutgoing ? "正在打开…" : "显示更多"}
+                  </button>
+                </>
+              )}
             </div>
           )}
         </>
@@ -10909,6 +10965,11 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
   // meant closing the list and tapping the count again. Bump to
   // re-run the fetch in place.
   const [connectionsRetry, setConnectionsRetry] = useState(0);
+  // BUGHUNT-20261113: a first load with no cache failed into an error
+  // page with only "关闭 / 回到广场" — retrying meant leaving the
+  // page and coming back. Bump to re-run the load in place (same
+  // pattern as connectionsRetry above).
+  const [profileRetry, setProfileRetry] = useState(0);
   const [connectionBusyUid, setConnectionBusyUid] = useState("");
   // The friend relationship with this page's owner (FRIENDS batch):
   // seeded from the payload's viewerState.friendState, then driven by
@@ -10960,7 +11021,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
       });
     const unsubscribe = subscribeProfile({ viewerUid, uid }, (next) => { if (live) setProfile(next); });
     return () => { live = false; unsubscribe(); };
-  }, [uid, getToken, viewerUid]);
+  }, [uid, getToken, viewerUid, profileRetry]);
   // Persist the visit's view state as it changes (B4): which avatar
   // stands on the showcase. Scroll position is deliberately NOT part
   // of it — REQ-64 deleted the scroll memory, its verbatim restore
@@ -11018,6 +11079,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
       <div className={rootClass}>
         <div className="plaza-empty" role="alert">
           <h3>{error}</h3>
+          <Button variant="primary" onClick={() => setProfileRetry((value) => value + 1)}>再试一次</Button>
           <Button variant="secondary" onClick={() => (onClose ? onClose() : onNavigate("plaza"))}>{onClose ? "关闭" : "回到广场"}</Button>
         </div>
       </div>
@@ -12435,6 +12497,11 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
   const applyForLine = async (book, otherStory) => {
     const publicationId = book.config?.sourcePublicationId;
     if (!publicationId || applyingId) return;
+    // BUGHUNT-20261113: with no line of mine selected there is
+    // nothing to fuse with — the old path sent storyTitle "" and the
+    // author got an application with no context at all. Refuse here
+    // (toggleLine shows the same refusal before calling).
+    if (!otherStory) { setError(`先选一条自己的线，再向《${book.title}》的作者提交合流申请。`); return; }
     setApplyingId(book.id);
     setError("");
     try {
@@ -12471,7 +12538,13 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
     }
     const gate = gateForStory(book);
     if (gate.state === "apply") {
-      void applyForLine(book, selectedStories.find((story) => story.id !== book.id) || null);
+      // BUGHUNT-20261113: applying with no line selected used to file
+      // an empty application — stop at the tap and say which line to
+      // pick first, instead of letting the author puzzle over a blank
+      // "对方的线".
+      const other = selectedStories.find((story) => story.id !== book.id) || null;
+      if (!other) { setError(`先选一条自己的线，再向《${book.title}》的作者提交合流申请。`); return; }
+      void applyForLine(book, other);
       return;
     }
     if (!gate.canFuse) {

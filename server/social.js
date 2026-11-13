@@ -563,10 +563,12 @@ export function createSocialService({
      * BUGHUNT-20261111: the lists are capped (friends 100, requests
      * 50 a page) while counts are full — the client discloses the
      * truncation, and incoming requests page through incomingOffset
-     * (counts never move). Outgoing has no count shown anywhere, so
-     * it stays a single page for now.
+     * (counts never move). BUGHUNT-20261113: outgoing pages the same
+     * way through outgoingOffset, and counts carries outgoingTotal
+     * (every outgoing request, all states) so the client can disclose
+     * and page it — the old single page silently hid request 51+.
      */
-    async friends(identity, { incomingOffset = 0 } = {}) {
+    async friends(identity, { incomingOffset = 0, outgoingOffset = 0 } = {}) {
       if (!backend) throw new ApiError(503, '好友功能尚未配置。')
       const me = identity.uid
       const [friendships, incoming, outgoing] = await Promise.all([
@@ -589,7 +591,8 @@ export function createSocialService({
         at: record.createdAt || null,
         person: await resolvedPerson(record.fromUid, identity),
       })))
-      const outgoingRows = await Promise.all([...outgoing].sort(byUpdated).slice(0, NOTIFY_ITEM_CAP).map(async (record) => ({
+      const outgoingOffsetSafe = Number.isInteger(outgoingOffset) && outgoingOffset > 0 ? outgoingOffset : 0
+      const outgoingRows = await Promise.all([...outgoing].sort(byUpdated).slice(outgoingOffsetSafe, outgoingOffsetSafe + NOTIFY_ITEM_CAP).map(async (record) => ({
         id: record.id,
         status: record.status,
         message: record.message || '',
@@ -600,7 +603,7 @@ export function createSocialService({
         friends: friendRows,
         incoming: incomingRows,
         outgoing: outgoingRows,
-        counts: { friends: friendships.length, incomingPending: pendingIncoming.length },
+        counts: { friends: friendships.length, incomingPending: pendingIncoming.length, outgoingTotal: outgoing.length },
       }
     },
 
@@ -1449,9 +1452,15 @@ export function createSocialService({
      * one category never touches the others.
      * BUGHUNT-20261111: the caller may pass readThrough — the newest
      * instant it actually SHOWED — and the watermark stops there, so
-     * items cut off past the 50-item page stay unread instead of
-     * being marked read sight unseen. An absent or unparsable value
-     * keeps the old "now" behaviour.
+     * items that arrive DURING the dwell stay unread instead of being
+     * marked read sight unseen. An absent or unparsable value keeps
+     * the old "now" behaviour.
+     * BUGHUNT-20261113: the earlier wording ("items cut off past the
+     * 50-item page stay unread") overstated this — for the activity
+     * list the cut-off tail is OLDER than the watermark, so items
+     * past 50 are still marked read. That residual needs entry-level
+     * read state or activity paging (product decision, unchanged
+     * here); only the dwell-arrival protection above is real.
      */
     async markNotificationsRead(identity, category, readThrough) {
       if (!backend) throw new ApiError(503, '消息服务尚未配置。')
