@@ -60,7 +60,11 @@ export default function ReadingPreferences({ value, onChange, storageWarning }) 
         fold at 852px tall) and a reader on the wrong mode never found
         it; the primary reading choice is the first thing listed now. */}
     {options("readingMode", "阅读方式", [{ value: "page", label: "逐屏阅读" }, { value: "scroll", label: "上下滚动" }])}
-    {settings.readingMode === "page" && <p className="reading-preference-hint reading-font-note">点页面左／右两侧逐屏翻页，保留少量内容重叠，也可以直接上下滚动。</p>}
+    {/* BUGHUNT-20261114: the old hint described the scroll mode —
+        "保留少量内容重叠，也可以直接上下滚动" — but it only rendered
+        under 逐屏阅读, where the page is overflow:hidden and pages share
+        no lines. Say only what page mode does: tap the sides, or drag. */}
+    {settings.readingMode === "page" && <p className="reading-preference-hint reading-font-note">点页面左／右两侧逐屏翻页，也可以左右拖动翻页。</p>}
     {/* READER-FIX3 (REQ-47): the turn animation is chosen right
         under the mode it belongs to — simulated curl by default,
         the smooth slide as the alternative. */}

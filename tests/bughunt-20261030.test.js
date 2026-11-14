@@ -54,7 +54,10 @@ test('bughunt-6: plaza post menu closes on outside tap and on Escape', () => {
 
 test('bughunt-7: avatar page seeds only after sign-in, so a cold deep link cannot strand the owner on a blank form', () => {
   assert.match(main, /if \(!signedIn\) \{/)
-  assert.match(main, /avatarState\.loaded, editingId, signedIn\]/)
+  // BUGHUNT-20261114: the deps gained avatarState.loadFailed — a
+  // failed first load must not seed the blank form either (the page
+  // shows the failure with a retry instead, and seeds once it lands).
+  assert.match(main, /avatarState\.loaded, avatarState\.loadFailed, editingId, signedIn\]/)
 })
 
 test('bughunt-8: intervention overlay offers a way back to reading while the pass continues', () => {

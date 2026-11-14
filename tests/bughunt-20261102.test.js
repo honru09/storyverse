@@ -23,8 +23,12 @@ test('bughunt-1: a successful fusion decision clears the pin so other rows stay 
 
 test('bughunt-2: a saved/deleted rating tells the detail header to refetch its average', () => {
   assert.match(main, /onRated/)
-  assert.match(main, /if \(payload\) onRated\?\.\(\)/)
-  assert.match(main, /if \(removedPayload\) onRated\?\.\(\)/)
+  // BUGHUNT-20261114: the refetch is unconditional now — gating on the
+  // list payload left the header silently stale when the list reload
+  // failed after a save/delete. A failed refetch lands in the
+  // stale-head banner with its own retry.
+  assert.match(main, /const payload = await load\(\);[\s\S]*?onRated\?\.\(\);/)
+  assert.match(main, /await load\(\);\n\s+onRated\?\.\(\);/)
   // BUGHUNT-20261108: the refetch gained an id guard — rate on book A,
   // jump to book B before it lands, and A's response must not overwrite
   // B. The callback still refetches; it only writes back for its own book.

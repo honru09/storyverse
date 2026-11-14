@@ -134,13 +134,20 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
   // gets the email copy, anything else the username copy. Only one line is
   // ever shown; when the email channel is off, the username copy wins even
   // for an email shape, because that is the channel that could serve them.
+  // BUGHUNT-20261114: the username copy used to win whenever the email
+  // channel was off — even when the username channel was off too, so a
+  // form that could never submit promised "用户名注册可用". The hint now
+  // follows the channel that can actually serve the registration, and
+  // says plainly when neither password channel is open.
   const registerHint = passwordAvailable && (identifierIsEmail || !usernameAvailable)
     ? "用邮箱注册，提交后直接登录；另发一封验证邮件确认邮箱，日后找回账号也靠它。"
-    : "用户名 3–20 个字符，大小写不敏感；注册后直接登录，不用邮箱。";
+    : usernameAvailable
+      ? "用户名 3–20 个字符，大小写不敏感；注册后直接登录，不用邮箱。"
+      : "邮箱密码与用户名注册都还没开通。";
   // The registration form is a username form exactly when the hint above
   // is the username copy; only then do the recovery warning and the
   // optional recovery-email field belong on it.
-  const usernameForm = activeMode === "register" && !(passwordAvailable && (identifierIsEmail || !usernameAvailable));
+  const usernameForm = activeMode === "register" && usernameAvailable && !(passwordAvailable && (identifierIsEmail || !usernameAvailable));
   // Username reset stages: look the account's recovery state up, offer to
   // send the code, collect code + new password — or stop at an honest
   // explanation when there is nothing to send to / no channel yet.
@@ -388,6 +395,15 @@ export default function AccountPanel({ client, account, onContinue, onOpenAvatar
         {activeMode === "register" && <p className="account-storage-note">{registerHint}</p>}
         {error && <p className="account-message is-error" role="alert">{error}</p>}
         {account.notice && <p className="account-message" role="status">{account.notice}</p>}
+        {/* BUGHUNT-20261114: with both password channels closed the
+            login form is a dead form — disabled fields, disabled button,
+            no word. Say which channel is open instead of silence. The
+            code tab already covers the code-available case (preferCode
+            lands there), so this only fires when the login tab itself
+            cannot serve anyone. */}
+        {activeMode === "login" && !passwordAvailable && !usernameAvailable && (
+          <p className="account-message" role="status">邮箱密码登录还没开通。{account.config?.providers?.google ? "请用 Google 登录。" : alternativeLoginText()}</p>
+        )}
         {busy && slowPending && <p className="account-message" role="status">网络较慢，仍在处理中，请稍等；如果一直没有结果，可以检查网络后重试。</p>}
         {account.status === "loading" && <p className="account-message" role="status">正在连接账号服务…</p>}
         {resetActionable && <button type="submit" className="button button-primary account-primary" disabled={busy || !configured || (activeMode === "code" ? !codeAvailable || code.length !== 6 : activeMode === "reset" ? resetDisabled : activeMode === "register" ? !(passwordAvailable || usernameAvailable) || password !== confirmPassword : !(passwordAvailable || usernameAvailable))}>{busy ? "正在处理…" : activeMode === "register" ? "创建账号" : activeMode === "reset" ? resetLabel : activeMode === "code" ? "验证码登录" : "登录账号"}</button>}

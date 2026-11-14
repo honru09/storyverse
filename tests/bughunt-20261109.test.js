@@ -122,8 +122,11 @@ test('bughunt-10: a failed ratings load retries in place', () => {
   // The detail ratings panel only said so; retrying meant leaving
   // the detail page and coming back. load() is only re-run on
   // mount/bookId change, so the button calls it directly.
+  // BUGHUNT-20261114: the retry also refetches the header once the
+  // list actually reloads — otherwise the header stays on the old
+  // average after a save/delete whose reload just failed.
   const ratings = slice('function BookRatingsSection(', 'function PlazaDetail(')
-  assert.match(ratings, /\{error && \(<p className="plaza-thread-error" role="alert">\{error\} <button type="button" className="small-link" onClick=\{\(\) => void load\(\)\}>再试一次<\/button><\/p>\)\}/)
+  assert.match(ratings, /\{error && \(<p className="plaza-thread-error" role="alert">\{error\} <button type="button" className="small-link" onClick=\{\(\) => void load\(\)\.then\(\(payload\) => \{ if \(payload\) onRated\?\.\(\); \}\)\}>再试一次<\/button><\/p>\)\}/)
 })
 
 test('bughunt-11: a failed detail first load retries in place', () => {

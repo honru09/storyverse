@@ -1451,12 +1451,19 @@ function useAvatarProfile(authClient, account) {
   const [mainId, setMainId] = useState(null);
   const [quota, setQuota] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  // BUGHUNT-20261114: a failed first fetch used to look exactly like
+  // "this owner has no avatars" — the catch swallowed the error, the
+  // finally still raised loaded, and AvatarPage seeded a blank creation
+  // form over the owner's real collection. Track the failure so the
+  // page can say so and retry instead of seeding on an empty list.
+  const [loadFailed, setLoadFailed] = useState(false);
   const status = account?.status;
   const refresh = useCallback(async () => {
     if (status !== "authenticated") {
       setAvatars([]);
       setMainId(null);
       setQuota(null);
+      setLoadFailed(false);
       setLoaded(true);
       return null;
     }
@@ -1465,8 +1472,10 @@ function useAvatarProfile(authClient, account) {
       setAvatars(result.avatars);
       setMainId(result.mainId);
       setQuota(result.quota);
+      setLoadFailed(false);
       return result;
     } catch {
+      setLoadFailed(true);
       return null;
     } finally {
       setLoaded(true);
@@ -1489,7 +1498,7 @@ function useAvatarProfile(authClient, account) {
     if (Array.isArray(result.avatars)) setAvatars(result.avatars);
     if ("mainId" in result) setMainId(result.mainId);
   }, []);
-  return { avatar, avatars, mainId, quota, loaded, refresh, updateAvatar, applyCollection };
+  return { avatar, avatars, mainId, quota, loaded, loadFailed, refresh, updateAvatar, applyCollection };
 }
 
 function AvatarPortrait({ avatar, getAccessToken, which = "current", className = "", variant = "face" }) {
@@ -1581,12 +1590,12 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
       if (editingId !== undefined) { setEditingId(undefined); setForm(null); }
       return;
     }
-    if (!avatarState.loaded || editingId !== undefined) return;
+    if (!avatarState.loaded || avatarState.loadFailed || editingId !== undefined) return;
     const main = mainAvatarOf(avatars, mainId);
     if (main) { setEditingId(main.id); seedForm(main); }
     else { setEditingId(""); seedForm(null); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [avatarState.loaded, editingId, signedIn]);
+  }, [avatarState.loaded, avatarState.loadFailed, editingId, signedIn]);
 
   if (!signedIn) {
     return (
@@ -1596,6 +1605,23 @@ function AvatarPage({ authClient, account, avatarState, stories, onOpenStory, on
           <h1>化身跟着账号走。</h1>
           <p>先登录，再创建你的化身——它会陪你走进每一个世界。</p>
           <Button icon="arrow" onClick={onOpenAccount}>登录 / 注册</Button>
+        </div>
+      </div>
+    );
+  }
+  // BUGHUNT-20261114: the first fetch failed — say so and offer a
+  // retry instead of falling through to the loading spinner (or, worse,
+  // the blank creation form the seed effect used to plant on an empty
+  // list). A retry that lands clears loadFailed and the seed effect
+  // runs then.
+  if (avatarState.loaded && avatarState.loadFailed && !form) {
+    return (
+      <div className="page page-avatar page-enter">
+        <div className="sw-empty-page">
+          <div className="sw-empty-icon"><Icon name="users" size={25} /></div>
+          <h1>化身暂时没能打开。</h1>
+          <p>网络或服务抖了一下，你的化身还在，不用担心。</p>
+          <Button icon="arrow" onClick={() => void avatarState.refresh()}>再试一次</Button>
         </div>
       </div>
     );
@@ -2873,6 +2899,13 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     const borrow = draft.genreId !== CUSTOM_GENRE.id
       ? (worldChosen ? draft.genreId : "")
       : (draft.godBorrowWorldId || "");
+    // BUGHUNT-20261114: this import REPLACES the draft's lorebook —
+    // a second import used to silently drop whatever the first import
+    // (or a character card's travelling entries) had hung on the book.
+    // The replacement stands, but the note now says how many entries
+    // it cleared, so nothing vanishes without a word.
+    const replaced = (draft.lorebook || []).length;
+    const replacedNote = replaced > 0 ? `原有的 ${replaced} 条世界书条目已被这次导入替换。` : "";
     set({
       genreId: CUSTOM_GENRE.id,
       godBorrowWorldId: borrow,
@@ -2882,7 +2915,7 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
       lorebook: entries || [],
     });
     setFragmentBatch(drawInspirationFragments(4));
-    setWorldImportNote(note);
+    setWorldImportNote(note ? `${note}${replacedNote}` : replacedNote);
     setError("");
   };
   const handleWorldFile = async (file) => {
@@ -8302,6 +8335,11 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
   useEffect(() => {
     if (!focusPostId) { setFocusPost(null); setFocusFailed(false); return undefined; }
     let live = true;
+    // BUGHUNT-20261114: switching permalinks used to keep the old post
+    // pinned on top until the new one arrived — the stale card read as
+    // the current post, and it was missing from the stream at the same
+    // time. Clear it first, like PlazaDetail does with setDetail(null).
+    setFocusPost(null);
     setFocusFailed(false);
     fetchPlazaPost({ id: focusPostId, getAccessToken: getToken })
       .then((post) => { if (live) setFocusPost(post); })
@@ -8695,7 +8733,12 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
       // BUGHUNT-20261102: the detail header reads its own copy of the
       // average, so a save here must tell the parent to refetch it —
       // otherwise the header keeps saying "暂无评价" above a saved 5★.
-      if (payload) onRated?.();
+      // BUGHUNT-20261114: the refetch is unconditional now — when the
+      // list reload fails load() resolves null, and gating on it used
+      // to leave the header silently stale with no recovery path. The
+      // header refetch either lands (fresh average) or fails loudly
+      // into the stale-head banner with its own retry.
+      onRated?.();
       // load() swallows its own failure into the error line and
       // resolves null — celebrating over that error would be a false
       // beat, and a book switch mid-flight must not inherit it.
@@ -8722,8 +8765,11 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
       // no confirm and no word afterwards — the button now asks
       // first (like deleting a post), and success says so.
       setRemoveNote("你的评价已删除。");
-      const removedPayload = await load();
-      if (removedPayload) onRated?.();
+      // BUGHUNT-20261114: same unconditional head refetch as submit —
+      // a failed list reload must not strand the header on the deleted
+      // rating's average (see the submit note above).
+      await load();
+      onRated?.();
     } catch (failure) {
       if (failure?.code === "auth-required") onOpenAccount();
       else setFormError(failure?.message || "评价没能删掉，请稍后再试。");
@@ -8764,7 +8810,7 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
           <span className="da-skel da-skel--line" style={{ width: "68%" }} aria-hidden="true" />
         </div>
       )}
-      {error && (<p className="plaza-thread-error" role="alert">{error} <button type="button" className="small-link" onClick={() => void load()}>再试一次</button></p>)}
+      {error && (<p className="plaza-thread-error" role="alert">{error} <button type="button" className="small-link" onClick={() => void load().then((payload) => { if (payload) onRated?.(); })}>再试一次</button></p>)}
       {data && (
         <>
           {data.ratingCount > 0 ? (
@@ -9101,7 +9147,7 @@ function PlazaDetail({ id, account, authClient, stories = [], onNavigate, onBack
             )}
           </p>
           {ratingsHeadStale && (
-            <p className="plaza-note" role="status">评分已保存，但头部数据没能刷新。 <button type="button" className="small-link" onClick={refreshHead}>再试一次</button></p>
+            <p className="plaza-note" role="status">评价刚有变化，但头部数据没能刷新。 <button type="button" className="small-link" onClick={refreshHead}>再试一次</button></p>
           )}
         </div>
       </section>
@@ -10313,6 +10359,12 @@ function FriendsPanel({ authClient, onOpenProfile }) {
               placeholder={searchMode === "email" ? "输入对方的完整邮箱" : "输入用户名或 @ID 的一部分"}
               aria-label={searchMode === "email" ? "按邮箱找人" : "按用户名找人"}
               inputMode={searchMode === "email" ? "email" : "search"}
+              // BUGHUNT-20261114: the server clips name queries at 40
+              // chars (clip(q, 40)) while the box took any length, so a
+              // 41+ char query silently searched its first 40. Cap the
+              // box at the same 40 — email mode only: the email path
+              // never clips, and a full address can run past 40.
+              maxLength={searchMode === "name" ? 40 : undefined}
             />
             <button type="button" disabled={searching || !searchText.trim()} onClick={() => void runSearch()}>
               <Icon name="search" size={17} />
@@ -10322,7 +10374,7 @@ function FriendsPanel({ authClient, onOpenProfile }) {
           <p className="friends-search-note">
             {searchMode === "email"
               ? "邮箱是精确查找：找到就显示对方的主页卡片，邮箱本身不会出现在这里。"
-              : "按用户名或显示名模糊查找，点头像可以先看看对方的主页。"}
+              : <>按用户名或显示名模糊查找，点头像可以先看看对方的主页。 <small className="da-unit-count" aria-live="polite">{searchText.length} / 40</small></>}
           </p>
           {searchError ? (
             <p className="profile-line-empty" role="alert">{searchError}</p>
@@ -11908,6 +11960,10 @@ function PlazaPublish({ stories, avatar, avatarLoaded, account, authClient, onNa
 function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = null, avatarLoaded, onNavigate, onOpenAccount, onOpenAvatar, onEnterLine }) {
   const [detail, setDetail] = useState(null);
   const [loadError, setLoadError] = useState("");
+  // BUGHUNT-20261114: the first load used to be a dead end on failure —
+  // the error page offered only "back to plaza". Same retry pattern as
+  // PlazaDetail ([id, retry] + a retry button on the error page).
+  const [enterRetry, setEnterRetry] = useState(0);
   const [identityId, setIdentityId] = useState("");
   const [spawnName, setSpawnName] = useState("");
   const [spawnHook, setSpawnHook] = useState("");
@@ -11924,13 +11980,15 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
   const operation = useRef(null);
   useEffect(() => {
     let live = true;
+    setDetail(null);
+    setLoadError("");
     fetchPlazaDetail({ id })
       .then((next) => { if (live) setDetail(next); })
       .catch((failure) => {
         if (live) setLoadError(failure?.code === "not-found" ? "这条故事线已下架或不存在。" : "暂时没能打开这条故事线，请稍后再试。");
       });
     return () => { live = false; };
-  }, [id]);
+  }, [id, enterRetry]);
   useEffect(() => () => { operation.current?.abort(); }, []);
 
   const genre = detail ? genreById[detail.genreId] || GENRES[0] : null;
@@ -12015,7 +12073,10 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
         </button>
         <div className="plaza-empty" role="alert">
           <h3>{loadError}</h3>
-          <Button variant="secondary" onClick={() => onNavigate("plaza")}>回到广场</Button>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+            <Button variant="secondary" onClick={() => setEnterRetry((value) => value + 1)}>再试一次</Button>
+            <Button variant="secondary" onClick={() => onNavigate("plaza")}>回到广场</Button>
+          </div>
         </div>
       </div>
     );
@@ -12414,22 +12475,56 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
   );
   const [fusionStatus, setFusionStatus] = useState({});
   const fusionStatusKey = fusionPublicationIds.join("|");
-  useEffect(() => {
-    if (!fusionStatusKey) return undefined;
-    let live = true;
-    fetchFusionStatus({
-      publicationIds: fusionStatusKey.split("|"),
-      getAccessToken: () => authClient.getAccessToken(),
-    })
-      .then((statuses) => { if (live) setFusionStatus(statuses || {}); })
-      .catch(() => { /* offline posture: no gate without the server's word */ });
-    return () => { live = false; };
-  }, [fusionStatusKey]);
+  // BUGHUNT-20261114: the gates used to load once at mount — an author
+  // approving mid-session left the page stuck on 申请中 with no way to
+  // re-check. The fetch is now a named refresh the button below can
+  // re-run; a request counter keeps a stale flight from overwriting a
+  // newer key's statuses, like the old live guard did.
+  const fusionRequestRef = useRef(0);
+  const [fusionRefreshing, setFusionRefreshing] = useState(false);
+  const refreshFusionStatus = useCallback(async () => {
+    if (!fusionStatusKey) return;
+    const request = fusionRequestRef.current + 1;
+    fusionRequestRef.current = request;
+    setFusionRefreshing(true);
+    try {
+      const statuses = await fetchFusionStatus({
+        publicationIds: fusionStatusKey.split("|"),
+        getAccessToken: () => authClient.getAccessToken(),
+      });
+      if (fusionRequestRef.current === request) setFusionStatus(statuses || {});
+    } catch {
+      // Offline posture: no gate without the server's word — the
+      // previous statuses stay, and the button stays usable.
+    } finally {
+      if (fusionRequestRef.current === request) setFusionRefreshing(false);
+    }
+  }, [fusionStatusKey, authClient]);
+  useEffect(() => { void refreshFusionStatus(); }, [refreshFusionStatus]);
   const gateForStory = (story) => {
     const publicationId = story?.config?.sourcePublicationId || "";
     if (!publicationId) return fusionGateFor(null);
     return fusionGateFor(fusionStatus[publicationId]);
   };
+  // BUGHUNT-20261114: the seed selection above runs before the gates
+  // arrive, so a forbidden / ask / pending line could open selected
+  // and only be refused at "开始合流" — while tapping the same card
+  // refuses at once. Once the server has spoken, drop every selected
+  // line whose gate does not fuse; the card keeps its badge, so the
+  // reason stays visible in the list. Unknown gates (status not back
+  // yet) still fuse, so this never prunes on a network hiccup.
+  useEffect(() => {
+    if (!fusionStatusKey) return;
+    setSelectedIds((current) => {
+      const kept = current.filter((id) => {
+        const story = id === FRIEND_BOOK.id ? FRIEND_BOOK : originals.find((item) => item.id === id);
+        if (!story) return true;
+        return gateForStory(story).canFuse;
+      });
+      return kept.length === current.length ? current : kept;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fusionStatus]);
   const [fusionNote, setFusionNote] = useState("");
   const [applyingId, setApplyingId] = useState("");
   const applyForLine = async (book, otherStory) => {
@@ -12668,6 +12763,13 @@ function Merge({ activeStory, stories, onNavigate, onMerged, provider, authClien
       {!error && fusionNote && (
         <div className="merge-fusion-note" role="status">
           {fusionNote}
+        </div>
+      )}
+      {fusionStatusKey && (
+        <div className="merge-fusion-refresh">
+          <button type="button" className="small-link" disabled={fusionRefreshing} onClick={() => void refreshFusionStatus()}>
+            {fusionRefreshing ? "正在确认合流状态…" : "刷新合流状态"}
+          </button>
         </div>
       )}
       <div className="merge-controls">
@@ -13346,12 +13448,18 @@ function WriteDesk({ story, onUpdateStory, onNavigate }) {
           </label>
           <label className="field-label">
             正文
+            {/* BUGHUNT-20261114: the placeholder used to promise a
+                blank-line rule, but manualTextToParagraphs splits on
+                ANY newline run (its own comment says so) and the
+                editor round-trips through it — a single Enter has
+                always been a new paragraph. Say that, instead of
+                promising a rule the code never kept. */}
             <textarea
               className="write-textarea"
               rows={16}
               value={draftText}
               aria-label="章节正文"
-              placeholder="在这里写这一章。空行分段——回车两次，就是新的一段。"
+              placeholder="在这里写这一章。回车就是新的一段。"
               onChange={(event) => { dirtyRef.current = true; setDraftText(event.target.value); }}
             />
           </label>

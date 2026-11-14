@@ -95,6 +95,14 @@ export default function BillingPanel({ getToken }) {
 
   return (
     <div className="billing-panel">
+      {/* BUGHUNT-20261114: loadError used to render only when there was
+          no state at all — a refresh that failed after a successful
+          redemption left the success note standing over stale numbers
+          with no word and no retry. With state in hand the error rides
+          as a banner on top, same copy and retry as the full-page one. */}
+      {loadError && (
+        <p className="billing-error" role="alert">{loadError} <button type="button" className="billing-retry" onClick={() => void load()}>重试</button></p>
+      )}
       <section className="billing-state" aria-label="我的权益">
         <div className="billing-state-row">
           <strong>{member.active ? "会员生效中" : "还不是会员"}</strong>

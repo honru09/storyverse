@@ -158,12 +158,14 @@ test('bughunt-8: the profile ··· menu closes on an outside tap or Esc', () =>
 test('bughunt-9: a failed header refetch after rating is visible and retryable', () => {
   // onRated's refetch swallowed failures, so the header kept saying
   // "暂无评价" above a saved 5★ until the page was left and re-entered.
+  // BUGHUNT-20261114: the banner copy is neutral now — a deleted rating
+  // feeds the same stale-head path, so "评分已保存" no longer fits.
   const detail = slice('function PlazaDetail(', 'function ProfilePage(')
   assert.match(detail, /const \[ratingsHeadStale, setRatingsHeadStale\] = useState\(false\)/)
   assert.match(detail, /const refreshHead = useCallback\(\(\) => \{/)
   assert.match(detail, /catch\(\(\) => \{ if \(idRef\.current === wanted\) setRatingsHeadStale\(true\); \}\)/)
   assert.match(detail, /onRated=\{refreshHead\}/)
-  assert.match(detail, /评分已保存，但头部数据没能刷新。 <button type="button" className="small-link" onClick=\{refreshHead\}>再试一次<\/button>/)
+  assert.match(detail, /评价刚有变化，但头部数据没能刷新。 <button type="button" className="small-link" onClick=\{refreshHead\}>再试一次<\/button>/)
 })
 
 test('bughunt-10: the copy-link fallback note can break its URL', () => {

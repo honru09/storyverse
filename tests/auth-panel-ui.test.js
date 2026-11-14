@@ -67,7 +67,10 @@ test('username registration carries the recovery warning and the optional recove
   assert.match(panel, /<label>恢复邮箱（可选）<input type="email" name="recoveryEmail"/)
   // Both appear only on the username form, gated by the same condition
   // that selects the username register hint.
-  assert.match(panel, /const usernameForm = activeMode === "register" && !\(passwordAvailable && \(identifierIsEmail \|\| !usernameAvailable\)\)/)
+  // BUGHUNT-20261114: the gate gained a usernameAvailable check — with
+  // the username channel closed the form could never submit, yet it
+  // still promised username registration and showed this warning.
+  assert.match(panel, /const usernameForm = activeMode === "register" && usernameAvailable && !\(passwordAvailable && \(identifierIsEmail \|\| !usernameAvailable\)\)/)
   assert.match(panel, /\{usernameForm && <>/)
 })
 
