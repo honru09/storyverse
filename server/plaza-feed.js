@@ -32,6 +32,13 @@ import { publicHandle } from './social.js'
  * - Reporter uid lists are server-only; no payload copies them out.
  */
 const clip = (value, length) => typeof value === 'string' ? value.trim().slice(0, length) : ''
+// BUGHUNT-20261115: the like-row excerpt is read as the post itself,
+// so a clipped excerpt must say so — see server/social.js clipMarked.
+const clipMarked = (value, length) => {
+  if (typeof value !== 'string') return ''
+  const text = value.trim()
+  return text.length > length ? `${text.slice(0, length)}…` : text
+}
 const charCount = (value) => [...value].length
 
 /**
@@ -330,7 +337,7 @@ export function createPlazaFeedService({ env = process.env, store, books, social
           postId: id,
           postAuthorUid: post.authorUid,
           userUid: identity.uid,
-          postExcerpt: clip(post.content, 60),
+          postExcerpt: clipMarked(post.content, 60),
           createdAt: timestamp,
         })
         const likeCount = Math.max(0, post.likeCount || 0) + 1
@@ -390,7 +397,7 @@ export function createPlazaFeedService({ env = process.env, store, books, social
           authorUid: identity.uid,
           authorName: plazaAuthorNameFor(identity) || '织界旅人',
           content: cleaned.text,
-          postExcerpt: clip(post.content, 60),
+          postExcerpt: clipMarked(post.content, 60),
           status: 'active',
           reporters: [],
           hiddenReason: null,

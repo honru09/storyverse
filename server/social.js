@@ -87,6 +87,15 @@ const EMAIL_SEARCH_MAX = 10
 
 const WORLD_ART_IDS = new Set(['mist', 'cultivation', 'neon', 'city', 'court', 'frontier', CUSTOM_GENRE_ID])
 const clip = (value, length) => typeof value === 'string' ? value.trim().slice(0, length) : ''
+// BUGHUNT-20261115: quotes shown in the notification list are read as
+// the other person's full words, so a clipped quote must say so —
+// clip() alone cuts silently. clipMarked appends "…" only when text
+// was actually cut.
+const clipMarked = (value, length) => {
+  if (typeof value !== 'string') return ''
+  const text = value.trim()
+  return text.length > length ? `${text.slice(0, length)}…` : text
+}
 /* DEVICE-FIX3 (DESIGN §54): card-facing strings are budgeted in
  * wide units (CJK/fullwidth = 2, else 1) — the same measure the
  * client uses (src/plaza.js textUnitsFor). The display name's card
@@ -1338,7 +1347,7 @@ export function createSocialService({
               postId: record.postId,
               excerpt: record.postExcerpt || '',
               commentId: record.id,
-              commentText: clip(record.content, 120),
+              commentText: clipMarked(record.content, 120),
             },
             at: record.createdAt || null,
           }
@@ -1368,7 +1377,7 @@ export function createSocialService({
               bookId: record.bookId,
               bookTitle: record.bookTitle || '',
               stars: record.stars,
-              ratingText: clip(record.text, 120),
+              ratingText: clipMarked(record.text, 120),
             },
             at: record.createdAt || null,
           }

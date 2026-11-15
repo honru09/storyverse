@@ -1361,7 +1361,10 @@ function LibrarySwitcher({ stories, activeStoryId, onOpenStory, onFuseStory, onD
             />
           )}
           <img className="empty-inline-art" src="/art/empty-search-512.webp" alt="" loading="lazy" />
-          书架上没有找到「{query}」。
+          {/* BUGHUNT-20261115: echo what the reader typed, not the
+              lowercased match key — "ABC" used to come back as "abc"
+              while the box still showed "ABC". */}
+          书架上没有找到「{shelfQuery.trim()}」。
         </div>
       )}
       {shelves.map((row) => {
@@ -3005,6 +3008,15 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
     // from the current (world × template) list and lands it — the same
     // rule as the world and identity sections. There is no default
     // ability to fall back to.
+    // BUGHUNT-20261115: except when the reader explicitly picked
+    // "write your own" and left it blank — rolling then would silently
+    // swap in a library ability (or quietly keep the previously picked
+    // one) while the radio still shows "custom". Stop on this step and
+    // say so instead of rewriting the pick behind the reader's back.
+    if (step === 4 && abilitySourceEff === "custom" && !customAbility.trim()) {
+      setError("先写下你的能力，再继续。");
+      return;
+    }
     if (step === 4 && !abilityPick) rollAbility();
     setError("");
     setStep((value) => Math.min(5, value + 1));
@@ -3738,10 +3750,27 @@ function Forge({ onGenerate, onCreateManual, initialDraft, onDraftChange, provid
                           maxLength={START_POINT_NAME_MAX}
                           autoComplete="off"
                           value={draft.startPointName || ""}
-                          onChange={(event) => set({ startPointName: event.target.value, startPointHook: "" })}
+                          onChange={(event) => set({ startPointName: event.target.value })}
                           placeholder="例如：醒来的地方——一张草席、一间值班室、一段舰桥"
                         />
                         <small className="da-unit-count" aria-live="polite">{[...(draft.startPointName || "")].length} / {START_POINT_NAME_MAX}</small>
+                      </label>
+                      {/* BUGHUNT-20261115: the custom-world branch had no
+                          hook field at all, and renaming the point wiped
+                          the borrowed hook (the 11-09 #6 enter-page fix
+                          never reached the forge side). Renaming no
+                          longer clears the hook, and the hook is editable
+                          here, like the preset-world branch below. */}
+                      <label className="field-label">
+                        开局处境（选填）
+                        <input
+                          maxLength={START_POINT_HOOK_MAX}
+                          autoComplete="off"
+                          value={draft.startPointHook || ""}
+                          onChange={(event) => set({ startPointHook: event.target.value })}
+                          placeholder="睁开眼时，正在发生什么"
+                        />
+                        <small className="da-unit-count" aria-live="polite">{[...(draft.startPointHook || "")].length} / {START_POINT_HOOK_MAX}</small>
                       </label>
                       <p className="field-hint">留空也行：出生点由你的背景设定决定。写一个小而具体的地方——主角睁开眼时，就在那里。</p>
                       {borrowPoints.length > 0 ? (
@@ -6404,6 +6433,13 @@ function Reader({
   // captures the old chapter's screen, the advance swaps the chapter,
   // and the layout effect below completes the slide against the new
   // chapter. Otherwise the advance is the plain jump it always was.
+  // BUGHUNT-20261115: an armed slide belongs to the turn that armed
+  // it. If the next chapter is still generating, the arm outlives the
+  // tap — and the next unrelated jump (directory / bookmark / find)
+  // would play the stale direction's slide-in. Every other chapter
+  // jump therefore cancels the arm first (see selectLocation,
+  // enterProse and the 上一章 buttons); the pending turn itself keeps
+  // its arm and still slides in when the chapter arrives.
   const chapterTurn = (direction) => {
     const advance = () => {
       if (direction > 0) handleNext();
@@ -6416,6 +6452,10 @@ function Reader({
   const selectLocation = (target, anchor) => {
     requestedLocation.current = { index: target, anchor };
     setToolsOpen(false);
+    // BUGHUNT-20261115: a directory / bookmark / find jump is not the
+    // turn that armed a pending cross-chapter slide — cancel the arm
+    // so the jump does not play a stale direction's slide-in.
+    reading.cancelCrossTurn();
     if (target === index) reading.jump(anchor);
     else goToChapter(target);
   };
@@ -6551,7 +6591,12 @@ function Reader({
         : `共 ${frontTotal} 章 · 读到第 ${index + 1} 章`;
   const frontAtStart = index === 0 && reading.progress === 0;
   const enterProse = (target) => {
-    if (target !== null && target !== undefined && target !== index) goToChapter(target);
+    if (target !== null && target !== undefined && target !== index) {
+      // BUGHUNT-20261115: leaving the chapter front is its own jump,
+      // not the armed turn — cancel a pending cross-chapter slide.
+      reading.cancelCrossTurn();
+      goToChapter(target);
+    }
     if (turnMotion) {
       setFrontLeaving(true);
       window.setTimeout(() => { setFrontStage(null); setFrontLeaving(false); }, 350);
@@ -6742,7 +6787,7 @@ function Reader({
     {index > 0 && (
       <button
         className="reader-directory-button"
-        onClick={() => goToChapter(index - 1)}
+        onClick={() => { reading.cancelCrossTurn(); goToChapter(index - 1); }}
       >
         <Icon name="chevron" size={15} className="rotate-180" />
         上一章
@@ -6887,7 +6932,7 @@ function Reader({
               <button
                 type="button"
                 className="reader-chrome-chapter-nav"
-                onClick={() => goToChapter(index - 1)}
+                onClick={() => { reading.cancelCrossTurn(); goToChapter(index - 1); }}
                 disabled={index <= 0}
               >
                 上一章
@@ -8268,13 +8313,20 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
   // The 60s tick must never silently drop pages the reader already
   // flipped to: once loadMore has run, the tick only merges the fresh
   // first page in front (dedupe by id) and leaves the cursor alone.
+  // BUGHUNT-20261115: merging by id alone froze everything already
+  // loaded — someone else's like / comment / edit / delete on a loaded
+  // post never reached the card, because the old copy was kept verbatim
+  // and the card only syncs from parent props. The fresh first page now
+  // replaces its own ids in place, so loaded posts refresh too; deeper
+  // pages are untouched and the cursor is still left alone.
   const pagedRef = useRef(false);
   const refreshFeed = useCallback(async () => {
     const result = await fetchPlazaPosts({ getAccessToken: getToken, limit: 20 });
     setOnlineCount(result.onlineCount);
     if (pagedRef.current) {
-      const freshIds = new Set((result.posts || []).map((post) => post.id));
-      setPosts((current) => [...(result.posts || []), ...(current || []).filter((post) => !freshIds.has(post.id))]);
+      const fresh = result.posts || [];
+      const freshIds = new Set(fresh.map((post) => post.id));
+      setPosts((current) => [...fresh, ...(current || []).filter((post) => !freshIds.has(post.id))]);
     } else {
       setPosts(result.posts);
       setNextCursor(result.nextCursor);
@@ -11480,6 +11532,13 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
         </section>
       ) : (
       <>
+      {/* BUGHUNT-20261115: on someone else's profile the shelf below
+          rendered the exact same publications list as the 上架 section
+          right under it (ownBooks is null off-self, so both mapped
+          publications) — the same books twice on one page, against the
+          no-repeat first rule. Visitors now only get 上架; the shelf
+          stays for the owner, where it shows their own stories. */}
+      {isSelf && (
       <section className="profile-sec profile-shelf" aria-label="书架">
         <div className="profile-sec-head">
           {/* No count here: the stats row above already carries the
@@ -11535,6 +11594,7 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
           </div>
         )}
       </section>
+      )}
 
       <section className="profile-sec" aria-label="上架" data-enter>
         <div className="profile-sec-head">
