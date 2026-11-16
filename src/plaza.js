@@ -921,6 +921,97 @@ export async function fetchPlazaPost({ id, getAccessToken, fetchImpl = globalThi
   return result?.post ?? null
 }
 
+// BUGHUNT-20261116 A-1: the pinned permalink post was fetched once and
+// never touched by the 60s tick, so someone else's edit/like — or a
+// delete — stayed frozen above the stream until the plaza remounted.
+// Re-fetch one pinned post for the tick: { post } refreshes it in
+// place, { deleted: true } means the server says it is gone (404 or an
+// empty body), and { post: undefined } is a transient failure — the old
+// card stays rather than flashing "deleted" on a network blip.
+export async function refreshFocusPost({ id, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
+  try {
+    const post = await fetchPlazaPost({ id, getAccessToken, fetchImpl })
+    return post == null ? { post: null, deleted: true } : { post, deleted: false }
+  } catch (failure) {
+    if (failure?.code === 'not-found') return { post: null, deleted: true }
+    return { post: undefined, deleted: false }
+  }
+}
+
+// BUGHUNT-20261116 A-2: the 60s tick only ever fetched the first page,
+// so once loadMore had run, every post below the fresh first 20 kept its
+// stale copy forever (the paged branch merged page 1 in front and left
+// the rest untouched). Merge a re-fetched window over the loaded list:
+// page 1's posts go first in fetched order (new arrivals included),
+// then the loaded list in its own order with each entry swapped for its
+// fresh copy where one exists. Fresh posts from deeper pages that the
+// reader never loaded are never appended — they would land out of order
+// at the top. Unfetched entries keep their old copy; nothing is
+// dropped, the cursor is untouched.
+export function mergeRefreshedPosts(current, pages) {
+  const freshById = new Map()
+  for (const page of pages || []) {
+    for (const post of page || []) {
+      if (post && !freshById.has(post.id)) freshById.set(post.id, post)
+    }
+  }
+  const seen = new Set()
+  const merged = []
+  for (const post of pages?.[0] || []) {
+    if (!post || seen.has(post.id)) continue
+    seen.add(post.id)
+    merged.push(post)
+  }
+  for (const post of current || []) {
+    if (!post || seen.has(post.id)) continue
+    seen.add(post.id)
+    merged.push(freshById.get(post.id) || post)
+  }
+  return merged
+}
+
+// BUGHUNT-20261116 A-2: walk the cursor chain to re-fetch the window
+// the reader already loaded (one page past it, so new arrivals pushing
+// the window down by up to a page still leave every loaded id covered),
+// capped at 10 pages so a long shelf never turns the tick into a crawl.
+// Returns the fetched pages in order plus page 1's online count; a
+// mid-walk failure keeps the pages already fetched instead of failing
+// the whole tick.
+export async function fetchPlazaRefreshPages({ getAccessToken, loadedCount = 0, fetchImpl = globalThis.fetch } = {}) {
+  const pageCount = Math.max(1, Math.min(10, Math.ceil(loadedCount / 20) + 1))
+  const pages = []
+  let onlineCount = 0
+  let cursor = ''
+  for (let page = 0; page < pageCount; page += 1) {
+    let result
+    try {
+      result = await fetchPlazaPosts({ getAccessToken, cursor, limit: 20, fetchImpl })
+    } catch (failure) {
+      // Page 1 failing means the tick has nothing fresh at all — let
+      // the caller fall back to its old page-1 merge. A later page
+      // failing just stops the walk with what is already fetched.
+      if (page === 0) throw failure
+      break
+    }
+    if (page === 0) onlineCount = result.onlineCount
+    pages.push(result.posts || [])
+    if (!result.nextCursor || (result.posts || []).length === 0) break
+    cursor = result.nextCursor
+  }
+  return { pages, onlineCount }
+}
+
+// BUGHUNT-20261116 B-3: on the plaza-enter page, picking "write your
+// own ability" and leaving it blank silently carried the book's first
+// candidate ability (custom-empty resolved to null, then || abilities[0]
+// — the same silent swap 20261115 #6 blocked on the forge side).
+// Entering with a custom ability still unwritten is a stop, not a
+// fallback: returns the message to show, or null when entry may proceed.
+export function enterAbilityBlockedReason({ source, customText } = {}) {
+  if (source === 'custom' && !String(customText || '').trim()) return '先写下你的能力，再继续。'
+  return null
+}
+
 /** Post to the plaza: a free-text post, or a share of a bookstore book with my own words on it. */
 export async function createPlazaPost({ type, content, bookId, getAccessToken, fetchImpl = globalThis.fetch } = {}) {
   const headers = { 'Content-Type': 'application/json', ...(await plazaHeaders(getAccessToken)) }

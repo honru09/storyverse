@@ -1273,6 +1273,29 @@ export const storyLengthModeOf = (source) => {
   return STORY_LENGTH_MODES[mode] ? mode : 'short'
 }
 
+// BUGHUNT-20261116 B-1: the merged book's origin line in settings said
+// "这是一本 6 章的合流短篇" for every non-endless fused book — but a
+// fused book can be a 24-chapter season or a 100-chapter long line
+// (createMergedStory pins the reader's explicit length choice). Say the
+// real shape: season names its per-season count, everything else its
+// total; endless keeps its own line.
+export const mergedBookOriginHint = (story) => {
+  const mode = storyLengthModeOf(story)
+  if (mode === 'endless') return '这条线继承了无限连载：没有预设终章，每 12 章一弧，直到你亲手为它完结。'
+  if (mode === 'season') return `这是一本季模式的合流书，每季 ${totalChaptersFor(story)} 章，走完一季即告一段落。`
+  const total = totalChaptersFor(story)
+  if (Number.isFinite(total)) return `这是一本 ${total} 章的合流书，走完即止。`
+  return '这是一本合流书，走完即止。'
+}
+
+// BUGHUNT-20261116 B-4: the chapter-end "开启下一季" button only
+// checked the length mode, but startNextSeason refuses a merged line
+// outright (kind === 'merged' throws) — so a finished 24-chapter fused
+// season showed a live button that could only answer "这一季还没有读
+// 完". Only a non-merged season line can actually roll over.
+export const canStartNextSeason = (story) =>
+  storyLengthModeOf(story) === 'season' && story?.kind !== 'merged'
+
 // An endless line its owner has finished by hand: the finish timestamp is
 // the only "ended" signal an unbounded line ever gets.
 export const isManuallyFinished = (source) =>

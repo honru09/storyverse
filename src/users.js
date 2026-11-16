@@ -61,6 +61,18 @@ export async function unfollowUser({ uid, getAccessToken, fetchImpl = globalThis
   return usersJson(response)
 }
 
+// BUGHUNT-20261116 A-3: the plaza's "关注动态" strip reads
+// followingUids once, when the plaza mounts — and the plaza stays
+// mounted (keep-alive) while the profile window is open. A follow or
+// unfollow landed in that window therefore never reached the strip
+// until the next remount. Follow state changes broadcast on this event;
+// the plaza listens and re-fetches its following list.
+export const FOLLOWING_CHANGED_EVENT = 'storyweave:following-changed'
+export function notifyFollowingChanged() {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
+  window.dispatchEvent(new window.CustomEvent(FOLLOWING_CHANGED_EVENT))
+}
+
 /**
  * The public name-list behind a profile's 粉丝/关注 counts. Rows are
  * resolved server-side through the same identity layers as the

@@ -67,6 +67,11 @@ export default function ReadingTools({
       <label className="reading-search-label">查找已开启的正文
         <input type="search" autoComplete="off" placeholder="输入字词或人物名字" maxLength={100}
           value={query} onChange={event => setQuery(event.target.value)} />
+        {/* BUGHUNT-20261116 B-2/C-1: the 100-char cap silently ate pasted
+            text past the limit with no count anywhere, and the status
+            line then reported on the truncated query. Show the count,
+            like every other capped input. */}
+        <small className="da-count" aria-live="polite">{query.length} / 100</small>
       </label>
       <p className="reading-tools-status" role="status">{!query.trim() ? '只搜索这本书已开启的章节，不会提前揭晓剧情。' : total ? (hasMore ? `前 60 处结果，共 ${total} 处` : `${total} 处结果`) : '没有找到，试试更短的词。'}</p>
       <div className="reading-search-results">

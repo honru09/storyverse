@@ -76,6 +76,10 @@ import {
   fetchPlazaDetail,
   fetchPlazaPost,
   fetchPlazaPosts,
+  fetchPlazaRefreshPages,
+  refreshFocusPost,
+  mergeRefreshedPosts,
+  enterAbilityBlockedReason,
   fetchPostComments,
   fetchStoreBooks,
   plazaCardIntroFor,
@@ -122,6 +126,7 @@ import {
   bitmapRegionToBannerJpeg,
   deleteMyBanner,
   followUser,
+  FOLLOWING_CHANGED_EVENT,
   markNotificationsRead,
   publicDisplayName as profileDisplayName,
   publicHandle as profileHandle,
@@ -131,6 +136,7 @@ import {
   sendFriendRequest,
   sendPresenceHeartbeat,
   unfollowUser,
+  notifyFollowingChanged,
   updateMyProfile,
   uploadMyBanner,
   uploadMyPicture,
@@ -287,6 +293,8 @@ import {
   shelfById,
   shelfForTemplate,
   startNextSeason,
+  canStartNextSeason,
+  mergedBookOriginHint,
   storyLengthModeOf,
   structureFor,
   totalChaptersFor,
@@ -2271,7 +2279,7 @@ function ManualBookForm({ onCreate, onCancel }) {
           ))}
         </div>
         <label className="field-label">
-          标签（可不填，用顿号隔开，最多 5 个）
+          标签（可不填，用顿号隔开，最多 5 个，每条最多 12 字）
           <input
             type="text"
             value={tagsText}
@@ -5534,9 +5542,10 @@ function StorySettingsBook({ story, avatars = [], onBringAvatar, onOpenAvatarPag
               : <>由多条故事线融合而来，主角们共同走这条线。</>}
           </p>
           <p className="field-hint">
-            {storyLengthModeOf(story) === "endless"
-              ? "这条线继承了无限连载：没有预设终章，每 12 章一弧，直到你亲手为它完结。"
-              : "这是一本 6 章的合流短篇，走完即止。"}
+            {/* BUGHUNT-20261116 B-1: this used to say "6 章的合流短篇" for
+                every non-endless fused book — a fused season is 24
+                chapters and a fused long line is 100. Name the real shape. */}
+            {mergedBookOriginHint(story)}
             合流故事是多条线合流的结晶，不能再作合流的来源。
           </p>
         </div>
@@ -6691,7 +6700,11 @@ function Reader({
                 : "这一卷，读完了。"
           : "已读完分享章节"}
       </h2>
-      {isFinal && !readOnly && lengthMode === "season" ? (
+      {/* BUGHUNT-20261116 B-4: a finished fused season is a season line
+          that can never roll over (startNextSeason refuses kind
+          'merged') — showing the button only let it answer "这一季还没
+          有读完" to a season that is done. Non-merged seasons only. */}
+      {isFinal && !readOnly && lengthMode === "season" && canStartNextSeason(story) ? (
         <>
           <p>标尺已经抬高一格：下一季的对手、价码和要守的东西，都会比这一季更重。</p>
           <Button icon="spark" onClick={() => onStartNextSeason?.(story)}>
@@ -8252,10 +8265,18 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
   useEffect(() => {
     if (!viewerUid || !authClient) { setFollowingUids([]); return undefined; }
     let live = true;
-    fetchUserProfile({ uid: viewerUid, getAccessToken: () => authClient.getAccessToken() })
-      .then((profile) => { if (live) setFollowingUids(Array.isArray(profile?.followingUids) ? profile.followingUids : []); })
-      .catch(() => {});
-    return () => { live = false; };
+    const refreshFollowing = () => {
+      fetchUserProfile({ uid: viewerUid, getAccessToken: () => authClient.getAccessToken() })
+        .then((profile) => { if (live) setFollowingUids(Array.isArray(profile?.followingUids) ? profile.followingUids : []); })
+        .catch(() => {});
+    };
+    refreshFollowing();
+    // BUGHUNT-20261116 A-3: the plaza stays mounted (keep-alive) while
+    // the profile window is open, so a follow/unfollow landed there
+    // never re-ran this effect and the "关注动态" strip kept showing
+    // the old list. Follow changes broadcast on this event; re-read.
+    window.addEventListener(FOLLOWING_CHANGED_EVENT, refreshFollowing);
+    return () => { live = false; window.removeEventListener(FOLLOWING_CHANGED_EVENT, refreshFollowing); };
   }, [viewerUid, authClient]);
 
   const load = useCallback(async () => {
@@ -8266,18 +8287,47 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
   }, [getToken]);
 
   // The 60s tick must never silently drop pages the reader already
-  // flipped to: once loadMore has run, the tick only merges the fresh
-  // first page in front (dedupe by id) and leaves the cursor alone.
+  // flipped to: once loadMore has run, the tick merges the fresh window
+  // over the loaded list (dedupe by id, fresh copy wins) and leaves the
+  // cursor alone.
   const pagedRef = useRef(false);
+  const postsRef = useRef(posts);
+  const focusPostIdRef = useRef(focusPostId);
+  useEffect(() => { postsRef.current = posts; }, [posts]);
+  useEffect(() => { focusPostIdRef.current = focusPostId; }, [focusPostId]);
   const refreshFeed = useCallback(async () => {
-    const result = await fetchPlazaPosts({ getAccessToken: getToken, limit: 20 });
-    setOnlineCount(result.onlineCount);
     if (pagedRef.current) {
-      const freshIds = new Set((result.posts || []).map((post) => post.id));
-      setPosts((current) => [...(result.posts || []), ...(current || []).filter((post) => !freshIds.has(post.id))]);
+      // BUGHUNT-20261116 A-2: the tick used to fetch only page 1, so
+      // every post below the fresh first 20 kept its stale copy
+      // forever. Walk the cursor chain over the loaded window and swap
+      // each loaded post for its fresh copy in place; on any failure
+      // fall back to the old page-1-only merge rather than dropping.
+      try {
+        const refreshed = await fetchPlazaRefreshPages({ getAccessToken: getToken, loadedCount: postsRef.current?.length || 0 });
+        setOnlineCount(refreshed.onlineCount);
+        setPosts((current) => mergeRefreshedPosts(current, refreshed.pages));
+      } catch {
+        const result = await fetchPlazaPosts({ getAccessToken: getToken, limit: 20 });
+        setOnlineCount(result.onlineCount);
+        const freshIds = new Set((result.posts || []).map((post) => post.id));
+        setPosts((current) => [...(result.posts || []), ...(current || []).filter((post) => !freshIds.has(post.id))]);
+      }
     } else {
+      const result = await fetchPlazaPosts({ getAccessToken: getToken, limit: 20 });
+      setOnlineCount(result.onlineCount);
       setPosts(result.posts);
       setNextCursor(result.nextCursor);
+    }
+    // BUGHUNT-20261116 A-1: the pinned permalink post is separate state
+    // and the tick never touched it, so someone else's edit/like — or a
+    // delete — stayed frozen above the stream. Refresh it on the tick;
+    // a gone post clears the pin and shows the deleted note, a
+    // transient failure leaves the old card alone.
+    const focusId = focusPostIdRef.current;
+    if (focusId) {
+      const focus = await refreshFocusPost({ id: focusId, getAccessToken: getToken });
+      if (focus.deleted) { setFocusPost(null); setFocusFailed(true); }
+      else if (focus.post) { setFocusPost(focus.post); }
     }
   }, [getToken]);
 
@@ -11106,6 +11156,10 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
       };
       setProfile(next);
       rememberProfile({ viewerUid, profile: next });
+      // BUGHUNT-20261116 A-3: the plaza's "关注动态" strip reads the
+      // following list once at mount and stays mounted (keep-alive)
+      // while this window is open — tell it the list just changed.
+      notifyFollowingChanged();
       // BUGHUNT-20261103: following lands with a sparkle, but
       // unfollowing landed with nothing at all — the button flip was
       // the only signal. Say it in words, like every other action.
@@ -11128,6 +11182,10 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
         ...current,
         people: current.people.map((row) => (row.uid === person.uid ? { ...row, isFollowing: result.following } : row)),
       } : current);
+      // BUGHUNT-20261116 A-3: same broadcast as the profile follow
+      // button — the keep-alive plaza strip reads its following list
+      // once at mount, so tell it the list just changed.
+      notifyFollowingChanged();
       // BUGHUNT-20261107: the list rows landed follow and unfollow
       // with no word either way (the top-bar row got its unfollow
       // note in 20261103; the list rows never did). Say it, like
@@ -11957,6 +12015,13 @@ function PlazaEnter({ id, account, authClient, avatar, avatars = [], mainId = nu
   };
   const enter = async () => {
     if (!detail || !identityId || busy) return;
+    // BUGHUNT-20261116 B-3: picking "write your own ability" and leaving
+    // it blank used to silently carry the book's first candidate ability
+    // (custom-empty resolved to null, then || abilities[0] — the same
+    // silent swap 20261115 #6 blocked on the forge side). Stop here and
+    // say so, like the forge does.
+    const blockedAbility = enterAbilityBlockedReason({ source: enterSourceEff, customText: enterCustomAbility });
+    if (blockedAbility) { setError(blockedAbility); return; }
     const controller = new AbortController();
     operation.current = controller;
     setBusy(true);
