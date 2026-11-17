@@ -61,6 +61,17 @@ export async function unfollowUser({ uid, getAccessToken, fetchImpl = globalThis
   return usersJson(response)
 }
 
+// BUGHUNT-20261117 A-3: a friend request answered from someone else's
+// profile window lands on the server, but the own page's FriendsPanel
+// only fetches on mount and never hears about it — the requests tab
+// keeps showing the answered row until a full reload. Friend actions
+// broadcast on this event; the panel listens and re-fetches.
+export const FRIENDS_CHANGED_EVENT = 'storyweave:friends-changed'
+export function notifyFriendsChanged() {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
+  window.dispatchEvent(new window.CustomEvent(FRIENDS_CHANGED_EVENT))
+}
+
 /**
  * The public name-list behind a profile's 粉丝/关注 counts. Rows are
  * resolved server-side through the same identity layers as the

@@ -1318,6 +1318,12 @@ export const isStoryComplete = (story) =>
 export const finishEndlessLine = (story) => {
   if (!story || typeof story !== 'object' || storyLengthModeOf(story) !== 'endless') return story
   if (isManuallyFinished(story)) return story
+  // BUGHUNT-20261117 B-2: a hand-written book with no written chapter
+  // must not be markable finished — the publish gate already refuses
+  // it ("至少写完一章"), and there is no un-finish path anywhere.
+  // The WriteDesk button is gated the same way; this is the engine
+  // floor so no caller can finish an empty book.
+  if (isManualStory(story) && manualWrittenChapterCount(story) < 1) return story
   const timestamp = now()
   return {
     ...story,

@@ -58,6 +58,24 @@ export function rememberProfile({ viewerUid = '', profile } = {}) {
   notify(key, profile)
 }
 
+// BUGHUNT-20261117 A-2: following someone from their own page (or
+// their followers/following list) changes the viewer's own following
+// count, but the toggle only rewrites the target's payload — the own
+// page sits keep-alive underneath the profile window and never
+// re-fetches. The caller bumps the cached own payload through this
+// helper so the subscribed own page counts move at once.
+export function withFollowingCount(profile, following) {
+  if (!profile || typeof profile !== 'object') return profile
+  const current = Number.isInteger(profile.counts?.following) ? profile.counts.following : 0
+  return {
+    ...profile,
+    counts: {
+      ...(profile.counts || {}),
+      following: following ? current + 1 : Math.max(0, current - 1),
+    },
+  }
+}
+
 /**
  * Load a profile SWR-style. Resolves with the cached payload at once
  * when one exists (and revalidates in the background); otherwise

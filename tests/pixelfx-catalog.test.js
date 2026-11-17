@@ -540,11 +540,17 @@ test('wave-4 review wiring: claims are visibility-guarded, races closed', () => 
   assert.match(main, /setFinaleFxId\(null\), 6000\)/)
   // A rating beat needs the reload to have actually landed, and must
   // still belong to the book on screen.
-  assert.match(main, /const payload = await load\(\);/)
+  // BUGHUNT-20261117 A-4: the reload is now reloadKeepingPages (it
+  // re-fetches the pages the reader already opened instead of
+  // collapsing to page 1); the beat still fires only on a landed
+  // payload for the book on screen.
+  assert.match(main, /const payload = await reloadKeepingPages\(\);/)
   assert.match(main, /bookIdRef\.current === bookId/)
   assert.match(main, /uidRef\.current === targetUid/)
   // uid/book switches clear any queued beat.
-  assert.match(main, /useEffect\(\(\) => \{ setRatingFx\(null\); \}, \[bookId\]\)/)
+  // BUGHUNT-20261117 A-4: the same effect also resets the opened
+  // review-page count, so a new book starts back at page 1.
+  assert.match(main, /useEffect\(\(\) => \{ setRatingFx\(null\); loadedPagesRef\.current = 1; \}, \[bookId\]\)/)
 })
 
 test('wave-5 wiring: adaptive quality, crossfade, flash guard, save-data and pause coverage', () => {

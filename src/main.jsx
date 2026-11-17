@@ -102,6 +102,8 @@ import {
   rateBook,
   ratingAverageText,
   recordPlazaRead,
+  replacePlazaPost,
+  appendRatingsPage,
   reportPlazaPost,
   reportPostComment,
   reportPublication,
@@ -123,6 +125,8 @@ import {
   deleteMyBanner,
   followUser,
   markNotificationsRead,
+  notifyFriendsChanged,
+  FRIENDS_CHANGED_EVENT,
   publicDisplayName as profileDisplayName,
   publicHandle as profileHandle,
   reportUser,
@@ -145,6 +149,7 @@ import {
   rememberProfile,
   rememberProfileViewState,
   subscribeProfile,
+  withFollowingCount,
 } from "./profile-cache.js";
 import {
   FUSION_PERMISSION_OPTIONS,
@@ -4715,6 +4720,14 @@ function NotificationsPanel({ authClient, onOpenProfile, onUnreadChange }) {
                         {item.target?.storyTitle ? (
                           <span className="notify-row-body">对方的线：《{item.target.storyTitle}》</span>
                         ) : null}
+                        {item.target?.avatarName ? (
+                          // BUGHUNT-20261117 C-2: the payload carries
+                          // the applicant's avatar name, but the row
+                          // never showed it — the author decides the
+                          // request without seeing which character
+                          // comes with it.
+                          <span className="notify-row-body">对方带来的化身：{item.target.avatarName}</span>
+                        ) : null}
                         {item.at && <small>{notifyTime(item.at)}</small>}
                         <span className="notify-actions">
                           <button
@@ -5952,9 +5965,15 @@ function Reader({
     ? readerIndexFor({ ...story, readerIndex: snapshotIndex }, true)
     : readerIndexFor(story);
   const readingChapters = useMemo(() => story?.chapters.map((_, i) => chapterForReading(story, i)) || [], [story]);
-  const chapter = story ? (readingChapters[index] || buildChapter(story, index)) : null;
+  // BUGHUNT-20261117 B-1: a hand-written book's chapters are the
+  // author's own words — no path may invent more (WRITE-MODE §50,
+  // reading-flow.js). A zero-chapter manual book used to fall through
+  // to buildChapter and read template prose it never wrote, and even
+  // record a ghost reading position for it. Keep the chapter null so
+  // the empty state below takes over instead.
+  const chapter = story ? (readingChapters[index] || (isManualStory(story) ? null : buildChapter(story, index))) : null;
   const coverState = coverStateOf(story);
-  const locationKey = story && chapterLocationKey(story.id, index, chapter.paragraphs, readOnly);
+  const locationKey = story && chapter ? chapterLocationKey(story.id, index, chapter.paragraphs, readOnly) : null;
   const { animate: readerMotionAnimate } = useMotionPolicy("reader");
   // BUGHUNT-20261106: turn motion used to follow
   // preferences.inputMethod, a sticky copy fed only by the settings
@@ -5994,11 +6013,19 @@ function Reader({
     setChromeOpen(false);
     setInterveneOpen(false);
     setSettingsOpen(false);
-    setInterveneNote("");
     setRerollConfirm(false);
     setProseOpen(false);
     setError("");
   }, [story?.id, story?.revision, readOnly]);
+
+  // BUGHUNT-20261117 B-3: the queued-intervention note used to be
+  // cleared by the revision effect above — queueIntervention bumps
+  // revision, so a note set in the same tick was wiped before it ever
+  // showed. It now clears only when the chapter (or book) actually
+  // changes; the intervention overlay already follows this rule.
+  useEffect(() => {
+    setInterveneNote("");
+  }, [story?.id, index, readOnly]);
 
   useEffect(() => {
     setFrontStage("cover");
@@ -6151,6 +6178,18 @@ function Reader({
     <div className="page sw-empty-page">
       <h1>故事还在这里。</h1><p role="status">{generationError || "正在接回这一章…"}</p>
       <Button disabled={preparing} onClick={() => setRetry((value) => value + 1)}>重试</Button>
+      <Button variant="ghost" onClick={() => onNavigate("home")}>返回书架</Button>
+    </div>
+  );
+  // BUGHUNT-20261117 B-1: the manual counterpart of the gemini guard
+  // above — a hand-written book with no chapter at this index shows
+  // an empty state, never template prose. A read-only copy gets no
+  // writing-desk door (it cannot be written).
+  if (isManualStory(story) && !story.chapters[index]) return (
+    <div className="page sw-empty-page">
+      <h1>这本书还没有章节。</h1>
+      <p role="status">{readOnly ? "这本书还没有可以读的章节。" : "先去写作台写下第一章，再回来读。"}</p>
+      {!readOnly && (<Button icon="pencil" onClick={() => onNavigate("write", { storyId: story.id })}>去写作台写第一章</Button>)}
       <Button variant="ghost" onClick={() => onNavigate("home")}>返回书架</Button>
     </div>
   );
@@ -7949,7 +7988,7 @@ function PlazaPostBookCard({ book, onOpenDetail, onReadLine, onEnter }) {
   );
 }
 
-function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, onEnter, onOpenProfile, onOpenAccount, onToast, onDeleted, onLikeChange }) {
+function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, onEnter, onOpenProfile, onOpenAccount, onToast, onDeleted, onEdited, onLikeChange }) {
   const viewerUid = account.user?.uid || "";
   const own = Boolean(viewerUid) && post.authorUid === viewerUid;
   const [liked, setLiked] = useState(Boolean(post.viewerLiked));
@@ -8078,6 +8117,11 @@ function PlazaPostCard({ post, account, authClient, onOpenDetail, onReadLine, on
       if (updated) {
         setContent(updated.content);
         setEdited(Boolean(updated.updatedAt) && updated.updatedAt !== updated.createdAt);
+        // BUGHUNT-20261117 A-1: without this write-back the resync
+        // effect replays the parent's still-old post object over the
+        // saved text the moment editing closes — "saved" toast over
+        // old prose. Same shape as the like path (onLikeChange).
+        onEdited?.(updated);
       }
       setEditing(false);
       onToast?.("帖子已更新。");
@@ -8537,6 +8581,10 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
           onOpenAccount={onOpenAccount}
           onToast={onToast}
           onLikeChange={handleLikeChange}
+          onEdited={(updated) => {
+            setFocusPost((current) => (current && current.id === updated.id ? updated : current));
+            setPosts((current) => replacePlazaPost(current, updated));
+          }}
           onDeleted={(postId) => {
             // BUGHUNT-20261105: clearing only the focus used to let
             // the same post reappear as a stream card, because the
@@ -8576,6 +8624,7 @@ function PlazaFeed({ account, authClient, activeStory, stories, focusPostId = ""
               onOpenAccount={onOpenAccount}
               onToast={onToast}
               onLikeChange={handleLikeChange}
+              onEdited={(updated) => setPosts((current) => replacePlazaPost(current, updated))}
               onDeleted={(postId) => setPosts((current) => (current || []).filter((entry) => entry.id !== postId))}
             />
           ))}
@@ -8638,7 +8687,11 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
   // queued for one book must never land on another's picker.
   const bookIdRef = useRef(bookId);
   bookIdRef.current = bookId;
-  useEffect(() => { setRatingFx(null); }, [bookId]);
+  // BUGHUNT-20261117 A-4: how many review pages the reader has
+  // opened with 更多评价 — a save/delete re-fetches this depth
+  // instead of collapsing back to page 1.
+  const loadedPagesRef = useRef(1);
+  useEffect(() => { setRatingFx(null); loadedPagesRef.current = 1; }, [bookId]);
   const token = () => authClient.getAccessToken();
 
   const load = useCallback(async () => {
@@ -8653,6 +8706,7 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
       });
       if (bookIdRef.current !== requestBook) return null;
       setData(payload);
+      loadedPagesRef.current = 1;
       setError("");
       return payload;
     } catch {
@@ -8662,6 +8716,37 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId, account.user]);
+
+  // BUGHUNT-20261117 A-4: a save/delete used to re-fetch page 1 only,
+  // silently collapsing pages the reader had already opened with
+  // 更多评价. Re-fetch page 1, then replay the same cursor walk the
+  // reader already did, so the opened depth survives the save; a
+  // failed page keeps what is already there and says so.
+  const reloadKeepingPages = async () => {
+    const target = loadedPagesRef.current;
+    const first = await load();
+    if (!first) return null;
+    let merged = first;
+    let pages = 1;
+    while (pages < target && merged.nextCursor) {
+      try {
+        const page = await fetchBookRatings({
+          id: bookId,
+          cursor: merged.nextCursor,
+          getAccessToken: account.user ? token : undefined,
+        });
+        if (bookIdRef.current !== bookId) return null;
+        merged = appendRatingsPage(merged, page);
+        setData(merged);
+        pages += 1;
+      } catch {
+        setError("更多评价没能打开，请稍后再试。");
+        break;
+      }
+    }
+    loadedPagesRef.current = pages;
+    return merged;
+  };
 
   useEffect(() => { void load(); }, [load]);
 
@@ -8688,10 +8773,14 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
     setBusy(true);
     setFormError("");
     setSaveNote("");
+    // BUGHUNT-20261117 A-5: a save and a delete each wrote only their
+    // own note, so both lines could stand at once and contradict each
+    // other. One action, one note — clear the other.
+    setRemoveNote("");
     try {
       await rateBook({ id: bookId, stars: draftStars, text: draftText, getAccessToken: token });
       setSaveNote("评价已保存。");
-      const payload = await load();
+      const payload = await reloadKeepingPages();
       // BUGHUNT-20261102: the detail header reads its own copy of the
       // average, so a save here must tell the parent to refetch it —
       // otherwise the header keeps saying "暂无评价" above a saved 5★.
@@ -8712,6 +8801,8 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
     setBusy(true);
     setFormError("");
     setRemoveNote("");
+    // BUGHUNT-20261117 A-5: see submit — one action, one note.
+    setSaveNote("");
     try {
       await deleteBookRating({ id: bookId, getAccessToken: token });
       setSeededFor("");
@@ -8722,7 +8813,7 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
       // no confirm and no word afterwards — the button now asks
       // first (like deleting a post), and success says so.
       setRemoveNote("你的评价已删除。");
-      const removedPayload = await load();
+      const removedPayload = await reloadKeepingPages();
       if (removedPayload) onRated?.();
     } catch (failure) {
       if (failure?.code === "auth-required") onOpenAccount();
@@ -8741,7 +8832,8 @@ function BookRatingsSection({ bookId, account, authClient, onOpenAccount, onOpen
         getAccessToken: account.user ? token : undefined,
       });
       if (bookIdRef.current !== requestBook) return;
-      setData((current) => current ? { ...current, ratings: [...current.ratings, ...page.ratings], nextCursor: page.nextCursor } : current);
+      setData((current) => appendRatingsPage(current, page));
+      loadedPagesRef.current += 1;
     } catch { setError("更多评价没能打开，请稍后再试。"); } finally { setLoadingMore(false); }
   };
 
@@ -10028,6 +10120,16 @@ function FriendsPanel({ authClient, onOpenProfile }) {
   }, [getToken]);
   useEffect(() => { reload(); }, [reload]);
 
+  // BUGHUNT-20261117 A-3: a request answered from someone else's
+  // profile window lands on the server, but this panel only fetches
+  // on mount — listen for the broadcast and re-fetch, so the requests
+  // tab and its pending count follow the answer.
+  useEffect(() => {
+    const onFriendsChanged = () => reload();
+    window.addEventListener(FRIENDS_CHANGED_EVENT, onFriendsChanged);
+    return () => window.removeEventListener(FRIENDS_CHANGED_EVENT, onFriendsChanged);
+  }, [reload]);
+
   // BUGHUNT-20261111: incoming requests page 50 at a time while the
   // badge counts all pending — append the next page, deduped by id,
   // under a busy guard; the count never moves, so the list just
@@ -10126,6 +10228,15 @@ function FriendsPanel({ authClient, onOpenProfile }) {
   const runSearch = async () => {
     const value = searchText.trim();
     if (!value || searching) return;
+    // BUGHUNT-20261117 C-1: an ill-formed address never reaches the
+    // server — it is not "no such account", and it must not burn one
+    // of the 10 email lookups per 15 minutes. The server enforces the
+    // same rule for direct callers; this is the reader-facing half.
+    if (searchMode === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      setSearchResult(null);
+      setSearchError("邮箱格式不对，先检查一下再搜。");
+      return;
+    }
     setSearching(true);
     setSearchError("");
     setSearchResult(null);
@@ -11106,6 +11217,15 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
       };
       setProfile(next);
       rememberProfile({ viewerUid, profile: next });
+      // BUGHUNT-20261117 A-2: following from this page also moves
+      // the viewer's own following count — the own page sits
+      // keep-alive underneath the profile window and never re-fetches.
+      // Bump the cached own payload so its subscribed count moves at
+      // once (a no-op when it was never cached).
+      if (uid !== viewerUid) {
+        const own = peekProfile({ viewerUid, uid: viewerUid });
+        if (own) rememberProfile({ viewerUid, profile: withFollowingCount(own, result.following) });
+      }
       // BUGHUNT-20261103: following lands with a sparkle, but
       // unfollowing landed with nothing at all — the button flip was
       // the only signal. Say it in words, like every other action.
@@ -11140,6 +11260,12 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
         const next = { ...profile, counts: { ...profile.counts, following: result.following ? profile.counts.following + 1 : Math.max(0, profile.counts.following - 1) } };
         setProfile(next);
         rememberProfile({ viewerUid, profile: next });
+      } else {
+        // BUGHUNT-20261117 A-2: following from someone else's list
+        // still moves the viewer's own following count — bump the
+        // cached own payload like toggleFollow does above.
+        const own = peekProfile({ viewerUid, uid: viewerUid });
+        if (own) rememberProfile({ viewerUid, profile: withFollowingCount(own, result.following) });
       }
     } catch (failure) {
       if (failure?.code === "auth-required") onOpenAccount();
@@ -11197,6 +11323,10 @@ function ProfilePage({ uid, account, authClient, onNavigate, onOpenAccount, onOp
         setFriendState(result.state || "none");
         setNote("申请已取消。");
       }
+      // BUGHUNT-20261117 A-3: the own page's FriendsPanel only
+      // fetches on mount — tell it the relationship moved so its list
+      // and pending count re-fetch instead of going stale.
+      notifyFriendsChanged();
     } catch (failure) {
       if (failure?.code === "auth-required") onOpenAccount();
       else setNote(failure?.message || "操作没能完成，请稍后再试。");
@@ -13266,6 +13396,12 @@ function WriteDesk({ story, onUpdateStory, onNavigate }) {
             <button type="button" className="small-link" onClick={finishBook}>确认完结</button>
             <button type="button" className="small-link" onClick={() => setConfirmFinish(false)}>再想想</button>
           </span>
+        ) : written < 1 ? (
+          // BUGHUNT-20261117 B-2: a book with no written chapter cannot
+          // be marked finished — the publish gate already refuses it,
+          // and finishing is irreversible. Say so instead of offering
+          // a button that would mark an empty book finished.
+          <span className="write-finished-note">写完一章就能标记完结。</span>
         ) : (
           <button type="button" className="small-link" onClick={() => setConfirmFinish(true)}>
             标记完结

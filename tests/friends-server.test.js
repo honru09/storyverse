@@ -201,11 +201,14 @@ test('email search is exact, never echoes the address, and cannot tell a miss fr
   result = await search(base, seeker.token, { email: '  Bound.Friend@Example.COM ' })
   assert.equal(result.body.people.length, 1)
 
-  // Unknown address, malformed address: the same empty answer.
+  // Unknown address: an honest empty answer. A malformed address is
+  // not a miss — BUGHUNT-20261117 C-1 rejects it loudly (400) before
+  // it can burn a throttle slot or read as "no such account".
   result = await search(base, seeker.token, { email: 'nobody@example.com' })
   assert.deepEqual(result.body, { mode: 'email', people: [], total: 0 })
   result = await search(base, seeker.token, { email: 'not-an-email' })
-  assert.deepEqual(result.body, { mode: 'email', people: [], total: 0 })
+  assert.equal(result.status, 400)
+  assert.match(result.body.error || '', /邮箱格式不对/)
 
   // Seeking my own bound address does not return me.
   const selfBound = await register(base, 'mail_self', { recoveryEmail: 'self.mail@example.com' })
@@ -247,6 +250,17 @@ test('email lookups are throttled per account', async (t) => {
   // Name search is a different, unthrottled surface.
   const byName = await search(base, seeker.token, { q: 'throttle' })
   assert.equal(byName.status, 200)
+})
+
+test('malformed email searches do not burn the throttle budget', async (t) => {
+  const { base } = await startFriendsServer(t)
+  const seeker = await register(base, 'throttle_malformed')
+  for (let index = 0; index < 10; index += 1) {
+    const result = await search(base, seeker.token, { email: 'not-an-email' })
+    assert.equal(result.status, 400, `malformed lookup ${index + 1} is rejected, not counted`)
+  }
+  const valid = await search(base, seeker.token, { email: 'probe@example.com' })
+  assert.equal(valid.status, 200, 'ten malformed lookups leave the budget untouched')
 })
 
 test('the request flow: note, idempotence, viewer states, and the 互动 reminder', async (t) => {

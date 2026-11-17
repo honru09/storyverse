@@ -1054,3 +1054,29 @@ export async function deleteBookRating({ id, getAccessToken, fetchImpl = globalT
   const response = await fetchImpl(`/api/store/${encodeURIComponent(id)}/ratings`, { method: 'DELETE', headers })
   return plazaJson(response)
 }
+
+// BUGHUNT-20261117 A-1: a plaza card edits its own copy in place, but
+// the resync effect replays the parent's (still old) post object over
+// it the moment editing closes — the saved text flashes back to the
+// old one while the toast claims success. The parent writes the saved
+// copy back into its list (and the pinned focus copy) through this
+// helper, so the resync reads fresh props instead of stale ones —
+// the same shape the like path already uses (onLikeChange).
+export function replacePlazaPost(posts, updated) {
+  if (!Array.isArray(posts) || !updated?.id) return posts
+  return posts.map((entry) => (entry?.id === updated.id ? updated : entry))
+}
+
+// BUGHUNT-20261117 A-4: a rating save/delete used to re-fetch page 1
+// and drop the pages the reader had already opened with 更多评价.
+// The reload replays the same append page 1, page 2, … so the opened
+// depth survives the save; a failed page keeps what is already there.
+export function appendRatingsPage(current, page) {
+  if (!current) return page ?? null
+  if (!page) return current
+  return {
+    ...current,
+    ratings: [...(current.ratings || []), ...(page.ratings || [])],
+    nextCursor: page.nextCursor ?? null,
+  }
+}

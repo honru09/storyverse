@@ -627,12 +627,18 @@ export function createSocialService({
       const me = identity.uid
       const emailQuery = typeof email === 'string' ? normalizeEmailAddress(email) : ''
       if (emailQuery) {
+        // BUGHUNT-20261117 C-1: a malformed address used to burn one
+        // throttle slot and then read as "no such account" — the same
+        // empty result a real miss returns. Validate first: a bad
+        // format is rejected loudly and never touches the budget.
+        if (!validEmailAddress(emailQuery)) {
+          throw new ApiError(400, '邮箱格式不对，先检查一下再搜。')
+        }
         const key = `friend-email:${me}`
         if (searchWindowCount(key, EMAIL_SEARCH_WINDOW_MS) >= EMAIL_SEARCH_MAX) {
           throw new ApiError(429, '用邮箱找人太频繁了，请稍后再试。')
         }
         searchBump(key, EMAIL_SEARCH_WINDOW_MS)
-        if (!validEmailAddress(emailQuery)) return { mode: 'email', people: [], total: 0 }
         const found = new Set()
         const emailUid = emailCodeUid(emailQuery)
         if (emailUid !== me && await exists(emailUid, identity)) found.add(emailUid)
